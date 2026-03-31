@@ -52,6 +52,7 @@ namespace VisionGuard
             _monitorService.FrameProcessed += OnFrameProcessed;
 
             SetupTrayIcon();
+            LoadSettings();
             UpdateControlState(started: false);
 
             _log.Info("VisionGuard 已就绪，请选择捕获区域后点击「开始」。");
@@ -209,6 +210,37 @@ namespace VisionGuard
             };
         }
 
+        private void LoadSettings()
+        {
+            SettingsStore.Load();
+            _trkThreshold.Value = Math.Max(_trkThreshold.Minimum,
+                Math.Min(_trkThreshold.Maximum, SettingsStore.GetInt("ConfidenceThresholdPct", 45)));
+            _nudFps.Value       = SettingsStore.GetInt("TargetFps",            (int)_nudFps.Value);
+            _nudThreads.Value   = SettingsStore.GetInt("IntraOpNumThreads",    (int)_nudThreads.Value);
+            _nudCooldown.Value  = SettingsStore.GetInt("AlertCooldownSeconds", (int)_nudCooldown.Value);
+            _chkPlaySound.Checked = SettingsStore.GetBool("PlayAlertSound", true);
+
+            string soundPath = SettingsStore.GetString("AlertSoundPath", string.Empty);
+            if (!string.IsNullOrEmpty(soundPath) && File.Exists(soundPath))
+            {
+                _txtSoundPath.Text      = soundPath;
+                _txtSoundPath.ForeColor = Color.White;
+            }
+            // 否则保持默认占位文字，无需处理
+        }
+
+        private void SaveSettings()
+        {
+            SettingsStore.Set("ConfidenceThresholdPct",  _trkThreshold.Value);
+            SettingsStore.Set("TargetFps",               (int)_nudFps.Value);
+            SettingsStore.Set("IntraOpNumThreads",        (int)_nudThreads.Value);
+            SettingsStore.Set("AlertCooldownSeconds",     (int)_nudCooldown.Value);
+            SettingsStore.Set("PlayAlertSound",           _chkPlaySound.Checked);
+            SettingsStore.Set("AlertSoundPath",
+                _txtSoundPath.Text == "默认系统音" ? string.Empty : _txtSoundPath.Text);
+            SettingsStore.Save();
+        }
+
         private void UpdateControlState(bool started)
         {
             _btnStart.Enabled        = !started;
@@ -242,6 +274,7 @@ namespace VisionGuard
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            SaveSettings();
             _alertService?.StopAlarm();
             _keyHook?.Dispose();
             _keyHook = null;
