@@ -14,6 +14,7 @@ namespace VisionGuard.Models
         public HashSet<int> WatchedClassIds { get; set; } = new HashSet<int> { 0 }; // 0=person
         public int AlertCooldownSeconds { get; set; } = 5;
         public bool SaveAlertSnapshot { get; set; } = true;
-        public bool PlayAlertSound { get; set; } = true;
+        public bool   PlayAlertSound   { get; set; } = true;
+        public string AlertSoundPath   { get; set; } = string.Empty;
     }
 }

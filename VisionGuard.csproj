@@ -215,6 +215,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Capture\NativeMethods.cs" />
+    <Compile Include="Capture\GlobalKeyHook.cs" />
     <Compile Include="Capture\ScreenCapturer.cs" />
     <Compile Include="Form1.cs">
       <SubType>Form</SubType>

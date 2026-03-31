@@ -21,7 +21,8 @@ namespace VisionGuard.Services
         private AlertService        _alertService;
         private MonitorConfig       _config;
         private Timer               _timer;
-        private int                 _isRunning;   // 0=idle, 1=processing（Interlocked 防重入）
+        private int _isRunning;   // 0=idle, 1=processing（Interlocked 防重入）
+        private int _isPaused;    // 0=运行, 1=暂停（报警期间）
         private bool                _disposed;
 
         // 统计
@@ -57,7 +58,14 @@ namespace VisionGuard.Services
             _engine?.Dispose();
             _engine = null;
             _isRunning = 0;
+            _isPaused  = 0;
         }
+
+        /// <summary>暂停推理（报警期间调用）</summary>
+        public void Pause()  => Interlocked.Exchange(ref _isPaused, 1);
+
+        /// <summary>恢复推理（用户停止铃声后调用）</summary>
+        public void Resume() => Interlocked.Exchange(ref _isPaused, 0);
 
         public void UpdateConfig(MonitorConfig config)
         {
@@ -68,6 +76,9 @@ namespace VisionGuard.Services
 
         private void OnTick(object state)
         {
+            // 报警期间暂停推理
+            if (Interlocked.CompareExchange(ref _isPaused, 0, 0) == 1) return;
+
             // 防重入：若上一帧还在推理，跳过本帧
             if (Interlocked.CompareExchange(ref _isRunning, 1, 0) != 0) return;
 

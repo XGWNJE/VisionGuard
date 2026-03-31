@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
+using VisionGuard.Capture;
 using VisionGuard.Models;
 using VisionGuard.Services;
 using VisionGuard.UI;
@@ -20,13 +21,17 @@ namespace VisionGuard
         // ── UI 控件（代码构建，不依赖 Designer）──────────────────────
         private DetectionOverlayPanel _overlayPanel;
         private NumericUpDown _nudX, _nudY, _nudW, _nudH;
-        private NumericUpDown _nudFps, _nudThreads;
+        private NumericUpDown _nudFps, _nudThreads, _nudCooldown;
         private TrackBar      _trkThreshold;
         private Label         _lblThreshold;
         private Button        _btnSelectRegion, _btnStart, _btnStop;
+        private CheckBox      _chkPlaySound;
+        private TextBox       _txtSoundPath;
+        private Button        _btnPickSound;
         private ListBox       _lstLog;
         private ToolStripStatusLabel _tsStatus, _tsLastAlert, _tsInferMs;
         private NotifyIcon    _notifyIcon;
+        private GlobalKeyHook _keyHook;
 
         private string ModelPath => Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory, "Assets", "yolov5nu.onnx");
@@ -42,6 +47,8 @@ namespace VisionGuard
             _log            = new LogManager(_lstLog);
 
             _alertService.AlertTriggered   += OnAlertTriggered;
+            _alertService.AlarmStarted     += OnAlarmStarted;
+            _alertService.AlarmStopped     += OnAlarmStopped;
             _monitorService.FrameProcessed += OnFrameProcessed;
 
             SetupTrayIcon();
@@ -94,6 +101,9 @@ namespace VisionGuard
             try
             {
                 _monitorService.Start(ModelPath, cfg);
+                // 启动全局键盘钩子（UI 线程创建，确保有消息循环）
+                _keyHook = new GlobalKeyHook();
+                _keyHook.KeyDown += OnGlobalKeyDown;
                 UpdateControlState(started: true);
                 _log.Info($"监控已启动 | 区域 {cfg.CaptureRegion} | {cfg.TargetFps} FPS | 阈值 {cfg.ConfidenceThreshold:P0}");
             }
@@ -109,9 +119,21 @@ namespace VisionGuard
 
         private void BtnStop_Click(object sender, EventArgs e)
         {
+            _alertService.StopAlarm();   // 先停铃声，再停推理，避免 Resume 后立刻又被 Stop
+            _keyHook?.Dispose();
+            _keyHook = null;
             _monitorService.Stop();
             UpdateControlState(started: false);
             _log.Info("监控已停止。");
+        }
+
+        private void OnGlobalKeyDown(Keys key)
+        {
+            if (key == Keys.Space && _alertService.IsAlarming)
+            {
+                _alertService.StopAlarm();
+                _log.Info("用户按 Space 键，铃声已停止，推理恢复。");
+            }
         }
 
         // ── MonitorService 回调（ThreadPool 线程）────────────────────
@@ -142,10 +164,29 @@ namespace VisionGuard
             BeginInvoke(new Action(() =>
             {
                 _tsLastAlert.Text = "最后报警：" + e.Timestamp.ToString("HH:mm:ss");
-                _notifyIcon.ShowBalloonTip(3000, "VisionGuard — 检测到目标", msg, ToolTipIcon.Warning);
             }));
 
             e.Snapshot?.Dispose();
+        }
+
+        private void OnAlarmStarted(object sender, EventArgs e)
+        {
+            _monitorService.Pause();
+            BeginInvoke(new Action(() =>
+            {
+                _tsStatus.Text      = "⚠ 报警中 — 按 Space 停止";
+                _tsStatus.ForeColor = Color.OrangeRed;
+            }));
+        }
+
+        private void OnAlarmStopped(object sender, EventArgs e)
+        {
+            _monitorService.Resume();
+            BeginInvoke(new Action(() =>
+            {
+                _tsStatus.Text      = "● 监控中";
+                _tsStatus.ForeColor = Color.LimeGreen;
+            }));
         }
 
         // ── 辅助 ─────────────────────────────────────────────────────
@@ -161,9 +202,10 @@ namespace VisionGuard
                 TargetFps            = (int)_nudFps.Value,
                 IntraOpNumThreads    = (int)_nudThreads.Value,
                 WatchedClassIds      = new System.Collections.Generic.HashSet<int> { 0 },
-                AlertCooldownSeconds = 5,
+                AlertCooldownSeconds = (int)_nudCooldown.Value,
                 SaveAlertSnapshot    = true,
-                PlayAlertSound       = true
+                PlayAlertSound       = _chkPlaySound.Checked,
+                AlertSoundPath       = _txtSoundPath.Text == "默认系统音" ? string.Empty : _txtSoundPath.Text
             };
         }
 
@@ -173,7 +215,9 @@ namespace VisionGuard
             _btnStop.Enabled         =  started;
             _btnSelectRegion.Enabled = !started;
             _nudX.Enabled = _nudY.Enabled = _nudW.Enabled = _nudH.Enabled = !started;
-            _nudFps.Enabled = _nudThreads.Enabled = !started;
+            _nudFps.Enabled = _nudThreads.Enabled = _nudCooldown.Enabled = _chkPlaySound.Enabled = !started;
+            _txtSoundPath.Enabled = !started && _chkPlaySound.Checked;
+            _btnPickSound.Enabled = !started && _chkPlaySound.Checked;
             _trkThreshold.Enabled = !started;
             _tsStatus.Text      = started ? "● 监控中" : "○ 已停止";
             _tsStatus.ForeColor = started ? Color.LimeGreen : Color.Gray;
@@ -198,6 +242,9 @@ namespace VisionGuard
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            _alertService?.StopAlarm();
+            _keyHook?.Dispose();
+            _keyHook = null;
             _monitorService?.Stop();
             _monitorService?.Dispose();
             _notifyIcon?.Dispose();
@@ -310,7 +357,37 @@ namespace VisionGuard
                     ForeColor = Color.LightGray
                 };
                 gb.Controls.Add(_lblThreshold);
-                return gy + 22;
+                gy += 22;
+                _nudCooldown = MakeNud(gb, "冷却(s)：", gy, 1, 300, 5); gy += 26;
+                _chkPlaySound = new CheckBox
+                {
+                    Text      = "警报铃声",
+                    Bounds    = new Rectangle(8, gy, gb.Width - 20, 22),
+                    ForeColor = Color.LightGray,
+                    Checked   = true
+                };
+                gb.Controls.Add(_chkPlaySound);
+                gy += 26;
+                _txtSoundPath = new TextBox
+                {
+                    Bounds    = new Rectangle(8, gy, gb.Width - 52, 22),
+                    BackColor = Color.FromArgb(45, 45, 45),
+                    ForeColor = Color.DimGray,
+                    Text      = "默认系统音",
+                    ReadOnly  = true
+                };
+                gb.Controls.Add(_txtSoundPath);
+                _btnPickSound = new Button
+                {
+                    Text      = "...",
+                    Bounds    = new Rectangle(gb.Width - 42, gy, 32, 22),
+                    BackColor = Color.FromArgb(60, 60, 60),
+                    ForeColor = Color.White,
+                    FlatStyle = FlatStyle.Flat
+                };
+                gb.Controls.Add(_btnPickSound);
+                gy += 26;
+                return gy;
             });
 
             // 性能参数组
@@ -361,6 +438,29 @@ namespace VisionGuard
             _btnStop.Click         += BtnStop_Click;
             _trkThreshold.ValueChanged += (s, e) =>
                 _lblThreshold.Text = (_trkThreshold.Value / 100f).ToString("F2");
+
+            _chkPlaySound.CheckedChanged += (s, e) =>
+            {
+                _txtSoundPath.Enabled = _chkPlaySound.Checked;
+                _btnPickSound.Enabled = _chkPlaySound.Checked;
+            };
+
+            _btnPickSound.Click += (s, e) =>
+            {
+                using (var dlg = new OpenFileDialog
+                {
+                    Title  = "选择警报铃声（WAV）",
+                    Filter = "WAV 音频|*.wav",
+                    CheckFileExists = true
+                })
+                {
+                    if (dlg.ShowDialog() == DialogResult.OK)
+                    {
+                        _txtSoundPath.Text      = dlg.FileName;
+                        _txtSoundPath.ForeColor = Color.White;
+                    }
+                }
+            };
         }
 
         // ── UI 构建辅助 ───────────────────────────────────────────────

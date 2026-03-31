@@ -1,1 +1,179 @@
-我来评估一下这个项目的需求和技术方案。## 项目需求评估### 硬件约束分析**平台：Windows 7 + Intel 第3代酷睿 i5 (Ivy Bridge, ~2012年)**- CPU：i5-3xxx，4线程，单核性能有限- 核显：Intel HD Graphics 4000，**不支持 CUDA/OpenCL 加速推理**- 内存：推测 4~8GB- 纯 CPU 推理，性能非常有限---## 技术方案设计### 1. 屏幕截取方案网页封装的监控系统（如 Electron / CEF），直接截取特定窗口区域：```推荐：GDI+ BitBlt 截屏（Windows 原生，Win7 兼容）备选：Windows Graphics Capture API ❌（Win10+ 才支持）```截取频率建议：**2~5 FPS** 即可，CPU 压力小，目标检测不需要太高帧率。---### 2. 推理模型选型（关键）| 模型 | 大小 | Win7 CPU 推理速度 | 推荐度 ||------|------|-------------------|--------|| **YOLOv5n / YOLOv5s** ONNX | ~4~14MB | 约 300~800ms/帧 | ⭐⭐⭐ || **YOLOv8n** ONNX | ~6MB | 约 400ms/帧 | ⭐⭐⭐ || **NanoDet** ONNX | ~1MB | 约 150~300ms/帧 | ⭐⭐⭐⭐ || **MobileNet-SSD** ONNX | ~7MB | 约 200~400ms/帧 | ⭐⭐⭐⭐ || **YOLOv10n** | ~5MB | 类似 v8n | ⭐⭐⭐ |**强烈推荐：YOLOv5n 或 NanoDet，导出为 ONNX 格式**，配合 ONNX Runtime CPU 推理。---### 3. .NET 框架版本选择**Windows 7 的 .NET 兼容性限制：**```✅ .NET Framework 4.8     → Win7 SP1 支持，最后一个 Framework 版本✅ .NET Framework 4.7.2   → 稳定，推荐⚠️ .NET 6 / 7 / 8        → 需要 Win7 额外补丁，官方不再支持❌ .NET 9                 → 不支持 Win7```**结论：使用 .NET Framework 4.7.2 或 4.8**---### 4. 整体框架设计```┌─────────────────────────────────────────────────┐│              .NET Framework 4.7.2/4.8            │├─────────────────────────────────────────────────┤│  截图模块           推理模块          报警模块    ││  ScreenCapture  →  ONNXRuntime   →  AlertService ││  (GDI+ BitBlt)     (CPU推理)        (事件/弹窗)  │├─────────────────────────────────────────────────┤│  定时器调度（System.Threading.Timer，2~5FPS）    │├─────────────────────────────────────────────────┤│  UI层：WinForms（轻量）或 WPF（可视化调试用）    │└─────────────────────────────────────────────────┘```---### 5. 关键 NuGet 包```xml<!-- ONNX 推理，支持 .NET Framework 4.x -->Microsoft.ML.OnnxRuntime  版本：1.16.x（最后支持 netstandard2.0 的版本）<!-- 图像处理 -->OpenCvSharp4.runtime.win  版本：4.8.x（需验证 Win7 兼容性）// 备选：直接用 System.Drawing（GDI+，Win7 原生）<!-- 截图 -->直接使用 WinAPI P/Invoke（BitBlt）无需额外包```> ⚠️ **注意**：`Microsoft.ML.OnnxRuntime` 1.17+ 开始放弃 Win7 支持，锁定用 **1.16.3**---### 6. 核心代码结构示意```csharp// 截图 → 推理 → 报警 主循环public class MonitorService{    private InferenceSession _session;  // ONNX Runtime    private System.Threading.Timer _timer;    public void Start()    {        _session = new InferenceSession("yolov5n.onnx");        // 每 500ms 截一次（约 2FPS）        _timer = new Timer(OnTick, null, 0, 500);    }    private void OnTick(object state)    {        // 1. 截取指定窗口区域（GDI BitBlt）        var bitmap = ScreenCapture.CaptureRegion(rect);                // 2. 预处理：缩放到 320x320（减少推理耗时）        var tensor = Preprocess(bitmap);                // 3. ONNX 推理        var results = RunInference(tensor);                // 4. 检测到目标 → 触发报警        if (results.Any(r => r.Confidence > 0.6f))            AlertService.Trigger(results);    }}```---## 总结建议| 项目 | 推荐方案 ||------|----------|| .NET 版本 | **.NET Framework 4.7.2 或 4.8** || UI框架 | **WinForms**（轻量，Win7 兼容最佳） || 推理引擎 | **ONNX Runtime 1.16.3** || 模型 | **YOLOv5n.onnx 或 NanoDet.onnx**（输入分辨率降到 320x320） || 截图 | **GDI+ BitBlt P/Invoke** || 推理频率 | **2~3 FPS**（每帧推理约 400~800ms，CPU 占用约 30~60%） |**最大风险点**：第3代 i5 做实时目标检测，帧率低是必然的，建议和客户明确 **"准实时"而非真正实时**，2~3秒内响应是合理预期。
+# VisionGuard
+
+> 基于 YOLOv5 的轻量级屏幕区域人员检测与报警系统，专为低配 Windows 环境设计。
+
+![Platform](https://img.shields.io/badge/platform-Windows%207%2B-blue)
+![Framework](https://img.shields.io/badge/.NET-4.7.2-purple)
+![Model](https://img.shields.io/badge/model-YOLOv5nu%20ONNX-orange)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+---
+
+## 功能概览
+
+| 功能 | 说明 |
+|------|------|
+| 区域截图检测 | 拖拽选取任意屏幕区域，实时截图送入推理 |
+| YOLOv5 推理 | ONNX Runtime CPU 推理，无需 GPU |
+| 置信度过滤 | 滑块调节阈值（10%–90%），实时生效 |
+| 循环铃声报警 | 触发后无限循环播放 WAV / 系统提示音，Space 键停止 |
+| 推理自动暂停 | 报警期间暂停推理任务，降低 CPU 占用 |
+| 冷却计时 | 停止铃声后重新起算冷却，防止立即重复触发 |
+| 快照保存 | 报警瞬间截图自动保存至 AppData |
+| 托盘常驻 | 最小化后系统托盘运行，双击唤起主窗口 |
+
+---
+
+## 截图
+
+> 主界面预览（左侧控制面板 + 右侧实时检测叠加）
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  捕获区域   │                                               │
+│  检测参数   │        实时视频预览 + 检测框叠加              │
+│  性能参数   │                                               │
+│  [开始][停止]│                                              │
+├─────────────────────────────────────────────────────────────┤
+│  ● 监控中    最后报警：14:23:07              推理 312 ms    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 快速开始
+
+### 环境要求
+
+- Windows 7 SP1 x64 或更高版本
+- .NET Framework 4.7.2
+- 无需独立显卡
+
+### 安装
+
+1. 克隆或下载本仓库
+2. 将 `yolov5nu.onnx` 模型文件放入 `Assets/` 目录（见 [Assets/ASSETS_README.md](Assets/ASSETS_README.md)）
+3. 用 Visual Studio 2019+ 打开 `VisionGuard.sln`，还原 NuGet 包后生成
+
+### 使用流程
+
+```
+1. 点击「拖拽选区...」在屏幕上框选监控区域
+2. 调整置信度阈值、冷却时间、铃声等参数
+3. 点击「▶ 开始」启动监控
+4. 检测到人员时铃声自动循环 → 按 Space 键停止铃声并恢复推理
+5. 点击「■ 停止」结束监控
+```
+
+---
+
+## 参数说明
+
+### 检测参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| 置信度阈值 | 0.45 | 低于此值的检测框被忽略 |
+| 冷却时间 | 5 秒 | 从"用户按 Space 停止铃声"时刻起算，期间不重复报警 |
+| 警报铃声 | 系统提示音 | 可选择自定义 WAV 文件；未选则使用系统 Exclamation 音循环 |
+| 本机警报提醒 | 开启 | 关闭后静默运行，仅记录日志 |
+
+### 性能参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| FPS | 2 | 截图推理频率（1–5），建议低配机器保持 2 |
+| 线程数 | 2 | ONNX Runtime IntraOp 线程数（1–4） |
+
+---
+
+## 项目结构
+
+```
+VisionGuard/
+├── Assets/                  # 模型文件目录
+│   └── yolov5nu.onnx        # YOLOv5n 模型（需手动放置）
+├── Capture/
+│   ├── ScreenCapturer.cs    # GDI BitBlt 屏幕截图
+│   ├── GlobalKeyHook.cs     # 全局键盘钩子（Space 停止铃声）
+│   └── NativeMethods.cs     # Win32 P/Invoke 声明
+├── Inference/
+│   ├── OnnxInferenceEngine.cs   # ONNX Runtime 推理封装
+│   ├── ImagePreprocessor.cs     # 图像缩放 + 张量转换
+│   └── YoloOutputParser.cs      # YOLOv5 输出解析 + NMS
+├── Models/
+│   ├── MonitorConfig.cs     # 运行时配置（阈值、铃声路径等）
+│   ├── Detection.cs         # 单次检测结果
+│   └── AlertEvent.cs        # 报警事件参数
+├── Services/
+│   ├── MonitorService.cs    # 主监控循环（Timer + ThreadPool）
+│   └── AlertService.cs      # 冷却判断 + 循环铃声状态机
+├── UI/
+│   ├── DetectionOverlayPanel.cs # 实时检测框叠加绘制
+│   └── RegionSelectorForm.cs    # 屏幕区域拖拽选取
+├── Utils/
+│   └── LogManager.cs        # ListBox 日志输出
+└── Form1.cs                 # 主界面（纯代码构建，不依赖 Designer）
+```
+
+---
+
+## 技术栈
+
+| 层 | 技术 |
+|----|------|
+| UI | WinForms (.NET Framework 4.7.2) |
+| 推理引擎 | Microsoft.ML.OnnxRuntime 1.16.3 |
+| 模型 | YOLOv5nu（ONNX 格式，输入 640×640） |
+| 截图 | GDI+ BitBlt P/Invoke |
+| 音频 | System.Media.SoundPlayer（WAV 循环） |
+| 键盘监听 | SetWindowsHookEx WH_KEYBOARD_LL |
+
+> **为什么是 OnnxRuntime 1.16.3？**
+> 1.17+ 起放弃 Windows 7 支持；1.16.3 是最后一个兼容 netstandard2.0 且在 Win7 x64 上验证可用的版本。
+
+---
+
+## 报警逻辑状态机
+
+```
+监控运行中（推理正常）
+       │
+       ▼ 检测到目标 & 冷却通过
+  StartLoopAlarm()
+       │
+       ├─ SoundPlayer.PlayLooping() / 系统音循环线程
+       ├─ MonitorService.Pause()  ← 推理暂停，降低 CPU 占用
+       └─ 状态栏：⚠ 报警中 — 按 Space 停止
+       │
+       ▼ 用户按 Space 键
+   StopAlarm()
+       │
+       ├─ 停止铃声 & 释放 SoundPlayer
+       ├─ 冷却时间戳重置为当前时刻  ← 防止立即重触发
+       ├─ MonitorService.Resume() ← 推理恢复
+       └─ 状态栏：● 监控中
+```
+
+---
+
+## 已知限制
+
+- 纯 CPU 推理，单帧耗时约 300–800 ms（取决于硬件）
+- 最高支持 5 FPS，不适合需要毫秒级响应的场景
+- 铃声仅支持 WAV 格式（`SoundPlayer` 限制）
+
+---
+
+## 未来规划
+
+- [ ] **跨端推送通知**：集成 PushDeer，报警时同步推送到手机（iOS / Android / macOS）
+- [ ] **多目标类别选择**：UI 支持勾选检测车辆、动物等其他 COCO 类别
+- [ ] **历史快照查看器**：内置浏览 AppData 报警截图的界面
+- [ ] **HTTP Webhook**：报警时向自定义 URL 发送 POST 请求，对接自有平台
+
+---
+
+## License
+
+MIT © VisionGuard Contributors
