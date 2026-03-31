@@ -1,19 +1,20 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+using System;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace VisionGuard
 {
     internal static class Program
     {
-        /// <summary>
-        /// 应用程序的主入口点。
-        /// </summary>
+        [DllImport("user32.dll")]
+        private static extern bool SetProcessDPIAware();
+
         [STAThread]
         static void Main()
         {
+            // 必须在任何窗口句柄创建前调用，确保 BitBlt 坐标与鼠标坐标一致
+            SetProcessDPIAware();
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new Form1());
