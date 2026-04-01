@@ -271,10 +271,11 @@ namespace VisionGuard
 
         private void SetupTrayIcon()
         {
+            var trayIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Shield;
             _notifyIcon = new NotifyIcon
             {
                 Text    = "VisionGuard",
-                Icon    = SystemIcons.Shield,
+                Icon    = trayIcon,
                 Visible = true
             };
             var menu = new ContextMenu(new[]
