@@ -28,6 +28,7 @@
 | 循环报警 | 触发后无限循环播放 WAV / 系统音，`Space` 停止 |
 | 推理暂停 | 报警期间自动暂停推理，降低 CPU 占用 |
 | 冷却机制 | 停止后重置冷却计时，防止立即重触发 |
+| **多类别监控** | 支持选择任意 COCO 类别组合（person / car / dog 等），详见 `Assets/COCO_CLASSES.md` |
 | 快照保存 | 报警瞬间自动截图至 EXE 同目录 `alerts\`（可在 `MonitorConfig.SaveAlertSnapshot` 中关闭，默认开启） |
 | 托盘运行 | 最小化后系统托盘常驻，双击唤起 |
 | 参数持久化 | 所有设置（含窗口尺寸）自动保存，下次启动恢复 |
@@ -35,6 +36,8 @@
 ## 参数
 
 **持久化位置**：`settings.ini` 与 `alerts\` 目录均在 EXE 同级目录下。
+
+**监控类别**：`WatchedClasses`（留空 = 检测全部；填类名 = 只检测指定类别，如 `person,car,dog`），类名参考 `Assets/COCO_CLASSES.md`
 
 **性能**：FPS（默认 2，范围 1–5）、推理线程数（默认 2，范围 1–4）
 
@@ -62,7 +65,7 @@ git clone <repo>
 
 ```
 VisionGuard/
-├── Assets/          # 模型 (.onnx) 与图标
+├── Assets/          # 模型 (.onnx)、图标、COCO 类别列表
 ├── Capture/         # 屏幕截图 + 全局键盘钩子
 ├── Inference/       # ONNX 推理 + 图像预处理 + NMS
 ├── Models/          # 数据结构（配置、检测结果、报警事件）
@@ -75,7 +78,7 @@ VisionGuard/
 ## 路线图
 
 - [ ] PushDeer 手机推送通知
-- [ ] 多目标类别选择（车辆、动物等 COCO 类别）
+- [x] **多目标类别选择**（车辆、动物等 COCO 类别）— 见 `Assets/COCO_CLASSES.md`
 - [ ] HTTP Webhook 对接自有平台
 - [ ] 内置历史快照查看器
 
