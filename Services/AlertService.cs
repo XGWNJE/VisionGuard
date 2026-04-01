@@ -190,8 +190,8 @@ namespace VisionGuard.Services
             try
             {
                 string dir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "VisionGuard", "alerts");
+                    AppDomain.CurrentDomain.BaseDirectory,
+                    "alerts");
                 Directory.CreateDirectory(dir);
 
                 string filename = timestamp.ToString("yyyyMMdd_HHmmss_fff") + ".png";

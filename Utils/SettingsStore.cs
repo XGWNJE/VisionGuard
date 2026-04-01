@@ -12,8 +12,8 @@ namespace VisionGuard.Utils
     internal static class SettingsStore
     {
         private static readonly string FilePath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "VisionGuard", "settings.ini");
+            AppDomain.CurrentDomain.BaseDirectory,
+            "settings.ini");
 
         private static Dictionary<string, string> _data = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
