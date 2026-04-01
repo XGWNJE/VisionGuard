@@ -10,8 +10,8 @@ namespace VisionGuard.Models
         public float IouThreshold { get; set; } = 0.45f;
         public int TargetFps { get; set; } = 2;
         public int IntraOpNumThreads { get; set; } = 2;
-        // 只检测这些 ClassId，空集合 = 检测全部
-        public HashSet<int> WatchedClassIds { get; set; } = new HashSet<int> { 0 }; // 0=person
+        // 要监控的类名集合，空集合 = 检测全部（空白配置也视为全部）
+        public HashSet<string> WatchedClasses { get; set; } = new HashSet<string>();
         public int AlertCooldownSeconds { get; set; } = 5;
         public bool SaveAlertSnapshot { get; set; } = true;
         public bool   PlayAlertSound   { get; set; } = true;

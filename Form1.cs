@@ -28,6 +28,7 @@ namespace VisionGuard
         private CheckBox      _chkPlaySound;
         private TextBox       _txtSoundPath;
         private FlatRoundButton _btnPickSound;
+        private TextBox       _txtWatchedClasses;
         private OwnerDrawListBox _lstLog;
         private ToolStripStatusLabel _tsStatus, _tsLastAlert, _tsInferMs;
         private NotifyIcon    _notifyIcon;
@@ -202,7 +203,7 @@ namespace VisionGuard
                 ConfidenceThreshold  = _trkThreshold.Value / 100f,
                 TargetFps            = (int)_nudFps.Value,
                 IntraOpNumThreads    = (int)_nudThreads.Value,
-                WatchedClassIds      = new System.Collections.Generic.HashSet<int> { 0 },
+                WatchedClasses       = SettingsStore.GetStringList("WatchedClasses"),
                 AlertCooldownSeconds = (int)_nudCooldown.Value,
                 SaveAlertSnapshot    = true,
                 PlayAlertSound       = _chkPlaySound.Checked,
@@ -228,6 +229,14 @@ namespace VisionGuard
             }
             // 否则保持默认占位文字，无需处理
 
+            // 监控对象类型（空白 = 全部）
+            string watchedClasses = SettingsStore.GetString("WatchedClasses", string.Empty);
+            if (!string.IsNullOrWhiteSpace(watchedClasses))
+            {
+                _txtWatchedClasses.Text = watchedClasses;
+                _txtWatchedClasses.ForeColor = Color.White;
+            }
+
             // 窗口尺寸恢复
             int w = Math.Max(MinimumSize.Width,  SettingsStore.GetInt("WindowWidth",  Width));
             int h = Math.Max(MinimumSize.Height, SettingsStore.GetInt("WindowHeight", Height));
@@ -245,6 +254,9 @@ namespace VisionGuard
             SettingsStore.Set("PlayAlertSound",           _chkPlaySound.Checked);
             SettingsStore.Set("AlertSoundPath",
                 _txtSoundPath.Text == "默认系统音" ? string.Empty : _txtSoundPath.Text);
+            // 监控对象类型（空白 = 全部）
+            SettingsStore.Set("WatchedClasses",
+                string.IsNullOrWhiteSpace(_txtWatchedClasses.Text) ? string.Empty : _txtWatchedClasses.Text);
 
             // 窗口尺寸：最大化时用 RestoreBounds 保存还原尺寸
             Size saveSize = WindowState == FormWindowState.Normal ? Size : RestoreBounds.Size;
@@ -433,6 +445,23 @@ namespace VisionGuard
                     ForeColor   = Color.White
                 };
                 gb.Controls.Add(_btnPickSound);
+                gy += 26;
+                gb.Controls.Add(new Label
+                {
+                    Text      = "监控对象（类名）：",
+                    Bounds    = new Rectangle(8, gy, 130, 18),
+                    ForeColor = Color.LightGray
+                });
+                gy += 18;
+                _txtWatchedClasses = new TextBox
+                {
+                    Bounds       = new Rectangle(8, gy, gb.Width - 20, 22),
+                    BackColor    = Color.FromArgb(45, 45, 45),
+                    ForeColor    = Color.DimGray,
+                    Font         = new Font("Consolas", 8),
+                    Text         = ""
+                };
+                gb.Controls.Add(_txtWatchedClasses);
                 gy += 26;
                 return gy;
             });

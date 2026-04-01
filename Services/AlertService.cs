@@ -22,8 +22,8 @@ namespace VisionGuard.Services
         /// <summary>铃声停止后触发（通知外部恢复推理）</summary>
         public event EventHandler AlarmStopped;
 
-        // ── 冷却 ─────────────────────────────────────────────────────
-        private readonly Dictionary<int, DateTime> _lastAlertTime = new Dictionary<int, DateTime>();
+        // ── 冷却（全局，以时间为基准）────────────────────────────────
+        private DateTime _lastAlertTime = DateTime.MinValue;
         private readonly object _cooldownLock = new object();
 
         // ── 报警状态（0=静默, 1=报警中）──────────────────────────────
@@ -47,24 +47,16 @@ namespace VisionGuard.Services
             // 报警中：跳过，避免重复触发
             if (Interlocked.CompareExchange(ref _alarmState, 0, 0) == 1) return;
 
-            var triggered = new List<Detection>();
-            DateTime now  = DateTime.Now;
+            DateTime now = DateTime.Now;
 
             lock (_cooldownLock)
             {
-                foreach (var det in detections)
-                {
-                    if (_lastAlertTime.TryGetValue(det.ClassId, out DateTime last))
-                    {
-                        if ((now - last).TotalSeconds < config.AlertCooldownSeconds)
-                            continue;
-                    }
-                    _lastAlertTime[det.ClassId] = now;
-                    triggered.Add(det);
-                }
-            }
+                // 全局冷却：触发报警后，冷却时间内任何类别都不再触发
+                if ((now - _lastAlertTime).TotalSeconds < config.AlertCooldownSeconds)
+                    return;
 
-            if (triggered.Count == 0) return;
+                _lastAlertTime = now;
+            }
 
             Bitmap snapshot;
             try { snapshot = (Bitmap)frame.Clone(); }
@@ -73,8 +65,8 @@ namespace VisionGuard.Services
             if (config.SaveAlertSnapshot && snapshot != null)
                 TrySaveSnapshot(snapshot, now);
 
-            // 触发事件
-            AlertTriggered?.Invoke(this, new AlertEvent(triggered.AsReadOnly(), snapshot));
+            // 触发事件（传递本帧所有检测结果）
+            AlertTriggered?.Invoke(this, new AlertEvent(detections.AsReadOnly(), snapshot));
 
             // 启动循环铃声（需要配置了铃声开关）
             if (config.PlayAlertSound)
@@ -171,10 +163,7 @@ namespace VisionGuard.Services
             // 避免报警期间耗掉了冷却时间导致停止后立即再次触发。
             lock (_cooldownLock)
             {
-                DateTime now = DateTime.Now;
-                var keys = new List<int>(_lastAlertTime.Keys);
-                foreach (var k in keys)
-                    _lastAlertTime[k] = now;
+                _lastAlertTime = DateTime.Now;
             }
 
             AlarmStopped?.Invoke(this, EventArgs.Empty);

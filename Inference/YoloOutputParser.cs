@@ -12,6 +12,9 @@ namespace VisionGuard.Inference
     ///   - 84 = 4(xywh) + 80(class scores)，无 objectness 列
     ///   - 2100 = 40x40 + 20x20 + 10x10 anchor grid（320px 输入）
     ///   - 坐标已是绝对像素值（相对 320x320），无需乘以 anchors
+    ///
+    /// 前5置信度顺序匹配：所有候选按置信度降序，取前5名，
+    ///   若配置了 WatchedClasses 则在这5个中匹配，否则直接取前5。
     /// </summary>
     public static class YoloOutputParser
     {
@@ -40,13 +43,13 @@ namespace VisionGuard.Inference
         /// <param name="captureRegion">原始捕获区域（用于将坐标映射回屏幕）</param>
         /// <param name="confThreshold">置信度阈值</param>
         /// <param name="iouThreshold">NMS IoU 阈值</param>
-        /// <param name="watchedClassIds">只保留这些类（null 或空集 = 全部）</param>
+        /// <param name="watchedClasses">只保留这些类名（null 或空集合 = 全部）</param>
         public static List<Detection> Parse(
-            float[]      rawOutput,
-            Rectangle    captureRegion,
-            float        confThreshold,
-            float        iouThreshold,
-            HashSet<int> watchedClassIds)
+            float[]         rawOutput,
+            Rectangle       captureRegion,
+            float           confThreshold,
+            float           iouThreshold,
+            HashSet<string> watchedClasses)
         {
             // rawOutput 展平自 [1, 84, 2100]
             // 索引: rawOutput[channel * 2100 + anchor]
@@ -56,7 +59,7 @@ namespace VisionGuard.Inference
             float scaleX = captureRegion.Width  / (float)ModelSize;
             float scaleY = captureRegion.Height / (float)ModelSize;
 
-            var candidates = new List<Detection>();
+            var allCandidates = new List<Detection>();
 
             for (int a = 0; a < numAnchors; a++)
             {
@@ -74,8 +77,12 @@ namespace VisionGuard.Inference
                 }
 
                 if (bestScore < confThreshold) continue;
-                if (watchedClassIds != null && watchedClassIds.Count > 0
-                    && !watchedClassIds.Contains(bestClass)) continue;
+
+                string label = bestClass < CocoLabels.Length ? CocoLabels[bestClass] : bestClass.ToString();
+
+                // watchedClasses 空 = 全部；非空则只保留匹配项
+                if (watchedClasses != null && watchedClasses.Count > 0
+                    && !watchedClasses.Contains(label)) continue;
 
                 float cx = rawOutput[0 * numAnchors + a];
                 float cy = rawOutput[1 * numAnchors + a];
@@ -88,16 +95,20 @@ namespace VisionGuard.Inference
                 float w = bw * scaleX;
                 float h = bh * scaleY;
 
-                candidates.Add(new Detection
+                allCandidates.Add(new Detection
                 {
-                    ClassId    = bestClass,
-                    Label      = bestClass < CocoLabels.Length ? CocoLabels[bestClass] : bestClass.ToString(),
-                    Confidence = bestScore,
+                    ClassId     = bestClass,
+                    Label       = label,
+                    Confidence  = bestScore,
                     BoundingBox = new RectangleF(x, y, w, h)
                 });
             }
 
-            return NMS(candidates, iouThreshold);
+            // 前5置信度顺序匹配：先按置信度降序，取前5名，再 NMS
+            allCandidates.Sort((a, b) => b.Confidence.CompareTo(a.Confidence));
+            var top5 = allCandidates.Count > 5 ? allCandidates.GetRange(0, 5) : allCandidates;
+
+            return NMS(top5, iouThreshold);
         }
 
         // ── NMS ─────────────────────────────────────────────────────

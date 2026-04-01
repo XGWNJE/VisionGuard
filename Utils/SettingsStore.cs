@@ -72,6 +72,22 @@ namespace VisionGuard.Utils
             return _data.TryGetValue(key, out string s) ? s : defaultValue;
         }
 
+        /// <summary>
+        /// 读取逗号分隔的字符串列表，空字符串返回空集合。
+        /// </summary>
+        public static HashSet<string> GetStringList(string key)
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (_data.TryGetValue(key, out string s) && !string.IsNullOrWhiteSpace(s))
+            {
+                foreach (var item in s.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    result.Add(item.Trim());
+                }
+            }
+            return result;
+        }
+
         public static void Set(string key, int value)    => _data[key] = value.ToString();
         public static void Set(string key, bool value)   => _data[key] = value.ToString();
         public static void Set(string key, string value) => _data[key] = value ?? string.Empty;

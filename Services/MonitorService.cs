@@ -17,13 +17,15 @@ namespace VisionGuard.Services
     {
         public event EventHandler<FrameResultEventArgs> FrameProcessed;
 
-        private OnnxInferenceEngine _engine;
-        private AlertService        _alertService;
-        private MonitorConfig       _config;
-        private Timer               _timer;
-        private int _isRunning;   // 0=idle, 1=processing（Interlocked 防重入）
-        private int _isPaused;    // 0=运行, 1=暂停（报警期间）
-        private bool                _disposed;
+        private OnnxInferenceEngine  _engine;
+        private AlertService         _alertService;
+        private MonitorConfig        _config;
+        private Timer                _timer;
+        private int                  _isRunning;   // 0=idle, 1=processing（Interlocked 防重入）
+        private int                  _isPaused;    // 0=运行, 1=暂停（报警期间）
+        private bool                 _disposed;
+        // 停止同步：确保 OnTick 完全结束（包括 finally）后才能安全 Dispose _engine
+        private readonly ManualResetEvent _tickCompleted = new ManualResetEvent(true);
 
         // 统计
         private long  _totalFrames;
@@ -53,12 +55,16 @@ namespace VisionGuard.Services
 
         public void Stop()
         {
+            // 阻止新 OnTick 进入，并等待正在执行的 Tick 完全结束
+            _tickCompleted.Reset();           // 未完成信号
             _timer?.Dispose();
             _timer = null;
+            _tickCompleted.WaitOne(2000);     // 最多等2秒让 OnTick 退出
             _engine?.Dispose();
             _engine = null;
             _isRunning = 0;
             _isPaused  = 0;
+            _tickCompleted.Set();             // 恢复为已结束状态
         }
 
         /// <summary>暂停推理（报警期间调用）</summary>
@@ -76,15 +82,20 @@ namespace VisionGuard.Services
 
         private void OnTick(object state)
         {
+            // 停止中：跳过本次Tick（Stop 已调用 WaitOne，这里直接返回）
+            if (!_tickCompleted.WaitOne(0)) return;
+
             // 报警期间暂停推理
             if (Interlocked.CompareExchange(ref _isPaused, 0, 0) == 1) return;
 
             // 防重入：若上一帧还在推理，跳过本帧
             if (Interlocked.CompareExchange(ref _isRunning, 1, 0) != 0) return;
 
+            // 标记 Tick 开始执行（Stop 会等待此信号）
+            _tickCompleted.Reset();
+
             MonitorConfig cfg = Volatile.Read(ref _config);
             Bitmap frame    = null;
-            Bitmap snapshot = null;
 
             try
             {
@@ -106,7 +117,7 @@ namespace VisionGuard.Services
                     cfg.CaptureRegion,
                     cfg.ConfidenceThreshold,
                     cfg.IouThreshold,
-                    cfg.WatchedClassIds);
+                    cfg.WatchedClasses);
 
                 // 5. 报警评估（传 frame 供 AlertService clone 快照）
                 _alertService.Evaluate(detections, frame, cfg);
@@ -128,6 +139,8 @@ namespace VisionGuard.Services
             }
             finally
             {
+                // 标记 Tick 结束：Stop() 可以安全 Dispose _engine
+                _tickCompleted.Set();
                 frame?.Dispose();
                 Interlocked.Exchange(ref _isRunning, 0);
             }
