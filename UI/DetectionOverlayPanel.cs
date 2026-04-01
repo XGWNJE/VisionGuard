@@ -50,12 +50,13 @@ namespace VisionGuard.UI
         {
             base.OnPaint(e);
 
-            Bitmap           frameCopy;
+            Bitmap           frameCopy = null;
             List<Detection>  dets;
             lock (_lock)
             {
-                frameCopy = _frame;
-                dets      = _detections;
+                if (_frame != null)
+                    frameCopy = (Bitmap)_frame.Clone();
+                dets = _detections;
             }
 
             Graphics g = e.Graphics;
@@ -77,6 +78,8 @@ namespace VisionGuard.UI
                 return;
             }
 
+            try
+            {
             // 等比缩放到面板区域
             RectangleF dst = FitRect(frameCopy.Width, frameCopy.Height, Width, Height);
             g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
@@ -112,6 +115,11 @@ namespace VisionGuard.UI
                     using (var textBrush = new SolidBrush(BoxColor))
                         g.DrawString(label, font, textBrush, lx, ly);
                 }
+            }
+            }
+            finally
+            {
+                frameCopy.Dispose();
             }
         }
 

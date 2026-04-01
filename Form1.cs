@@ -22,13 +22,13 @@ namespace VisionGuard
         private DetectionOverlayPanel _overlayPanel;
         private NumericUpDown _nudX, _nudY, _nudW, _nudH;
         private NumericUpDown _nudFps, _nudThreads, _nudCooldown;
-        private TrackBar      _trkThreshold;
+        private DarkSlider    _trkThreshold;
         private Label         _lblThreshold;
-        private Button        _btnSelectRegion, _btnStart, _btnStop;
+        private FlatRoundButton _btnSelectRegion, _btnStart, _btnStop;
         private CheckBox      _chkPlaySound;
         private TextBox       _txtSoundPath;
-        private Button        _btnPickSound;
-        private ListBox       _lstLog;
+        private FlatRoundButton _btnPickSound;
+        private OwnerDrawListBox _lstLog;
         private ToolStripStatusLabel _tsStatus, _tsLastAlert, _tsInferMs;
         private NotifyIcon    _notifyIcon;
         private GlobalKeyHook _keyHook;
@@ -227,6 +227,13 @@ namespace VisionGuard
                 _txtSoundPath.ForeColor = Color.White;
             }
             // 否则保持默认占位文字，无需处理
+
+            // 窗口尺寸恢复
+            int w = Math.Max(MinimumSize.Width,  SettingsStore.GetInt("WindowWidth",  Width));
+            int h = Math.Max(MinimumSize.Height, SettingsStore.GetInt("WindowHeight", Height));
+            Size = new Size(w, h);
+            if (SettingsStore.GetBool("WindowMaximized", false))
+                WindowState = FormWindowState.Maximized;
         }
 
         private void SaveSettings()
@@ -238,6 +245,13 @@ namespace VisionGuard
             SettingsStore.Set("PlayAlertSound",           _chkPlaySound.Checked);
             SettingsStore.Set("AlertSoundPath",
                 _txtSoundPath.Text == "默认系统音" ? string.Empty : _txtSoundPath.Text);
+
+            // 窗口尺寸：最大化时用 RestoreBounds 保存还原尺寸
+            Size saveSize = WindowState == FormWindowState.Normal ? Size : RestoreBounds.Size;
+            SettingsStore.Set("WindowWidth",     saveSize.Width);
+            SettingsStore.Set("WindowHeight",    saveSize.Height);
+            SettingsStore.Set("WindowMaximized", WindowState == FormWindowState.Maximized);
+
             SettingsStore.Save();
         }
 
@@ -312,22 +326,21 @@ namespace VisionGuard
             BackColor     = Color.FromArgb(25, 25, 25);
             ForeColor     = Color.LightGray;
 
+            try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
+
             // ── 状态栏 ───────────────────────────────────────────────
-            var strip   = new StatusStrip { BackColor = Color.FromArgb(40, 40, 40) };
+            var strip   = new StatusStrip { BackColor = Color.FromArgb(37, 37, 37) };
+            strip.Renderer = new DarkStatusRenderer();
             _tsStatus   = new ToolStripStatusLabel("○ 已停止") { ForeColor = Color.Gray };
             _tsLastAlert= new ToolStripStatusLabel("最后报警：—") { Spring = true };
             _tsInferMs  = new ToolStripStatusLabel("推理 — ms") { Alignment = ToolStripItemAlignment.Right };
             strip.Items.AddRange(new ToolStripItem[] { _tsStatus, _tsLastAlert, _tsInferMs });
 
             // ── 日志面板 ─────────────────────────────────────────────
-            _lstLog = new ListBox
+            _lstLog = new OwnerDrawListBox
             {
                 Dock                = DockStyle.Fill,
-                Font                = new Font("Consolas", 8),
-                BackColor           = Color.FromArgb(15, 15, 15),
-                ForeColor           = Color.LightGray,
-                ScrollAlwaysVisible = true,
-                BorderStyle         = BorderStyle.None
+                ScrollAlwaysVisible = true
             };
             var logPanel = new Panel { Dock = DockStyle.Bottom, Height = 130 };
             logPanel.Controls.Add(_lstLog);
@@ -353,13 +366,14 @@ namespace VisionGuard
                 _nudY = MakeNud(gb, "Y：",    gy,  0, 9999, 0);   gy += 26;
                 _nudW = MakeNud(gb, "宽：",   gy, 32, 3840, 640); gy += 26;
                 _nudH = MakeNud(gb, "高：",   gy, 32, 2160, 480); gy += 26;
-                _btnSelectRegion = new Button
+                _btnSelectRegion = new FlatRoundButton
                 {
-                    Text      = "拖拽选区...",
-                    Bounds    = new Rectangle(8, gy, gb.Width - 20, 26),
-                    BackColor = Color.FromArgb(50, 80, 50),
-                    ForeColor = Color.White,
-                    FlatStyle = FlatStyle.Flat
+                    Text         = "拖拽选区...",
+                    Bounds       = new Rectangle(8, gy, gb.Width - 20, 26),
+                    NormalColor  = Color.FromArgb(45, 80, 45),
+                    HoverColor   = Color.FromArgb(58, 100, 58),
+                    ForeColor    = Color.White,
+                    Font         = new Font(Font, FontStyle.Bold)
                 };
                 gb.Controls.Add(_btnSelectRegion);
                 return gy + 30;
@@ -375,11 +389,10 @@ namespace VisionGuard
                     ForeColor = Color.LightGray
                 });
                 gy += 20;
-                _trkThreshold = new TrackBar
+                _trkThreshold = new DarkSlider
                 {
-                    Bounds        = new Rectangle(4, gy, gb.Width - 16, 30),
-                    Minimum       = 10, Maximum = 90, Value = 45,
-                    TickFrequency = 10
+                    Bounds  = new Rectangle(4, gy, gb.Width - 16, 28),
+                    Minimum = 10, Maximum = 90, Value = 45
                 };
                 gb.Controls.Add(_trkThreshold);
                 gy += 32;
@@ -410,13 +423,13 @@ namespace VisionGuard
                     ReadOnly  = true
                 };
                 gb.Controls.Add(_txtSoundPath);
-                _btnPickSound = new Button
+                _btnPickSound = new FlatRoundButton
                 {
-                    Text      = "...",
-                    Bounds    = new Rectangle(gb.Width - 42, gy, 32, 22),
-                    BackColor = Color.FromArgb(60, 60, 60),
-                    ForeColor = Color.White,
-                    FlatStyle = FlatStyle.Flat
+                    Text        = "...",
+                    Bounds      = new Rectangle(gb.Width - 42, gy, 32, 22),
+                    NormalColor = Color.FromArgb(60, 60, 60),
+                    HoverColor  = Color.FromArgb(75, 75, 75),
+                    ForeColor   = Color.White
                 };
                 gb.Controls.Add(_btnPickSound);
                 gy += 26;
@@ -432,24 +445,25 @@ namespace VisionGuard
             });
 
             // 开始/停止
-            _btnStart = new Button
+            _btnStart = new FlatRoundButton
             {
-                Text      = "▶  开  始",
-                Bounds    = new Rectangle(8, y, 104, 36),
-                BackColor = Color.FromArgb(30, 100, 30),
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Font      = new Font(Font, FontStyle.Bold)
+                Text        = "▶  开  始",
+                Bounds      = new Rectangle(8, y, 104, 36),
+                NormalColor = Color.FromArgb(0, 120, 212),
+                HoverColor  = Color.FromArgb(16, 110, 190),
+                PressColor  = Color.FromArgb(0, 90, 170),
+                ForeColor   = Color.White,
+                Font        = new Font(Font, FontStyle.Bold)
             };
-            _btnStop = new Button
+            _btnStop = new FlatRoundButton
             {
-                Text      = "■  停  止",
-                Bounds    = new Rectangle(120, y, 104, 36),
-                BackColor = Color.FromArgb(100, 30, 30),
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Font      = new Font(Font, FontStyle.Bold),
-                Enabled   = false
+                Text         = "■  停  止",
+                Bounds       = new Rectangle(120, y, 104, 36),
+                NormalColor  = Color.FromArgb(58, 58, 58),
+                HoverColor   = Color.FromArgb(72, 72, 72),
+                ForeColor    = Color.White,
+                Font         = new Font(Font, FontStyle.Bold),
+                Enabled      = false
             };
             ctrl.Controls.Add(_btnStart);
             ctrl.Controls.Add(_btnStop);
@@ -498,22 +512,21 @@ namespace VisionGuard
 
         // ── UI 构建辅助 ───────────────────────────────────────────────
 
-        private int AddGroup(Panel parent, string title, int top, Func<GroupBox, int, int> build)
+        private int AddGroup(Panel parent, string title, int top, Func<Panel, int, int> build)
         {
-            var gb = new GroupBox
+            var gb = new CardPanel
             {
-                Text      = title,
-                ForeColor = Color.LightGray,
-                Left      = 4, Top = top,
-                Width     = parent.Width - 16
+                Title  = title,
+                Left   = 4, Top = top,
+                Width  = parent.Width - 16
             };
-            int innerY = build(gb, 18);
+            int innerY = build(gb, 22);
             gb.Height  = innerY + 8;
             parent.Controls.Add(gb);
             return top + gb.Height + 6;
         }
 
-        private NumericUpDown MakeNud(GroupBox gb, string label, int top, int min, int max, int val)
+        private NumericUpDown MakeNud(Panel gb, string label, int top, int min, int max, int val)
         {
             gb.Controls.Add(new Label
             {
@@ -521,14 +534,31 @@ namespace VisionGuard
                 Bounds    = new Rectangle(8, top + 2, 58, 18),
                 ForeColor = Color.LightGray
             });
+            var wrapper = new Panel
+            {
+                Bounds    = new Rectangle(68, top, gb.Width - 80, 24),
+                BackColor = Color.FromArgb(58, 58, 58)
+            };
+            wrapper.Paint += (s, e) =>
+            {
+                using (var path = CardPanel.RoundRect(
+                    new Rectangle(0, 0, wrapper.Width - 1, wrapper.Height - 1), 3))
+                using (var pen = new System.Drawing.Pen(Color.FromArgb(74, 74, 74)))
+                    e.Graphics.DrawPath(pen, path);
+            };
             var nud = new NumericUpDown
             {
-                Bounds    = new Rectangle(68, top, gb.Width - 80, 22),
-                Minimum   = min, Maximum = max, Value = val,
-                BackColor = Color.FromArgb(45, 45, 45),
-                ForeColor = Color.White
+                Dock        = DockStyle.Fill,
+                Margin      = new Padding(2, 2, 22, 2),
+                Minimum     = min, Maximum = max, Value = val,
+                BackColor   = Color.FromArgb(58, 58, 58),
+                ForeColor   = Color.White,
+                BorderStyle = BorderStyle.None
             };
-            gb.Controls.Add(nud);
+            nud.HandleCreated += (s, e) =>
+                NativeMethods.SetWindowTheme(nud.Handle, "DarkMode_Explorer", null);
+            wrapper.Controls.Add(nud);
+            gb.Controls.Add(wrapper);
             return nud;
         }
     }

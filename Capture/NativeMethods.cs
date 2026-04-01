@@ -63,5 +63,9 @@ namespace VisionGuard.Capture
 
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         internal static extern IntPtr GetModuleHandle(string lpModuleName);
+
+        // ── uxtheme（NUD 暗色主题，Win11 生效；Win7 静默忽略）────────
+        [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+        internal static extern int SetWindowTheme(IntPtr hWnd, string pszSubAppName, string pszSubIdList);
     }
 }
