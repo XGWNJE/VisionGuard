@@ -855,7 +855,7 @@ namespace VisionGuard
                     Left = PadX, Top = y, Height = RowH,
                     Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top,
                     BackColor = Color.FromArgb(45, 45, 45), ForeColor = Color.DimGray,
-                    Text = "默认系统音", ReadOnly = true
+                    Text = @"Assets\soundreality-drums-loop-75bpm-3-455453.wav", ReadOnly = true
                 };
                 _btnPickSound = new FlatRoundButton
                 {
