@@ -8,6 +8,8 @@
 ![Model](https://img.shields.io/badge/YOLOv5nu%20320×320-FF6F00?style=flat-square)
 ![License](https://img.shields.io/badge/MIT-22C55E?style=flat-square)
 
+![界面截图](https://github.com/XGWNJE/VisionGuard/raw/main/Assets/screenshot.png)
+
 ---
 
 框选屏幕区域或选择目标窗口 → YOLOv5 CPU 推理 → 检测到目标时循环播放报警音，按 `Space` 停止。全程无需 GPU。

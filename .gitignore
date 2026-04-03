@@ -33,6 +33,7 @@ dist/
 
 # ===== AI 生成的原始素材 =====
 *.png
+!Assets/screenshot.png
 
 # ===== 模型文件说明 =====
 # Assets/yolov5nu.onnx 需要手动下载，见 readme.md 中的说明
