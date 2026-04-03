@@ -19,13 +19,26 @@ namespace VisionGuard.UI
 
         public OwnerDrawListBox()
         {
-            DrawMode            = DrawMode.OwnerDrawFixed;
-            ItemHeight          = 18;
-            BorderStyle         = BorderStyle.None;
-            BackColor           = Color.FromArgb(15, 15, 15);
-            ForeColor           = FgNormal;
-            Font                = new Font("Consolas", 8f);
-            SelectionMode       = SelectionMode.None;
+            DrawMode      = DrawMode.OwnerDrawFixed;
+            BorderStyle   = BorderStyle.None;
+            BackColor     = Color.FromArgb(15, 15, 15);
+            ForeColor     = FgNormal;
+            SelectionMode = SelectionMode.None;
+            // 字体继承自父容器（Form），不硬编码
+            // ItemHeight 在 OnFontChanged 里动态更新
+            UpdateItemHeight();
+        }
+
+        protected override void OnFontChanged(System.EventArgs e)
+        {
+            base.OnFontChanged(e);
+            UpdateItemHeight();
+        }
+
+        private void UpdateItemHeight()
+        {
+            // 行高 = 字体高度 + 上下各 2px 行间距
+            ItemHeight = Font.Height + 4;
         }
 
         protected override void OnDrawItem(DrawItemEventArgs e)

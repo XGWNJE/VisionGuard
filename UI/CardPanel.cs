@@ -13,6 +13,12 @@ namespace VisionGuard.UI
 
         public string Title { get; set; }
 
+        /// <summary>
+        /// 内容区起始 Y 坐标（标题栏下方）。
+        /// AddCard 的 build 回调应从此值开始放置控件。
+        /// </summary>
+        public int ContentTop => Padding.Top;
+
         public CardPanel()
         {
             SetStyle(
@@ -23,7 +29,23 @@ namespace VisionGuard.UI
 
             BackColor = Color.FromArgb(42, 42, 42);
             ForeColor = Color.White;
-            Padding   = new Padding(8, 22, 8, 8);
+            // 固定内边距：左右8，顶部留给标题行（字体行高+上下各4），底部6
+            // 在 OnFontChanged 里同步更新，确保与实际字体匹配
+            UpdatePadding();
+        }
+
+        protected override void OnFontChanged(System.EventArgs e)
+        {
+            base.OnFontChanged(e);
+            UpdatePadding();
+            Invalidate();
+        }
+
+        private void UpdatePadding()
+        {
+            // 标题行高 = 字体行高 + 上边距4 + 下边距4
+            int titleRowH = Font.Height + 8;
+            Padding = new Padding(8, titleRowH, 8, 6);
         }
 
         protected override void OnMouseEnter(System.EventArgs e)
@@ -49,11 +71,9 @@ namespace VisionGuard.UI
 
             using (GraphicsPath path = RoundRect(rc, 6))
             {
-                // 填充卡片背景
                 using (SolidBrush fill = new SolidBrush(Color.FromArgb(42, 42, 42)))
                     g.FillPath(fill, path);
 
-                // 边框
                 Color borderColor = _hovered
                     ? Color.FromArgb(74, 74, 74)
                     : Color.FromArgb(56, 56, 56);
@@ -61,12 +81,21 @@ namespace VisionGuard.UI
                     g.DrawPath(pen, path);
             }
 
-            // 标题文字
+            // 标题文字：垂直居中在标题行内
             if (!string.IsNullOrEmpty(Title))
             {
-                using (Font f = new Font(Font.FontFamily, 8.5f, FontStyle.Bold))
-                using (SolidBrush brush = new SolidBrush(Color.FromArgb(204, 204, 204)))
-                    g.DrawString(Title, f, brush, new RectangleF(10, 5, Width - 20, 16));
+                int titleH = Padding.Top;
+                using (Font f = new Font(Font, FontStyle.Bold))
+                using (SolidBrush brush = new SolidBrush(Color.FromArgb(200, 200, 200)))
+                {
+                    var titleRect = new RectangleF(10, 0, Width - 20, titleH);
+                    var sf = new StringFormat
+                    {
+                        Alignment     = StringAlignment.Near,
+                        LineAlignment = StringAlignment.Center
+                    };
+                    g.DrawString(Title, f, brush, titleRect, sf);
+                }
             }
         }
 
@@ -74,10 +103,10 @@ namespace VisionGuard.UI
         {
             var path = new GraphicsPath();
             int d = radius * 2;
-            path.AddArc(r.X,              r.Y,               d, d, 180, 90);
-            path.AddArc(r.Right - d,      r.Y,               d, d, 270, 90);
-            path.AddArc(r.Right - d,      r.Bottom - d,      d, d,   0, 90);
-            path.AddArc(r.X,              r.Bottom - d,      d, d,  90, 90);
+            path.AddArc(r.X,         r.Y,          d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y,          d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d,   0, 90);
+            path.AddArc(r.X,         r.Bottom - d, d, d,  90, 90);
             path.CloseFigure();
             return path;
         }

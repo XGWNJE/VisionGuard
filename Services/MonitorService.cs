@@ -99,8 +99,16 @@ namespace VisionGuard.Services
 
             try
             {
-                // 1. 截图
-                frame = ScreenCapturer.CaptureRegion(cfg.CaptureRegion);
+                // 1. 截图（根据捕获模式选择方式）
+                if (cfg.CaptureMode == Models.CaptureMode.WindowHandle
+                    && cfg.TargetWindowHandle != IntPtr.Zero)
+                {
+                    frame = WindowCapturer.CaptureWindow(cfg.TargetWindowHandle, cfg.WindowSubRegion);
+                }
+                else
+                {
+                    frame = ScreenCapturer.CaptureRegion(cfg.CaptureRegion);
+                }
 
                 // 2. 预处理（内部 resize + 转张量）
                 float[] tensor = ImagePreprocessor.ToTensor(frame);

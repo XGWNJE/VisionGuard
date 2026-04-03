@@ -6,14 +6,18 @@ namespace VisionGuard
 {
     internal static class Program
     {
+        // .NET Framework 4.7.2 不提供 Application.SetHighDpiMode。
+        // 高 DPI 感知已通过 app.manifest（dpiAwareness=PerMonitorV2）
+        // 和 App.config（DpiAwareness=PerMonitorV2）声明，此处无需额外调用。
+        // 保留 SetProcessDPIAware 仅作为 Win7 旧版兜底（DWM 关闭场景）。
         [DllImport("user32.dll")]
         private static extern bool SetProcessDPIAware();
 
         [STAThread]
         static void Main()
         {
-            // 必须在任何窗口句柄创建前调用，确保 BitBlt 坐标与鼠标坐标一致
-            SetProcessDPIAware();
+            // 旧版兜底（Win7 / Aero 关闭场景）；Win10/11 已由 manifest 处理
+            try { SetProcessDPIAware(); } catch { }
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);

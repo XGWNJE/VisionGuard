@@ -43,8 +43,66 @@ namespace VisionGuard.Capture
         [DllImport("user32.dll")]
         internal static extern uint GetGuiResources(IntPtr hProcess, uint uiFlags);
 
-        internal const uint SRCCOPY     = 0x00CC0020;
+        internal const uint SRCCOPY       = 0x00CC0020;
         internal const uint GR_GDIOBJECTS = 0;
+
+        // ── PrintWindow（窗口句柄捕获，遮挡/最小化时仍可用）────────
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool PrintWindow(IntPtr hwnd, IntPtr hdcBlt, uint nFlags);
+
+        internal const uint PW_CLIENTONLY       = 0x00000001;
+        internal const uint PW_RENDERFULLCONTENT = 0x00000002;
+
+        // ── DWM（获取窗口真实边界，含阴影）────────────────────────
+        [DllImport("dwmapi.dll")]
+        internal static extern int DwmGetWindowAttribute(
+            IntPtr hwnd, uint dwAttribute, out RECT pvAttribute, int cbAttribute);
+
+        internal const uint DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct RECT
+        {
+            public int Left, Top, Right, Bottom;
+            public System.Drawing.Rectangle ToRectangle() =>
+                System.Drawing.Rectangle.FromLTRB(Left, Top, Right, Bottom);
+        }
+
+        // ── GetWindowRect（DWM 失败时的回退）───────────────────────
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        // ── 窗口枚举 ────────────────────────────────────────────────
+        internal delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        internal static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        internal static extern int GetWindowTextLength(IntPtr hWnd);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        internal static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool IsIconic(IntPtr hWnd);
+
+        // ── TextBox Placeholder（cue banner）────────────────────────
+        internal const int EM_SETCUEBANNER = 0x1501;
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        internal static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, string lParam);
 
         // ── 全局键盘钩子 ─────────────────────────────────────────────
         internal delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
