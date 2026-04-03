@@ -98,6 +98,8 @@ namespace VisionGuard
             base.OnShown(e);
 
             // 此时 DPI 缩放完全生效，Font.Height 已是最终值
+            var ver = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            this.Text = $"VisionGuard v{ver.Major}.{ver.Minor}";
             BuildCards(_ctrlOuter);
             WireEvents();
             LoadSettings();
@@ -916,7 +918,7 @@ namespace VisionGuard
             {
                 var btnPanel = new Panel
                 {
-                    Left = MarginH, Top = curY, Height = BtnH + 16,
+                    Left = MarginH, Top = curY, Height = (BtnH + 4) * 2 + 12,
                     Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top,
                     BackColor = Color.FromArgb(32, 32, 32)
                 };
@@ -925,16 +927,25 @@ namespace VisionGuard
 
                 _btnStart = new FlatRoundButton
                 {
-                    Text = "▶  开  始", Left = 4, Top = 6, Width = BtnH * 4, Height = BtnH + 4,
+                    Text = "▶  开  始", Left = 4, Top = 4,
+                    Height = BtnH + 4,
                     NormalColor = Color.FromArgb(0, 120, 212), HoverColor = Color.FromArgb(16, 110, 190),
                     PressColor  = Color.FromArgb(0, 90, 170),  ForeColor  = Color.White
                 };
                 _btnStop = new FlatRoundButton
                 {
-                    Text = "■  停  止", Left = BtnH * 4 + 10, Top = 6, Width = BtnH * 4, Height = BtnH + 4,
+                    Text = "■  停  止", Left = 4, Top = BtnH + 8,
+                    Height = BtnH + 4,
                     NormalColor = Color.FromArgb(58, 58, 58), HoverColor = Color.FromArgb(72, 72, 72),
                     ForeColor = Color.White, Enabled = false
                 };
+                btnPanel.Resize += (s, e) =>
+                {
+                    if (!_btnStart.IsDisposed) _btnStart.Width = btnPanel.ClientSize.Width - 8;
+                    if (!_btnStop.IsDisposed)  _btnStop.Width  = btnPanel.ClientSize.Width - 8;
+                };
+                _btnStart.Width = btnPanel.ClientSize.Width - 8;
+                _btnStop.Width  = btnPanel.ClientSize.Width - 8;
                 btnPanel.Controls.Add(_btnStart);
                 btnPanel.Controls.Add(_btnStop);
             }

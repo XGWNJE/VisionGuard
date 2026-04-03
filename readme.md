@@ -2,7 +2,7 @@
 
 **屏幕区域 / 窗口人员检测 + 循环报警**，专为低配 Windows 设计，开箱即用。
 
-![Version](https://img.shields.io/badge/v2.0-0078D4?style=flat-square)
+![Version](https://img.shields.io/badge/v2.0.1-0078D4?style=flat-square)
 ![Platform](https://img.shields.io/badge/Windows%2010%2F11%20x64-0078D4?style=flat-square&logo=windows&logoColor=white)
 ![.NET](https://img.shields.io/badge/.NET%204.7.2-512BD4?style=flat-square&logo=dotnet&logoColor=white)
 ![Model](https://img.shields.io/badge/YOLOv5nu%20320×320-FF6F00?style=flat-square)
@@ -14,7 +14,7 @@
 
 ## 快速开始
 
-从 [Releases](../../releases) 下载 `VisionGuard_v2.0_x64.zip`，解压直接运行 `VisionGuard.exe`。
+从 [Releases](../../releases) 下载 `VisionGuard_v2.0.1_x64.zip`，解压直接运行 `VisionGuard.exe`。
 
 1. 点击 **「选择窗口」** 选取目标进程，或点击 **「拖拽选区」** 框选屏幕区域
 2. 在「检测参数」卡片调整置信度阈值、冷却时间、报警铃声
@@ -22,7 +22,7 @@
 4. 点击 **「▶ 开始」** 启动监控
 5. 检测到目标 → 铃声循环响起 → 按 `Space` 停止并恢复推理
 
-## v2.0 新功能
+## v2.0.1 更新
 
 ### 捕获方式升级
 | 旧版 | v2.0 |
