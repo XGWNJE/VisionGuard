@@ -629,7 +629,7 @@ namespace VisionGuard
             _overlayPanel = new DetectionOverlayPanel { Dock = DockStyle.Fill };
 
             // ── 日志面板 ─────────────────────────────────────────────
-            _lstLog = new OwnerDrawListBox { Dock = DockStyle.Fill, ScrollAlwaysVisible = true };
+            _lstLog = new OwnerDrawListBox { Dock = DockStyle.Fill };
             _lstLog.Font = new Font("Consolas", Font.SizeInPoints, FontStyle.Regular, GraphicsUnit.Point);
             var logContainer = new Panel { Dock = DockStyle.Fill, MinimumSize = new Size(0, 60) };
             logContainer.Controls.Add(_lstLog);
@@ -649,11 +649,10 @@ namespace VisionGuard
             Resize += (s, e) => ApplySplitterRatio();
 
             // ── 左侧控制面板：可滚动容器 ─────────────────────────────
-            _ctrlOuter = new Panel
+            _ctrlOuter = new HiddenScrollPanel
             {
-                Dock       = DockStyle.Fill,
-                BackColor  = Color.FromArgb(32, 32, 32),
-                AutoScroll = true
+                Dock      = DockStyle.Fill,
+                BackColor = Color.FromArgb(32, 32, 32)
             };
 
             // 注意：BuildCards(_ctrlOuter) 推迟到 OnShown 中调用，

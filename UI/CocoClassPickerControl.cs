@@ -17,7 +17,7 @@ namespace VisionGuard.UI
         private Panel            _searchPanel;
         private TextBox          _txtSearch;
         private Label            _lblCount;
-        private CheckedListBox   _clbClasses;
+        private HiddenScrollCheckedListBox _clbClasses;
 
         // ── 状态 ─────────────────────────────────────────────────────
         /// <summary>当前勾选的英文类名（在过滤/重建列表时保持）</summary>
@@ -103,7 +103,7 @@ namespace VisionGuard.UI
             _searchPanel.Controls.Add(_lblCount);
 
             // 勾选列表
-            _clbClasses = new CheckedListBox
+            _clbClasses = new HiddenScrollCheckedListBox
             {
                 Dock           = DockStyle.Fill,
                 BackColor      = Color.FromArgb(40, 40, 40),

@@ -290,6 +290,9 @@
     <Compile Include="UI\OwnerDrawListBox.cs">
       <SubType>Component</SubType>
     </Compile>
+    <Compile Include="UI\HiddenScrollPanel.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="UI\RegionSelectorForm.cs">
       <SubType>Form</SubType>
     </Compile>
