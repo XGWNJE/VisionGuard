@@ -4,7 +4,6 @@
 
 ![Version](https://img.shields.io/badge/v2.0.1-0078D4?style=flat-square)
 ![Platform](https://img.shields.io/badge/Windows%207%2B%20x64-0078D4?style=flat-square&logo=windows&logoColor=white)
-> 最低兼容 Windows 7 SP1（High DPI 功能需 Windows 10+）
 ![.NET](https://img.shields.io/badge/.NET%204.7.2-512BD4?style=flat-square&logo=dotnet&logoColor=white)
 ![Model](https://img.shields.io/badge/YOLOv5nu%20320×320-FF6F00?style=flat-square)
 ![License](https://img.shields.io/badge/MIT-22C55E?style=flat-square)
