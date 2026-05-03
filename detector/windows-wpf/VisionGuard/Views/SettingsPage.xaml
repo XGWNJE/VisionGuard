@@ -1,0 +1,66 @@
+<UserControl x:Class="VisionGuard.Views.SettingsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{StaticResource BackgroundDark}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="16">
+            <TextBlock Text="检测设置" Style="{StaticResource TitleText}" Margin="0,0,0,16"/>
+
+            <!-- 置信度阈值 -->
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="置信度阈值" Style="{StaticResource BodyText}" Margin="0,0,0,8"/>
+                    <Slider Style="{StaticResource DarkSlider}" Minimum="10" Maximum="95" Value="{Binding Threshold}"
+                            TickFrequency="5" IsSnapToTickEnabled="True"/>
+                    <TextBlock Text="{Binding ThresholdText}" Style="{StaticResource CaptionText}" HorizontalAlignment="Right" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 目标采样率 -->
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="目标采样率" Style="{StaticResource BodyText}" Margin="0,0,0,8"/>
+                    <Slider Style="{StaticResource DarkSlider}" Minimum="1" Maximum="5" Value="{Binding SamplingRate}"
+                            TickFrequency="1" IsSnapToTickEnabled="True"/>
+                    <TextBlock Text="{Binding SamplingRateText}" Style="{StaticResource CaptionText}" HorizontalAlignment="Right" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 警报推送冷却时间 -->
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="警报推送冷却时间" Style="{StaticResource BodyText}" Margin="0,0,0,8"/>
+                    <Slider Style="{StaticResource DarkSlider}" Minimum="1" Maximum="300" Value="{Binding Cooldown}"
+                            TickFrequency="1" IsSnapToTickEnabled="True"/>
+                    <TextBlock Text="{Binding CooldownText}" Style="{StaticResource CaptionText}" HorizontalAlignment="Right" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- 模型选择 -->
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="模型选择" Style="{StaticResource BodyText}" Margin="0,0,0,8"/>
+                    <ComboBox Style="{StaticResource DarkComboBox}" SelectedIndex="{Binding SelectedModelIndex}">
+                        <ComboBoxItem>YOLO26n (轻量 ~5MB)</ComboBoxItem>
+                        <ComboBoxItem>YOLO26s (精准 ~20MB)</ComboBoxItem>
+                    </ComboBox>
+                </StackPanel>
+            </Border>
+
+            <!-- 监控目标 -->
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="监控目标" Style="{StaticResource BodyText}" Margin="0,0,0,12"/>
+                    <UniformGrid Columns="2">
+                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="人" IsChecked="True" Margin="0,4"/>
+                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="自行车" Margin="0,4"/>
+                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="汽车" Margin="0,4"/>
+                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="摩托车" Margin="0,4"/>
+                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="客车" Margin="0,4"/>
+                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="卡车" Margin="0,4"/>
+                    </UniformGrid>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
