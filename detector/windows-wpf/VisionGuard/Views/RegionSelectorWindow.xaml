@@ -1,0 +1,29 @@
+<Window x:Class="VisionGuard.Views.RegionSelectorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        WindowStartupLocation="Manual"
+        Topmost="True"
+        Cursor="Cross">
+    <Grid>
+        <!-- 背景图（仅在窗口子区域模式时显示） -->
+        <Image x:Name="BackgroundImage" Stretch="Uniform"
+               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+
+        <!-- 暗化遮罩（全屏模式时覆盖整个屏幕；窗口模式时覆盖图像） -->
+        <Rectangle x:Name="DimOverlay" Fill="#AA000000"/>
+
+        <!-- 交互画布 -->
+        <Canvas x:Name="OverlayCanvas">
+            <TextBlock x:Name="HintText" Text="拖拽鼠标绘制选区，按 ESC 取消"
+                       Foreground="White" FontSize="16"
+                       Canvas.Left="20" Canvas.Top="20"/>
+            <Rectangle x:Name="SelectionRect"
+                       Stroke="LimeGreen" StrokeThickness="2"
+                       Fill="Transparent"
+                       Visibility="Collapsed"/>
+        </Canvas>
+    </Grid>
+</Window>

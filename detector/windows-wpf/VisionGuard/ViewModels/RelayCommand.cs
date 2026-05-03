@@ -7,6 +7,7 @@ namespace VisionGuard.ViewModels
     {
         private readonly Action<object?> _execute;
         private readonly Predicate<object?>? _canExecute;
+        private EventHandler? _canExecuteChanged;
 
         public RelayCommand(Action<object?> execute, Predicate<object?>? canExecute = null)
         {
@@ -26,13 +27,13 @@ namespace VisionGuard.ViewModels
 
         public event EventHandler? CanExecuteChanged
         {
-            add { CommandManager.RequerySuggested += value; }
-            remove { CommandManager.RequerySuggested -= value; }
+            add { _canExecuteChanged += value; }
+            remove { _canExecuteChanged -= value; }
         }
 
         public void RaiseCanExecuteChanged()
         {
-            CommandManager.InvalidateRequerySuggested();
+            _canExecuteChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 }

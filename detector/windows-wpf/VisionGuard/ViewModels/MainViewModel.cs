@@ -1,3 +1,6 @@
+using VisionGuard.Services;
+using VisionGuard.Utils;
+
 namespace VisionGuard.ViewModels
 {
     public enum PageType { Monitor, Settings, Server }
@@ -50,12 +53,60 @@ namespace VisionGuard.ViewModels
         public RelayCommand NavigateToSettingsCommand { get; }
         public RelayCommand NavigateToServerCommand { get; }
 
-        public MonitorViewModel MonitorVm { get; } = new MonitorViewModel();
-        public SettingsViewModel SettingsVm { get; } = new SettingsViewModel();
-        public ServerViewModel ServerVm { get; } = new ServerViewModel();
+        // 子 ViewModel（共享服务）
+        public MonitorViewModel MonitorVm { get; }
+        public SettingsViewModel SettingsVm { get; }
+        public ServerViewModel ServerVm { get; }
 
         public MainViewModel()
         {
+            // 加载持久化设置
+            SettingsStore.Load();
+
+            // 创建共享服务
+            var alertService = new AlertService();
+            var serverPushService = new ServerPushService();
+
+            // 子 ViewModel（注入共享服务）
+            SettingsVm = new SettingsViewModel();
+            MonitorVm = new MonitorViewModel(alertService, serverPushService, SettingsVm);
+            ServerVm = new ServerViewModel(serverPushService);
+
+            // 从磁盘恢复设置
+            SettingsVm.Load();
+            MonitorVm.Load();
+            ServerVm.Load();
+
+            // 属性变更自动保存（防抖 500ms，避免 Slider 拖动频繁写盘）
+            var saveTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = System.TimeSpan.FromMilliseconds(500)
+            };
+            saveTimer.Tick += (s, e) =>
+            {
+                saveTimer.Stop();
+                SettingsVm.Save();
+                MonitorVm.Save();
+                ServerVm.Save();
+            };
+
+            void QueueSave()
+            {
+                saveTimer.Stop();
+                saveTimer.Start();
+            }
+
+            SettingsVm.PropertyChanged += (s, e) => QueueSave();
+            MonitorVm.PropertyChanged += (s, e) => QueueSave();
+            ServerVm.PropertyChanged += (s, e) => QueueSave();
+
+            // 初始配置服务器连接
+            serverPushService.Configure(
+                AppConfig.ServerUrl,
+                AppConfig.ApiKey,
+                AppConfig.DeviceId,
+                ServerVm.DeviceName);
+
             NavigateToMonitorCommand = new RelayCommand(() => CurrentPage = PageType.Monitor);
             NavigateToSettingsCommand = new RelayCommand(() => CurrentPage = PageType.Settings);
             NavigateToServerCommand = new RelayCommand(() => CurrentPage = PageType.Server);

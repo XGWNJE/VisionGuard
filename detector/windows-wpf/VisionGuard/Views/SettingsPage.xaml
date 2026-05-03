@@ -52,12 +52,12 @@
                 <StackPanel>
                     <TextBlock Text="监控目标" Style="{StaticResource BodyText}" Margin="0,0,0,12"/>
                     <UniformGrid Columns="2">
-                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="人" IsChecked="True" Margin="0,4"/>
-                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="自行车" Margin="0,4"/>
-                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="汽车" Margin="0,4"/>
-                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="摩托车" Margin="0,4"/>
-                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="客车" Margin="0,4"/>
-                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="卡车" Margin="0,4"/>
+                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="人" IsChecked="{Binding WatchPerson}" Margin="0,4"/>
+                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="自行车" IsChecked="{Binding WatchBicycle}" Margin="0,4"/>
+                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="汽车" IsChecked="{Binding WatchCar}" Margin="0,4"/>
+                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="摩托车" IsChecked="{Binding WatchMotorcycle}" Margin="0,4"/>
+                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="客车" IsChecked="{Binding WatchBus}" Margin="0,4"/>
+                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="卡车" IsChecked="{Binding WatchTruck}" Margin="0,4"/>
                     </UniformGrid>
                 </StackPanel>
             </Border>

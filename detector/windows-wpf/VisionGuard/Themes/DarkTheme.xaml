@@ -118,11 +118,49 @@
     </Style>
 
     <!-- ════════════════════════════════════════════════════════════ -->
-    <!-- CheckBox -->
+    <!-- CheckBox —— 完整自定义模板，暗色下勾选状态清晰可见 -->
     <!-- ════════════════════════════════════════════════════════════ -->
     <Style TargetType="CheckBox" x:Key="DarkCheckBox">
         <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
         <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <BulletDecorator Background="Transparent" VerticalAlignment="Center">
+                        <BulletDecorator.Bullet>
+                            <Border x:Name="Border" Width="16" Height="16"
+                                    Background="{StaticResource SurfaceLight}"
+                                    BorderBrush="{StaticResource BorderBrush}"
+                                    BorderThickness="1" CornerRadius="2">
+                                <Path x:Name="CheckMark"
+                                      Data="M 2.5 7.5 L 6.5 11.5 L 12.5 3.5"
+                                      Stroke="{StaticResource Primary}"
+                                      StrokeThickness="2.5"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round"
+                                      Visibility="Collapsed"/>
+                            </Border>
+                        </BulletDecorator.Bullet>
+                        <ContentPresenter Margin="8,0,0,0"
+                                          VerticalAlignment="Center"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
+                    </BulletDecorator>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
+                            <Setter TargetName="Border" Property="BorderBrush" Value="{StaticResource Primary}"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Border" Property="BorderBrush" Value="{StaticResource PrimaryHover}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- ════════════════════════════════════════════════════════════ -->
@@ -264,19 +302,19 @@
                                     <Border Background="{TemplateBinding Background}"
                                             BorderBrush="{TemplateBinding BorderBrush}"
                                             BorderThickness="{TemplateBinding BorderThickness}"
-                                            CornerRadius="3"
-                                            Padding="6,4">
-                                        <Grid>
-                                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"
-                                                              Content="{TemplateBinding Content}"
-                                                              ContentTemplate="{TemplateBinding ContentTemplate}"/>
-                                            <Path x:Name="Arrow" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                                  Data="M 0 0 L 4 4 L 8 0 Z" Fill="{StaticResource TextSecondary}" Margin="0,0,4,0"/>
-                                        </Grid>
+                                            CornerRadius="3">
+                                        <Path x:Name="Arrow" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                              Data="M 0 0 L 4 4 L 8 0 Z" Fill="{StaticResource TextSecondary}" Margin="0,0,8,0"/>
                                     </Border>
                                 </ControlTemplate>
                             </ToggleButton.Template>
                         </ToggleButton>
+                        <!-- 显示当前选中项（覆盖在 ToggleButton 之上，点击穿透） -->
+                        <ContentPresenter Content="{TemplateBinding SelectionBoxItem}"
+                                          ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                          VerticalAlignment="Center"
+                                          Margin="8,0,24,0"
+                                          IsHitTestVisible="False"/>
                         <Popup x:Name="Popup" Placement="Bottom" IsOpen="{TemplateBinding IsDropDownOpen}"
                                AllowsTransparency="true" Focusable="false" PopupAnimation="Slide">
                             <Border Background="{StaticResource SurfaceLight}" BorderBrush="{StaticResource BorderBrush}"

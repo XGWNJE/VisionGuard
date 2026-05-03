@@ -8,14 +8,30 @@
 
             <Border Style="{StaticResource CardBorder}">
                 <StackPanel>
-                    <TextBlock Text="{Binding RegionInfo}" Style="{StaticResource CaptionText}" Margin="0,0,0,12"/>
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding RegionInfo}" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="✕" Style="{StaticResource DarkButton}" Width="28" Height="28" Padding="0"
+                                Command="{Binding ResetWindowCommand}"
+                                Visibility="{Binding CanResetWindow, Converter={StaticResource BoolToVis}}"
+                                ToolTip="清除窗口选择，回到全屏"
+                                ToolTipService.ShowOnDisabled="True"/>
+                    </Grid>
 
                     <Button Content="选择窗口…" Style="{StaticResource DarkButton}" Margin="0,0,0,8"
                             Command="{Binding PickWindowCommand}"/>
                     <Button Content="拖拽选区…" Style="{StaticResource DarkButton}" Margin="0,0,0,8"
                             Command="{Binding SelectRegionCommand}"/>
                     <Button Content="遮罩区域…" Style="{StaticResource DarkButton}" Margin="0,0,0,8"
-                            Command="{Binding EditMasksCommand}"/>
+                            Command="{Binding EditMasksCommand}"
+                            ToolTipService.ShowOnDisabled="True">
+                        <Button.ToolTip>
+                            <ToolTip Content="请先选择窗口或屏幕区域"/>
+                        </Button.ToolTip>
+                    </Button>
 
                     <TextBlock Text="{Binding MaskInfo}" Style="{StaticResource CaptionText}" Margin="0,8,0,0"/>
                 </StackPanel>

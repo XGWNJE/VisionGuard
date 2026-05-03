@@ -31,7 +31,7 @@ namespace VisionGuard.Capture
         [DllImport("gdi32.dll")]
         internal static extern IntPtr SelectObject(IntPtr hDC, IntPtr hObject);
 
-        [DllImport("gdi32.dll")]
+        [DllImport("gdi32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool BitBlt(
             IntPtr hdcDest, int nXDest, int nYDest, int nWidth, int nHeight,
@@ -98,6 +98,12 @@ namespace VisionGuard.Capture
         [DllImport("user32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool IsIconic(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        internal static extern int GetSystemMetrics(int nIndex);
+
+        internal const int SM_CXSCREEN = 0;
+        internal const int SM_CYSCREEN = 1;
 
         // ── TextBox Placeholder（cue banner）────────────────────────
         internal const int EM_SETCUEBANNER = 0x1501;

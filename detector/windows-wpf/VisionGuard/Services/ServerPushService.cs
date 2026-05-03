@@ -147,6 +147,11 @@ namespace VisionGuard.Services
 
         public void Disconnect() => Post(OnDisconnect);
 
+        public void Reconnect()
+        {
+            Post(() => OnConnect(_serverUrl, _apiKey, _deviceId, _deviceName));
+        }
+
         public void UpdateHeartbeatParams(bool isMonitoring, bool isReady,
             int cooldown, float confidence, string targets)
         {

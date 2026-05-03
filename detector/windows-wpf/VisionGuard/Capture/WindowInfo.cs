@@ -11,7 +11,7 @@ namespace VisionGuard.Capture
     /// <summary>
     /// 描述一个顶层窗口的基本信息。
     /// </summary>
-    internal class WindowInfo
+    public class WindowInfo
     {
         public IntPtr   Handle    { get; }
         public string   Title     { get; }

@@ -66,3 +66,9 @@ Desktop.ini
 # ===== release 文件夹（构建产物）=====
 **/release/ 
 detector/android/.key/det
+
+# WPF migration temp
+detector/windows-wpf/**/.vs/
+detector/windows-wpf/**/bin/
+detector/windows-wpf/**/obj/
+
