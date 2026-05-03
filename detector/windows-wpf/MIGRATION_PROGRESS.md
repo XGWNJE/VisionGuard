@@ -3,7 +3,7 @@
 > 分支：`feat/wpf-migration-kimi`  
 > 目标框架：`net9.0-windows` + WPF  
 > 旧项目：`detector/windows/`（.NET Framework 4.7.2 + WinForms）已完全恢复保留  
-> 最后更新：2026-05-03
+> 最后更新：2026-05-03（Phase 6 实时预览完成）
 
 ---
 
@@ -69,6 +69,14 @@
 | IsMonitoring 联动 | ✅ | setter 内刷新全部 6 个命令状态 |
 | 按钮禁用 | ✅ | 监控中禁用选择/遮罩/清除，启用停止 |
 
+### ✅ Phase 6 — 实时预览画面
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| 预览区 Image 绑定 | ✅ | `Viewbox` + `Image` + `BitmapSource` 绑定，Uniform 自动缩放 |
+| 检测框 Canvas 叠加 | ✅ | `ItemsControl` + `Canvas` 动态叠加红色边框 + 标签 |
+| 状态栏联动 | ✅ | `StatusText` / `InferMsText` / `LastAlertText` 实时刷新 |
+| 停止清空 | ✅ | 停止监控后预览画面与检测框自动清空，显示占位文字 |
+
 ---
 
 ## 二、已修复 BUG
@@ -85,33 +93,18 @@
 
 ## 三、待完成阶段
 
-### ⏳ Phase 6 — 实时预览画面
+### ⏳ Phase 7 — 代码质量与收尾
 | 任务 | 优先级 | 说明 |
 |------|--------|------|
-| 预览区 Image 绑定 | 高 | MainWindow 中间栏替换为 `Image` + `BitmapSource` 绑定 |
-| 检测框 Canvas 叠加 | 高 | `Canvas` 覆盖在 `Image` 上，动态添加/移除矩形 |
-| 遮罩预览 | 中 | 实时显示遮罩区域（半透明红色） |
-| FPS/状态显示 | 低 | 当前推理耗时、帧率 |
-
-### ⏳ Phase 7 — 报警通知
-| 任务 | 优先级 | 说明 |
-|------|--------|------|
-| 系统通知托盘 | 中 | `Hardcodet.NotifyIcon.Wpf` 气泡提示 |
-| 报警声 | 低 | 播放 Assets 音效 |
-
-### ⏳ Phase 8 — 代码质量
-| 任务 | 优先级 | 说明 |
-|------|--------|------|
+| 遮罩预览叠加 | 低 | 实时在预览画面显示遮罩区域（半透明红色） |
 | Nullable warnings | 低 | ~40 条 CS8618/CS8622/CS8600/CS8604/CS8625 |
 | WebSocket 库替换 | 低 | `WebSocketSharp` → `System.Net.WebSockets.Client`（可选） |
 | AOT 兼容性检查 | 低 | 单文件发布、裁剪验证 |
-
-### ⏳ Phase 9 — 收尾
-| 任务 | 优先级 | 说明 |
-|------|--------|------|
 | 旧项目清理 | 低 | 确认 `detector/windows/` 可归档后移除 |
 | CI/CD 脚本 | 低 | `dotnet publish -c Release -r win-x64 --self-contained` |
 | 全面回归测试 | 高 | 窗口/区域/全屏三模式 × 遮罩 × 启停 × 报警 × 持久化 |
+
+> **已削减需求**：检测端本地报警通知（托盘气泡 + 音效）— 由 Android 接收端全权负责通知，Windows 端仅保留日志与截图。 |
 
 ---
 
@@ -124,6 +117,7 @@
 | 2026-05-03 | 保留 `System.Drawing.Common` | 截屏/截图渲染仍需 GDI Bitmap，WPF 无法完全替代 |
 | 2026-05-03 | 遮罩按钮不前置依赖选区 | 无窗口时默认抓取主屏幕作为编辑器背景，与旧版行为一致 |
 | 2026-05-03 | 切换范围清空遮罩 | 遮罩坐标是相对于当前范围的，范围变更后旧遮罩失去意义 |
+| 2026-05-03 | 预览画面使用 Viewbox 缩放 | `Image` + `ItemsControl` 共用原始像素坐标系，Viewbox 统一按比例缩放到容器，避免手动坐标换算 |
 
 ---
 

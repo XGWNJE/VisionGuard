@@ -153,10 +153,56 @@
                 <Grid>
                     <Border Background="{StaticResource SurfaceDark}" CornerRadius="6" Margin="12"
                             BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-                        <TextBlock Text="预览区占位（Phase 6 实现实时画面）"
-                                   Foreground="{StaticResource TextSecondary}"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center"/>
+                        <Grid>
+                            <!-- 未监控时显示占位文字 -->
+                            <TextBlock Text="点击「开始监控」以显示实时画面"
+                                       Foreground="{StaticResource TextSecondary}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding PreviewImage}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <!-- 实时画面：Viewbox 自动按比例缩放 -->
+                            <Viewbox Stretch="Uniform" Margin="4">
+                                <Grid Width="{Binding FrameWidth}" Height="{Binding FrameHeight}">
+                                    <Image Source="{Binding PreviewImage}" Stretch="None"/>
+                                    <ItemsControl ItemsSource="{Binding Detections}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <Canvas IsItemsHost="True"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemContainerStyle>
+                                            <Style TargetType="ContentPresenter">
+                                                <Setter Property="Canvas.Left" Value="{Binding Left}"/>
+                                                <Setter Property="Canvas.Top" Value="{Binding Top}"/>
+                                            </Style>
+                                        </ItemsControl.ItemContainerStyle>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid>
+                                                    <Rectangle Width="{Binding Width}" Height="{Binding Height}"
+                                                               Stroke="#FF4444" StrokeThickness="2" Fill="Transparent"/>
+                                                    <TextBlock Text="{Binding Label}" Foreground="#FF4444"
+                                                               FontSize="10" Background="#CC000000"
+                                                               Padding="2,0" VerticalAlignment="Top"
+                                                               Margin="0,-14,0,0"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Grid>
+                            </Viewbox>
+                        </Grid>
                     </Border>
                 </Grid>
             </Border>

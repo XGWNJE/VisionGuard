@@ -18,6 +18,7 @@ namespace VisionGuard.ViewModels
         private readonly MonitorService _monitorService;
         private readonly ServerPushService _serverPushService;
         private readonly SettingsViewModel _settingsVm;
+        private readonly MainViewModel _mainVm;
 
         private string _regionInfo = "未选择区域";
         public string RegionInfo
@@ -52,6 +53,13 @@ namespace VisionGuard.ViewModels
                     SelectRegionCommand.RaiseCanExecuteChanged();
                     EditMasksCommand.RaiseCanExecuteChanged();
                     ResetWindowCommand.RaiseCanExecuteChanged();
+
+                    // 同步主窗口状态栏与预览
+                    if (_mainVm != null)
+                    {
+                        _mainVm.StatusText = value ? "● 监控中" : "○ 已停止";
+                        if (!value) _mainVm.ClearPreview();
+                    }
                 }
             }
         }
@@ -81,12 +89,14 @@ namespace VisionGuard.ViewModels
 
         public MonitorViewModel(AlertService alertService,
                                 ServerPushService serverPushService,
-                                SettingsViewModel settingsVm)
+                                SettingsViewModel settingsVm,
+                                MainViewModel mainVm)
         {
             _alertService = alertService;
             _monitorService = new MonitorService(alertService);
             _serverPushService = serverPushService;
             _settingsVm = settingsVm;
+            _mainVm = mainVm;
 
             StartCommand = new RelayCommand(StartMonitor, () => CanStart);
             StopCommand = new RelayCommand(StopMonitor, () => CanStop);
@@ -94,6 +104,29 @@ namespace VisionGuard.ViewModels
             SelectRegionCommand = new RelayCommand(SelectRegion, () => CanSelectRegion);
             EditMasksCommand = new RelayCommand(EditMasks, () => CanEditMasks);
             ResetWindowCommand = new RelayCommand(ResetWindow, () => CanResetWindow);
+
+            _monitorService.FrameProcessed += OnFrameProcessed;
+        }
+
+        /// <summary>MonitorService 每帧回调（ThreadPool 线程）→ UI 线程更新预览。</summary>
+        private void OnFrameProcessed(object? sender, FrameResultEventArgs e)
+        {
+            if (e.HasError)
+            {
+                // 静默忽略单帧错误，避免弹窗轰炸
+                return;
+            }
+
+            // 必须在 UI 线程执行：BitmapSource 创建 + ObservableCollection 修改
+            System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
+            {
+                using (e.Frame)
+                {
+                    var bitmapSource = ConvertToBitmapSource(e.Frame);
+                    _mainVm.UpdatePreview(bitmapSource, e.Detections);
+                    _mainVm.InferMsText = $"推理 {e.InferenceMs} ms";
+                }
+            });
         }
 
         private void StartMonitor()
@@ -119,6 +152,12 @@ namespace VisionGuard.ViewModels
         {
             _monitorService.Stop();
             IsMonitoring = false;
+        }
+
+        public void Dispose()
+        {
+            _monitorService.FrameProcessed -= OnFrameProcessed;
+            _monitorService.Dispose();
         }
 
         private void ClearMasks()
