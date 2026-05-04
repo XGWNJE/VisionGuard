@@ -1,124 +1,201 @@
-# VisionGuard Windows 检测端 WPF 迁移进度
+# VisionGuard WPF 检测端 — 开发者速查
 
 > 分支：`feat/wpf-migration-kimi`  
-> 目标框架：`net9.0-windows` + WPF  
-> 旧项目：`detector/windows/`（.NET Framework 4.7.2 + WinForms）已完全恢复保留  
-> 最后更新：2026-05-03（Phase 6 实时预览完成）
+> 框架：`net9.0-windows` + WPF  
+> 旧项目：`detector/windows/`（.NET Framework 4.7.2 + WinForms，保留为参考）  
+> 最后更新：2026-05-04
 
 ---
 
-## 一、已完成阶段
+## 一、模块地图
 
-### ✅ P0 — 项目骨架
-| 任务 | 状态 | 说明 |
-|------|------|------|
-| SDK 风格 `.csproj` | ✅ | `<UseWPF>true</UseWPF>`，x64，nullable=enable |
-| 依赖升级 | ✅ | `Microsoft.ML.OnnxRuntime` 1.19.0 + Managed，`Hardcodet.NotifyIcon.Wpf` |
-| `System.Drawing.Common` | ✅ | 用于 Bitmap/GDI 截屏（.NET 9 需显式兼容） |
-| app.manifest | ✅ | PerMonitorV2 DPI 感知 |
-
-### ✅ P1 — 核心模块移植（业务逻辑零改动）
-| 模块 | 文件 | 状态 |
-|------|------|------|
-| 捕获 | `Capture/ScreenCapturer.cs`, `WindowCapturer.cs`, `WindowEnumerator.cs` | ✅ |
-| 推理 | `Inference/OnnxInferenceEngine.cs`, `YoloOutputParser.cs`, `ImagePreprocessor.cs`, `MaskApplier.cs` | ✅ |
-| 服务 | `Services/MonitorService.cs`, `AlertService.cs`, `ServerPushService.cs` | ✅ |
-| 模型 | `Models/MonitorConfig.cs`, `Detection.cs`, `AlertEvent.cs` | ✅ |
-| 工具 | `Utils/SettingsStore.cs`, `SimpleJson.cs`, `NtpSync.cs`, `SnapshotRenderer.cs`, `LogManager.cs` | ✅ |
-| 数据 | `Data/CocoClassMap.cs` | ✅ |
-
-### ✅ P2 — UI 框架搭建
-| 任务 | 状态 | 说明 |
-|------|------|------|
-| 暗色主题 | ✅ | `Themes/DarkTheme.xaml`，统一 Background/Foreground/Brush |
-| 主窗口 | ✅ | `MainWindow.xaml` 三栏布局：导航 200px + 内容区 + 预览区占位 |
-| 导航按钮 | ✅ | 4 页切换（监控/目标/参数/服务器） |
-| ViewModel 基类 | ✅ | `ViewModelBase` + `RelayCommand` + `INotifyPropertyChanged` |
-
-### ✅ P3 — 监控页交互
-| 任务 | 状态 | 说明 |
-|------|------|------|
-| 窗口选择器 | ✅ | `WindowPickerWindow.xaml`，DWM 真实边界 + 过滤不可见窗口 |
-| 区域选择器 | ✅ | `RegionSelectorWindow.xaml`，双模式（窗口子区域 / 全屏区域） |
-| 遮罩编辑器 | ✅ | `MaskEditorWindow.xaml`，多矩形拖拽绘制，撤销/清空/确定 |
-| 高 DPI 安全 | ✅ | DIP 归一化 → 物理像素映射，画布 `Uniform` + 居中 |
-| 边界保护 | ✅ | 鼠标释放时 Clamp 到画布内 |
-
-### ✅ P4 — 监控服务链
-| 任务 | 状态 | 说明 |
-|------|------|------|
-| MonitorService 循环 | ✅ | ThreadPool 定时器，推理 → 报警 → 截图 |
-| MaskApplier | ✅ | 推理前 in-place 涂黑遮罩区域 |
-| 自动回退 | ✅ | 未选区域时默认主屏幕全屏 |
-| 递进限制 | ✅ | 未选区域可编辑遮罩（GrabFrame 回退 CapturePrimaryScreen） |
-
-### ✅ P5 — 设置与持久化
-| 任务 | 状态 | 说明 |
-|------|------|------|
-| SettingsStore | ✅ | 兼容旧版 `settings.ini` key 格式 100% |
-| 自动保存 | ✅ | 防抖 500ms，配置变更后自动持久化 |
-| 设置页 | ✅ | 阈值/采样率/冷却/模型选择 |
-| 目标页 | ✅ | 6 类 CheckBox，全空视为检测全部 |
-| 服务器页 | ✅ | 连接状态/设备名/手动重连 |
-| 遮罩持久化 | ✅ | JSON 序列化 `MaskRegions` key |
-
-### ✅ P6 — 命令状态管理
-| 任务 | 状态 | 说明 |
-|------|------|------|
-| RelayCommand | ✅ | 显式 `RaiseCanExecuteChanged()` |
-| IsMonitoring 联动 | ✅ | setter 内刷新全部 6 个命令状态 |
-| 按钮禁用 | ✅ | 监控中禁用选择/遮罩/清除，启用停止 |
-
-### ✅ Phase 6 — 实时预览画面
-| 任务 | 状态 | 说明 |
-|------|------|------|
-| 预览区 Image 绑定 | ✅ | `Viewbox` + `Image` + `BitmapSource` 绑定，Uniform 自动缩放 |
-| 检测框 Canvas 叠加 | ✅ | `ItemsControl` + `Canvas` 动态叠加红色边框 + 标签 |
-| 状态栏联动 | ✅ | `StatusText` / `InferMsText` / `LastAlertText` 实时刷新 |
-| 停止清空 | ✅ | 停止监控后预览画面与检测框自动清空，显示占位文字 |
+```
+VisionGuard/
+├── App.xaml(.cs)              ← 启动入口、NTP 同步、全局异常处理
+├── VisionGuard.csproj         ← net9.0-windows, x64, UseWPF, 3 个 NuGet 依赖
+├── Themes/DarkTheme.xaml      ← 唯一主题文件（颜色令牌、控件样式、BoolToVis 转换器）
+│
+├── Capture/                   ← GDI 截屏层（System.Drawing 依赖）
+│   ├── ScreenCapturer.cs      ← BitBlt 屏幕区域捕获
+│   ├── WindowCapturer.cs      ← PrintWindow 窗口捕获 + 子区域裁剪
+│   ├── WindowEnumerator.cs    ← EnumWindows 枚举 + DWM 边界 + 黑名单过滤
+│   ├── WindowInfo.cs          ← 窗口信息 DTO (Handle/Title/ClassName/Bounds)
+│   └── NativeMethods.cs       ← user32/gdi32/dwmapi P/Invoke
+│
+├── Inference/                 ← ONNX 推理链（ThreadPool 执行）
+│   ├── OnnxInferenceEngine.cs ← InferenceSession 封装，线程数 2
+│   ├── ImagePreprocessor.cs   ← Bitmap → 320×320 CHW float[] 张量
+│   ├── YoloOutputParser.cs    ← [1,300,6] 输出 → Detection[]，前5按置信度排序
+│   └── MaskApplier.cs         ← 相对坐标遮罩 in-place 涂黑（推理前调用）
+│
+├── Services/                  ← 业务服务层
+│   ├── MonitorService.cs      ← 主循环：ThreadPool Timer → 截图→遮罩→推理→报警→UI事件
+│   ├── AlertService.cs        ← 冷却锁判定 + 截图本地缓存(LRU 1GB/7天/5000条) + 报警事件
+│   └── ServerPushService.cs   ← WS 单状态源事件循环：认证/心跳/报警推送/命令/截图按需
+│
+├── Models/                    ← 数据对象
+│   ├── MonitorConfig.cs       ← 捕获模式/阈值/FPS/遮罩/目标类别 配置 DTO
+│   ├── Detection.cs           ← 单检测结果 (ClassId/Label/Confidence/BoundingBox)
+│   ├── AlertEvent.cs          ← 报警事件 (AlertId/Snapshot/Detections/Timings)
+│   └── DetectionItem.cs       ← UI 检测框绑定模型 (Canvas Left/Top/Width/Height/Label)
+│
+├── ViewModels/                ← MVVM 层
+│   ├── ViewModelBase.cs       ← INotifyPropertyChanged + SetProperty<T>
+│   ├── RelayCommand.cs        ← ICommand 实现，需手动调用 RaiseCanExecuteChanged()
+│   ├── MainViewModel.cs       ← 根 VM：拥有所有服务 + 子 VM + 预览/状态栏属性
+│   ├── MonitorViewModel.cs    ← 监控页：选区/遮罩/启停 + FrameProcessed→UI线程预览更新
+│   ├── SettingsViewModel.cs   ← 设置页：置信度/采样率/冷却/模型/6类目标 + 持久化
+│   ├── ServerViewModel.cs     ← 服务器页：连接状态/设备名/重连
+│   └── MaskEditorViewModel.cs ← 遮罩编辑器：MaskRect 集合 + 撤销/清空/删除命令
+│
+├── Views/                     ← XAML 视图
+│   ├── MainWindow.xaml(.cs)   ← 三栏布局：导航72px | 预览 Viewbox+Canvas | 右侧页面
+│   ├── MonitorPage.xaml(.cs)  ← 捕获区域选择 + 遮罩入口 + 启停按钮
+│   ├── SettingsPage.xaml(.cs) ← Slider+CheckBox+ComboBox 参数设置
+│   ├── ServerPage.xaml(.cs)   ← 连接状态 + 设备名 + 重试
+│   ├── WindowPickerWindow.*   ← 窗口列表弹窗（双击选中）
+│   ├── RegionSelectorWindow.* ← 拖拽选区弹窗（全屏半透明 + 窗口子区域两种模式）
+│   └── MaskEditorWindow.*     ← 遮罩拖拽编辑弹窗（LimeGreen 已有 + Yellow 进行中）
+│
+├── Utils/
+│   ├── SettingsStore.cs       ← settings.ini 读写（%AppData%/VisionGuard/）
+│   ├── SimpleJson.cs          ← System.Text.Json 轻量封装
+│   ├── SnapshotRenderer.cs    ← Bitmap 上绘制检测框（报警截图标注）
+│   ├── NtpSync.cs             ← NTP 时钟同步（阿里云/腾讯/ntp.org 三服务器回退）
+│   ├── LogManager.cs          ← Debug.WriteLine 线程安全日志
+│   ├── AppConfig.cs           ← ServerUrl/ApiKey 常量 + DeviceId 运行时属性
+│   └── MaskRegionDto.cs       ← 遮罩持久化 DTO (left/top/right/bottom)
+│
+└── Data/
+    └── CocoClassMap.cs        ← COCO 80 类中英文映射 + TargetClassNames 6 类子集
+```
 
 ---
 
-## 二、已修复 BUG
+## 二、架构速览
 
-| BUG | 根因 | 修复 |
-|-----|------|------|
-| 全屏模式遮罩报错"无法抓取截图" | `BitmapSource.Create` 的 `bufferSize` 与 `stride` 不匹配 | 改用 `CreateBitmapSourceFromHBitmap` |
-| 清除窗口按钮不可见 | `CanResetWindow` 缺少 `PropertyChanged` 通知 | 在 `PickWindow`/`ResetWindow`/`Load`/`IsMonitoring setter` 中补全 |
-| 监控启动后无法停止 | `RelayCommand.CanExecuteChanged` 未订阅 `CommandManager.RequerySuggested` | `IsMonitoring` setter 内显式调用全部命令的 `RaiseCanExecuteChanged()` |
-| 切换范围后遮罩未清空 | `PickWindow`/`SelectRegion`/`ResetWindow` 未清空 `MaskRegions` | 添加 `ClearMasks()` 辅助方法，在范围变更时调用 |
-| 坐标越界导致 BitBlt 失败 | `RegionSelectorWindow` 鼠标释放时未 Clamp | 添加 `Math.Max(0, Math.Min(...))` 边界限制 |
+### 启动顺序
+
+```
+App.OnStartup
+  ├── NtpSync.SyncAsync()           // fire-and-forget
+  └── MainWindow 加载
+        └── MainViewModel 构造
+              ├── SettingsStore.Load()       // 读 settings.ini
+              ├── new AlertService()
+              ├── new ServerPushService()    // 启动 WS 事件循环线程
+              ├── new SettingsViewModel() → .Load()
+              ├── new MonitorViewModel(alert, ws, settings, this) → .Load()
+              ├── new ServerViewModel(ws) → .Load()
+              ├── 注册自动保存（防抖 500ms）
+              └── serverPushService.Configure(url, key, deviceId, deviceName)
+```
+
+### 监控数据流（每帧）
+
+```
+MonitorService.OnTick (ThreadPool)
+  │
+  ├─ 1. ScreenCapturer / WindowCapturer  → Bitmap frame
+  ├─ 2. MaskApplier.ApplyMasks(frame, masks)  // in-place 涂黑（相对坐标→像素）
+  ├─ 3. ImagePreprocessor.ToTensor(frame)     // → 320×320 CHW float[]
+  ├─ 4. OnnxInferenceEngine.Run(tensor)       // → float[1800]
+  ├─ 5. YoloOutputParser.Parse(output, ...)   // → List<Detection>（前5）
+  ├─ 6. AlertService.Evaluate(dets, config, timings, frame)
+  │     ├─ 冷却判定 → Clone 截图 + SnapshotRenderer 标注
+  │     ├─ 保存本地 PNG（alerts/ 目录）
+  │     └─ AlertTriggered 事件
+  │           ├─ ServerPushService.PushAlert()  // WS 推送元数据
+  │           └─ Dispatcher.BeginInvoke → 更新状态栏
+  └─ 7. FrameProcessed 事件
+        └─ Dispatcher.BeginInvoke → UpdatePreview(bitmap, detections)
+              ├─ PreviewImage = BitmapSource
+              ├─ Detections.Clear() + 重新填充
+              └─ InferMsText 更新
+```
+
+### ViewModel 依赖关系
+
+```
+MainViewModel（根，持有所有共享服务）
+  ├── MonitorVm  ← AlertService, ServerPushService, SettingsVm, MainViewModel
+  ├── SettingsVm ← 独立，读写 SettingsStore
+  └── ServerVm   ← ServerPushService（订阅 ConnectionStateChanged）
+```
 
 ---
 
-## 三、待完成阶段
+## 三、约束与易错点
 
-### ⏳ Phase 7 — 代码质量与收尾
-| 任务 | 优先级 | 说明 |
-|------|--------|------|
-| 遮罩预览叠加 | 低 | 实时在预览画面显示遮罩区域（半透明红色） |
-| Nullable warnings | 低 | ~40 条 CS8618/CS8622/CS8600/CS8604/CS8625 |
-| WebSocket 库替换 | 低 | `WebSocketSharp` → `System.Net.WebSockets.Client`（可选） |
-| AOT 兼容性检查 | 低 | 单文件发布、裁剪验证 |
-| 旧项目清理 | 低 | 确认 `detector/windows/` 可归档后移除 |
-| CI/CD 脚本 | 低 | `dotnet publish -c Release -r win-x64 --self-contained` |
-| 全面回归测试 | 高 | 窗口/区域/全屏三模式 × 遮罩 × 启停 × 报警 × 持久化 |
+### 线程安全
 
-> **已削减需求**：检测端本地报警通知（托盘气泡 + 音效）— 由 Android 接收端全权负责通知，Windows 端仅保留日志与截图。 |
+| 规则 | 说明 |
+|------|------|
+| Bitmap 在 ThreadPool 创建/Dispose | `MonitorService.OnTick` 线程内完成 |
+| BitmapSource 必须在 UI 线程创建 | `Dispatcher.BeginInvoke` 内调用 `CreateBitmapSourceFromHBitmap` |
+| ObservableCollection 只能在 UI 线程修改 | `Detections.Clear()/Add()` 均在 Dispatcher 回调内 |
+| ServerPushService 单事件循环 | 所有操作通过 `Post(Action)` 排队，Session 内部有 `sendLock` |
+
+### 命令状态刷新
+
+`RelayCommand` 未挂钩 `CommandManager.RequerySuggested`（WPF 标准做法）。当前通过 `IsMonitoring` setter 手动批量调用 `RaiseCanExecuteChanged()`。**新增命令时需手动在状态变更点追加刷新调用**，否则按钮 IsEnabled 不会更新。
+
+### 遮罩坐标系统
+
+- **存储**：相对坐标 `RectangleF(X,Y,Width,Height)`，各分量 ∈ [0,1]
+- **序列化**：`MaskRegionDto { left, top, right, bottom }` JSON 数组
+- **应用**：`MaskApplier` 在推理前将相对坐标 × 帧尺寸 → 像素 → `FillRectangle(Brush=Black)`
+- **副作用**：涂黑区域同时影响推理、报警截图、UI 预览（三处同源）
+- **范围变更**：选中新窗口/区域时自动清空旧遮罩（`ClearMasks()`）
+
+### 捕获模式的隐式回退
+
+```
+TargetWindow != null  →  WindowCapturer.CaptureWindow(hwnd, subRegion)
+ScreenRegion 有效     →  ScreenCapturer.CaptureRegion(region)
+以上皆无             →  ScreenCapturer.CapturePrimaryScreen()（自动回退）
+```
+
+编辑遮罩时的 `GrabFrame()` 也遵循同样回退链。
+
+### SettingsStore 兼容性
+
+Key 命名保持旧版 `settings.ini` 格式（如 `ConfidenceThresholdPct`、`AlertCooldownSeconds`），确保从 .NET Framework 版升级的用户设置不丢失。
+
+### .NET 9 兼容注意
+
+- `System.Drawing.Bitmap` 需要显式 NuGet 引用 `System.Drawing.Common`（类型已从 Windows SDK 转发出去）
+- `ClientWebSocket` 内置于 `System.Net.WebSockets`，无需第三方库
+- `app.manifest` 声明 PerMonitorV2 DPI 感知，代码无需额外调用
 
 ---
 
-## 四、技术决策记录
+## 四、待完成
 
-| 日期 | 决策 | 上下文 |
-|------|------|--------|
-| 2026-05-03 | WPF + .NET 9（非 WinForms） | 彻底消除 WinForms GDI+ 自绘、DPI、布局等所有缺陷 |
-| 2026-05-03 | 功能零改动 | AI 推理、报警、WebSocket、截图、遮罩、坐标系统全部保留 |
-| 2026-05-03 | 保留 `System.Drawing.Common` | 截屏/截图渲染仍需 GDI Bitmap，WPF 无法完全替代 |
-| 2026-05-03 | 遮罩按钮不前置依赖选区 | 无窗口时默认抓取主屏幕作为编辑器背景，与旧版行为一致 |
-| 2026-05-03 | 切换范围清空遮罩 | 遮罩坐标是相对于当前范围的，范围变更后旧遮罩失去意义 |
-| 2026-05-03 | 预览画面使用 Viewbox 缩放 | `Image` + `ItemsControl` 共用原始像素坐标系，Viewbox 统一按比例缩放到容器，避免手动坐标换算 |
+| 优先级 | 任务 | 说明 |
+|--------|------|------|
+| **高** | 全面回归测试 | 窗口/区域/全屏 × 遮罩 × 启停 × 报警 × 持久化 |
+| **中** | 服务端命令路由 | `CommandReceived` / `SetConfigReceived` 无人订阅，远程 pause/resume/set-config 不可用 |
+| 低 | 遮罩预览叠加 | 在实时预览画面显示遮罩区域（半透明红色） |
+| 低 | Nullable warnings | ~84 条 CS8618/CS8622/CS8600/CS8604/CS8625 |
+| 低 | CI/CD 脚本 | `dotnet publish -c Release -r win-x64 --self-contained` |
+| 低 | AOT 兼容性检查 | 单文件发布、裁剪验证 |
+
+> **已削减**：本地托盘通知由 Android 端负责，`Hardcodet.NotifyIcon.Wpf` 已移除。  
+> **已清理**：GlobalKeyHook → Pause/Resume 键盘钩子链路（早期遗弃）。  
+> **WebSocket**：已改用 .NET 内置 `System.Net.WebSockets.Client`。
 
 ---
 
-*本文档由 Kimi Code 根据实际代码进度维护，每次会话后按需更新。*
+## 五、关键决策
+
+| 决策 | 原因 |
+|------|------|
+| WPF + .NET 9 替代 WinForms | 彻底消除 GDI+ 自绘、DPI 缩放、布局计算缺陷 |
+| 保留 `System.Drawing.Common` | 截屏、GDI BitBlt、报警截图标注仍需 GDI |
+| 遮罩按钮不前置依赖选区 | 无选区时自动抓取主屏幕作为编辑器背景 |
+| 切换范围清空遮罩 | 遮罩相对坐标失去参照系 |
+| 预览用 Viewbox 缩放 | 检测框与画面共用原始像素坐标系，避免手动换算 |
+| 报警推送纯 WS + 按需截图 | 与 Server `ENABLE_HTTP_SCREENSHOT_UPLOAD=false` 对齐 |
+| DeviceId = MachineName | 多机部署需运行时唯一标识 |
+| 3 页导航 | 参数页与目标页合并，减少导航层级 |

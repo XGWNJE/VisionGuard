@@ -29,7 +29,7 @@
                             Command="{Binding EditMasksCommand}"
                             ToolTipService.ShowOnDisabled="True">
                         <Button.ToolTip>
-                            <ToolTip Content="请先选择窗口或屏幕区域"/>
+                            <ToolTip Content="在当前捕获画面上绘制遮罩区域（未选区时默认抓取主屏幕作为背景）"/>
                         </Button.ToolTip>
                     </Button>
 

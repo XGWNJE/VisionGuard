@@ -15,6 +15,9 @@ namespace VisionGuard
             this.DispatcherUnhandledException += OnDispatcherUnhandledException;
             AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
 
+            // 后台同步 NTP 时钟（fire-and-forget，不阻塞 UI 启动）
+            _ = Utils.NtpSync.SyncAsync();
+
             base.OnStartup(e);
         }
 

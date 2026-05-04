@@ -96,9 +96,12 @@ namespace VisionGuard.ViewModels
             var alertService = new AlertService();
             var serverPushService = new ServerPushService();
 
-            // 报警事件 → 状态栏
+            // 报警事件 → 推送服务器 + 更新状态栏
             alertService.AlertTriggered += (s, e) =>
             {
+                // 推送报警元数据到服务器（WebSocket），按需截图由服务端 request-screenshot 拉取
+                serverPushService.PushAlert(e);
+
                 System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
                 {
                     string target = e.Detections.FirstOrDefault()?.Label ?? "目标";

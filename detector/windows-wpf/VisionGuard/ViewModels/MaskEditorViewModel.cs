@@ -63,6 +63,20 @@ namespace VisionGuard.ViewModels
                     SelectedMask = null;
                 }
             }, () => Masks.Count > 0);
+
+            // 集合变更后刷新 Clear/Undo 按钮状态
+            Masks.CollectionChanged += (s, e) =>
+            {
+                ClearCommand.RaiseCanExecuteChanged();
+                UndoCommand.RaiseCanExecuteChanged();
+            };
+
+            // SelectedMask 变更后刷新 Delete 按钮状态
+            PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(SelectedMask))
+                    DeleteSelectedCommand.RaiseCanExecuteChanged();
+            };
         }
 
         /// <summary>将像素坐标转换为相对坐标 [0,1]</summary>

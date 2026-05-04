@@ -3,7 +3,7 @@
 // │ 角色：主监控循环，定时截图→推理→报警                    │
 // │ 线程：Timer回调在 ThreadPool 执行，UI 更新通过事件      │
 // │ 依赖：OnnxInferenceEngine, AlertService, ImagePreprocessor│
-// │ 对外 API：Start(), Stop(), Pause(), Resume()            │
+// │ 对外 API：Start(), Stop()                               │
 // │ 事件：FrameProcessed (每帧结果通知 Form1 更新 UI)       │
 // └─────────────────────────────────────────────────────────┘
 using System;
@@ -29,9 +29,8 @@ namespace VisionGuard.Services
         private AlertService         _alertService;
         private MonitorConfig        _config;
         private Timer                _timer;
-        private int                  _isRunning;   // 0=idle, 1=processing（Interlocked 防重入）
-        private int                  _isPaused;    // 0=运行, 1=暂停（报警期间）
-        private bool                 _disposed;
+        private int  _isRunning;   // 0=idle, 1=processing（Interlocked 防重入）
+        private bool _disposed;
         // 停止同步：确保 OnTick 完全结束（包括 finally）后才能安全 Dispose _engine
         private readonly ManualResetEvent _tickCompleted = new ManualResetEvent(true);
 
@@ -76,18 +75,17 @@ namespace VisionGuard.Services
             _timer?.Dispose();
             _timer = null;
             _tickCompleted.WaitOne(2000);     // 最多等2秒让 OnTick 退出
+            // 超时保护：若 OnTick 仍未退出，等待 _isRunning 清零（再给 1 秒）
+            if (Interlocked.CompareExchange(ref _isRunning, 0, 0) != 0)
+            {
+                for (int i = 0; i < 10 && Interlocked.CompareExchange(ref _isRunning, 0, 0) != 0; i++)
+                    Thread.Sleep(100);
+            }
             _engine?.Dispose();
             _engine = null;
             _isRunning = 0;
-            _isPaused  = 0;
             _tickCompleted.Set();             // 恢复为已结束状态
         }
-
-        /// <summary>暂停推理（报警期间调用）</summary>
-        public void Pause()  => Interlocked.Exchange(ref _isPaused, 1);
-
-        /// <summary>恢复推理（用户停止铃声后调用）</summary>
-        public void Resume() => Interlocked.Exchange(ref _isPaused, 0);
 
         public void UpdateConfig(MonitorConfig config)
         {
@@ -100,9 +98,6 @@ namespace VisionGuard.Services
         {
             // 停止中：跳过本次Tick（Stop 已调用 WaitOne，这里直接返回）
             if (!_tickCompleted.WaitOne(0)) return;
-
-            // 报警期间暂停推理
-            if (Interlocked.CompareExchange(ref _isPaused, 0, 0) == 1) return;
 
             // 防重入：若上一帧还在推理，跳过本帧
             if (Interlocked.CompareExchange(ref _isRunning, 1, 0) != 0) return;

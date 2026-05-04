@@ -85,12 +85,14 @@ namespace VisionGuard.Services
             long alertMs = sw.ElapsedMilliseconds;
             long processMs = timings["captureMs"] + timings["preprocessMs"]
                            + timings["inferMs"] + timings["parseMs"] + alertMs;
-            // 简化表达：只保留本地计算处理总耗时
-            timings.Clear();
-            timings["processMs"] = processMs;
+            // 构建新的 timings 字典，不修改调用方传入的字典
+            var finalTimings = new Dictionary<string, long>
+            {
+                ["processMs"] = processMs,
+            };
 
             // 触发事件（传递本帧所有检测结果）
-            AlertTriggered?.Invoke(this, new AlertEvent(alertId, detections.AsReadOnly(), snapshot, timings));
+            AlertTriggered?.Invoke(this, new AlertEvent(alertId, detections.AsReadOnly(), snapshot, finalTimings));
         }
 
         /// <summary>当前是否处于报警状态（始终 false，保留接口兼容）</summary>

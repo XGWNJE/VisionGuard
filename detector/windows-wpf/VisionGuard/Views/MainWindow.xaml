@@ -48,10 +48,10 @@
                                         <ControlTemplate TargetType="Button">
                                             <Border Background="{TemplateBinding Background}" CornerRadius="4">
                                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                    <TextBlock Text="&#xE7AD;" FontFamily="Segoe UI Symbol" FontSize="20"
-                                                               Foreground="{StaticResource TextPrimary}" HorizontalAlignment="Center"/>
+                                                    <Image Source="pack://application:,,,/Assets/capture.png" Width="22" Height="22"
+                                                           RenderOptions.BitmapScalingMode="HighQuality" HorizontalAlignment="Center"/>
                                                     <TextBlock Text="监控" FontSize="11" Foreground="{StaticResource TextSecondary}"
-                                                               HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                                               HorizontalAlignment="Center" Margin="0,4,0,0"/>
                                                 </StackPanel>
                                             </Border>
                                         </ControlTemplate>
@@ -85,10 +85,10 @@
                                         <ControlTemplate TargetType="Button">
                                             <Border Background="{TemplateBinding Background}" CornerRadius="4">
                                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                    <TextBlock Text="&#xE713;" FontFamily="Segoe UI Symbol" FontSize="20"
-                                                               Foreground="{StaticResource TextPrimary}" HorizontalAlignment="Center"/>
+                                                    <Image Source="pack://application:,,,/Assets/settings.png" Width="22" Height="22"
+                                                           RenderOptions.BitmapScalingMode="HighQuality" HorizontalAlignment="Center"/>
                                                     <TextBlock Text="设置" FontSize="11" Foreground="{StaticResource TextSecondary}"
-                                                               HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                                               HorizontalAlignment="Center" Margin="0,4,0,0"/>
                                                 </StackPanel>
                                             </Border>
                                         </ControlTemplate>
@@ -122,10 +122,10 @@
                                         <ControlTemplate TargetType="Button">
                                             <Border Background="{TemplateBinding Background}" CornerRadius="4">
                                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                    <TextBlock Text="&#xE703;" FontFamily="Segoe UI Symbol" FontSize="20"
-                                                               Foreground="{StaticResource TextPrimary}" HorizontalAlignment="Center"/>
+                                                    <Image Source="pack://application:,,,/Assets/server.png" Width="22" Height="22"
+                                                           RenderOptions.BitmapScalingMode="HighQuality" HorizontalAlignment="Center"/>
                                                     <TextBlock Text="服务器" FontSize="11" Foreground="{StaticResource TextSecondary}"
-                                                               HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                                                               HorizontalAlignment="Center" Margin="0,4,0,0"/>
                                                 </StackPanel>
                                             </Border>
                                         </ControlTemplate>
