@@ -31,7 +31,7 @@ namespace VisionGuard.Capture
         [DllImport("gdi32.dll")]
         internal static extern IntPtr SelectObject(IntPtr hDC, IntPtr hObject);
 
-        [DllImport("gdi32.dll", SetLastError = true)]
+        [DllImport("gdi32.dll")]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool BitBlt(
             IntPtr hdcDest, int nXDest, int nYDest, int nWidth, int nHeight,
@@ -99,17 +99,32 @@ namespace VisionGuard.Capture
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool IsIconic(IntPtr hWnd);
 
-        [DllImport("user32.dll")]
-        internal static extern int GetSystemMetrics(int nIndex);
-
-        internal const int SM_CXSCREEN = 0;
-        internal const int SM_CYSCREEN = 1;
-
         // ── TextBox Placeholder（cue banner）────────────────────────
         internal const int EM_SETCUEBANNER = 0x1501;
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         internal static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, string lParam);
 
+        // ── 全局键盘钩子 ─────────────────────────────────────────────
+        internal delegate IntPtr LowLevelKeyboardProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        internal static extern IntPtr SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn,
+            IntPtr hMod, uint dwThreadId);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        internal static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode,
+            IntPtr wParam, IntPtr lParam);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        internal static extern IntPtr GetModuleHandle(string lpModuleName);
+
+        // ── uxtheme（NUD 暗色主题，Win11 生效；Win7 静默忽略）────────
+        [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+        internal static extern int SetWindowTheme(IntPtr hWnd, string pszSubAppName, string pszSubIdList);
     }
 }

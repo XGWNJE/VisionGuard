@@ -409,7 +409,7 @@ OverlayControl (UserControl)
 ### 6.1 已完成文件清单（可直接复用）
 
 ```
-detector/windows-wpf/VisionGuard/
+detector/windows/
 ├── VisionGuard.csproj              (SDK 风格，net9.0-windows，x64)
 ├── App.xaml                        (引用 DarkTheme.xaml)
 ├── App.xaml.cs                     (全局异常处理)
@@ -460,7 +460,7 @@ Phase 4 目标：监控页功能完整化 + 遮罩编辑器 + 区域/窗口选�
 ### 6.5 编译运行命令
 
 ```bash
-cd d:\ObjectCode\VisionGuard\detector\windows-wpf\VisionGuard
+cd d:\ObjectCode\VisionGuard\detector\windows
 dotnet build          # 编译
 dotnet run            # 运行预览
 ```

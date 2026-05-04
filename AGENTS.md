@@ -10,9 +10,9 @@
 VisionGuard 是基于 AI 的实时监控系统。Windows 检测端通过 YOLO26 推理，经自建服务器实时推送报警至 Android 手机。
 
 ```
-detector/windows-wpf/     detector/android/         server/                    receiver/android/
+detector/windows/          detector/android/         server/                    receiver/android/
   (Win检测端 WPF新版)        (安卓检测端)       ──►  VPS 中继服务器  ──►         (接收端)
-detector/windows/          后置摄像头 + ONNX          Node.js / WebSocket          Android 手机
+detector/windows-winforms/  后置摄像头 + ONNX          Node.js / WebSocket          Android 手机
   (Win检测端 WinForms旧版)   YOLO26 目标检测            HTTP REST + WS               查看报警 / 远程控制
   屏幕/窗口捕获
   YOLO26 目标检测
@@ -20,8 +20,8 @@ detector/windows/          后置摄像头 + ONNX          Node.js / WebSocket  
 
 | 目录 | 技术栈 | 功能 |
 |---|---|---|
-| `detector/windows-wpf/` | C# / .NET 9 / WPF | **新版**：屏幕/窗口捕获 + YOLO26 ONNX 推理 + 报警推送 |
-| `detector/windows/` | C# / .NET Framework 4.7.2 / WinForms | **旧版**（参考）：功能同上，websocket-sharp，固定布局 |
+| `detector/windows/` | C# / .NET 9 / WPF | **新版**：屏幕/窗口捕获 + YOLO26 ONNX 推理 + 报警推送 |
+| `detector/windows-winforms/` | C# / .NET Framework 4.7.2 / WinForms | **旧版**（参考）：功能同上，websocket-sharp，固定布局 |
 | `server/` | Node.js / TypeScript / Express / ws | 中继服务器：设备管理、报警转发、截图存储 |
 | `receiver/android/` | Kotlin / Jetpack Compose / OkHttp | 接收报警通知、查看截图、远程控制检测端 |
 | `detector/android/` | Kotlin / Jetpack Compose / CameraX / ONNX Runtime Mobile | Android 检测端（后置摄像头 + YOLO26 推理 + 报警推送） |
@@ -31,9 +31,9 @@ detector/windows/          后置摄像头 + ONNX          Node.js / WebSocket  
 ## WPF 迁移状态
 
 Windows 检测端已从 .NET Framework 4.7.2 + WinForms 迁移至 **.NET 9 + WPF**，核心功能链全部可用。
-旧项目 `detector/windows/` 保留为参考，新项目位于 `detector/windows-wpf/`。
+旧项目 `detector/windows-winforms/` 保留为参考，新项目位于 `detector/windows/`。
 
-> 详细进度、架构图、约束与待办见 **[MIGRATION_PROGRESS.md](detector/windows-wpf/MIGRATION_PROGRESS.md)**，本文档仅保留与跨端协作相关的要点。
+> 详细进度、架构图、约束与待办见 **[MIGRATION_PROGRESS.md](detector/windows/MIGRATION_PROGRESS.md)**，本文档仅保留与跨端协作相关的要点。
 
 ### 当前状态
 
@@ -80,9 +80,9 @@ Windows 检测端已从 .NET Framework 4.7.2 + WinForms 迁移至 **.NET 9 + WPF
 
 ## 各端详解
 
-### detector/windows-wpf — Windows 推理检测端（WPF 新版）
+### detector/windows — Windows 推理检测端（WPF 新版）
 
-> 完整开发者文档见 **[MIGRATION_PROGRESS.md](detector/windows-wpf/MIGRATION_PROGRESS.md)**。
+> 完整开发者文档见 **[MIGRATION_PROGRESS.md](detector/windows/MIGRATION_PROGRESS.md)**。
 
 **核心模块**：
 - `Capture/` — 屏幕捕获 (BitBlt)、窗口捕获 (PrintWindow)、窗口枚举 + DWM 边界
@@ -98,7 +98,7 @@ Windows 检测端已从 .NET Framework 4.7.2 + WinForms 迁移至 **.NET 9 + WPF
 **WS role**：`windows`
 **目标框架**：net9.0-windows，x64
 
-### detector/windows — Windows 推理检测端（WinForms 旧版，保留参考）
+### detector/windows-winforms — Windows 推理检测端（WinForms 旧版，保留参考）
 
 旧版 .NET Framework 4.7.2 项目，x64。核心模块结构与 WPF 版对应：
 `Capture/`、`Inference/`、`Services/`、`Models/`、`UI/`（WinForms 控件）、`Data/`、`Utils/`
@@ -194,13 +194,13 @@ npm start
 
 **Windows（WPF 新版 .NET 9）**：
 ```bash
-cd detector/windows-wpf/VisionGuard
+cd detector/windows
 dotnet build -c Release
 dotnet publish -c Release -r win-x64 --self-contained true
 ```
 
 **Windows（WinForms 旧版 .NET Framework 4.7.2）**：
-- Visual Studio 2022 打开 `detector/windows/VisionGuard.csproj`
+- Visual Studio 2022 打开 `detector/windows-winforms/VisionGuard.csproj`
 
 **Android**：
 ```bash
@@ -219,9 +219,9 @@ cd receiver/android
 5. **NTP 同步**：Windows 端启动时同步 NTP 时钟，确保报警时间戳准确。
 6. **网络切换**：Windows 端监听 `NetworkAddressChanged`，30s 防抖后重连。
 7. **Windows 新旧版本差异**：
-   - WPF 新版（`detector/windows-wpf/`）：net9.0-windows，MVVM 架构，`System.Net.WebSockets.Client`，3 页导航
-   - WinForms 旧版（`detector/windows/`）：.NET Framework 4.7.2，websocket-sharp，4 页导航——保留为参考
-8. **Windows WPF 约束**：详见 [MIGRATION_PROGRESS.md](detector/windows-wpf/MIGRATION_PROGRESS.md) 第三章（线程安全、命令刷新机制、遮罩坐标系统、捕获回退链、SettingsStore 兼容性）
+   - WPF 新版（`detector/windows/`）：net9.0-windows，MVVM 架构，`System.Net.WebSockets.Client`，3 页导航
+   - WinForms 旧版（`detector/windows-winforms/`）：.NET Framework 4.7.2，websocket-sharp，4 页导航——保留为参考
+8. **Windows WPF 约束**：详见 [MIGRATION_PROGRESS.md](detector/windows/MIGRATION_PROGRESS.md) 第三章（线程安全、命令刷新机制、遮罩坐标系统、捕获回退链、SettingsStore 兼容性）
 9. **仅 Windows 端在重构**：Android 检测端/接收端和 Server 保持原样
 10. **WPF 待完成**：服务端远程命令路由暂停/恢复/设配置未接入（`CommandReceived`/`SetConfigReceived` 无人订阅）
 

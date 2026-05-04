@@ -67,8 +67,8 @@ Desktop.ini
 **/release/ 
 detector/android/.key/det
 
-# WPF migration temp
-detector/windows-wpf/**/.vs/
-detector/windows-wpf/**/bin/
-detector/windows-wpf/**/obj/
+# WPF windows detector
+detector/windows/**/.vs/
+detector/windows/**/bin/
+detector/windows/**/obj/
 

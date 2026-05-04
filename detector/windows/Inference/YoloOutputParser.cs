@@ -50,7 +50,7 @@ namespace VisionGuard.Inference
         {
             // rawOutput 展平自 [1, 300, 6]
             const int numDetections = 300;
-            const int valuesPerBox  = 6;   // [cx, cy, w, h, conf, class_id]
+            const int valuesPerBox  = 6;   // [x1, y1, x2, y2, confidence, class_id]
 
             float scaleX = captureRegion.Width  / (float)ModelSize;
             float scaleY = captureRegion.Height / (float)ModelSize;

@@ -15,7 +15,7 @@ using System.Linq;
 using System.Net.NetworkInformation;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Net.WebSockets;
+using WebSocketSharp;
 using VisionGuard.Models;
 using VisionGuard.Utils;
 
@@ -146,11 +146,6 @@ namespace VisionGuard.Services
         }
 
         public void Disconnect() => Post(OnDisconnect);
-
-        public void Reconnect()
-        {
-            Post(() => OnConnect(_serverUrl, _apiKey, _deviceId, _deviceName));
-        }
 
         public void UpdateHeartbeatParams(bool isMonitoring, bool isReady,
             int cooldown, float confidence, string targets)
@@ -504,15 +499,13 @@ namespace VisionGuard.Services
         {
             private readonly ServerPushService _parent;
             private readonly string _wsUrl;
-            private ClientWebSocket? _ws;
+            private WebSocket _ws;
             private readonly object _sendLock = new object();
-            private Thread? _receiveThread;
-            private Thread? _heartbeatThread;
-            private Thread? _authTimeoutThread;
+            private Thread _heartbeatThread;
+            private Thread _authTimeoutThread;
             private readonly CancellationTokenSource _cts = new CancellationTokenSource();
             private long _lastMessageAtTicks = DateTime.UtcNow.Ticks;
             private volatile bool _shutdown;
-            private volatile bool _failReported;
 
             public Session(ServerPushService parent, string wsUrl)
             {
@@ -522,13 +515,36 @@ namespace VisionGuard.Services
 
             public void Start()
             {
-                _ws = new ClientWebSocket();
-                _receiveThread = new Thread(ReceiveLoop)
+                _ws = new WebSocket(_wsUrl);
+                _ws.OnOpen += (_, __) =>
                 {
-                    IsBackground = true,
-                    Name = "VG_WsReceive"
+                    if (_shutdown) return;
+                    Interlocked.Exchange(ref _lastMessageAtTicks, DateTime.UtcNow.Ticks);
+                    _parent.Post(() => _parent.OnWsOpened(this));
                 };
-                _receiveThread.Start();
+                _ws.OnMessage += (_, e) =>
+                {
+                    if (_shutdown) return;
+                    Interlocked.Exchange(ref _lastMessageAtTicks, DateTime.UtcNow.Ticks);
+                    HandleMessage(e.Data);
+                };
+                _ws.OnClose += (_, e) =>
+                {
+                    if (_shutdown) return;
+                    _parent.Post(() => _parent.OnWsFailed(this, e.Code, $"closed:{e.Reason}"));
+                };
+                _ws.OnError += (_, e) =>
+                {
+                    if (_shutdown) return;
+                    _parent.Post(() => _parent.OnWsFailed(this, 0, $"error:{e.Message}"));
+                };
+
+                try { _ws.Connect(); }
+                catch (Exception ex)
+                {
+                    _parent.Post(() => _parent.OnWsFailed(this, 0, $"connect-ex:{ex.Message}"));
+                    return;
+                }
 
                 // 认证超时看门狗
                 var token = _cts.Token;
@@ -548,55 +564,6 @@ namespace VisionGuard.Services
                 })
                 { IsBackground = true, Name = "VG_AuthTimeout" };
                 _authTimeoutThread.Start();
-            }
-
-            private void ReceiveLoop()
-            {
-                try
-                {
-                    var uri = new Uri(_wsUrl);
-                    _ws!.ConnectAsync(uri, _cts.Token).Wait();
-
-                    if (_shutdown) return;
-                    Interlocked.Exchange(ref _lastMessageAtTicks, DateTime.UtcNow.Ticks);
-                    _parent.Post(() => _parent.OnWsOpened(this));
-
-                    var buffer = new byte[8192];
-                    while (!_shutdown && _ws.State == WebSocketState.Open)
-                    {
-                        var sb = new System.Text.StringBuilder();
-                        WebSocketReceiveResult result;
-                        do
-                        {
-                            var segment = new ArraySegment<byte>(buffer);
-                            result = _ws.ReceiveAsync(segment, _cts.Token).Result;
-
-                            if (result.MessageType == WebSocketMessageType.Close)
-                            {
-                                ReportFailed((ushort)result.CloseStatus.GetValueOrDefault(), $"closed:{result.CloseStatusDescription}");
-                                return;
-                            }
-
-                            sb.Append(System.Text.Encoding.UTF8.GetString(buffer, 0, result.Count));
-                        } while (!result.EndOfMessage);
-
-                        var message = sb.ToString();
-                        Interlocked.Exchange(ref _lastMessageAtTicks, DateTime.UtcNow.Ticks);
-                        HandleMessage(message);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    ReportFailed(0, $"error:{ex.Message}");
-                }
-            }
-
-            private void ReportFailed(ushort code, string reason)
-            {
-                if (_failReported) return;
-                _failReported = true;
-                if (!_shutdown)
-                    _parent.Post(() => _parent.OnWsFailed(this, code, reason));
             }
 
             public void StartHeartbeat()
@@ -666,7 +633,7 @@ namespace VisionGuard.Services
                     {
                         case "auth-result":
                         {
-                            bool success = d.TryGetValue("success", out object? sv) && sv is bool b && b;
+                            bool success = d.TryGetValue("success", out object sv) && sv is bool b && b;
                             string reason = SimpleJson.GetString(d, "reason", "");
                             _parent.Post(() => _parent.OnAuthResult(this, success, reason));
                             break;
@@ -713,12 +680,10 @@ namespace VisionGuard.Services
 
                 lock (_sendLock)
                 {
-                    if (_ws == null || _ws.State != WebSocketState.Open) return false;
+                    if (_ws == null || !_ws.IsAlive) return false;
                     try
                     {
-                        var bytes = System.Text.Encoding.UTF8.GetBytes(json);
-                        var segment = new ArraySegment<byte>(bytes);
-                        var task = _ws.SendAsync(segment, WebSocketMessageType.Text, true, _cts.Token);
+                        var task = Task.Run(() => _ws.Send(json));
                         if (task.Wait(SEND_TIMEOUT_MS)) return true;
                         LogManager.StaticWarn($"[Server] WS 发送超时({SEND_TIMEOUT_MS}ms)");
                         return false;
@@ -736,8 +701,7 @@ namespace VisionGuard.Services
                 if (_shutdown) return;
                 _shutdown = true;
                 try { _cts.Cancel(); } catch { }
-                try { _ws?.Abort(); } catch { }
-                try { _ws?.Dispose(); } catch { }
+                try { _ws?.Close(); } catch { }
                 LogManager.StaticInfo($"[Server] Session shutdown: {reason}");
             }
         }

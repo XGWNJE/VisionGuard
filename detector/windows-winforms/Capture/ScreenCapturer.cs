@@ -8,7 +8,6 @@
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
 
 namespace VisionGuard.Capture
 {
@@ -37,18 +36,12 @@ namespace VisionGuard.Capture
 
                 memDC   = NativeMethods.CreateCompatibleDC(screenDC);
                 hBitmap = NativeMethods.CreateCompatibleBitmap(screenDC, region.Width, region.Height);
-                if (hBitmap == IntPtr.Zero)
-                    throw new InvalidOperationException($"CreateCompatibleBitmap 失败，尺寸 {region.Width}×{region.Height}，错误码: {Marshal.GetLastWin32Error()}");
-
                 oldBmp  = NativeMethods.SelectObject(memDC, hBitmap);
 
-                bool ok = NativeMethods.BitBlt(
+                NativeMethods.BitBlt(
                     memDC, 0, 0, region.Width, region.Height,
                     screenDC, region.X, region.Y,
                     NativeMethods.SRCCOPY);
-
-                if (!ok)
-                    throw new InvalidOperationException($"BitBlt 失败，区域 {region}，错误码: {Marshal.GetLastWin32Error()}");
 
                 // 先包装成托管 Bitmap（内部复制像素），再释放 HBITMAP
                 Bitmap result = Image.FromHbitmap(hBitmap);
@@ -62,13 +55,6 @@ namespace VisionGuard.Capture
                 if (memDC    != IntPtr.Zero) NativeMethods.DeleteDC(memDC);
                 if (screenDC != IntPtr.Zero) NativeMethods.ReleaseDC(desktop, screenDC);
             }
-        }
-
-        public static Bitmap CapturePrimaryScreen()
-        {
-            int width  = NativeMethods.GetSystemMetrics(NativeMethods.SM_CXSCREEN);
-            int height = NativeMethods.GetSystemMetrics(NativeMethods.SM_CYSCREEN);
-            return CaptureRegion(new Rectangle(0, 0, width, height));
         }
 
     }
