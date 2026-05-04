@@ -88,7 +88,7 @@ namespace VisionGuard
         private Rectangle     _windowSubRegion; // WindowHandle 子区域
 
         // ── 模型选择 ────────────────────────────────────────────────
-        private string _selectedModel = "yolo26n"; // "yolo26n" | "yolo26s"
+        private string _selectedModel = "yolov5nu";
 
         private string ModelPath => Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory, "Assets", $"{_selectedModel}.onnx");
@@ -305,14 +305,6 @@ namespace VisionGuard
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            // 用户点击 × 时隐藏到托盘，不退出；托盘菜单"退出"才真正关闭
-            if (e.CloseReason == CloseReason.UserClosing)
-            {
-                e.Cancel = true;
-                Hide();
-                return;
-            }
-
             SaveSettings();
             _heartbeatTimer?.Stop();
             _heartbeatTimer?.Dispose();

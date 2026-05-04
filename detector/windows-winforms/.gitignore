@@ -40,6 +40,6 @@ dist/
 
 
 # ===== 模型文件说明 =====
-# Assets/yolo26n.onnx / yolo26s.onnx 通过 ultralytics 导出，见 Assets/ASSETS_README.md
-# yolo26n.onnx ~9.4MB，yolo26s.onnx ~36MB
+# Assets/yolov8n_320.onnx / yolov8s_320.onnx 通过 ultralytics 导出，见 Assets/ASSETS_README.md
+# yolov8n_320.onnx ~12MB，yolov8s_320.onnx ~43MB
 # 如果文件超过 50MB 请使用 Git LFS：git lfs track "*.onnx"

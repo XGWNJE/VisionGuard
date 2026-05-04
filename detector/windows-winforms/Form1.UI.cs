@@ -23,7 +23,6 @@ namespace VisionGuard
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox     = false;
             StartPosition   = FormStartPosition.CenterScreen;
-            ShowInTaskbar   = false;   // 始终不显示任务栏按钮，靠托盘图标操作
             BackColor       = Color.FromArgb(25, 25, 25);
             ForeColor       = Color.LightGray;
             Font = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point);
@@ -260,11 +259,11 @@ namespace VisionGuard
                 FlatStyle = FlatStyle.Flat,
                 Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top
             };
-            _cmbModel.Items.AddRange(new object[] { "YOLO26n (轻量 ~5MB)", "YOLO26s (精准 ~20MB)" });
-            _cmbModel.SelectedIndex = 0; // 默认 yolo26n
+            _cmbModel.Items.AddRange(new object[] { "YOLOv5nu 320 (轻量 ~10MB)" });
+            _cmbModel.SelectedIndex = 0;
             _cmbModel.SelectedIndexChanged += (s, e) =>
             {
-                _selectedModel = _cmbModel.SelectedIndex == 0 ? "yolo26n" : "yolo26s";
+                _selectedModel = "yolov5nu";
             };
             _pageParams.Controls.Add(_cmbModel);
         }
