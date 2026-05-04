@@ -17,15 +17,18 @@
 ## 架构
 
 ```
-detector/windows/    detector/android/         server/                    receiver/android/
-  (Win检测端)           (安卓检测端)       ──►  VPS 中继服务器  ──►         (接收端)
-  屏幕/窗口捕获         后置摄像头 + ONNX          Node.js / WebSocket          Android 手机
-  YOLO26 目标检测       YOLO26 目标检测            HTTP REST + WS               查看报警 / 远程控制
+detector/windows-winforms/ detector/android/         server/                    receiver/android/
+  (Win检测端 WinForms)       (安卓检测端)       ──►  VPS 中继服务器  ──►         (接收端)
+detector/windows/            后置摄像头 + ONNX          Node.js / WebSocket          Android 手机
+  (Win检测端 WPF)            YOLO26 目标检测            HTTP REST + WS               查看报警 / 远程控制
+  屏幕/窗口捕获
+  YOLOv5nu 目标检测
 ```
 
 | 目录 | 技术栈 | 功能 |
 |---|---|---|
-| `detector/windows/` | C# / .NET Framework 4.7.2 / WinForms | 屏幕/窗口捕获 + YOLO26 ONNX 推理 + 报警推送 |
+| `detector/windows-winforms/` | C# / .NET Framework 4.7.2 / WinForms | YOLOv5nu + ORT 1.1.0，Win7 兼容 |
+| `detector/windows/` | C# / .NET 9 / WPF | YOLO26 + MVVM 架构，Win10+ |
 | `detector/android/` | Kotlin / Jetpack Compose / CameraX / ONNX Runtime Mobile | 后置摄像头 + YOLO26 推理 + 报警推送 + 本地截图缓存 |
 | `server/` | Node.js / TypeScript / Express / ws | 中继服务器：设备管理、报警转发、报警记录持久化、截图按需中继 |
 | `receiver/android/` | Kotlin / Jetpack Compose / OkHttp | 接收报警通知、查看截图、历史报警列表、远程控制检测端 |
@@ -33,7 +36,8 @@ detector/windows/    detector/android/         server/                    receiv
 ## 功能特性
 
 ### 检测端（Windows / Android）
-- **实时检测** — YOLO26 ONNX 推理，支持 n/s 双模型切换
+- **实时检测** — YOLOv5nu / YOLO26 ONNX 推理
+- **Win7 兼容** — WinForms 版支持 Windows 7 及以上，WPF 版支持 Windows 10 及以上
 - **多平台支持** — Windows 屏幕捕获 或 Android 后置摄像头
 - **本地截图缓存** — 报警截图本地压缩缓存（7天/100MB/2000张），供接收端按需拉取
 - **冷却期控制** — 可配置报警推送冷却时间，避免重复通知
@@ -58,7 +62,8 @@ detector/windows/    detector/android/         server/                    receiv
 | 端 | 最低系统要求 |
 |---|---|
 | Server | Ubuntu 20.04+ / Debian 11+，Node.js 20+ |
-| Windows 检测端 | **Windows 10 及以上**（.NET Framework 4.7.2，x64） |
+| Windows 检测端 (WinForms) | **Windows 7 及以上**（.NET Framework 4.7.2，x64） |
+| Windows 检测端 (WPF) | **Windows 10 及以上**（.NET 9，x64） |
 | Android 检测端 | Android 9.0+（API 28+），推荐骁龙 7/8 Gen 或天玑 8/9 系列 |
 | Android 接收端 | Android 9.0+（API 28+） |
 
@@ -83,9 +88,16 @@ bash server/deploy.sh --full # 同时同步 package.json 并 npm install
 
 ### Windows 检测端
 
-1. Visual Studio 2022 打开 `detector/windows/VisionGuard.csproj`
-2. 确保 `Assets/yolo26n.onnx` 和 `Assets/yolo26s.onnx` 已放置
+**WinForms 主力线（Win7 兼容）**：
+1. Visual Studio 2022 打开 `detector/windows-winforms/VisionGuard.csproj`
+2. 确保 `Assets/yolov5nu.onnx` 已放置
 3. 生成 → 发布
+
+**WPF 视觉升级线（Win10+）**：
+```bash
+cd detector/windows
+dotnet build -c Release
+```
 
 ### Android 检测端
 

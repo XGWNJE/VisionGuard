@@ -10,28 +10,28 @@
 VisionGuard 是基于 AI 的实时监控系统。Windows 检测端通过 YOLO26 推理，经自建服务器实时推送报警至 Android 手机。
 
 ```
-detector/windows/          detector/android/         server/                    receiver/android/
-  (Win检测端 WPF新版)        (安卓检测端)       ──►  VPS 中继服务器  ──►         (接收端)
-detector/windows-winforms/  后置摄像头 + ONNX          Node.js / WebSocket          Android 手机
-  (Win检测端 WinForms旧版)   YOLO26 目标检测            HTTP REST + WS               查看报警 / 远程控制
+detector/windows-winforms/ detector/android/         server/                    receiver/android/
+  (Win检测端 WinForms主力)  (安卓检测端)       ──►  VPS 中继服务器  ──►         (接收端)
+detector/windows/           后置摄像头 + ONNX          Node.js / WebSocket          Android 手机
+  (Win检测端 WPF视觉升级)    YOLO26 目标检测            HTTP REST + WS               查看报警 / 远程控制
   屏幕/窗口捕获
-  YOLO26 目标检测
+  YOLOv5nu 目标检测
 ```
 
 | 目录 | 技术栈 | 功能 |
 |---|---|---|
-| `detector/windows/` | C# / .NET 9 / WPF | **新版**：屏幕/窗口捕获 + YOLO26 ONNX 推理 + 报警推送 |
-| `detector/windows-winforms/` | C# / .NET Framework 4.7.2 / WinForms | **旧版**（参考）：功能同上，websocket-sharp，固定布局 |
+| `detector/windows-winforms/` | C# / .NET Framework 4.7.2 / WinForms | **主力线**：YOLOv5nu + ORT 1.1.0，Win7 兼容 |
+| `detector/windows/` | C# / .NET 9 / WPF | **视觉升级线**：YOLO26 + ORT 1.19.0，MVVM 架构 |
 | `server/` | Node.js / TypeScript / Express / ws | 中继服务器：设备管理、报警转发、截图存储 |
 | `receiver/android/` | Kotlin / Jetpack Compose / OkHttp | 接收报警通知、查看截图、远程控制检测端 |
 | `detector/android/` | Kotlin / Jetpack Compose / CameraX / ONNX Runtime Mobile | Android 检测端（后置摄像头 + YOLO26 推理 + 报警推送） |
 
 ---
 
-## WPF 迁移状态
+## Windows 双版本说明
 
-Windows 检测端已从 .NET Framework 4.7.2 + WinForms 迁移至 **.NET 9 + WPF**，核心功能链全部可用。
-旧项目 `detector/windows-winforms/` 保留为参考，新项目位于 `detector/windows/`。
+WinForms 版（`detector/windows-winforms/`）为 **Win7 兼容主力维护线**，YOLOv5nu + ONNX Runtime 1.1.0。
+WPF 版（`detector/windows/`）为 **.NET 9 视觉升级线**，YOLO26 + MVVM 架构，仅 Win10+。
 
 > 详细进度、架构图、约束与待办见 **[MIGRATION_PROGRESS.md](detector/windows/MIGRATION_PROGRESS.md)**，本文档仅保留与跨端协作相关的要点。
 
@@ -98,16 +98,18 @@ Windows 检测端已从 .NET Framework 4.7.2 + WinForms 迁移至 **.NET 9 + WPF
 **WS role**：`windows`
 **目标框架**：net9.0-windows，x64
 
-### detector/windows-winforms — Windows 推理检测端（WinForms 旧版，保留参考）
+### detector/windows-winforms — Windows 推理检测端（WinForms，Win7 兼容主力线）
 
-旧版 .NET Framework 4.7.2 项目，x64。核心模块结构与 WPF 版对应：
+.NET Framework 4.7.2 项目，x64。核心模块：
 `Capture/`、`Inference/`、`Services/`、`Models/`、`UI/`（WinForms 控件）、`Data/`、`Utils/`
 
+- **模型**：YOLOv5nu（`[1,84,2100]`，绝对坐标，无内置 NMS），ONNX Runtime **1.1.0** 统一包
 - **UI**：固定 960×640 暗色 WinForms，4 页（捕获/参数/目标/服务器），左侧图标菜单
 - **遮罩**：v3.7.0 加入，相对坐标 [0,1]，`MaskEditorForm` 全屏拖拽编辑，`MaskApplier` 推理前 in-place 涂黑
-- **依赖**：Microsoft.ML.OnnxRuntime 1.17+、websocket-sharp
+- **退出**：窗口 X 直接关闭程序，托盘右键可退出/显示，最小化隐藏到托盘
+- **依赖**：Microsoft.ML.OnnxRuntime 1.1.0、websocket-sharp
 - **WS role**：`windows`
-- **GlobalKeyHook**：旧版有键盘钩子（空格停止报警），WPF 版已移除此机制
+- **系统支持**：Windows 7 及以上（x64）
 
 ### server — 中继服务器
 

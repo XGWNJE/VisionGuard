@@ -2,22 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-# VisionGuard — Claude Code 项目指南
+# VisionGuard — 项目指南
 
-> 基于 AI 的实时监控系统。Windows 检测端通过 YOLO26 推理，经自建服务器实时推送报警至 Android 手机。
+> 基于 AI 的实时监控系统。Windows 检测端经自建服务器实时推送报警至 Android 手机。
 
 ## 项目概览
 
 ```
-detector/windows/    detector/android/         server/                    receiver/android/
-  (Win检测端)           (安卓检测端)       ──►  VPS 中继服务器  ──►         (接收端)
-  屏幕/窗口捕获         后置摄像头 + ONNX          Node.js / WebSocket          Android 手机
-  YOLO26 目标检测       YOLO26 目标检测            HTTP REST + WS               查看报警 / 远程控制
+detector/windows-winforms/ detector/android/         server/                    receiver/android/
+  (Win检测端 WinForms)       (安卓检测端)       ──►  VPS 中继服务器  ──►         (接收端)
+detector/windows/            后置摄像头 + ONNX          Node.js / WebSocket          Android 手机
+  (Win检测端 WPF)            YOLO26 目标检测            HTTP REST + WS               查看报警 / 远程控制
+  屏幕/窗口捕获
+  YOLOv5nu 目标检测
 ```
 
 | 目录 | 技术栈 | 功能 |
 |---|---|---|
-| `detector/windows/` | C# / .NET Framework 4.7.2 / WinForms | 屏幕/窗口捕获 + YOLO26 ONNX 推理 + 报警推送 |
+| `detector/windows-winforms/` | C# / .NET Framework 4.7.2 / WinForms | **主力线**：YOLOv5nu + ORT 1.1.0，Win7 兼容 |
+| `detector/windows/` | C# / .NET 9 / WPF | **视觉升级线**：YOLO26 + MVVM，Win10+ |
 | `server/` | Node.js / TypeScript / Express / ws | 中继服务器：设备管理、报警转发、截图存储 |
 | `receiver/android/` | Kotlin / Jetpack Compose / OkHttp | 接收报警通知、查看截图、远程控制检测端 |
 | `detector/android/` | Kotlin / Jetpack Compose / CameraX / ONNX Runtime Mobile | Android 检测端（后置摄像头 + YOLO26 推理 + 报警推送） |
@@ -40,7 +43,7 @@ detector/windows/    detector/android/         server/                    receiv
 
 ## 各端详解
 
-### detector/windows — Windows 推理检测端
+### detector/windows-winforms — Windows 检测端（WinForms，Win7 兼容主力线）
 
 **核心模块**：
 - `Capture/` — 屏幕捕获、窗口枚举、子区域选择、`GlobalKeyHook.cs` 全局热键
@@ -52,18 +55,18 @@ detector/windows/    detector/android/         server/                    receiv
 - `Utils/` — NTP 时钟同步、设置持久化、截图渲染器
 
 **关键文件**：
-- [Form1.cs](detector/windows/Form1.cs) — 主窗体：字段、构造、配置构建、状态控制
-- [Form1.Monitor.cs](detector/windows/Form1.Monitor.cs) — 监控控制：区域选择、启停、回调
-- [Form1.Server.cs](detector/windows/Form1.Server.cs) — 服务器连接、设置持久化、远程配置
-- [Form1.UI.cs](detector/windows/Form1.UI.cs) — UI 构建：主布局、4 页面、辅助方法
-- [Form1.Designer.cs](detector/windows/Form1.Designer.cs) — Designer 自动生成的最小桩代码
-- [OnnxInferenceEngine.cs](detector/windows/Inference/OnnxInferenceEngine.cs) — ONNX Runtime 封装
-- [YoloOutputParser.cs](detector/windows/Inference/YoloOutputParser.cs) — YOLO26 输出解析（格式 `[1, 300, 6]`，已内置 NMS，6 = [x1, y1, x2, y2, conf, class_id]）
-- [CocoClassMap.cs](detector/windows/Data/CocoClassMap.cs) — COCO 80 类中英文映射，`TargetClassNames` 定义 6 类监控目标子集
+- [Form1.cs](detector/windows-winforms/Form1.cs) — 主窗体：字段、构造、配置构建、状态控制
+- [Form1.Monitor.cs](detector/windows-winforms/Form1.Monitor.cs) — 监控控制：区域选择、启停、回调
+- [Form1.Server.cs](detector/windows-winforms/Form1.Server.cs) — 服务器连接、设置持久化、远程配置
+- [Form1.UI.cs](detector/windows-winforms/Form1.UI.cs) — UI 构建：主布局、4 页面、辅助方法
+- [Form1.Designer.cs](detector/windows-winforms/Form1.Designer.cs) — Designer 自动生成的最小桩代码
+- [OnnxInferenceEngine.cs](detector/windows-winforms/Inference/OnnxInferenceEngine.cs) — ONNX Runtime 封装
+- [YoloOutputParser.cs](detector/windows-winforms/Inference/YoloOutputParser.cs) — YOLOv5nu 输出解析（格式 `[1, 84, 2100]`，绝对坐标，无内置 NMS）
+- [CocoClassMap.cs](detector/windows-winforms/Data/CocoClassMap.cs) — COCO 80 类中英文映射，`TargetClassNames` 定义 6 类监控目标子集
 
 **UI 架构**：固定 960×640 暗色 WinForms，左侧图标菜单 + 右侧内容区（预览 58% + 页面 42%）
 - **捕获页**：区域/窗口选择、**遮罩区域绘制**（启动 `MaskEditorForm`）、当前遮罩计数、开始/停止监控
-- **参数页**：置信度阈值 Slider（10–95%，显示 "N%"）、目标采样率 Slider（1–5 次/秒）、警报推送冷却时间 Slider（1–300 秒）、模型选择下拉框（yolo26n / yolo26s）
+- **参数页**：置信度阈值 Slider（10–95%，显示 "N%"）、目标采样率 Slider（1–5 次/秒）、警报推送冷却时间 Slider（1–300 秒）、模型选择下拉框（YOLOv5nu 320）
 - **目标页**：6 个 `CheckBox`（人 / 自行车 / 汽车 / 摩托车 / 客车 / 卡车），默认只勾选"人"；空选视为检测全部
 - **服务器页**：连接状态、设备名、手动重试
 
@@ -75,22 +78,31 @@ detector/windows/    detector/android/         server/                    receiv
 
 **v3.7.0 新增功能 — 遮罩绘制（Mask）**（与 Android v3.6.0 行为对齐）：
 - **数据结构**：`MonitorConfig.MaskRegions: List<RectangleF>`，相对坐标 X/Y/Width/Height ∈ [0,1]，最小相对尺寸 `0.02`
-- **编辑入口**：捕获页「遮罩区域…」按钮 → [Form1.Monitor.cs](detector/windows/Form1.Monitor.cs) `BtnEditMasks_Click`：抓一帧底图（`WindowCapturer.CaptureWindow` / `ScreenCapturer.CaptureRegion`，与监控帧尺寸一致），打开 [MaskEditorForm.cs](detector/windows/UI/MaskEditorForm.cs) 多矩形拖拽编辑器（撤销/清空/取消/确定 + ESC，半透明红色填充 + 进行中黄色虚线）
-- **耦合点**：[MaskApplier.cs](detector/windows/Inference/MaskApplier.cs) 在 [MonitorService.cs](detector/windows/Services/MonitorService.cs) `OnTick` 第 132–134 行（capture 完、`ToTensor` 之前）`Graphics.FillRectangle` 黑色 in-place 涂黑
+- **编辑入口**：捕获页「遮罩区域…」按钮 → [Form1.Monitor.cs](detector/windows-winforms/Form1.Monitor.cs) `BtnEditMasks_Click`：抓一帧底图（`WindowCapturer.CaptureWindow` / `ScreenCapturer.CaptureRegion`，与监控帧尺寸一致），打开 [MaskEditorForm.cs](detector/windows-winforms/UI/MaskEditorForm.cs) 多矩形拖拽编辑器（撤销/清空/取消/确定 + ESC，半透明红色填充 + 进行中黄色虚线）
+- **耦合点**：[MaskApplier.cs](detector/windows-winforms/Inference/MaskApplier.cs) 在 [MonitorService.cs](detector/windows-winforms/Services/MonitorService.cs) `OnTick` 第 132–134 行（capture 完、`ToTensor` 之前）`Graphics.FillRectangle` 黑色 in-place 涂黑
 - **重要副作用**：**遮罩同时影响推理与报警截图与 UI 预览**（涂黑区域不被识别，截图与 `DetectionOverlayPanel` 也是黑的）
 - **持久化**：settings.ini key `MaskRegions`，自定义 DTO `{left, top, right, bottom}` 经 `Utils.SimpleJson` 序列化（避开 `RectangleF` 默认序列化噪音；`SimpleJson.Deserialize<T>` 失败回退）
 - **热更新**：监控运行中编辑遮罩 → `_monitorService.UpdateConfig(BuildConfig())` 走 `Volatile.Write`，下个 Tick 即生效
-- **远程同步**：与 Android 一致**仅本地配置**，[Form1.Server.cs](detector/windows/Form1.Server.cs) `ApplyRemoteConfig` `default` 分支对 `maskRegions` 等未知项继续 NACK
+- **远程同步**：与 Android 一致**仅本地配置**，[Form1.Server.cs](detector/windows-winforms/Form1.Server.cs) `ApplyRemoteConfig` `default` 分支对 `maskRegions` 等未知项继续 NACK
 
-**依赖**：Microsoft.ML.OnnxRuntime 1.17+、websocket-sharp
-**模型**：`Assets/yolo26n.onnx`（~9.4MB，轻量）/ `Assets/yolo26s.onnx`（~37MB，精准），COCO 80 类
-**Assets 文件**：
-- 运行时打包至输出目录：`yolo26n.onnx` / `yolo26s.onnx`（模型）、`capture.png` / `settings.png` / `target.png` / `server.png`（4 个左侧菜单图标）、`*.wav`（报警音效）
-- 仅源码保留、**不复制**到 Release 输出（commit `12cada0` 精简）：`VisionGuard.ico`（运行时由 `Icon.ExtractAssociatedIcon` 从 EXE 自身读取）、`screenshot.png`（仅 README 引用，已通过 `Exclude` 排除）、`yolo26n.pt` / `yolo26s.pt`（PyTorch 源权重）、`yolov5nu.onnx`（旧模型遗留）、`COCO_CLASSES.md`、`ASSETS_README.md`
+**依赖**：Microsoft.ML.OnnxRuntime 1.1.0、websocket-sharp
+**模型**：`Assets/yolov5nu.onnx`（~10MB），YOLOv5nu，COCO 80 类
 **ONNX 线程数**：固定 2 线程（与 Android 检测端一致，不可调）
 **网络变化**：监听 `NetworkChange.NetworkAddressChanged`，30s 防抖，网络恢复时立即重连
 **目标框架**：.NET Framework 4.7.2，x64
+**系统支持**：Windows 7 及以上
 **WS role**：`windows`
+
+### detector/windows — Windows 检测端（WPF，.NET 9 视觉升级线）
+
+.NET 9 WPF 项目，MVVM 架构，x64。核心功能链全部可用，待完成远程命令路由接入。
+
+**依赖**：Microsoft.ML.OnnxRuntime 1.19.0、System.Drawing.Common 9.0.0
+**模型**：`Assets/yolo26n.onnx` / `Assets/yolo26s.onnx`，YOLO26，COCO 80 类
+**系统支持**：Windows 10 及以上
+**WS role**：`windows`
+
+> 详细文档见 [MIGRATION_PROGRESS.md](detector/windows/MIGRATION_PROGRESS.md)
 
 ### server — 中继服务器
 
@@ -256,7 +268,8 @@ detector/windows/    detector/android/         server/                    receiv
 | 端 | 最低系统要求 |
 |---|---|
 | Server | Ubuntu 20.04+ / Debian 11+，Node.js 20+ |
-| Windows 检测端 | **Windows 10 及以上**（.NET Framework 4.7.2，x64） |
+| Windows 检测端 (WinForms) | **Windows 7 及以上**（.NET Framework 4.7.2，x64） |
+| Windows 检测端 (WPF) | **Windows 10 及以上**（.NET 9，x64） |
 | Android 检测端 | Android 9.0+（API 28+），推荐骁龙 7/8 Gen 或天玑 8/9 系列 |
 | Android 接收端 | Android 9.0+（API 28+） |
 
@@ -309,9 +322,13 @@ cd receiver/android
 ./gradlew assembleRelease
 ```
 
-**Windows**：
-- 框架为 .NET Framework 4.7.2（老框架），推荐用 Visual Studio 2022 打开 `detector/windows/VisionGuard.csproj`
-- 编译前确认 `.csproj` 中 `Content` 资源（`Assets/yolo26n.onnx`、`Assets/yolo26s.onnx`、`Assets/*.png`（不含 `screenshot.png`，已 Exclude）等）的 `CopyToOutputDirectory` 已设置为 `PreserveNewest`
+**Windows (WinForms 主力线)**：
+- .NET Framework 4.7.2，推荐用 Visual Studio 2022 打开 `detector/windows-winforms/VisionGuard.csproj`
+- 模型：`Assets/yolov5nu.onnx`，`CopyToOutputDirectory = PreserveNewest`
+- 依赖：ONNX Runtime 1.1.0（统一包），websocket-sharp
+
+**Windows (WPF 视觉升级线)**：
+- .NET 9，`cd detector/windows && dotnet build -c Release`
 - Release 输出已精简（commit `12cada0`）：`GenerateManifests=false` / `SignManifests=false` 关闭 ClickOnce；`AllowedReferenceRelatedFileExtensions=.allowedextension` 阻止引用 DLL 的 `.pdb` / `.xml` 跟随复制；运行时图标用 `Icon.ExtractAssociatedIcon` 从 EXE 自身读取，不再复制 `VisionGuard.ico`
 - 若使用自动编译/CI，需确保 MSBuild 能解析 NuGet packages 路径，或预先执行 `nuget restore`
 - 生成 → 发布时，检查输出目录是否包含完整的 `Assets/` 子目录，缺失资源文件会导致运行时报错
