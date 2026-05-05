@@ -296,7 +296,7 @@ namespace VisionGuard
                 return;
             }
 
-            _overlayPanel.UpdateFrame(e.Frame, e.Detections);
+            UpdatePreview(e.Frame, e.Detections);
 
             string inferText = $"推理 {e.InferenceMs} ms";
             BeginInvoke(new Action(() => _tsInferMs.Text = inferText));

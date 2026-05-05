@@ -35,12 +35,11 @@ namespace VisionGuard
 
             // 监控目标（6 类 CheckBox）
             HashSet<string> watched = SettingsStore.GetStringList("WatchedClasses");
-            for (int i = 0; i < _targetCheckBoxes.Length; i++)
-                _targetCheckBoxes[i].Checked = watched.Contains(_targetClassKeys[i]);
-            // 兼容旧数据：空集合时默认只选 "person"
+            for (int i = 0; i < _targetClassKeys.Length; i++)
+                _targetListBox.SetItemChecked(i, watched.Contains(_targetClassKeys[i]));
             if (watched.Count == 0)
-                for (int i = 0; i < _targetCheckBoxes.Length; i++)
-                    _targetCheckBoxes[i].Checked = _targetClassKeys[i] == "person";
+                for (int i = 0; i < _targetClassKeys.Length; i++)
+                    _targetListBox.SetItemChecked(i, _targetClassKeys[i] == "person");
 
             // 捕获模式
             string modeStr = SettingsStore.GetString("CaptureMode", CaptureMode.ScreenRegion.ToString());
@@ -139,8 +138,8 @@ namespace VisionGuard
 
             // 监控目标
             var watched = new List<string>();
-            for (int i = 0; i < _targetCheckBoxes.Length; i++)
-                if (_targetCheckBoxes[i].Checked)
+            for (int i = 0; i < _targetClassKeys.Length; i++)
+                if (_targetListBox.GetItemChecked(i))
                     watched.Add(_targetClassKeys[i]);
             SettingsStore.Set("WatchedClasses", string.Join(",", watched));
 
@@ -175,8 +174,8 @@ namespace VisionGuard
         private string GetWatchedClassesString()
         {
             var list = new System.Collections.Generic.List<string>();
-            for (int i = 0; i < _targetCheckBoxes.Length; i++)
-                if (_targetCheckBoxes[i].Checked)
+            for (int i = 0; i < _targetClassKeys.Length; i++)
+                if (_targetListBox.GetItemChecked(i))
                     list.Add(_targetClassKeys[i]);
             return string.Join(",", list);
         }
@@ -346,8 +345,8 @@ namespace VisionGuard
                             if (!string.IsNullOrEmpty(trimmed))
                                 classes.Add(trimmed);
                         }
-                    for (int i = 0; i < _targetCheckBoxes.Length; i++)
-                        _targetCheckBoxes[i].Checked = classes.Contains(_targetClassKeys[i]);
+                    for (int i = 0; i < _targetClassKeys.Length; i++)
+                        _targetListBox.SetItemChecked(i, classes.Contains(_targetClassKeys[i]));
                     if (_monitorService.IsStarted)
                         _monitorService.UpdateConfig(BuildConfig());
                     _serverPushService.SendCommandAck("set-config:targets", true);

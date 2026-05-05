@@ -1,7 +1,7 @@
 // ┌─────────────────────────────────────────────────────────┐
 // │ AlertStore.ts                                           │
 // │ 角色：报警记录持久化存储（内存循环缓冲 + 文件持久化）     │
-// │ 对外 API：addAlert(), getAlerts(), getAlert()            │
+// │ 对外 API：addAlert(), getAlerts()                        │
 // │ 策略：超出 maxAlertsPerDevice 时淘汰最旧；超 TTL 时清理  │
 // │ 持久化：启动时从 data/alerts.json 加载；变更时自动保存   │
 // └─────────────────────────────────────────────────────────┘
@@ -109,19 +109,6 @@ export function getAlerts(deviceId?: string, since?: number, limit = 50): AlertR
   }
 
   return all.slice(0, limit);
-}
-
-/**
- * 查询单条报警记录
- */
-export function getAlert(alertId: string): AlertRecord | undefined {
-  const now = Date.now();
-  const deadline = now - alertTtlMs;
-  for (const list of store.values()) {
-    const found = list.find(r => r.alertId === alertId && r.createdAt >= deadline);
-    if (found) return found;
-  }
-  return undefined;
 }
 
 /**

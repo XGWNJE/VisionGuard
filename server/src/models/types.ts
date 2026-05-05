@@ -31,13 +31,6 @@ export interface AlertRecord {
   createdAt: number;          // Date.now()
 }
 
-/** GET /api/alerts 响应 */
-export interface AlertsQueryResponse {
-  ok: boolean;
-  alerts?: AlertRecord[];
-  error?: string;
-}
-
 // ── WebSocket 消息 ─────────────────────────────────────────
 
 /** 客户端 → 服务器：认证 */

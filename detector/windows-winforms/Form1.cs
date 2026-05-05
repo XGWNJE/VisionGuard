@@ -1,10 +1,4 @@
-// ┌─────────────────────────────────────────────────────────┐
-// │ Form1.cs — 核心：字段、构造、生命周期、配置、状态控制   │
-// │ 拆分文件：                                             │
-// │   Form1.Monitor.cs  — 监控控制：区域选择、启停、回调   │
-// │   Form1.Server.cs   — 设置持久化、服务器推送、远程配置 │
-// │   Form1.UI.cs       — UI 构建：主布局、页面、辅助方法  │
-// └─────────────────────────────────────────────────────────┘
+// Form1.cs — 核心：字段、构造、生命周期、配置、状态控制
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -14,101 +8,91 @@ using System.Windows.Forms;
 using VisionGuard.Capture;
 using VisionGuard.Models;
 using VisionGuard.Services;
-using VisionGuard.UI;
 using VisionGuard.Utils;
 
 namespace VisionGuard
 {
     public partial class Form1 : Form
     {
-        // ── 服务 ────────────────────────────────────────────────────
+        // Services
         private AlertService   _alertService;
         private MonitorService _monitorService;
         private LogManager     _log;
 
-        // ── 高 DPI ──────────────────────────────────────────────────
-        private float _scaleFactor = 1.0f;
+        // Preview
+        private Bitmap          _previewFrame;
+        private List<Detection> _previewDetections;
+        private readonly object _previewLock = new object();
 
-        // ── 菜单 ───────────────────────────────────────────────────
-        private Panel _menuPanel;
-        private MenuButton _menuCapture, _menuParams, _menuTargets, _menuServer;
-        private MenuButton[] _allMenuButtons;
+        // Menu
+        private Panel   _menuPanel;
+        private Button  _menuCapture, _menuParams, _menuTargets, _menuServer;
+        private Button[] _allMenuButtons;
 
-        // ── 预览 ──────────────────────────────────────────────────
-        private DetectionOverlayPanel _overlayPanel;
+        // Preview panel
+        private Panel   _previewPanel;
 
-        // ── 页面容器 ────────────────────────────────────────────────
+        // Page container
         private Panel _pageContainer;
         private Panel _pageCapture, _pageParams, _pageTargets, _pageServer;
 
-        // ── 捕获页 控件 ─────────────────────────────────────────────
-        private Label           _lblRegionInfo;
-        private FlatRoundButton _btnSelectRegion;
-        private FlatRoundButton _btnPickWindow;
-        private FlatRoundButton _btnStart, _btnStop;
-        private FlatRoundButton _btnEditMasks;
-        private Label           _lblMaskInfo;
+        // Capture page
+        private Label  _lblRegionInfo;
+        private Button _btnSelectRegion;
+        private Button _btnPickWindow;
+        private Button _btnStart, _btnStop;
+        private Button _btnEditMasks;
+        private Label  _lblMaskInfo;
 
-        // ── 参数页 控件 ─────────────────────────────────────────────
-        private DarkSlider      _trkThreshold;
-        private Label           _lblThreshold;
-        private DarkSlider      _sliderSamplingRate;
-        private Label           _lblSamplingRate;
-        private DarkSlider      _sliderCooldown;
-        private Label           _lblCooldown;
-        private ComboBox        _cmbModel;
+        // Params page
+        private TrackBar _trkThreshold;
+        private Label    _lblThreshold;
+        private TrackBar _sliderSamplingRate;
+        private Label    _lblSamplingRate;
+        private TrackBar _sliderCooldown;
+        private Label    _lblCooldown;
+        private ComboBox _cmbModel;
 
-        // ── 目标页 控件 ─────────────────────────────────────────────
-        private CheckBox[]      _targetCheckBoxes;
+        // Targets page
+        private CheckedListBox   _targetListBox;
         private readonly string[] _targetClassKeys = { "person", "bicycle", "car", "motorcycle", "bus", "truck" };
 
-        // ── 服务器页 控件 ────────────────────────────────────────────
-        private TextBox  _txtDeviceName;
-        private Label    _lblConnState;
-        private Label    _lblConnDetail;   // 第二行：详细状态说明
-        private FlatRoundButton _btnRetry; // 手动重试按钮
+        // Server page
+        private TextBox _txtDeviceName;
+        private Label   _lblConnState;
+        private Label   _lblConnDetail;
+        private Button  _btnRetry;
 
-        // ── 服务器硬编码常量 ──────────────────────────────────────────
+        // Server constants
         private const string ServerUrl = "http://216.36.111.208:3000";
         private const string ServerApiKey = "XG-VisionGuard-2024";
 
-        // ── ServerPushService + 心跳定时器 ───────────────────────────
+        // ServerPushService + heartbeat
         private ServerPushService _serverPushService;
         private System.Windows.Forms.Timer _heartbeatTimer;
 
-        // ── 状态栏 ──────────────────────────────────────────────────
+        // StatusBar
         private ToolStripStatusLabel _tsStatus, _tsLastAlert, _tsInferMs;
 
-        // ── 系统托盘 ──────────────────────────────────────────────
+        // System tray
         private NotifyIcon _notifyIcon;
 
-        // ── 运行时目标窗口（不持久化 HWND）──────────────────────────
-        private WindowInfo    _targetWindow;   // null = 屏幕区域模式
-        private Rectangle     _screenRegion;   // ScreenRegion 模式下的坐标
-        private Rectangle     _windowSubRegion; // WindowHandle 子区域
+        // Runtime target
+        private WindowInfo _targetWindow;
+        private Rectangle  _screenRegion;
+        private Rectangle  _windowSubRegion;
 
-        // ── 模型选择 ────────────────────────────────────────────────
+        // Model
         private string _selectedModel = "yolov5nu";
-
         private string ModelPath => Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory, "Assets", $"{_selectedModel}.onnx");
 
-        // ── 遮罩区域 ────────────────────────────────────────────────
-        // 相对坐标 [0,1]，对齐 Android 端 MaskRegion；本地配置不通过 set-config 远程同步
+        // Mask regions (relative coords [0,1])
         private List<RectangleF> _maskRegions = new List<RectangleF>();
-
-        // ════════════════════════════════════════════════════════════
-        // 构造
-        // ════════════════════════════════════════════════════════════
 
         public Form1()
         {
             InitializeComponent();
-
-            // 高 DPI：在任何控件创建前确定缩放系数
-            AutoScaleMode       = AutoScaleMode.Dpi;
-            AutoScaleDimensions = new SizeF(96F, 96F);
-
             BuildUI();
 
             _alertService   = new AlertService();
@@ -125,10 +109,8 @@ namespace VisionGuard
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
+            Text = "VisionGuard";
 
-            this.Text = "VisionGuard";
-
-            // 构建4个页面内容
             BuildCapturePage();
             BuildParamsPage();
             BuildTargetsPage();
@@ -139,7 +121,6 @@ namespace VisionGuard
             UpdateControlState(started: false);
             ShowPage(_pageCapture, _menuCapture);
 
-            // 启动时同步 NTP 时钟
             Task.Run(async () =>
             {
                 await Utils.NtpSync.SyncAsync();
@@ -148,38 +129,12 @@ namespace VisionGuard
             _log.Info("VisionGuard 已就绪，请选择捕获区域或目标窗口后点击「开始」。");
         }
 
-        // ════════════════════════════════════════════════════════════
-        // 高 DPI
-        // ════════════════════════════════════════════════════════════
-
-        protected override void OnLoad(EventArgs e)
-        {
-            base.OnLoad(e);
-            _scaleFactor = DeviceDpi / 96.0f;
-        }
-
-        protected override void OnDpiChanged(DpiChangedEventArgs e)
-        {
-            base.OnDpiChanged(e);
-            _scaleFactor = e.DeviceDpiNew / 96.0f;
-
-            // DPI 变化时重新调整窗口大小（固定逻辑尺寸 960×640）
-            int w = (int)(960 * _scaleFactor);
-            int h = (int)(640 * _scaleFactor);
-            Size = new Size(w, h);
-
-            _overlayPanel?.Invalidate();
-        }
-
-        // ════════════════════════════════════════════════════════════
-        // 配置构建
-        // ════════════════════════════════════════════════════════════
-
+        // Config
         private MonitorConfig BuildConfig()
         {
             var watched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            for (int i = 0; i < _targetCheckBoxes.Length; i++)
-                if (_targetCheckBoxes[i].Checked)
+            for (int i = 0; i < _targetClassKeys.Length; i++)
+                if (_targetListBox.GetItemChecked(i))
                     watched.Add(_targetClassKeys[i]);
 
             var cfg = new MonitorConfig
@@ -193,10 +148,10 @@ namespace VisionGuard
 
             if (_targetWindow != null)
             {
-                cfg.CaptureMode          = CaptureMode.WindowHandle;
-                cfg.TargetWindowTitle    = _targetWindow.Title;
-                cfg.TargetWindowHandle   = _targetWindow.Handle;
-                cfg.WindowSubRegion      = _windowSubRegion;
+                cfg.CaptureMode        = CaptureMode.WindowHandle;
+                cfg.TargetWindowTitle  = _targetWindow.Title;
+                cfg.TargetWindowHandle = _targetWindow.Handle;
+                cfg.WindowSubRegion    = _windowSubRegion;
                 cfg.CaptureRegion = _windowSubRegion != Rectangle.Empty
                     ? _windowSubRegion
                     : _targetWindow.Bounds;
@@ -207,30 +162,24 @@ namespace VisionGuard
                 cfg.CaptureRegion = _screenRegion;
             }
 
-            // 注入当前遮罩列表（防御性拷贝，避免 UI 后续编辑影响 MonitorService 中的 _config）
             cfg.MaskRegions = new List<RectangleF>(_maskRegions);
-
             return cfg;
         }
 
-        // ════════════════════════════════════════════════════════════
-        // 控件状态
-        // ════════════════════════════════════════════════════════════
-
+        // Control state
         private void UpdateControlState(bool started)
         {
-            _btnStart.Enabled        = !started;
-            _btnStop.Enabled         =  started;
-            _btnSelectRegion.Enabled = !started;
-            _btnPickWindow.Enabled   = !started;
+            _btnStart.Enabled         = !started;
+            _btnStop.Enabled          =  started;
+            _btnSelectRegion.Enabled  = !started;
+            _btnPickWindow.Enabled    = !started;
             if (_btnEditMasks != null) _btnEditMasks.Enabled = !started;
             _sliderSamplingRate.Enabled = !started;
-            _sliderCooldown.Enabled = !started;
-            _trkThreshold.Enabled = !started;
-            foreach (var cb in _targetCheckBoxes)
-                cb.Enabled = !started;
+            _sliderCooldown.Enabled     = !started;
+            _trkThreshold.Enabled       = !started;
+            _targetListBox.Enabled = !started;
 
-            _tsStatus.Text      = started ? "● 监控中" : "○ 已停止";
+            _tsStatus.Text      = started ? "监控中" : "已停止";
             _tsStatus.ForeColor = started ? Color.LimeGreen : Color.Gray;
         }
 
@@ -239,7 +188,7 @@ namespace VisionGuard
             if (_targetWindow != null)
             {
                 string sub = _windowSubRegion != Rectangle.Empty
-                    ? $"  子区域 {_windowSubRegion.Width}×{_windowSubRegion.Height}"
+                    ? $"  子区域 {_windowSubRegion.Width}x{_windowSubRegion.Height}"
                     : "  全窗口";
                 _lblRegionInfo.Text = $"[{_targetWindow.Title}]{sub}";
             }
@@ -247,23 +196,19 @@ namespace VisionGuard
             {
                 _lblRegionInfo.Text = _screenRegion == Rectangle.Empty
                     ? "未选择区域"
-                    : $"X:{_screenRegion.X}  Y:{_screenRegion.Y}  {_screenRegion.Width}×{_screenRegion.Height}";
+                    : $"X:{_screenRegion.X}  Y:{_screenRegion.Y}  {_screenRegion.Width}x{_screenRegion.Height}";
             }
         }
 
-        /// <summary>刷新「当前遮罩：N 个」标签。</summary>
         private void UpdateMaskInfoLabel()
         {
             if (_lblMaskInfo == null) return;
             int n = _maskRegions != null ? _maskRegions.Count : 0;
-            _lblMaskInfo.Text = n == 0 ? "当前遮罩：—" : $"当前遮罩：{n} 个";
+            _lblMaskInfo.Text = n == 0 ? "当前遮罩：-" : $"当前遮罩：{n} 个";
         }
 
-        // ════════════════════════════════════════════════════════════
-        // 菜单切换
-        // ════════════════════════════════════════════════════════════
-
-        private void ShowPage(Panel page, MenuButton activeMenu)
+        // Menu switching
+        private void ShowPage(Panel page, Button activeMenu)
         {
             _pageCapture.Visible = (page == _pageCapture);
             _pageParams.Visible  = (page == _pageParams);
@@ -271,22 +216,14 @@ namespace VisionGuard
             _pageServer.Visible  = (page == _pageServer);
 
             foreach (var btn in _allMenuButtons)
-                btn.IsSelected = (btn == activeMenu);
+                btn.BackColor = (btn == activeMenu) ? SystemColors.GradientActiveCaption : SystemColors.Control;
         }
 
-        // ════════════════════════════════════════════════════════════
-        // 托盘 / 关闭
-        // ════════════════════════════════════════════════════════════
-
+        // Tray
         private void SetupTrayIcon()
         {
             var trayIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Shield;
-            _notifyIcon = new NotifyIcon
-            {
-                Text    = "VisionGuard",
-                Icon    = trayIcon,
-                Visible = true
-            };
+            _notifyIcon = new NotifyIcon { Text = "VisionGuard", Icon = trayIcon, Visible = true };
             var menu = new ContextMenu(new[]
             {
                 new MenuItem("显示主窗口", (s, ev) => { Show(); WindowState = FormWindowState.Normal; Activate(); }),
@@ -295,11 +232,9 @@ namespace VisionGuard
             _notifyIcon.ContextMenu = menu;
             _notifyIcon.DoubleClick += (s, ev) => { Show(); WindowState = FormWindowState.Normal; Activate(); };
 
-            // 最小化时隐藏到托盘，不在任务栏占位
             Resize += (s, ev) =>
             {
-                if (WindowState == FormWindowState.Minimized)
-                    Hide();
+                if (WindowState == FormWindowState.Minimized) Hide();
             };
         }
 
@@ -316,10 +251,7 @@ namespace VisionGuard
             base.OnFormClosing(e);
         }
 
-        // ════════════════════════════════════════════════════════════
-        // 辅助方法
-        // ════════════════════════════════════════════════════════════
-
+        // Helpers
         private static string BuildExceptionMessage(Exception ex)
         {
             var sb = new System.Text.StringBuilder();
@@ -327,7 +259,7 @@ namespace VisionGuard
             int depth = 0;
             while (cur != null && depth < 6)
             {
-                if (depth > 0) sb.AppendLine("\n─── InnerException ───");
+                if (depth > 0) sb.AppendLine("\n--- InnerException ---");
                 sb.AppendLine(cur.GetType().Name + ": " + cur.Message);
                 cur = cur.InnerException;
                 depth++;
@@ -335,25 +267,29 @@ namespace VisionGuard
             return sb.ToString();
         }
 
-        /// <summary>
-        /// 捕获选区是否已设定（不依赖 MonitorService.IsReady，
-        /// MonitorService 启动前 _config 为 null 会导致 IsReady 始终 false）。
-        /// </summary>
         private bool IsRegionReady
         {
             get
             {
-                if (_targetWindow != null) return true;                          // 窗口捕获模式
-                return _screenRegion.Width >= 32 && _screenRegion.Height >= 32; // 屏幕区域模式
+                if (_targetWindow != null) return true;
+                return _screenRegion.Width >= 32 && _screenRegion.Height >= 32;
             }
         }
 
-        /// <summary>安全解析 TextBox 值（用于 BuildConfig）。</summary>
-        private static int ParseInt(string text, int min, int max, int def)
+        // Preview update (called from OnFrameProcessed)
+        private void UpdatePreview(Bitmap frame, List<Detection> detections)
         {
-            if (int.TryParse(text, out int v))
-                return Math.Max(min, Math.Min(max, v));
-            return def;
+            lock (_previewLock)
+            {
+                _previewFrame?.Dispose();
+                _previewFrame = frame;
+                _previewDetections = detections;
+            }
+            if (_previewPanel.IsDisposed) return;
+            if (_previewPanel.InvokeRequired)
+                _previewPanel.BeginInvoke(new Action(() => _previewPanel.Invalidate()));
+            else
+                _previewPanel.Invalidate();
         }
     }
 }
