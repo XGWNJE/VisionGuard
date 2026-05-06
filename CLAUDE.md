@@ -64,7 +64,7 @@ detector/windows/            后置摄像头 + ONNX          Node.js / WebSocket
 - [YoloOutputParser.cs](detector/windows-winforms/Inference/YoloOutputParser.cs) — YOLOv5nu 输出解析（格式 `[1, 84, 2100]`，绝对坐标，无内置 NMS）
 - [CocoClassMap.cs](detector/windows-winforms/Data/CocoClassMap.cs) — COCO 80 类中英文映射，`TargetClassNames` 定义 6 类监控目标子集
 
-**UI 架构**：固定 960×640 暗色 WinForms，左侧图标菜单 + 右侧内容区（预览 58% + 页面 42%）
+**UI 架构**：固定 960×640 原生 WinForms（浅色默认主题），左侧图标菜单 + 右侧内容区（预览 58% + 页面 42%）
 - **捕获页**：区域/窗口选择、**遮罩区域绘制**（启动 `MaskEditorForm`）、当前遮罩计数、开始/停止监控
 - **参数页**：置信度阈值 Slider（10–95%，显示 "N%"）、目标采样率 Slider（1–5 次/秒）、警报推送冷却时间 Slider（1–300 秒）、模型选择下拉框（YOLOv5nu 320）
 - **目标页**：6 个 `CheckBox`（人 / 自行车 / 汽车 / 摩托车 / 客车 / 卡车），默认只勾选"人"；空选视为检测全部

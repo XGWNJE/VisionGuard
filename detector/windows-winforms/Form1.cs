@@ -24,17 +24,12 @@ namespace VisionGuard
         private List<Detection> _previewDetections;
         private readonly object _previewLock = new object();
 
-        // Menu
-        private Panel   _menuPanel;
-        private Button  _menuCapture, _menuParams, _menuTargets, _menuServer;
-        private Button[] _allMenuButtons;
-
         // Preview panel
         private Panel   _previewPanel;
 
-        // Page container
-        private Panel _pageContainer;
-        private Panel _pageCapture, _pageParams, _pageTargets, _pageServer;
+        // Tab control
+        private TabControl _tabControl;
+        private TabPage _tabCapture, _tabParams, _tabTargets, _tabServer;
 
         // Capture page
         private Label  _lblRegionInfo;
@@ -119,7 +114,6 @@ namespace VisionGuard
             WireEvents();
             LoadSettings();
             UpdateControlState(started: false);
-            ShowPage(_pageCapture, _menuCapture);
 
             Task.Run(async () =>
             {
@@ -207,17 +201,7 @@ namespace VisionGuard
             _lblMaskInfo.Text = n == 0 ? "当前遮罩：-" : $"当前遮罩：{n} 个";
         }
 
-        // Menu switching
-        private void ShowPage(Panel page, Button activeMenu)
-        {
-            _pageCapture.Visible = (page == _pageCapture);
-            _pageParams.Visible  = (page == _pageParams);
-            _pageTargets.Visible = (page == _pageTargets);
-            _pageServer.Visible  = (page == _pageServer);
-
-            foreach (var btn in _allMenuButtons)
-                btn.BackColor = (btn == activeMenu) ? SystemColors.GradientActiveCaption : SystemColors.Control;
-        }
+        // Menu switching — handled by TabControl natively
 
         // Tray
         private void SetupTrayIcon()

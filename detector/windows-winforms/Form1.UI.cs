@@ -1,4 +1,4 @@
-// Form1.UI.cs — UI 构建：主布局、各页面、事件绑定、辅助方法
+// Form1.UI.cs — UI 构建：主布局（左预览 + 右 TabControl）、各页面、事件绑定、辅助方法
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -13,7 +13,7 @@ namespace VisionGuard
     public partial class Form1
     {
         // ════════════════════════════════════════════════════════════
-        // BuildUI — 主布局：960x640，左侧菜单 + 内容区 + 状态栏
+        // BuildUI — 主布局：960x640，左预览（2/3）+ 右 TabControl（1/3）+ 状态栏
         // ════════════════════════════════════════════════════════════
 
         private void BuildUI()
@@ -35,54 +35,36 @@ namespace VisionGuard
             _tsInferMs   = new ToolStripStatusLabel("推理 - ms") { Alignment = ToolStripItemAlignment.Right };
             strip.Items.AddRange(new ToolStripItem[] { _tsStatus, _tsLastAlert, _tsInferMs });
 
-            // Left menu panel
-            _menuPanel = new Panel { Dock = DockStyle.Left, Width = 72 };
-
-            _menuCapture = new Button { Text = "捕获",   Dock = DockStyle.Top, Height = 56, FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true };
-            _menuParams  = new Button { Text = "参数",   Dock = DockStyle.Top, Height = 56, FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true };
-            _menuTargets = new Button { Text = "目标",   Dock = DockStyle.Top, Height = 56, FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true };
-            _menuServer  = new Button { Text = "服务器", Dock = DockStyle.Top, Height = 56, FlatStyle = FlatStyle.Flat, UseVisualStyleBackColor = true };
-            _allMenuButtons = new[] { _menuCapture, _menuParams, _menuTargets, _menuServer };
-
-            // Dock.Top stacks bottom-to-top by add order — add in reverse
-            _menuPanel.Controls.Add(_menuServer);
-            _menuPanel.Controls.Add(_menuTargets);
-            _menuPanel.Controls.Add(_menuParams);
-            _menuPanel.Controls.Add(_menuCapture);
-
-            // Preview panel: 1:1 square, frame drawn scale-to-fit inside
-            _previewPanel = new Panel { Size = new Size(420, 420) };
+            // Preview container: fills left column, preview panel fills it and scales frame proportionally
+            var previewContainer = new Panel { Dock = DockStyle.Fill };
+            _previewPanel = new Panel { Dock = DockStyle.Fill };
             EnableDoubleBuffering(_previewPanel);
             _previewPanel.Paint += PreviewPanel_Paint;
+            previewContainer.Controls.Add(_previewPanel);
 
-            // Page container (4 pages, stacked with Dock.Fill, toggled by Visible)
-            _pageCapture = new Panel { Dock = DockStyle.Fill, Visible = true };
-            _pageParams  = new Panel { Dock = DockStyle.Fill, Visible = false };
-            _pageTargets = new Panel { Dock = DockStyle.Fill, Visible = false };
-            _pageServer  = new Panel { Dock = DockStyle.Fill, Visible = false };
+            // TabControl: 4 tabs for right side (Win7 native style)
+            _tabControl = new TabControl { Dock = DockStyle.Fill };
+            _tabCapture = new TabPage("捕获");
+            _tabParams  = new TabPage("参数");
+            _tabTargets = new TabPage("目标");
+            _tabServer  = new TabPage("服务器");
+            _tabControl.TabPages.AddRange(new[] { _tabCapture, _tabParams, _tabTargets, _tabServer });
 
-            _pageContainer = new Panel { Dock = DockStyle.Fill };
-            _pageContainer.Controls.Add(_pageCapture);
-            _pageContainer.Controls.Add(_pageParams);
-            _pageContainer.Controls.Add(_pageTargets);
-            _pageContainer.Controls.Add(_pageServer);
-
-            // Layout: left column holds square preview, right column fills rest
+            // Layout: left 2/3 = preview, right 1/3 = TabControl
             var contentLayout = new TableLayoutPanel
             {
                 Dock        = DockStyle.Fill,
                 ColumnCount = 2,
                 RowCount    = 1
             };
-            contentLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 432F));
-            contentLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            contentLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 66.67F));
+            contentLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33F));
             contentLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            contentLayout.Controls.Add(_previewPanel,  0, 0);
-            contentLayout.Controls.Add(_pageContainer, 1, 0);
+            contentLayout.Controls.Add(previewContainer, 0, 0);
+            contentLayout.Controls.Add(_tabControl,      1, 0);
 
             // Assemble
             Controls.Add(contentLayout);
-            Controls.Add(_menuPanel);
             Controls.Add(strip);
 
             ResumeLayout(false);
@@ -174,48 +156,35 @@ namespace VisionGuard
 
         private void BuildCapturePage()
         {
-            int fh    = Font.Height;
-            int pad   = 12;
-            int gap   = fh / 3;
-            int btnH  = fh + 12;
-            int y     = 12;
+            var page = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12) };
+            int fh = Font.Height;
+            int gap = fh / 3;
 
-            _pageCapture.Controls.Add(MakeTitle("捕获区域", pad, ref y, fh));
+            var title1 = new Label { Text = "捕获区域", Dock = DockStyle.Top, Height = fh + 4, Font = new Font(Font, FontStyle.Bold) };
+            page.Controls.Add(title1);
+            AddGap(page, gap);
 
-            _lblRegionInfo = new Label
-            {
-                Text = "未选择区域", Left = pad, Top = y,
-                Width = _pageCapture.ClientSize.Width - pad * 2,
-                Height = fh + 4, AutoSize = false,
-                Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top
-            };
-            _pageCapture.Controls.Add(_lblRegionInfo);
-            y += fh + 4 + gap;
+            _lblRegionInfo = new Label { Text = "未选择区域", Dock = DockStyle.Top, Height = fh + 4 };
+            page.Controls.Add(_lblRegionInfo);
+            AddGap(page, gap);
 
-            _btnPickWindow   = MakePageBtn(_pageCapture, "选择窗口...",   pad, btnH, ref y);
-            y += gap;
-            _btnSelectRegion = MakePageBtn(_pageCapture, "拖拽选区...",   pad, btnH, ref y);
-            y += gap;
-            _btnEditMasks    = MakePageBtn(_pageCapture, "遮罩区域...",   pad, btnH, ref y);
-            y += gap / 2;
+            _btnPickWindow   = AddBtn(page, "选择窗口...", fh + 12); AddGap(page, gap);
+            _btnSelectRegion = AddBtn(page, "拖拽选区...", fh + 12); AddGap(page, gap);
+            _btnEditMasks    = AddBtn(page, "遮罩区域...", fh + 12); AddGap(page, gap / 2);
 
-            _lblMaskInfo = new Label
-            {
-                Text = "当前遮罩：-", Left = pad, Top = y,
-                Width = _pageCapture.ClientSize.Width - pad * 2,
-                Height = fh + 4, AutoSize = false,
-                Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top
-            };
-            _pageCapture.Controls.Add(_lblMaskInfo);
-            y += fh + 4 + gap;
+            _lblMaskInfo = new Label { Text = "当前遮罩：-", Dock = DockStyle.Top, Height = fh + 4 };
+            page.Controls.Add(_lblMaskInfo);
+            AddGap(page, gap * 2);
 
-            y += fh;
-            _pageCapture.Controls.Add(MakeTitle("监控控制", pad, ref y, fh));
+            var title2 = new Label { Text = "监控控制", Dock = DockStyle.Top, Height = fh + 4, Font = new Font(Font, FontStyle.Bold) };
+            page.Controls.Add(title2);
+            AddGap(page, gap);
 
-            _btnStart = MakePageBtn(_pageCapture, "开始监控", pad, btnH + 4, ref y);
-            y += gap;
-            _btnStop  = MakePageBtn(_pageCapture, "停止监控", pad, btnH + 4, ref y);
+            _btnStart = AddBtn(page, "开始监控", fh + 16); AddGap(page, gap);
+            _btnStop  = AddBtn(page, "停止监控", fh + 16);
             _btnStop.Enabled = false;
+
+            _tabCapture.Controls.Add(page);
         }
 
         // ════════════════════════════════════════════════════════════
@@ -224,99 +193,31 @@ namespace VisionGuard
 
         private void BuildParamsPage()
         {
-            int fh      = Font.Height;
-            int pad     = 12;
-            int gap     = fh / 3;
-            int sliderH = fh + 16;
-            int y       = 12;
+            var page = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12) };
+            int fh = Font.Height;
+            int gap = fh / 3;
+            int sliderH = fh * 2 + 8;
 
-            // Confidence threshold
-            _pageParams.Controls.Add(MakeTitle("置信度阈值", pad, ref y, fh));
+            AddTitle(page, "置信度阈值", fh); AddGap(page, gap);
+            _trkThreshold = AddSlider(page, 10, 95, 45, 10, sliderH); AddGap(page, gap);
+            _lblThreshold = AddVal(page, "45%", fh); AddGap(page, gap * 2);
 
-            _trkThreshold = new TrackBar
-            {
-                Left = pad, Top = y, Height = sliderH,
-                Width = _pageParams.ClientSize.Width - pad * 2,
-                Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top,
-                Minimum = 10, Maximum = 95, Value = 45,
-                TickFrequency = 10
-            };
-            _pageParams.Controls.Add(_trkThreshold);
-            y += sliderH + gap;
+            AddTitle(page, "目标采样率", fh); AddGap(page, gap);
+            _sliderSamplingRate = AddSlider(page, 1, 5, 3, 1, sliderH); AddGap(page, gap);
+            _lblSamplingRate = AddVal(page, "3 次/秒", fh); AddGap(page, gap * 2);
 
-            _lblThreshold = new Label
-            {
-                Text = "45%", Left = pad, Top = y, Height = fh + 2,
-                Width = _pageParams.ClientSize.Width - pad * 2,
-                AutoSize = false,
-                Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top
-            };
-            _pageParams.Controls.Add(_lblThreshold);
-            y += fh + 2 + gap + fh / 2;
+            AddTitle(page, "警报推送冷却时间", fh); AddGap(page, gap);
+            _sliderCooldown = AddSlider(page, 1, 300, 5, 30, sliderH); AddGap(page, gap);
+            _lblCooldown = AddVal(page, "5 秒", fh); AddGap(page, gap * 2);
 
-            // Target sampling rate
-            _pageParams.Controls.Add(MakeTitle("目标采样率", pad, ref y, fh));
-
-            _sliderSamplingRate = new TrackBar
-            {
-                Left = pad, Top = y, Height = sliderH,
-                Width = _pageParams.ClientSize.Width - pad * 2,
-                Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top,
-                Minimum = 1, Maximum = 5, Value = 3,
-                TickFrequency = 1
-            };
-            _pageParams.Controls.Add(_sliderSamplingRate);
-            y += sliderH + gap;
-
-            _lblSamplingRate = new Label
-            {
-                Text = "3 次/秒", Left = pad, Top = y, Height = fh + 2,
-                Width = _pageParams.ClientSize.Width - pad * 2,
-                AutoSize = false,
-                Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top
-            };
-            _pageParams.Controls.Add(_lblSamplingRate);
-            y += fh + 2 + gap + fh / 2;
-
-            // Alert cooldown
-            _pageParams.Controls.Add(MakeTitle("警报推送冷却时间", pad, ref y, fh));
-
-            _sliderCooldown = new TrackBar
-            {
-                Left = pad, Top = y, Height = sliderH,
-                Width = _pageParams.ClientSize.Width - pad * 2,
-                Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top,
-                Minimum = 1, Maximum = 300, Value = 5,
-                TickFrequency = 30
-            };
-            _pageParams.Controls.Add(_sliderCooldown);
-            y += sliderH + gap;
-
-            _lblCooldown = new Label
-            {
-                Text = "5 秒", Left = pad, Top = y, Height = fh + 2,
-                Width = _pageParams.ClientSize.Width - pad * 2,
-                AutoSize = false,
-                Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top
-            };
-            _pageParams.Controls.Add(_lblCooldown);
-            y += fh + 2 + gap + fh / 2;
-
-            // Model selection
-            _pageParams.Controls.Add(MakeTitle("模型选择", pad, ref y, fh));
-
-            int rowH = fh + 12;
-            _cmbModel = new ComboBox
-            {
-                Left = pad, Top = y, Height = rowH,
-                Width = _pageParams.ClientSize.Width - pad * 2,
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top
-            };
+            AddTitle(page, "模型选择", fh); AddGap(page, gap);
+            _cmbModel = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Top };
             _cmbModel.Items.AddRange(new object[] { "YOLOv5nu 320 (轻量 ~10MB)" });
             _cmbModel.SelectedIndex = 0;
             _cmbModel.SelectedIndexChanged += (s, e) => { _selectedModel = "yolov5nu"; };
-            _pageParams.Controls.Add(_cmbModel);
+            page.Controls.Add(_cmbModel);
+
+            _tabParams.Controls.Add(page);
         }
 
         // ════════════════════════════════════════════════════════════
@@ -325,26 +226,33 @@ namespace VisionGuard
 
         private void BuildTargetsPage()
         {
-            int pad = 12;
-            int y   = 12;
+            _tabTargets.Padding = new Padding(12);
+            int fh = Font.Height;
+            int gap = fh / 3;
 
-            _pageTargets.Controls.Add(MakeTitle("监控目标", pad, ref y, Font.Height));
+            var tlp = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+            tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            tlp.RowStyles.Add(new RowStyle(SizeType.Absolute, fh + 4 + gap));
+            tlp.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            var title = new Label
+            {
+                Text = "监控目标", Dock = DockStyle.Fill, TextAlign = ContentAlignment.BottomLeft,
+                Font = new Font(Font, FontStyle.Bold), Margin = new Padding(0, 0, 0, gap)
+            };
+            tlp.Controls.Add(title, 0, 0);
 
             _targetListBox = new CheckedListBox
             {
-                Left           = pad,
-                Top            = y,
-                Width          = _pageTargets.ClientSize.Width - pad * 2,
-                Height         = _pageTargets.ClientSize.Height - y - pad,
-                CheckOnClick   = true,
+                Dock = DockStyle.Fill,
+                CheckOnClick = true,
                 IntegralHeight = false,
-                BorderStyle    = BorderStyle.FixedSingle,
-                Anchor         = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Right
+                BorderStyle = BorderStyle.FixedSingle
             };
             foreach (string key in _targetClassKeys)
                 _targetListBox.Items.Add(CocoClassMap.EnZh[key], key == "person");
-
-            _pageTargets.Controls.Add(_targetListBox);
+            tlp.Controls.Add(_targetListBox, 0, 1);
+            _tabTargets.Controls.Add(tlp);
         }
 
         // ════════════════════════════════════════════════════════════
@@ -353,74 +261,48 @@ namespace VisionGuard
 
         private void BuildServerPage()
         {
-            const int pad = 12;
+            var page = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12) };
             int fh = Font.Height;
-            int y  = 12;
+            int gap = fh / 3;
 
-            // Server connection
-            _pageServer.Controls.Add(MakeTitle("服务器连接", pad, ref y, fh));
+            AddTitle(page, "服务器连接", fh); AddGap(page, gap);
 
+            // Row: connection state + retry button
+            var connRow = new Panel { Dock = DockStyle.Top, Height = fh + 14 };
             _lblConnState = new Label
             {
-                Text      = "未连接",
-                Left      = pad,
-                Top       = y + 2,
-                AutoSize  = true,
-                Font      = new Font(Font, FontStyle.Bold),
+                Text = "未连接", Dock = DockStyle.Left, AutoSize = true,
+                Font = new Font(Font, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft
             };
-            _pageServer.Controls.Add(_lblConnState);
-
             _btnRetry = new Button
             {
-                Text   = "重试连接",
-                Left   = _pageServer.ClientSize.Width - pad - 100,
-                Top    = y,
-                Width  = 100,
-                Height = 28,
-                Anchor = AnchorStyles.Right | AnchorStyles.Top
+                Text = "重试连接", Dock = DockStyle.Right, Width = 96
             };
-            _pageServer.Controls.Add(_btnRetry);
-            y += 44;
+            connRow.Controls.Add(_btnRetry);
+            connRow.Controls.Add(_lblConnState);
+            page.Controls.Add(connRow);
+            AddGap(page, gap * 3);
 
             // Separator
-            _pageServer.Controls.Add(new Label
-            {
-                Left      = pad,
-                Top       = y,
-                Width     = _pageServer.ClientSize.Width - pad * 2,
-                Height    = 1,
-                BorderStyle = BorderStyle.Fixed3D,
-                Anchor    = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top
-            });
-            y += 17;
+            var sep = new Label { Dock = DockStyle.Top, Height = 1, BorderStyle = BorderStyle.Fixed3D };
+            page.Controls.Add(sep);
+            AddGap(page, gap * 3);
 
-            // Device name
-            _pageServer.Controls.Add(MakeTitle("设备名称", pad, ref y, fh));
+            AddTitle(page, "设备名称", fh); AddGap(page, gap);
 
-            _txtDeviceName = new TextBox
-            {
-                Left        = pad,
-                Top         = y,
-                Width       = 180,
-                Text        = Environment.MachineName,
-                Anchor      = AnchorStyles.Left | AnchorStyles.Top
-            };
-            _pageServer.Controls.Add(_txtDeviceName);
-
-            var btnApplyName = new Button
-            {
-                Text   = "应用",
-                Left   = pad + 180 + 8,
-                Top    = y,
-                Width  = 72,
-                Height = 22,
-                Anchor = AnchorStyles.Left | AnchorStyles.Top
-            };
-            _pageServer.Controls.Add(btnApplyName);
+            // Row: device name + apply button
+            var nameRow = new Panel { Dock = DockStyle.Top, Height = fh + 12 };
+            var btnApplyName = new Button { Text = "应用", Dock = DockStyle.Right, Width = 70 };
+            _txtDeviceName = new TextBox { Dock = DockStyle.Fill, Text = Environment.MachineName };
+            nameRow.Controls.Add(btnApplyName);
+            nameRow.Controls.Add(_txtDeviceName);
+            page.Controls.Add(nameRow);
 
             // Hidden detail label (still assigned by WireServerPushEvents)
             _lblConnDetail = new Label { Visible = false };
-            _pageServer.Controls.Add(_lblConnDetail);
+            page.Controls.Add(_lblConnDetail);
+
+            _tabServer.Controls.Add(page);
 
             // Button events
             _btnRetry.Click += (s, e) =>
@@ -451,12 +333,6 @@ namespace VisionGuard
 
         private void WireEvents()
         {
-            // Menu switching
-            _menuCapture.Click += (s, e) => ShowPage(_pageCapture, _menuCapture);
-            _menuParams.Click  += (s, e) => ShowPage(_pageParams,  _menuParams);
-            _menuTargets.Click += (s, e) => ShowPage(_pageTargets, _menuTargets);
-            _menuServer.Click  += (s, e) => ShowPage(_pageServer,  _menuServer);
-
             // Capture page
             _btnSelectRegion.Click += BtnSelectRegion_Click;
             _btnPickWindow.Click   += BtnPickWindow_Click;
@@ -476,33 +352,39 @@ namespace VisionGuard
         }
 
         // ════════════════════════════════════════════════════════════
-        // UI helpers
+        // UI helpers — all use Dock for layout, no absolute positioning
         // ════════════════════════════════════════════════════════════
 
-        private Label MakeTitle(string text, int padX, ref int y, int fh)
+        private static void AddGap(Control parent, int h)
         {
-            var lbl = new Label
-            {
-                Text = text, Left = padX, Top = y,
-                Height = fh + 4, AutoSize = false,
-                Font = new Font(Font, FontStyle.Bold),
-                Anchor = AnchorStyles.Left | AnchorStyles.Top
-            };
-            y += fh + 4 + fh / 3;
+            parent.Controls.Add(new Panel { Dock = DockStyle.Top, Height = h });
+        }
+
+        private static Button AddBtn(Control parent, string text, int h)
+        {
+            var btn = new Button { Text = text, Dock = DockStyle.Top, Height = h };
+            parent.Controls.Add(btn);
+            return btn;
+        }
+
+        private static void AddTitle(Control parent, string text, int fh)
+        {
+            var lbl = new Label { Text = text, Dock = DockStyle.Top, Height = fh + 4, Font = new Font(parent.Font, FontStyle.Bold) };
+            parent.Controls.Add(lbl);
+        }
+
+        private static Label AddVal(Control parent, string text, int fh)
+        {
+            var lbl = new Label { Text = text, Dock = DockStyle.Top, Height = fh + 2 };
+            parent.Controls.Add(lbl);
             return lbl;
         }
 
-        private static Button MakePageBtn(Panel page, string text, int padX, int btnH, ref int y)
+        private static TrackBar AddSlider(Control parent, int min, int max, int val, int tick, int h)
         {
-            var btn = new Button
-            {
-                Text = text, Left = padX, Top = y, Height = btnH,
-                Width = page.ClientSize.Width - padX * 2,
-                Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top
-            };
-            page.Controls.Add(btn);
-            y += btnH;
-            return btn;
+            var tb = new TrackBar { Minimum = min, Maximum = max, Value = val, TickFrequency = tick, Dock = DockStyle.Top, Height = h };
+            parent.Controls.Add(tb);
+            return tb;
         }
 
         private static void EnableDoubleBuffering(Control c)
