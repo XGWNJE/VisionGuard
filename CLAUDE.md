@@ -46,7 +46,7 @@ detector/windows/            后置摄像头 + ONNX          Node.js / WebSocket
 ### detector/windows-winforms — Windows 检测端（WinForms，Win7 兼容主力线）
 
 **核心模块**：
-- `Capture/` — 屏幕捕获、窗口枚举、子区域选择、`GlobalKeyHook.cs` 全局热键
+- `Capture/` — 屏幕捕获、窗口枚举、子区域选择
 - `Inference/` — ONNX Runtime 推理引擎、YOLO 输出解析、`ImagePreprocessor.cs` 图像预处理、`MaskApplier.cs` 推理前在 Bitmap 上 in-place 涂黑遮罩
 - `Services/` — 监控服务（定时推理循环）、报警服务（声光通知）、服务器推送服务（WS 连接）
 - `Models/` — DTO 数据对象（`AlertEvent.cs` / `Detection.cs` / `MonitorConfig.cs`，含 `MaskRegions` 字段）

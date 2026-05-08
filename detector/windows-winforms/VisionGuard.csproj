@@ -254,7 +254,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Capture\NativeMethods.cs" />
-    <Compile Include="Capture\GlobalKeyHook.cs" />
     <Compile Include="Capture\ScreenCapturer.cs" />
     <Compile Include="Capture\WindowInfo.cs" />
     <Compile Include="Capture\WindowEnumerator.cs" />

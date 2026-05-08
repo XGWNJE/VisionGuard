@@ -20,6 +20,7 @@ VisionGuard_Server/data/screenshots/
 
 # ===== Android 端 =====
 VisionGuard_Android/*.iml
+receiver/android/.idea/
 
 # ===== Detector Android 端 =====
 detector/android/.gradle/
