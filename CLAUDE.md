@@ -114,6 +114,40 @@ MVVM + 前台 Service（`foregroundServiceType="remoteMessaging"`）。**无独�
 | 检测端包名 `com.xgwnje.visionguard` | `app_name = "VG 检测"` |
 | 接收端包名 `com.xgwnje.visionguard_android` | `app_name = "VG 接收"` |
 
+## 工程管理策略
+
+### 子智能体使用规则
+
+**模型路由**：重度思考（架构设计/调试/协议设计）→ `model: opus`，轻度任务（扫描/构建/重构/风格检查）→ `model: haiku`。
+
+**并行优先**：无依赖的子任务必须并行派发。典型场景：
+- 代码提交前：`scanner` + `style-checker` + `build-validator` 并行
+- 跨端变更验证：各端 `build-validator` 同一次派发
+- 大规模搜索：多个 Explore 或 `scanner` 并行，避免主会话膨胀
+
+**Agent 清单**（`.claude/agents/`）：
+
+| Agent | 模型 | 用途 | 触发时机 |
+|-------|------|------|---------|
+| architect | opus | 跨栈架构设计、方案评审 | 多端协议变更、技术选型、Breaking Change |
+| debugger | opus | 跨栈 Bug 根因分析 | 难复现 bug、WS 通信异常、推理无输出 |
+| protocol-designer | opus | WS 消息协议设计 | 消息格式变更、版本兼容分析 |
+| scanner | haiku | 死代码/未用资源/重复代码 | 提交前检查、清理任务 |
+| build-validator | haiku | 多平台构建验证 | 提交前全平台编译检查 |
+| style-checker | haiku | C#/Kotlin/TS 命名与格式 | 提交前风格一致性检查 |
+| refactor-batch | haiku | 批量机械重构 | 统一重命名、提取重复代码、import 整理 |
+
+**内置 Agent 补充**：`Explore`（只读搜索探索）、`general-purpose`（通用多步任务）、`Plan`（实现方案设计）。
+
+### 变更验证流水线
+
+提交前必做（可并行）：
+1. `build-validator` — 全平台编译
+2. `scanner` — 死代码/未用资源扫描
+3. `style-checker` — 风格一致性
+
+所有验证结果汇总后确认无误再提交。
+
 ## 详细文档
 
 - WPF 迁移进度与约束：[MIGRATION_PROGRESS.md](detector/windows/MIGRATION_PROGRESS.md)
