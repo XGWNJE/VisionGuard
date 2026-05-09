@@ -90,6 +90,26 @@ namespace VisionGuard.ViewModels
             return list;
         }
 
+        /// <summary>远控设置监控目标（逗号分隔的类名，空字符串 = 全部）。</summary>
+        public void SetWatchedClasses(string csv)
+        {
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(csv))
+                foreach (var cls in csv.Split(','))
+                {
+                    string t = cls.Trim();
+                    if (!string.IsNullOrEmpty(t)) set.Add(t);
+                }
+
+            bool all = set.Count == 0;
+            WatchPerson     = all || set.Contains("person");
+            WatchBicycle    = all || set.Contains("bicycle");
+            WatchCar        = all || set.Contains("car");
+            WatchMotorcycle = all || set.Contains("motorcycle");
+            WatchBus        = all || set.Contains("bus");
+            WatchTruck      = all || set.Contains("truck");
+        }
+
         /// <summary>模型文件名（yolo26n 或 yolo26s）。</summary>
         public string SelectedModelName => SelectedModelIndex == 0 ? "yolo26n" : "yolo26s";
 

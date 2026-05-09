@@ -98,8 +98,8 @@ namespace VisionGuard.ViewModels
             _settingsVm = settingsVm;
             _mainVm = mainVm;
 
-            StartCommand = new RelayCommand(StartMonitor, () => CanStart);
-            StopCommand = new RelayCommand(StopMonitor, () => CanStop);
+            StartCommand = new RelayCommand(() => StartMonitor(), () => CanStart);
+            StopCommand = new RelayCommand(() => StopMonitor(), () => CanStop);
             PickWindowCommand = new RelayCommand(PickWindow, () => CanSelectRegion);
             SelectRegionCommand = new RelayCommand(SelectRegion, () => CanSelectRegion);
             EditMasksCommand = new RelayCommand(EditMasks, () => CanEditMasks);
@@ -129,29 +129,109 @@ namespace VisionGuard.ViewModels
             });
         }
 
-        private void StartMonitor()
+        internal void StartMonitor(bool remote = false)
         {
-            // 未选任何区域时，默认使用主屏幕全屏
-            if (TargetWindow == null && !HasCaptureTarget)
+            if (!remote)
             {
-                using var primary = ScreenCapturer.CapturePrimaryScreen();
-                if (primary != null)
+                // 未选任何区域时，默认使用主屏幕全屏
+                if (TargetWindow == null && !HasCaptureTarget)
                 {
-                    ScreenRegion = new Rectangle(0, 0, primary.Width, primary.Height);
-                    RegionInfo = $"X:0  Y:0  {ScreenRegion.Width}×{ScreenRegion.Height}";
+                    using var primary = ScreenCapturer.CapturePrimaryScreen();
+                    if (primary != null)
+                    {
+                        ScreenRegion = new Rectangle(0, 0, primary.Width, primary.Height);
+                        RegionInfo = $"X:0  Y:0  {ScreenRegion.Width}×{ScreenRegion.Height}";
+                    }
                 }
             }
 
             var config = BuildConfig();
             var modelPath = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", _settingsVm.SelectedModelName + ".onnx");
+
+            if (!System.IO.File.Exists(modelPath))
+            {
+                string msg = $"模型文件不存在：{modelPath}";
+                if (remote)
+                {
+                    _serverPushService.SendCommandAck("start", false, msg);
+                    return;
+                }
+                MessageBox.Show(msg, "VisionGuard", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
             _monitorService.Start(modelPath, config);
             IsMonitoring = true;
+
+            if (remote)
+                _serverPushService.SendCommandAck("resume", true);
         }
 
-        private void StopMonitor()
+        internal void StopMonitor(bool remote = false)
         {
             _monitorService.Stop();
             IsMonitoring = false;
+
+            if (remote)
+                _serverPushService.SendCommandAck("pause", true);
+        }
+
+        /// <summary>远控暂停：保留 Timer，跳过帧处理。</summary>
+        public void PauseMonitor()
+        {
+            _monitorService.Pause();
+        }
+
+        /// <summary>远控恢复：继续帧处理。</summary>
+        public void ResumeMonitor()
+        {
+            _monitorService.Resume();
+        }
+
+        /// <summary>远控参数调整（cooldown / confidence / targets）。</summary>
+        public void ApplyRemoteConfig(string key, string value)
+        {
+            switch (key)
+            {
+                case "cooldown":
+                    if (int.TryParse(value, out int cd) && cd >= 1 && cd <= 300)
+                    {
+                        _settingsVm.Cooldown = cd;
+                        if (_monitorService.IsStarted)
+                            _monitorService.UpdateConfig(BuildConfig());
+                        _serverPushService.SendCommandAck("set-config:cooldown", true);
+                    }
+                    else
+                        _serverPushService.SendCommandAck("set-config:cooldown", false, "值无效（1–300）");
+                    break;
+
+                case "confidence":
+                    if (float.TryParse(value,
+                        System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        out float conf) && conf >= 0.1f && conf <= 0.95f)
+                    {
+                        _settingsVm.Threshold = (int)(conf * 100);
+                        if (_monitorService.IsStarted)
+                            _monitorService.UpdateConfig(BuildConfig());
+                        _serverPushService.SendCommandAck("set-config:confidence", true);
+                    }
+                    else
+                        _serverPushService.SendCommandAck("set-config:confidence", false, "值无效（0.1–0.95）");
+                    break;
+
+                case "targets":
+                    // value 为逗号分隔类名，空字符串 = 全部
+                    _settingsVm.SetWatchedClasses(value);
+                    if (_monitorService.IsStarted)
+                        _monitorService.UpdateConfig(BuildConfig());
+                    _serverPushService.SendCommandAck("set-config:targets", true);
+                    break;
+
+                default:
+                    _serverPushService.SendCommandAck($"set-config:{key}", false, $"未知配置项：{key}");
+                    break;
+            }
         }
 
         public void Dispose()

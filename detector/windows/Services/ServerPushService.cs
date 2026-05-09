@@ -15,6 +15,8 @@ using System.Linq;
 using System.Net.NetworkInformation;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.WebSockets;
 using VisionGuard.Models;
 using VisionGuard.Utils;
@@ -68,6 +70,9 @@ namespace VisionGuard.Services
 
         private bool _disposed;
 
+        // HTTP 截图上传
+        private readonly HttpClient _httpClient;
+
         // 网络变化防抖：30 秒内只处理一次，且只在从"无网络"变为"有网络"时才重连
         private DateTime _lastNetworkChangeHandled = DateTime.MinValue;
         private bool _lastNetworkWasAvailable = false;
@@ -79,6 +84,8 @@ namespace VisionGuard.Services
         {
             _loopThread = new Thread(EventLoop) { IsBackground = true, Name = "VG_WsEventLoop" };
             _loopThread.Start();
+
+            _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
 
             // 监听系统网络变化 → 立即重连（避免等 60s 幽灵超时）
             NetworkChange.NetworkAddressChanged += OnSystemNetworkChanged;
@@ -168,25 +175,117 @@ namespace VisionGuard.Services
         public void PushAlert(AlertEvent alert)
         {
             if (alert == null) return;
+
+            // WS 推送（必须同步完成，Bitmap 在事件返回后可能被 Dispose）
             var s = _session;
-            if (s == null) return;
-            var msg = new Dictionary<string, object>
+            if (s != null)
             {
-                ["type"] = "alert",
-                ["alertId"] = alert.AlertId,
-                ["deviceId"] = _deviceId,
-                ["deviceName"] = _deviceName,
-                ["timestamp"] = alert.Timestamp.ToString("o"),
-                ["detections"] = BuildDetectionsPayload(alert.Detections),
-                ["timings"] = alert.Timings,
-                ["wsSentAt"] = NtpSync.UtcNow.ToString("o"),
-            };
-            var labels = string.Join(",", alert.Detections.Select(d => d.Label));
-            var totalMs = alert.Timings.TryGetValue("totalProcessMs", out var t) ? $"{t}ms" : "N/A";
-            if (s.SendJson(msg))
-                LogManager.StaticInfo($"[Server] 报警已推送: alertId={alert.AlertId}, targets={alert.Detections.Count}, [{labels}], total={totalMs}");
-            else
-                LogManager.StaticWarn($"[Server] 报警推送失败 alertId={alert.AlertId}");
+                var msg = new Dictionary<string, object>
+                {
+                    ["type"] = "alert",
+                    ["alertId"] = alert.AlertId,
+                    ["deviceId"] = _deviceId,
+                    ["deviceName"] = _deviceName,
+                    ["timestamp"] = alert.Timestamp.ToString("o"),
+                    ["detections"] = BuildDetectionsPayload(alert.Detections),
+                    ["timings"] = alert.Timings,
+                    ["wsSentAt"] = NtpSync.UtcNow.ToString("o"),
+                };
+                var labels = string.Join(",", alert.Detections.Select(d => d.Label));
+                var totalMs = alert.Timings.TryGetValue("totalProcessMs", out var t) ? $"{t}ms" : "N/A";
+                if (s.SendJson(msg))
+                    LogManager.StaticInfo($"[Server] 报警已推送: alertId={alert.AlertId}, targets={alert.Detections.Count}, [{labels}], total={totalMs}");
+                else
+                    LogManager.StaticWarn($"[Server] 报警推送失败 alertId={alert.AlertId}");
+            }
+
+            // HTTP 截图上传（fire-and-forget，不阻塞检测循环）
+            if (alert.Snapshot != null)
+            {
+                var alertId = alert.AlertId;
+                var deviceId = _deviceId;
+                var deviceName = _deviceName;
+                var timestamp = alert.Timestamp.ToString("o");
+                var detections = alert.Detections;
+                var timings = alert.Timings;
+                var snapshot = alert.Snapshot;
+                var serverUrl = _serverUrl;
+                var apiKey = _apiKey;
+                var httpClient = _httpClient;
+                Task.Run(() => UploadAlertHttp(alertId, deviceId, deviceName, timestamp,
+                    detections, timings, snapshot, serverUrl, apiKey, httpClient));
+            }
+        }
+
+        private static async Task UploadAlertHttp(
+            string alertId, string deviceId, string deviceName, string timestamp,
+            IReadOnlyList<Detection> detections, Dictionary<string, long> timings,
+            Bitmap snapshot, string serverUrl, string apiKey, HttpClient httpClient)
+        {
+            try
+            {
+                var detectionsPayload = new List<Dictionary<string, object>>();
+                foreach (var d in detections)
+                {
+                    detectionsPayload.Add(new Dictionary<string, object>
+                    {
+                        ["label"] = d.Label ?? "",
+                        ["confidence"] = d.Confidence,
+                        ["bbox"] = new Dictionary<string, object>
+                        {
+                            ["x"] = d.BoundingBox.X,
+                            ["y"] = d.BoundingBox.Y,
+                            ["w"] = d.BoundingBox.Width,
+                            ["h"] = d.BoundingBox.Height,
+                        },
+                    });
+                }
+
+                var meta = new Dictionary<string, object>
+                {
+                    ["deviceId"] = deviceId,
+                    ["deviceName"] = deviceName,
+                    ["timestamp"] = timestamp,
+                    ["detections"] = detectionsPayload,
+                    ["timings"] = timings,
+                };
+                string metaJson = SimpleJson.ToJson(meta);
+
+                using var ms = new MemoryStream();
+                var jpegParams = new EncoderParameters(1);
+                jpegParams.Param[0] = new EncoderParameter(Encoder.Quality, 75L);
+                var jpegCodec = ImageCodecInfo.GetImageEncoders()
+                    .FirstOrDefault(c => c.MimeType == "image/jpeg");
+                // 保存当前帧到内存流（fire-and-forget 时独占 Bitmap 引用，无需 lock）
+                if (jpegCodec != null)
+                    snapshot.Save(ms, jpegCodec, jpegParams);
+                else
+                    snapshot.Save(ms, System.Drawing.Imaging.ImageFormat.Jpeg);
+                byte[] jpegBytes = ms.ToArray();
+
+                using var content = new MultipartFormDataContent();
+                var metaContent = new StringContent(metaJson, System.Text.Encoding.UTF8, "application/json");
+                content.Add(metaContent, "meta");
+                var imageContent = new ByteArrayContent(jpegBytes);
+                imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
+                content.Add(imageContent, "screenshot", $"{alertId}.jpg");
+
+                var request = new HttpRequestMessage(HttpMethod.Post, $"{serverUrl}/api/alert")
+                {
+                    Content = content,
+                };
+                request.Headers.Add("X-API-Key", apiKey);
+
+                var response = await httpClient.SendAsync(request);
+                if (response.IsSuccessStatusCode)
+                    LogManager.StaticInfo($"[Server] HTTP 截图上传成功: {alertId} ({jpegBytes.Length}B)");
+                else
+                    LogManager.StaticWarn($"[Server] HTTP 截图上传被拒绝: {alertId} code={response.StatusCode}");
+            }
+            catch (Exception ex)
+            {
+                LogManager.StaticWarn($"[Server] HTTP 截图上传失败: {alertId} — {ex.Message}");
+            }
         }
 
         public void SendCommandAck(string command, bool success, string reason = "")
@@ -299,6 +398,7 @@ namespace VisionGuard.Services
             _events.CompleteAdding();
             try { _loopThread?.Join(1500); } catch { }
             _events.Dispose();
+            _httpClient?.Dispose();
         }
 
         // ════════════════════════════════════════════════════════════

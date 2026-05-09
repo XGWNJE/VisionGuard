@@ -30,11 +30,13 @@ namespace VisionGuard.Services
         private MonitorConfig        _config;
         private Timer                _timer;
         private int  _isRunning;   // 0=idle, 1=processing（Interlocked 防重入）
+        private int  _isPaused;    // 0=running, 1=paused（Interlocked 远控暂停）
         private bool _disposed;
         // 停止同步：确保 OnTick 完全结束（包括 finally）后才能安全 Dispose _engine
         private readonly ManualResetEvent _tickCompleted = new ManualResetEvent(true);
 
         public bool IsStarted => _timer != null;
+        public bool IsPaused => Interlocked.CompareExchange(ref _isPaused, 0, 0) == 1;
 
         /// <summary>选区/窗口是否已设定（用于心跳同步给 Android 显示准备状态）</summary>
         public bool IsReady
@@ -87,6 +89,16 @@ namespace VisionGuard.Services
             _tickCompleted.Set();             // 恢复为已结束状态
         }
 
+        public void Pause()
+        {
+            Interlocked.Exchange(ref _isPaused, 1);
+        }
+
+        public void Resume()
+        {
+            Interlocked.Exchange(ref _isPaused, 0);
+        }
+
         public void UpdateConfig(MonitorConfig config)
         {
             Volatile.Write(ref _config, config);
@@ -98,6 +110,10 @@ namespace VisionGuard.Services
         {
             // 停止中：跳过本次Tick（Stop 已调用 WaitOne，这里直接返回）
             if (!_tickCompleted.WaitOne(0)) return;
+
+            // 远控暂停：跳过帧处理但不停止 Timer（保留心跳上报）
+            // 必须在 _isRunning 之前检查，否则暂停后 _isRunning 永远为 1，Resume 后也无法恢复
+            if (Interlocked.CompareExchange(ref _isPaused, 0, 0) == 1) return;
 
             // 防重入：若上一帧还在推理，跳过本帧
             if (Interlocked.CompareExchange(ref _isRunning, 1, 0) != 0) return;
@@ -145,7 +161,6 @@ namespace VisionGuard.Services
                     rawOutput,
                     frameRegion,
                     cfg.ConfidenceThreshold,
-                    cfg.IouThreshold,
                     cfg.WatchedClasses);
                 long parseMs = sw.ElapsedMilliseconds;
 

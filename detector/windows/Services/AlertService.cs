@@ -48,7 +48,7 @@ namespace VisionGuard.Services
         {
             if (detections == null || detections.Count == 0) return;
 
-            DateTime now = DateTime.Now;
+            DateTime now = NtpSync.UtcNow;
 
             lock (_cooldownLock)
             {

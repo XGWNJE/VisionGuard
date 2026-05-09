@@ -6,6 +6,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using VisionGuard.Utils;
 
 namespace VisionGuard.Models
 {
@@ -14,7 +15,6 @@ namespace VisionGuard.Models
         public string AlertId { get; }
         public DateTime Timestamp { get; }
         public IReadOnlyList<Detection> Detections { get; }
-        // 调用方负责 Dispose，AlertService 不持有引用
         public Bitmap Snapshot { get; }
         public Dictionary<string, long> Timings { get; }
 
@@ -22,7 +22,7 @@ namespace VisionGuard.Models
                           Dictionary<string, long> timings)
         {
             AlertId    = alertId;
-            Timestamp  = DateTime.Now;
+            Timestamp  = NtpSync.UtcNow;
             Detections = detections;
             Snapshot   = snapshot;
             Timings    = timings ?? new Dictionary<string, long>();

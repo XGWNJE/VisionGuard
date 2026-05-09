@@ -39,13 +39,11 @@ namespace VisionGuard.Inference
         /// <param name="rawOutput">Run() 返回的展平 float[]，长度 = 300 * 6 = 1800</param>
         /// <param name="captureRegion">原始捕获区域（用于将坐标映射回屏幕）</param>
         /// <param name="confThreshold">置信度阈值</param>
-        /// <param name="iouThreshold">NMS IoU 阈值（保留参数但忽略，模型已内置 NMS）</param>
         /// <param name="watchedClasses">只保留这些类名（null 或空集合 = 全部）</param>
         public static List<Detection> Parse(
             float[]         rawOutput,
             Rectangle       captureRegion,
             float           confThreshold,
-            float           iouThreshold,  // 保留以兼容旧调用，模型已内置 NMS
             HashSet<string> watchedClasses)
         {
             // rawOutput 展平自 [1, 300, 6]
