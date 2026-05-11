@@ -7,9 +7,13 @@ set -euo pipefail
 #   --full: 同时同步 package.json 并 npm install
 #   --nginx: 同时更新 Nginx 配置并 reload
 
-VPS_HOST="root@216.36.111.208"
-# 域名上线后可改为: VPS_HOST="root@xgwnje.cn"
-VPS_PORT="${VPS_PORT:-53111}"
+# SSH 连接别名，定义于 ~/.ssh/config（IP/端口/密钥不硬编码在源码中）
+# Host visionguard
+#   HostName <实际IP>
+#   Port <实际端口>
+#   User root
+#   IdentityFile ~/.ssh/id_ed25519
+VPS_ALIAS="visionguard"
 VPS_PATH="/opt/visionguard/VisionGuard_Server"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -22,7 +26,7 @@ done
 
 echo "=== VisionGuard Server 部署 ==="
 echo "本地: $SCRIPT_DIR"
-echo "远程: $VPS_HOST:$VPS_PATH"
+echo "远程: $VPS_ALIAS:$VPS_PATH"
 $FULL && echo "模式: 含依赖"
 $NGINX && echo "模式: 含 Nginx"
 echo ""
@@ -35,17 +39,17 @@ echo ""
 
 # 2. 同步 src/
 echo "[2/6] 同步 src/ ..."
-ssh -p "$VPS_PORT" "$VPS_HOST" "rm -rf ${VPS_PATH}/src_new && mkdir -p ${VPS_PATH}/src_new"
-scp -P "$VPS_PORT" -r "$SCRIPT_DIR/src/" "$VPS_HOST:${VPS_PATH}/src_new/"
-ssh -p "$VPS_PORT" "$VPS_HOST" "cd ${VPS_PATH} && rm -rf src && mv src_new/src src && rm -rf src_new"
+ssh "$VPS_ALIAS" "rm -rf ${VPS_PATH}/src_new && mkdir -p ${VPS_PATH}/src_new"
+scp -r "$SCRIPT_DIR/src/" "$VPS_ALIAS:${VPS_PATH}/src_new/"
+ssh "$VPS_ALIAS" "cd ${VPS_PATH} && rm -rf src && mv src_new/src src && rm -rf src_new"
 echo "  OK"
 echo ""
 
 # 3. 同步 package.json (--full)
 if $FULL; then
     echo "[3/6] 同步 package.json + npm install ..."
-    scp -P "$VPS_PORT" "$SCRIPT_DIR/package.json" "$VPS_HOST:${VPS_PATH}/package.json"
-    ssh -p "$VPS_PORT" "$VPS_HOST" "cd ${VPS_PATH} && npm install"
+    scp "$SCRIPT_DIR/package.json" "$VPS_ALIAS:${VPS_PATH}/package.json"
+    ssh "$VPS_ALIAS" "cd ${VPS_PATH} && npm install"
     echo "  OK"
     echo ""
 else
@@ -56,8 +60,8 @@ fi
 # 4. Nginx 配置 (--nginx)
 if $NGINX; then
     echo "[4/6] 同步 Nginx 配置..."
-    scp -P "$VPS_PORT" "$SCRIPT_DIR/nginx-visionguard.conf" "$VPS_HOST:/etc/nginx/sites-available/xgwnje.cn"
-    ssh -p "$VPS_PORT" "$VPS_HOST" "ln -sf /etc/nginx/sites-available/xgwnje.cn /etc/nginx/sites-enabled/ && nginx -t && systemctl reload nginx"
+    scp "$SCRIPT_DIR/nginx-visionguard.conf" "$VPS_ALIAS:/etc/nginx/sites-available/xgwnje.cn"
+    ssh "$VPS_ALIAS" "ln -sf /etc/nginx/sites-available/xgwnje.cn /etc/nginx/sites-enabled/ && nginx -t && systemctl reload nginx"
     echo "  OK"
     echo ""
 else
@@ -67,14 +71,14 @@ fi
 
 # 5. 远程编译
 echo "[5/6] 远程编译..."
-ssh -p "$VPS_PORT" "$VPS_HOST" "cd ${VPS_PATH} && npm run build"
+ssh "$VPS_ALIAS" "cd ${VPS_PATH} && npm run build"
 echo "  OK"
 echo ""
 
 # 6. 重启服务
 echo "[6/6] 重启 visionguard 服务..."
-ssh -p "$VPS_PORT" "$VPS_HOST" "systemctl restart visionguard && sleep 2 && systemctl status visionguard --no-pager -l | head -15"
+ssh "$VPS_ALIAS" "systemctl restart visionguard && sleep 2 && systemctl status visionguard --no-pager -l | head -15"
 echo ""
 
-REMOTE_VER=$(ssh -p "$VPS_PORT" "$VPS_HOST" "node -e \"console.log(require('${VPS_PATH}/package.json').version)\"" 2>/dev/null || echo "unknown")
+REMOTE_VER=$(ssh "$VPS_ALIAS" "node -e \"console.log(require('${VPS_PATH}/package.json').version)\"" 2>/dev/null || echo "unknown")
 echo "=== 部署完成 — 服务器版本: ${REMOTE_VER} ==="
