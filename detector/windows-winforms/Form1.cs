@@ -59,7 +59,7 @@ namespace VisionGuard
         private Button  _btnRetry;
 
         // Server constants
-        private const string ServerUrl = "http://216.36.111.208:3000";
+        private const string ServerUrl = "https://xgwnje.cn";
         private const string ServerApiKey = "XG-VisionGuard-2024";
 
         // ServerPushService + heartbeat

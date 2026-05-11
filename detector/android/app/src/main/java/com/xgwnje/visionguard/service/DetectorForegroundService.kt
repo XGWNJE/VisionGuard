@@ -151,11 +151,11 @@ class DetectorForegroundService : LifecycleService() {
             NotificationHelper.buildForegroundNotification(this, "初始化中...")
         )
 
-        // 7. 获取 PARTIAL_WAKE_LOCK
+        // 7. 获取 PARTIAL_WAKE_LOCK（无超时，持续持有直到手动释放）
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "VisionGuard::DetectorWakeLock").apply {
             setReferenceCounted(false)
-            acquire(10 * 60 * 1000L) // 10 分钟，持续监控中会重新 acquire
+            acquire() // 无超时持续持有，避免 10 分钟后 CPU 休眠导致推理中断
         }
 
         // 8. 连接 WebSocket
@@ -488,13 +488,6 @@ class DetectorForegroundService : LifecycleService() {
             }
         }
 
-        // 订阅截图请求 → 从本地缓存读取并推送
-        serviceScope.launch {
-            serverPushService.wsClient.onRequestScreenshot.collect { alertId ->
-                handleScreenshotRequest(alertId)
-            }
-        }
-
         // 订阅实际采样率
         serviceScope.launch {
             monitorService.actualSamplingRate.collect { rate ->
@@ -600,39 +593,13 @@ class DetectorForegroundService : LifecycleService() {
         _lastAlertPushTime.value = timeStr
         Log.i(TAG, "报警已触发: alertId=$alertId, targets=${event.detections.map { it.label }}")
 
-        // 1. 保存截图到本地缓存（供后续 request-screenshot 响应使用）
+        // 1. 保存截图到本地缓存
         event.renderedFrame?.let { bmp ->
             screenshotCache.save(alertId, bmp)
         }
 
-        // 2. 发送轻量 WS alert（无截图数据，与 Windows PushAlert 对齐）
-        // 使用 AlertEvent 中的报警时间和链路耗时，确保 timestamp/timings 与 Windows 端一致
-        serverPushService.pushAlert(alertId, event.detections, event.timestamp, event.timings)
-
-        // 3. 报警通过 WS alert 推送，心跳不再携带 isAlarming 状态
-    }
-
-    /** 响应接收端的截图请求：从本地缓存读取并 base64 推送 */
-    private fun handleScreenshotRequest(alertId: String) {
-        serviceScope.launch {
-            try {
-                val bytes = screenshotCache.readBytes(alertId)
-                if (bytes == null) {
-                    Log.w(TAG, "截图请求: 本地缓存未命中 alertId=$alertId")
-                    return@launch
-                }
-                val base64 = Base64.encodeToString(bytes, Base64.DEFAULT)
-                // 估算宽高（从 JPEG 解析太复杂，简单估算或设为 0）
-                val sent = serverPushService.wsClient.sendScreenshotData(alertId, base64, 0, 0)
-                if (sent) {
-                    Log.i(TAG, "截图已推送: alertId=$alertId size=${bytes.size}B")
-                } else {
-                    Log.w(TAG, "截图推送失败: WS 未连接 alertId=$alertId")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "处理截图请求异常: alertId=$alertId", e)
-            }
-        }
+        // 2. v4.0.0: WS alert 内嵌截图 Base64（自动推送，去按需拉取）
+        serverPushService.pushAlert(alertId, event.detections, event.timestamp, event.timings, event.renderedFrame)
     }
 
     // ═════════════════════════════════════════════════════════

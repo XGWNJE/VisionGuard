@@ -7,6 +7,7 @@ package com.xgwnje.visionguard.data.model
 // └─────────────────────────────────────────────────────────┘
 
 import com.google.gson.JsonObject
+import com.xgwnje.visionguard.BuildConfig
 
 /** 所有 WS 消息的原始容器；先按 type 字段决定具体类型 */
 data class RawWsMessage(
@@ -20,7 +21,7 @@ data class WsAuthMessage(
     val role: String = "android-detector",
     val deviceId: String,
     val deviceName: String = "Android-Detector",
-    val version: String = "3.5.3"
+    val version: String = BuildConfig.VERSION_NAME
 )
 
 /** 服务器 → Android-detector：认证结果 */

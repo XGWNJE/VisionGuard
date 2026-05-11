@@ -142,18 +142,28 @@ class AlertForegroundService : LifecycleService() {
             }
         }
 
-        // 订阅报警
+        // 订阅报警 (v4.0.0: 内嵌截图)
         lifecycleScope.launch {
             wsClient.onAlert.collect { alert ->
                 Log.i(TAG, "收到报警: ${alert.deviceName} - ${alert.detections.size} 个目标")
-                _alerts.value = (listOf(alert) + _alerts.value).take(200)
 
-                // 不再自动下载截图：截图按需从检测端 WS 拉取
+                // v4.0.0: 从 alert 中提取内嵌截图
+                if (!alert.screenshotBase64.isNullOrEmpty()) {
+                    try {
+                        val bytes = Base64.decode(alert.screenshotBase64, Base64.DEFAULT)
+                        screenshotCache.save(alert.alertId, bytes)
+                        _onScreenshotData.emit(
+                            ScreenshotData(alert.alertId, alert.screenshotBase64, 0, 0)
+                        )
+                    } catch (_: Exception) { }
+                }
+
+                _alerts.value = (listOf(alert) + _alerts.value).take(200)
                 sendAlertNotification(alert)
             }
         }
 
-        // 订阅设备列表（仅日志，实际状态由 wsClient.onDeviceList 代理）
+        // 订阅设备列表
         lifecycleScope.launch {
             wsClient.onDeviceList.collect { devices ->
                 Log.d(TAG, "设备列表更新: ${devices.size} 台 [${
@@ -166,17 +176,6 @@ class AlertForegroundService : LifecycleService() {
         lifecycleScope.launch {
             wsClient.onCommandAck.collect { ack ->
                 _commandAck.emit(ack)
-            }
-        }
-
-        // 订阅截图数据：缓存到磁盘后转发给 UI
-        lifecycleScope.launch {
-            wsClient.onScreenshotData.collect { data ->
-                try {
-                    val bytes = Base64.decode(data.imageBase64, Base64.DEFAULT)
-                    screenshotCache.save(data.alertId, bytes)
-                } catch (_: Exception) { }
-                _onScreenshotData.emit(data)
             }
         }
 

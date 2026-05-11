@@ -18,7 +18,6 @@ import com.xgwnje.visionguard.data.model.WsCommandAck
 import com.xgwnje.visionguard.data.model.WsCommandMessage
 import com.xgwnje.visionguard.data.model.WsHeartbeatMessage
 import com.xgwnje.visionguard.data.model.WsLogReportMessage
-import com.xgwnje.visionguard.data.model.WsScreenshotDataMessage
 import com.xgwnje.visionguard.data.model.WsSetConfigMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -77,19 +76,12 @@ class WebSocketClient {
     private val _onCommandAck = MutableSharedFlow<Pair<String, Boolean>>(extraBufferCapacity = 8)
     val onCommandAck: SharedFlow<Pair<String, Boolean>> = _onCommandAck
 
-    private val _onScreenshotData = MutableSharedFlow<ScreenshotData>(extraBufferCapacity = 8)
-    val onScreenshotData: SharedFlow<ScreenshotData> = _onScreenshotData
-
     // detector 端新增：接收远程命令和配置变更
     private val _onCommand = MutableSharedFlow<WsCommandMessage>(extraBufferCapacity = 8)
     val onCommand: SharedFlow<WsCommandMessage> = _onCommand
 
     private val _onSetConfig = MutableSharedFlow<WsSetConfigMessage>(extraBufferCapacity = 8)
     val onSetConfig: SharedFlow<WsSetConfigMessage> = _onSetConfig
-
-    // detector 端新增：接收截图请求（接收端 request-screenshot 经服务器转发）
-    private val _onRequestScreenshot = MutableSharedFlow<String>(extraBufferCapacity = 8)
-    val onRequestScreenshot: SharedFlow<String> = _onRequestScreenshot
 
     // ── 运行状态（供心跳上报使用） ───────────────────────────
     @Volatile
@@ -198,11 +190,6 @@ class WebSocketClient {
         session?.ws?.send(gson.toJson(msg))
     }
 
-    fun requestScreenshot(alertId: String, targetDeviceId: String): Boolean {
-        val msg = WsScreenshotDataMessage(alertId = alertId, targetDeviceId = targetDeviceId)
-        return session?.ws?.send(gson.toJson(msg)) ?: false
-    }
-
     // ── detector 端新增 API ──────────────────────────────────
 
     /** 发送命令回执 */
@@ -212,19 +199,6 @@ class WebSocketClient {
             command = command,
             success = success,
             reason = reason
-        )
-        return session?.ws?.send(gson.toJson(msg)) ?: false
-    }
-
-    /** 发送截图数据 */
-    fun sendScreenshotData(alertId: String, imageBase64: String, width: Int, height: Int): Boolean {
-        val msg = WsScreenshotDataMessage(
-            type = "screenshot-data",
-            alertId = alertId,
-            targetDeviceId = deviceId,
-            imageBase64 = imageBase64,
-            width = width,
-            height = height
         )
         return session?.ws?.send(gson.toJson(msg)) ?: false
     }
@@ -599,16 +573,6 @@ class WebSocketClient {
                         scope.launch { _onCommandAck.emit(Pair(display, success)) }
                     }
                 }
-                "screenshot-data" -> {
-                    val data = gson.fromJson(text, WsScreenshotDataMessage::class.java)
-                    if (data.imageBase64.isNotEmpty()) {
-                        scope.launch {
-                            _onScreenshotData.emit(
-                                ScreenshotData(data.alertId, data.imageBase64, data.width, data.height)
-                            )
-                        }
-                    }
-                }
                 // detector 端新增：接收远程命令和配置变更
                 "command" -> {
                     val command = gson.fromJson(text, WsCommandMessage::class.java)
@@ -617,13 +581,6 @@ class WebSocketClient {
                 "set-config" -> {
                     val config = gson.fromJson(text, WsSetConfigMessage::class.java)
                     scope.launch { _onSetConfig.emit(config) }
-                }
-                // detector 端新增：接收截图请求（接收端 request-screenshot 经服务器转发）
-                "request-screenshot" -> {
-                    val alertId = obj.get("alertId")?.asString ?: ""
-                    if (alertId.isNotEmpty()) {
-                        scope.launch { _onRequestScreenshot.emit(alertId) }
-                    }
                 }
             }
         } catch (e: Exception) {
@@ -641,10 +598,3 @@ class WebSocketClient {
     }
 }
 
-/** 截图数据包装 */
-data class ScreenshotData(
-    val alertId: String,
-    val imageBase64: String,
-    val width: Int,
-    val height: Int
-)

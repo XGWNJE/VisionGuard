@@ -17,7 +17,6 @@ import com.xgwnje.visionguard_android.data.model.DeviceInfo
 import com.xgwnje.visionguard_android.data.model.ScreenshotData
 import com.xgwnje.visionguard_android.data.model.WsAuthMessage
 import com.xgwnje.visionguard_android.data.model.WsCommandMessage
-import com.xgwnje.visionguard_android.data.model.WsScreenshotDataMessage
 import com.xgwnje.visionguard_android.data.model.WsSetConfigMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -152,11 +151,6 @@ class WebSocketClient {
         session?.ws?.send(gson.toJson(msg))
     }
 
-    fun requestScreenshot(alertId: String, targetDeviceId: String): Boolean {
-        val msg = WsScreenshotDataMessage(alertId = alertId, targetDeviceId = targetDeviceId)
-        return session?.ws?.send(gson.toJson(msg)) ?: false
-    }
-
     // ═════════════════════════════════════════════════════════
     // 事件循环 — 所有状态变更的唯一入口
     // ═════════════════════════════════════════════════════════
@@ -272,8 +266,18 @@ class WebSocketClient {
             _onDeviceList.value = emptyList()
             e.session.shutdown("auth-failed")
             session = null
-            // 认证失败也继续重连（Key 可能临时错误）
-            if (shouldReconnect) scheduleReconnect()
+            // 区分永久错误和临时错误
+            val reason = e.reason ?: ""
+            val isPermanent = reason.contains("invalid api key", ignoreCase = true) ||
+                    reason.contains("version too old", ignoreCase = true) ||
+                    reason.contains("invalid role", ignoreCase = true) ||
+                    reason.contains("invalid deviceId", ignoreCase = true)
+            if (isPermanent) {
+                Log.e(TAG, "认证永久失败 ($reason)，停止重连")
+                shouldReconnect = false
+            } else if (shouldReconnect) {
+                scheduleReconnect()
+            }
         }
     }
 
@@ -500,14 +504,8 @@ class WebSocketClient {
                     }
                 }
                 "screenshot-data" -> {
-                    val data = gson.fromJson(text, WsScreenshotDataMessage::class.java)
-                    if (data.imageBase64.isNotEmpty()) {
-                        scope.launch {
-                            _onScreenshotData.emit(
-                                ScreenshotData(data.alertId, data.imageBase64, data.width, data.height)
-                            )
-                        }
-                    }
+                    // v4.0.0: 截图已通过 alert 消息内嵌推送，此类型不再使用
+                    // 保留处理以兼容旧版服务器
                 }
             }
         } catch (e: Exception) {

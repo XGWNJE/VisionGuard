@@ -68,6 +68,10 @@ namespace VisionGuard.Services
 
         private bool _disposed;
 
+        // 报警本地队列（WS 断连时缓存，恢复后批量重发）
+        private readonly ConcurrentQueue<AlertEvent> _pendingAlerts = new ConcurrentQueue<AlertEvent>();
+        private const int MAX_PENDING_ALERTS = 50;
+
         // 网络变化防抖：30 秒内只处理一次，且只在从"无网络"变为"有网络"时才重连
         private DateTime _lastNetworkChangeHandled = DateTime.MinValue;
         private bool _lastNetworkWasAvailable = false;
@@ -164,7 +168,20 @@ namespace VisionGuard.Services
         {
             if (alert == null) return;
             var s = _session;
-            if (s == null) return;
+            if (s == null || _state != WsState.Connected)
+            {
+                // 断连时缓存报警，超容量丢弃最旧的
+                _pendingAlerts.Enqueue(alert);
+                while (_pendingAlerts.Count > MAX_PENDING_ALERTS)
+                    _pendingAlerts.TryDequeue(out _);
+                LogManager.StaticWarn($"[Server] WS 未连接，报警入队 (队列 {_pendingAlerts.Count}/{MAX_PENDING_ALERTS}): {alert.AlertId}");
+                return;
+            }
+            DoPushAlert(s, alert);
+        }
+
+        private void DoPushAlert(Session s, AlertEvent alert)
+        {
             var msg = new Dictionary<string, object>
             {
                 ["type"] = "alert",
@@ -174,14 +191,70 @@ namespace VisionGuard.Services
                 ["timestamp"] = alert.Timestamp.ToString("o"),
                 ["detections"] = BuildDetectionsPayload(alert.Detections),
                 ["timings"] = alert.Timings,
-                ["wsSentAt"] = NtpSync.UtcNow.ToString("o"),
+                ["capturedAt"] = NtpSync.UtcNow.ToString("o"),
             };
+
+            // v4.0.0: 内嵌截图 Base64（自动推送，去按需拉取）
+            try
+            {
+                string path = AlertService.GetSnapshotPath(alert.AlertId);
+                if (File.Exists(path))
+                {
+                    using (var bmp = new Bitmap(path))
+                    {
+                        msg["screenshotBase64"] = EncodeScreenshotBase64(bmp);
+                    }
+                }
+            }
+            catch { /* 截图编码失败不阻塞报警推送 */ }
+
             var labels = string.Join(",", alert.Detections.Select(d => d.Label));
             var totalMs = alert.Timings.TryGetValue("totalProcessMs", out var t) ? $"{t}ms" : "N/A";
+            var hasScreenshot = msg.ContainsKey("screenshotBase64") ? "+screenshot" : "";
             if (s.SendJson(msg))
-                LogManager.StaticInfo($"[Server] 报警已推送: alertId={alert.AlertId}, targets={alert.Detections.Count}, [{labels}], total={totalMs}");
+                LogManager.StaticInfo($"[Server] 报警已推送: alertId={alert.AlertId}, targets={alert.Detections.Count}, [{labels}], total={totalMs} {hasScreenshot}");
             else
                 LogManager.StaticWarn($"[Server] 报警推送失败 alertId={alert.AlertId}");
+        }
+
+        private static string EncodeScreenshotBase64(Bitmap bmp)
+        {
+            const int MaxW = 960;
+            using (var toSend = bmp.Width > MaxW
+                ? new Bitmap(bmp, new Size(MaxW, (int)(bmp.Height * (MaxW / (double)bmp.Width))))
+                : null)
+            {
+                var target = toSend ?? bmp;
+                using (var ms = new MemoryStream())
+                {
+                    var jpegParams = new EncoderParameters(1);
+                    jpegParams.Param[0] = new EncoderParameter(Encoder.Quality, 65L);
+                    var jpegCodec = ImageCodecInfo.GetImageEncoders()
+                        .FirstOrDefault(c => c.MimeType == "image/jpeg");
+                    if (jpegCodec != null)
+                        target.Save(ms, jpegCodec, jpegParams);
+                    else
+                        target.Save(ms, ImageFormat.Jpeg);
+                    return Convert.ToBase64String(ms.ToArray());
+                }
+            }
+        }
+
+        private void DrainPendingAlerts()
+        {
+            var s = _session;
+            if (s == null || _state != WsState.Connected) return;
+            int count = 0;
+            while (_pendingAlerts.TryDequeue(out var alert) && count < MAX_PENDING_ALERTS)
+            {
+                // 丢弃超过 5 分钟的旧报警
+                if ((DateTime.UtcNow - alert.Timestamp).TotalMinutes > 5)
+                    continue;
+                DoPushAlert(s, alert);
+                count++;
+            }
+            if (count > 0)
+                LogManager.StaticInfo($"[Server] 已从队列重发 {count} 条报警");
         }
 
         public void SendCommandAck(string command, bool success, string reason = "")
@@ -222,57 +295,6 @@ namespace VisionGuard.Services
                 ["confidence"] = confidence,
                 ["targets"] = targets,
             });
-        }
-
-        public void SendScreenshotData(string alertId)
-        {
-            var s = _session;
-            if (s == null || _state != WsState.Connected) return;
-            try
-            {
-                string path = AlertService.GetSnapshotPath(alertId);
-                if (!File.Exists(path))
-                {
-                    LogManager.StaticWarn($"[Server] 截图不存在: {alertId}");
-                    return;
-                }
-                using (var bmp = new Bitmap(path))
-                {
-                    const int MaxW = 960;
-                    Bitmap toSend = bmp.Width > MaxW
-                        ? new Bitmap(bmp, new Size(MaxW, (int)(bmp.Height * (MaxW / (double)bmp.Width))))
-                        : bmp;
-                    try
-                    {
-                        using (var ms = new MemoryStream())
-                        {
-                            var jpegParams = new EncoderParameters(1);
-                            jpegParams.Param[0] = new EncoderParameter(Encoder.Quality, 65L);
-                            var jpegCodec = ImageCodecInfo.GetImageEncoders()
-                                .FirstOrDefault(c => c.MimeType == "image/jpeg");
-                            toSend.Save(ms, jpegCodec, jpegParams);
-                            byte[] jpegBytes = ms.ToArray();
-                            s.SendJson(new Dictionary<string, object>
-                            {
-                                ["type"] = "screenshot-data",
-                                ["alertId"] = alertId,
-                                ["imageBase64"] = Convert.ToBase64String(jpegBytes),
-                                ["width"] = toSend.Width,
-                                ["height"] = toSend.Height,
-                            });
-                            LogManager.StaticInfo($"[Server] 截图发送: {alertId} ({jpegBytes.Length}B, {toSend.Width}x{toSend.Height})");
-                        }
-                    }
-                    finally
-                    {
-                        if (!ReferenceEquals(toSend, bmp)) toSend.Dispose();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                LogManager.StaticWarn($"[Server] SendScreenshotData 异常: {ex.Message}");
-            }
         }
 
         public void Dispose()
@@ -388,7 +410,7 @@ namespace VisionGuard.Services
                 ["role"] = "windows",
                 ["deviceId"] = _deviceId,
                 ["deviceName"] = _deviceName,
-                ["version"] = "3.6.0",
+                ["version"] = "4.0.0",
             });
         }
 
@@ -401,6 +423,7 @@ namespace VisionGuard.Services
                 _attempt = 0;
                 SetState(WsState.Connected);
                 s.StartHeartbeat();
+                DrainPendingAlerts();
             }
             else
             {
@@ -659,16 +682,12 @@ namespace VisionGuard.Services
                                 try { _parent.SetConfigReceived?.Invoke(_parent, new KeyValuePair<string, string>(key, val)); } catch { }
                             break;
                         }
-                        case "request-screenshot":
-                        {
-                            string alertId = SimpleJson.GetString(d, "alertId");
-                            if (!string.IsNullOrEmpty(alertId))
-                                Task.Run(() => _parent.SendScreenshotData(alertId));
-                            break;
-                        }
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Server] HandleMessage 异常: {ex.Message}");
+                }
             }
 
             public bool SendJson(Dictionary<string, object> msg)

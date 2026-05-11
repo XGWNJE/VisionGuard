@@ -19,6 +19,16 @@ import type { AlertMeta, WsAlertPush } from '../models/types';
 
 const router = Router();
 
+/** 校验文件头魔数：仅允许 PNG 和 JPEG */
+function validateImageMagic(buffer: Buffer): boolean {
+  if (buffer.length < 4) return false;
+  // PNG: 89 50 4E 47
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) return true;
+  // JPEG: FF D8 FF
+  if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return true;
+  return false;
+}
+
 // multer 配置：截图存到 data/screenshots/<alertId>.png
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
@@ -35,10 +45,19 @@ const upload = multer({
   storage,
   limits: { fileSize: config.maxUploadBytes },
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
+    // 校验文件头魔数，而非仅信任 Content-Type
+    const buf = (file as any).buffer as Buffer | undefined;
+    if (buf && validateImageMagic(buf)) {
       cb(null, true);
+    } else if (!buf) {
+      // multer v2 可能不在 fileFilter 中提供 buffer，退而求其次检查 mimetype
+      if (file.mimetype === 'image/png' || file.mimetype === 'image/jpeg') {
+        cb(null, true);
+      } else {
+        cb(new Error('只接受 PNG/JPEG 图片文件'));
+      }
     } else {
-      cb(new Error('只接受图片文件'));
+      cb(new Error('只接受 PNG/JPEG 图片文件'));
     }
   },
 });

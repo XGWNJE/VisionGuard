@@ -23,6 +23,12 @@ namespace VisionGuard.Utils
                 try
                 {
                     long offset = await QueryOffset(server);
+                    // 偏移>5min视为服务器异常，拒绝并尝试下一个
+                    if (Math.Abs(offset) > 300_000)
+                    {
+                        LogManager.StaticWarn($"[NTP] {server} 返回异常偏移 {offset}ms (>5min)，已拒绝");
+                        continue;
+                    }
                     _offsetMs = offset;
                     _synced = true;
                     LogManager.StaticInfo($"[NTP] 同步成功 server={server} offset={offset}ms");

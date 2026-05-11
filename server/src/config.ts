@@ -36,18 +36,24 @@ export const config = {
   maxAlertsPerDevice: 200,
 
   /** 客户端最低版本要求 (语义化版本)。低于此版本的连接将在认证时被拒绝。 */
-  minClientVersion: '3.5.0',
+  minClientVersion: '4.0.0',
 
   /** 是否接收检测端 HTTP POST 截图上传。false = 纯 WS 按需模型，截图仅存在检测端本地 */
   enableHttpScreenshotUpload: process.env.ENABLE_HTTP_SCREENSHOT_UPLOAD === 'true',
 
   /** 报警记录 TTL (小时)，默认 168 小时 = 7 天。与检测端本地截图缓存 TTL 对齐 */
   alertTtlHours: parseInt(process.env.ALERT_TTL_HOURS || '168', 10),
+
+  /** WS 最大并发连接数 (所有角色合计)，防止连接洪水 */
+  maxWsConnections: parseInt(process.env.MAX_WS_CONNECTIONS || '100', 10),
+
+  /** 接收端幽灵清理阈值 (毫秒)。接收端心跳 20s + OkHttp ping 25s，取 100s */
+  receiverGhostThresholdMs: 100_000,
 } as const;
 
-// 启动时检查 API_KEY 是否配置
 export function validateConfig(): void {
   if (!config.apiKey) {
-    console.warn('[config] ⚠ API_KEY 未设置，所有请求将被拒绝。请在 .env 中配置 API_KEY');
+    console.error('[config] ❌ API_KEY 未设置，服务器拒绝启动。请在 .env 中配置 API_KEY');
+    process.exit(1);
   }
 }

@@ -2,6 +2,7 @@
 // │ types.ts                                                │
 // │ 角色：所有 TypeScript 接口/类型定义                       │
 // │ 覆盖：HTTP 请求/响应、WebSocket 消息、内部数据结构        │
+// │ 版本：4.0.0                                              │
 // └─────────────────────────────────────────────────────────┘
 
 // ── HTTP ──────────────────────────────────────────────────
@@ -27,7 +28,7 @@ export interface AlertRecord {
   deviceName: string;
   timestamp: string;
   detections: Detection[];
-  screenshotPath?: string;    // 磁盘路径（纯 WS 按需模型时为空）
+  screenshotPath?: string;
   createdAt: number;          // Date.now()
 }
 
@@ -43,7 +44,7 @@ export interface WsAuthMessage {
   version?: string;
 }
 
-/** Windows → 服务器：心跳 (每 15 秒) */
+/** 检测端 → 服务器：心跳 (每 15 秒) */
 export interface WsHeartbeat {
   type: 'heartbeat';
   deviceId: string;
@@ -55,13 +56,13 @@ export interface WsHeartbeat {
   targets?: string;
 }
 
-/** Android → 服务器：心跳 (每 20 秒，补充 OkHttp ping 帧) */
+/** 接收端 → 服务器：心跳 (每 20 秒) */
 export interface WsHeartbeatAndroid {
   type: 'heartbeat-android';
   deviceId: string;
 }
 
-/** 服务器 → Android：报警推送 */
+/** 服务器 → 接收端：报警推送 (v4.0.0: 内嵌截图) */
 export interface WsAlertPush {
   type: 'alert';
   alertId: string;
@@ -71,7 +72,12 @@ export interface WsAlertPush {
   detections: Detection[];
   screenshotUrl: string;
   timings?: Record<string, number>;
+  /** @deprecated since 4.0.0 — 使用 capturedAt 替代 */
   wsSentAt?: string;
+  /** v4.0.0: 检测端捕获帧的 NTP 时间戳 (ISO8601) */
+  capturedAt?: string;
+  /** v4.0.0: 报警截图 JPEG Base64 (自动推送，不再按需拉取) */
+  screenshotBase64?: string;
   serverReceivedAt?: string;
   serverRelayedAt?: string;
 }
@@ -89,18 +95,18 @@ export interface DeviceStatus {
   clientType: string;
 }
 
-/** Android → 服务器：反向控制命令 */
+/** 接收端 → 服务器：反向控制命令 */
 export interface WsCommand {
   type: 'command';
   targetDeviceId: string;
   command: 'pause' | 'resume' | 'stop-alarm';
 }
 
-/** Android → 服务器：参数调整 */
+/** 接收端 → 服务器：参数调整 */
 export interface WsSetConfig {
   type: 'set-config';
   targetDeviceId: string;
-  key: string;    // 'cooldown' | 'confidence' | 'targets'
+  key: string;
   value: string;
 }
 
@@ -119,48 +125,23 @@ export interface WsSetConfigRelay {
   targetDeviceId: string;
 }
 
-/** Android → 服务器：请求指定设备的截图（服务器转发给 Windows） */
-export interface WsRequestScreenshot {
-  type: 'request-screenshot';
-  alertId: string;
-  targetDeviceId: string;
-}
-
-/** 服务器 → Windows：转发截图请求 */
-export interface WsRequestScreenshotRelay {
-  type: 'request-screenshot';
-  alertId: string;
-}
-
-/** Windows → 服务器 → Android：截图数据（base64 JPEG） */
-export interface WsScreenshotData {
-  type: 'screenshot-data';
-  alertId: string;
-  imageBase64: string;
-  width: number;
-  height: number;
-}
-
-/** 客户端 → 服务器：主动断开原因（帮助服务端诊断） */
+/** 客户端 → 服务器：主动断开原因 */
 export interface WsDisconnectReason {
   type: 'disconnect-reason';
   reason: 'user-close' | 'network-lost' | 'server-kick' | 'app-killed' | 'server-unreachable' | 'auth-failed' | 'unknown';
   detail?: string;
 }
 
-/** Android → 服务器：重连时上报上次 Session 结束原因（帮助服务端诊断） */
+/** 接收端 → 服务器：重连时上报上次 Session 信息 */
 export interface WsSessionInfo {
   type: 'session-info';
   deviceId: string;
-  /** 上次连接是怎么结束的 */
   lastSessionEndReason: 'user-close' | 'network-lost' | 'server-kick' | 'app-killed' | 'unknown';
-  /** 上次连接持续了多久（毫秒），-1 表示未知 */
   lastSessionDurationMs: number;
-  /** 本次是重连还是首次连接 */
   isReconnect: boolean;
 }
 
-/** 服务器 → Android：命令确认（服务器生成 或 Windows 主动回包） */
+/** 服务器 → 接收端：命令确认 */
 export interface WsCommandAck {
   type: 'command-ack';
   targetDeviceId: string;
@@ -173,11 +154,11 @@ export interface WsCommandAck {
 
 import type WebSocket from 'ws';
 
-export interface WindowsClient {
+export interface DetectorClient {
   ws: WebSocket;
   deviceId: string;
   deviceName: string;
-  clientType: string;
+  clientType: string;       // 'windows' | 'android-detector'
   isMonitoring: boolean;
   isReady: boolean;
   lastSeen: Date;
@@ -186,7 +167,7 @@ export interface WindowsClient {
   targets: string;
 }
 
-export interface AndroidClient {
+export interface ReceiverClient {
   ws: WebSocket;
   deviceId: string;
   lastSeen: Date;

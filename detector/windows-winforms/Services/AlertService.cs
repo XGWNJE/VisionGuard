@@ -114,8 +114,8 @@ namespace VisionGuard.Services
                 string path     = Path.Combine(dir, filename);
                 bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
 
-                // 保存后执行缓存约束清理
-                CleanupCache(dir);
+                // 保存后异步执行缓存约束清理（避免阻塞报警路径）
+                Task.Run(() => CleanupCache(dir));
             }
             catch { }
         }

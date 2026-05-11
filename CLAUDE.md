@@ -21,6 +21,8 @@ cd server && npm install && npm run build && npm start
 # Server 部署到 VPS
 bash server/deploy.sh              # 仅同步 src/
 bash server/deploy.sh --full       # 含 package.json + npm install
+bash server/deploy.sh --nginx      # 含 Nginx 配置更新
+bash server/setup-tls.sh           # 首次 TLS 证书申请 (仅需一次)
 
 # Windows WinForms — Visual Studio 2022 打开 detector/windows-winforms/VisionGuard.csproj
 # Windows WPF      — cd detector/windows && dotnet build -c Release
@@ -68,13 +70,17 @@ WS 消息协议（关键）：
 | → Server | `heartbeat` | 富状态 15s（检测端）/ 极简 20s（接收端） |
 | → Server | `alert` | 报警（HTTP POST 或纯 WS） |
 | → Server | `command` / `set-config` | 接收端→Server→检测端 远控 |
-| ← Server | `device-list` / `alert` / `command-ack` | 广播与回执 |
+| ← Server | `device-list` / `alert` / `command-ack` / `ping` | 广播与回执 |
+| ↔ | `request-screenshot` / `screenshot-data` | 截图按需拉取（**4.0 将移除**） |
+| ↔ | `disconnect-reason` / `session-info` | 客户端断开诊断上报 |
 
-版本门控：`minClientVersion = '3.5.0'`，低版本 WS 认证直接拒绝。
+版本门控：`minClientVersion = '3.5.0'`，低版本 WS 认证直接拒绝。当前全端版本 `3.7.0`，根目录 `VERSION` 文件为权威来源。Android 端版本号由 `build.gradle.kts:versionName` 驱动，`WsMessage.kt` 通过 `BuildConfig.VERSION_NAME` 动态读取。
 
-幽灵检测：`deviceOfflineMs = 75_000` + 应用层 ping + WS 协议层 ping 双层探测。
+幽灵检测：`deviceOfflineMs = 75_000` + 应用层 ping + WS 协议层 ping 双层探测。幽灵清理使用 `<=` 比较确保边界一致。
 
-截图双模式：`ENABLE_HTTP_SCREENSHOT_UPLOAD` — true=HTTP 上传，false=纯 WS 按需拉取。
+截图模式：当前 `ENABLE_HTTP_SCREENSHOT_UPLOAD` — true=HTTP 上传，false=纯 WS 按需拉取。**计划 4.0.0 统一改为自动推送**（alert 消息内嵌截图 Base64，去按需拉取）。
+
+Server 角色管理：`windows` + `android-detector` 同存 `windowsClients` Map，`android` 存 `androidClients` Map。**计划 4.0.0 改为独立三 Map**（detectorWindows / detectorAndroid / receiver），各自独立幽灵阈值。
 
 ### Android 接收端
 
@@ -99,17 +105,19 @@ MVVM + 前台 Service（`foregroundServiceType="remoteMessaging"`）。**无独�
 7. 检测端 `foregroundServiceType="camera"`，接收端 `="remoteMessaging"`，不要混用
 8. 遮罩持久化：WinForms→settings.ini（SimpleJson），Android→DataStore（Gson），格式不同但语义等价
 9. WinForms 退出：窗口 X 直接关程序，托盘右键退出/显示，最小化到托盘
-10. WPF 远程命令路由（pause/resume/set-config）尚未接入，`CommandReceived`/`SetConfigReceived` 无人订阅
+10. WPF 远程命令路由（pause/resume/set-config）已全部接入 `MainViewModel.cs:120-147`，`CommandReceived` / `SetConfigReceived` 均有订阅
+11. 报警本地队列：WinForms 和 Android 检测端在 WS 断连时缓存最多 50 条报警，恢复后批量重发，超 5 分钟丢弃
+12. 接收端 `foregroundServiceType="remoteMessaging"` — Android 15+ 可能有政策风险（Google Play 要求此类型必须对接 FCM），暂维持现状，备忘后续评估改为 `dataSync`
 
 ## Server 配置参考
 
-关键 `.env` 字段：`PORT` / `API_KEY` / `SCREENSHOT_TTL_HOURS=72` / `ALERT_TTL_HOURS=168` / `MAX_UPLOAD_BYTES=2097152` / `ENABLE_HTTP_SCREENSHOT_UPLOAD=true`
+关键 `.env` 字段：`PORT` / `API_KEY`（为空时 Server 拒绝启动）/ `SCREENSHOT_TTL_HOURS=72` / `ALERT_TTL_HOURS=168` / `MAX_UPLOAD_BYTES=2097152` / `ENABLE_HTTP_SCREENSHOT_UPLOAD=true` / `MAX_WS_CONNECTIONS=100`
 
 ## 关键常量
 
 | 常量 | 位置 |
 |------|------|
-| `SERVER_URL = "http://216.36.111.208:3000"` | 两端 `AppConstants.kt` |
+| `SERVER_URL = "https://xgwnje.cn"` | 两端 `AppConstants.kt` + WinForms `Form1.cs` + WPF `AppConfig.cs` |
 | `API_KEY = "XG-VisionGuard-2024"` | 两端 `AppConstants.kt` |
 | 检测端包名 `com.xgwnje.visionguard` | `app_name = "VG 检测"` |
 | 接收端包名 `com.xgwnje.visionguard_android` | `app_name = "VG 接收"` |

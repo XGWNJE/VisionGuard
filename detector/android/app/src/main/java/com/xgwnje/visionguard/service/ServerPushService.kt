@@ -54,6 +54,15 @@ class ServerPushService(
 
     val wsClient = WebSocketClient()
 
+    // 报警本地队列（WS 断连时缓存，恢复后批量重发）
+    private val pendingAlerts = java.util.concurrent.ConcurrentLinkedQueue<PendingAlert>()
+    private data class PendingAlert(
+        val alertId: String,
+        val detections: List<com.xgwnje.visionguard.data.model.Detection>,
+        val timestampMs: Long,
+        val timings: Map<String, Long>
+    )
+
     val connectionState: StateFlow<WsState>
         get() = wsClient.connectionState
 
@@ -65,12 +74,6 @@ class ServerPushService(
 
     private val networkMonitor = NetworkMonitor(context)
     private val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-        .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-        .build()
 
     init {
         // 注入网络检测器
@@ -97,6 +100,15 @@ class ServerPushService(
                         wsClient.onNetworkLost()
                     }
                 )
+
+                // 监听连接状态，恢复后重发队列中的报警
+                scope.launch {
+                    wsClient.connectionState.collect { state ->
+                        if (state == WsState.CONNECTED) {
+                            drainPendingAlerts()
+                        }
+                    }
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "连接服务器失败", e)
             }
@@ -111,81 +123,36 @@ class ServerPushService(
     }
 
     /**
-     * 发送报警事件（HTTP POST multipart，与 Windows 端对齐）。
-     *
-     * @param event 报警事件
-     * @param bitmap 报警帧截图
-     */
-    fun sendAlert(event: AlertEvent, bitmap: Bitmap?) {
-        scope.launch {
-            val deviceId = settingsRepo.ensureDeviceId()
-            val deviceName = settingsRepo.getDeviceName()
-            val meta = AlertMeta(
-                deviceId = deviceId,
-                deviceName = deviceName,
-                timestamp = isoNow(),
-                detections = event.detections.map {
-                    ServerDetection(
-                        label = it.label,
-                        confidence = it.confidence,
-                        bbox = Bbox(it.bbox.left, it.bbox.top, it.bbox.width(), it.bbox.height())
-                    )
-                }
-            )
-            val metaJson = com.google.gson.Gson().toJson(meta)
-
-            val jpegBytes = bitmap?.let { bmpToJpeg(it) }
-            if (jpegBytes == null) {
-                Log.w(TAG, "报警帧为空，跳过 HTTP 上传")
-                return@launch
-            }
-
-            val body = MultipartBody.Builder()
-                .setType(MultipartBody.FORM)
-                .addFormDataPart("meta", metaJson)
-                .addFormDataPart(
-                    "screenshot", "alert.jpg",
-                    jpegBytes.toRequestBody("image/jpeg".toMediaType())
-                )
-                .build()
-
-            val request = Request.Builder()
-                .url("${AppConstants.SERVER_URL}/api/alert")
-                .header("X-API-Key", AppConstants.API_KEY)
-                .post(body)
-                .build()
-
-            httpClient.newCall(request).enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {
-                    Log.e(TAG, "报警上传失败: ${e.message}")
-                }
-                override fun onResponse(call: Call, response: Response) {
-                    response.use {
-                        if (it.isSuccessful) {
-                            Log.i(TAG, "报警已上传: ${event.detections.size} 个目标")
-                        } else {
-                            Log.w(TAG, "报警上传被拒绝: ${it.code} ${it.message}")
-                        }
-                    }
-                }
-            })
-        }
-    }
-
-    /**
-     * 发送轻量报警通知（WS，无截图数据）。
-     * 截图由检测端本地缓存，接收端按需通过 request-screenshot 拉取。
+     * v4.0.0: 推送报警（WS，内嵌截图 Base64）。
      *
      * @param alertId 报警 ID
      * @param detections 检测结果
-     * @param timestampMs 报警发生时间戳（毫秒，与 Windows 端 alert.Timestamp 对齐）
+     * @param timestampMs 报警发生时间戳（毫秒）
      * @param timings 链路耗时统计
+     * @param bitmap 报警帧截图（可空，断连入队时跳过）
      */
     fun pushAlert(
         alertId: String,
         detections: List<com.xgwnje.visionguard.data.model.Detection>,
         timestampMs: Long,
-        timings: Map<String, Long> = emptyMap()
+        timings: Map<String, Long> = emptyMap(),
+        bitmap: Bitmap? = null
+    ) {
+        if (wsClient.connectionState.value != WsState.CONNECTED) {
+            while (pendingAlerts.size >= 50) pendingAlerts.poll()
+            pendingAlerts.add(PendingAlert(alertId, detections, timestampMs, timings))
+            Log.w(TAG, "WS 未连接，报警入队 (队列 ${pendingAlerts.size}/50): $alertId")
+            return
+        }
+        doPushAlert(alertId, detections, timestampMs, timings, bitmap)
+    }
+
+    private fun doPushAlert(
+        alertId: String,
+        detections: List<com.xgwnje.visionguard.data.model.Detection>,
+        timestampMs: Long,
+        timings: Map<String, Long>,
+        bitmap: Bitmap? = null
     ) {
         scope.launch {
             val deviceId = settingsRepo.ensureDeviceId()
@@ -204,7 +171,7 @@ class ServerPushService(
                 }
             )
             val gson = com.google.gson.Gson()
-            val msg = mapOf(
+            val msg = mutableMapOf<String, Any>(
                 "type" to "alert",
                 "alertId" to alertId,
                 "deviceId" to deviceId,
@@ -212,15 +179,36 @@ class ServerPushService(
                 "timestamp" to timestamp,
                 "detections" to gson.fromJson(gson.toJson(meta.detections), List::class.java),
                 "timings" to timings,
-                "wsSentAt" to isoFormat(NtpSync.now())
+                "capturedAt" to isoFormat(NtpSync.now())
             )
+            // v4.0.0: 内嵌截图 Base64
+            if (bitmap != null) {
+                try {
+                    val jpegBytes = bmpToJpeg(bitmap)
+                    msg["screenshotBase64"] = android.util.Base64.encodeToString(jpegBytes, android.util.Base64.NO_WRAP)
+                } catch (e: Exception) {
+                    Log.w(TAG, "截图编码失败: ${e.message}")
+                }
+            }
             val sent = wsClient.sendRawJson(gson.toJson(msg))
             if (sent) {
-                Log.i(TAG, "报警已推送(WS): alertId=$alertId targets=${detections.size}")
+                Log.i(TAG, "报警已推送(WS): alertId=$alertId targets=${detections.size} hasScreenshot=${bitmap != null}")
             } else {
                 Log.w(TAG, "报警推送失败(WS): alertId=$alertId")
             }
         }
+    }
+
+    private fun drainPendingAlerts() {
+        var count = 0
+        while (true) {
+            val pending = pendingAlerts.poll() ?: break
+            if (System.currentTimeMillis() - pending.timestampMs > 5 * 60 * 1000L) continue
+            doPushAlert(pending.alertId, pending.detections, pending.timestampMs, pending.timings)
+            count++
+            if (count >= 50) break
+        }
+        if (count > 0) Log.i(TAG, "已从队列重发 $count 条报警")
     }
 
     /**

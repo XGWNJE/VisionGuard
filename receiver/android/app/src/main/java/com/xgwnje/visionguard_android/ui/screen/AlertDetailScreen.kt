@@ -72,7 +72,7 @@ fun AlertDetailScreen(
     var screenshotBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var screenshotFailed by remember { mutableStateOf(false) }
 
-    // 进入页面时：优先从缓存加载，缓存未命中再请求截图
+    // v4.0.0: 截图优先从缓存加载，其次从 alert 内嵌字段解码
     LaunchedEffect(alertId) {
         if (alert == null) return@LaunchedEffect
 
@@ -88,26 +88,26 @@ fun AlertDetailScreen(
             }
         }
 
-        // 缓存未命中，走网络请求
-        val sent = service.requestScreenshot(alertId, alert.deviceId)
-        if (!sent) {
-            screenshotFailed = true
-            return@LaunchedEffect
+        // 缓存未命中：尝试从 alert 内嵌 screenshotBase64 解码
+        if (!alert.screenshotBase64.isNullOrEmpty()) {
+            try {
+                val bytes = Base64.decode(alert.screenshotBase64, Base64.DEFAULT)
+                screenshotBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                return@LaunchedEffect
+            } catch (_: Exception) { }
         }
-        // 等待截图数据，10 秒超时
-        delay(10_000)
-        if (screenshotBitmap == null) {
-            screenshotFailed = true
-        }
+
+        screenshotFailed = true
     }
 
-    // 监听截图数据（来自 Windows 经服务器转发）
+    // 监听实时截图推送（来自 AlertForegroundService）
     LaunchedEffect(Unit) {
         service.onScreenshotData.collect { data ->
             if (data.alertId == alertId && data.imageBase64.isNotEmpty()) {
                 try {
                     val bytes = Base64.decode(data.imageBase64, Base64.DEFAULT)
                     screenshotBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    screenshotFailed = false
                 } catch (_: Exception) { }
             }
         }
@@ -232,8 +232,8 @@ fun AlertDetailScreen(
                 // 链路耗时（简化：本地处理 + 网络中继 + 合计）
                 val timings = alert.timings
                 val processMs = timings?.get("processMs")
-                val relayMs = computeRelayMs(alert)
-                if (processMs != null || relayMs != null) {
+                val e2eMs = computeE2ELatencyMs(alert)
+                if (processMs != null || e2eMs != null) {
                     Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider()
                     Spacer(modifier = Modifier.height(12.dp))
@@ -241,11 +241,11 @@ fun AlertDetailScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     processMs?.let { TimingRow("本地处理", "${it}ms") }
-                    relayMs?.let { TimingRow("网络中继", "${it}ms") }
+                    e2eMs?.let { TimingRow("端到端延迟", "${it}ms") }
 
-                    if (processMs != null && relayMs != null) {
+                    if (processMs != null && e2eMs != null) {
                         Spacer(modifier = Modifier.height(4.dp))
-                        TimingRow("合计", "${processMs + relayMs}ms", bold = true)
+                        TimingRow("合计", "${processMs + e2eMs}ms", bold = true)
                     }
                 }
             }
@@ -254,15 +254,15 @@ fun AlertDetailScreen(
 }
 
 /**
- * 计算网络中继耗时：检测端 WS 发出 → 接收端收到。
- * 两端已 NTP 校准，直接做差即可。
+ * v4.0.0: 端到端延迟 = 接收端前台通知时间 - 检测端捕获帧时间。
+ * 两端已 NTP 校准，capturedAt 来自检测端 WS alert 消息。
  */
-private fun computeRelayMs(alert: AlertMessage): Long? {
-    val wsSent = try {
-        alert.wsSentAt?.let { java.time.Instant.parse(it).toEpochMilli() }
+private fun computeE2ELatencyMs(alert: AlertMessage): Long? {
+    val capturedAt = try {
+        alert.capturedAt?.let { java.time.Instant.parse(it).toEpochMilli() }
     } catch (_: Exception) { null }
-    val received = alert.receivedAt.takeIf { it > 0L }
-    return if (wsSent != null && received != null) received - wsSent else null
+    val notified = alert.notifiedAt.takeIf { it > 0L }
+    return if (capturedAt != null && notified != null) notified - capturedAt else null
 }
 
 @Composable

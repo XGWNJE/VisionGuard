@@ -28,6 +28,11 @@ object NtpSync {
         for (server in servers) {
             try {
                 val offset = queryOffset(server)
+                // 偏移>5min视为服务器异常，拒绝并尝试下一个
+                if (kotlin.math.abs(offset) > 300_000) {
+                    Log.w(TAG, "$server 返回异常偏移 ${offset}ms (>5min)，已拒绝")
+                    continue
+                }
                 offsetMs = offset
                 isSynced = true
                 Log.i(TAG, "同步成功 server=$server offset=${offset}ms")
