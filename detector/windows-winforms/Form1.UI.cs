@@ -44,11 +44,10 @@ namespace VisionGuard
 
             // TabControl: 4 tabs for right side (Win7 native style)
             _tabControl = new TabControl { Dock = DockStyle.Fill };
-            _tabCapture = new TabPage("捕获");
-            _tabParams  = new TabPage("参数");
-            _tabTargets = new TabPage("目标");
-            _tabServer  = new TabPage("服务器");
-            _tabControl.TabPages.AddRange(new[] { _tabCapture, _tabParams, _tabTargets, _tabServer });
+            _tabCapture  = new TabPage("捕获");
+            _tabSettings = new TabPage("设置");
+            _tabServer   = new TabPage("服务器");
+            _tabControl.TabPages.AddRange(new[] { _tabCapture, _tabSettings, _tabServer });
 
             // Layout: left 2/3 = preview, right 1/3 = TabControl
             var contentLayout = new TableLayoutPanel
@@ -162,10 +161,12 @@ namespace VisionGuard
 
             var title1 = new Label { Text = "捕获区域", Dock = DockStyle.Top, Height = fh + 4, Font = new Font(Font, FontStyle.Bold) };
             page.Controls.Add(title1);
+            page.Controls.SetChildIndex(title1, 0);
             AddGap(page, gap);
 
             _lblRegionInfo = new Label { Text = "未选择区域", Dock = DockStyle.Top, Height = fh + 4 };
             page.Controls.Add(_lblRegionInfo);
+            page.Controls.SetChildIndex(_lblRegionInfo, 0);
             AddGap(page, gap);
 
             _btnPickWindow   = AddBtn(page, "选择窗口...", fh + 12); AddGap(page, gap);
@@ -174,10 +175,12 @@ namespace VisionGuard
 
             _lblMaskInfo = new Label { Text = "当前遮罩：-", Dock = DockStyle.Top, Height = fh + 4 };
             page.Controls.Add(_lblMaskInfo);
+            page.Controls.SetChildIndex(_lblMaskInfo, 0);
             AddGap(page, gap * 2);
 
             var title2 = new Label { Text = "监控控制", Dock = DockStyle.Top, Height = fh + 4, Font = new Font(Font, FontStyle.Bold) };
             page.Controls.Add(title2);
+            page.Controls.SetChildIndex(title2, 0);
             AddGap(page, gap);
 
             _btnStart = AddBtn(page, "开始监控", fh + 16); AddGap(page, gap);
@@ -188,71 +191,57 @@ namespace VisionGuard
         }
 
         // ════════════════════════════════════════════════════════════
-        // Page 2: Detection parameters
+        // Page 2: Detection settings (matches WPF order)
         // ════════════════════════════════════════════════════════════
 
-        private void BuildParamsPage()
+        private void BuildSettingsPage()
         {
-            var page = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12) };
+            var page = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12), AutoScroll = true };
             int fh = Font.Height;
             int gap = fh / 3;
             int sliderH = fh * 2 + 8;
 
+            // 1. 置信度阈值
             AddTitle(page, "置信度阈值", fh); AddGap(page, gap);
             _trkThreshold = AddSlider(page, 10, 95, 45, 10, sliderH); AddGap(page, gap);
             _lblThreshold = AddVal(page, "45%", fh); AddGap(page, gap * 2);
 
+            // 2. 目标采样率
             AddTitle(page, "目标采样率", fh); AddGap(page, gap);
             _sliderSamplingRate = AddSlider(page, 1, 5, 3, 1, sliderH); AddGap(page, gap);
             _lblSamplingRate = AddVal(page, "3 次/秒", fh); AddGap(page, gap * 2);
 
+            // 3. 警报推送冷却时间
             AddTitle(page, "警报推送冷却时间", fh); AddGap(page, gap);
             _sliderCooldown = AddSlider(page, 1, 300, 5, 30, sliderH); AddGap(page, gap);
             _lblCooldown = AddVal(page, "5 秒", fh); AddGap(page, gap * 2);
 
+            // 4. 模型选择
             AddTitle(page, "模型选择", fh); AddGap(page, gap);
             _cmbModel = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Top };
             _cmbModel.Items.AddRange(new object[] { "YOLOv5nu 320 (轻量 ~10MB)" });
             _cmbModel.SelectedIndex = 0;
             _cmbModel.SelectedIndexChanged += (s, e) => { _selectedModel = "yolov5nu"; };
             page.Controls.Add(_cmbModel);
+            page.Controls.SetChildIndex(_cmbModel, 0);
+            AddGap(page, gap * 2);
 
-            _tabParams.Controls.Add(page);
-        }
-
-        // ════════════════════════════════════════════════════════════
-        // Page 3: Monitoring targets
-        // ════════════════════════════════════════════════════════════
-
-        private void BuildTargetsPage()
-        {
-            _tabTargets.Padding = new Padding(12);
-            int fh = Font.Height;
-            int gap = fh / 3;
-
-            var tlp = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
-            tlp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            tlp.RowStyles.Add(new RowStyle(SizeType.Absolute, fh + 4 + gap));
-            tlp.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-
-            var title = new Label
-            {
-                Text = "监控目标", Dock = DockStyle.Fill, TextAlign = ContentAlignment.BottomLeft,
-                Font = new Font(Font, FontStyle.Bold), Margin = new Padding(0, 0, 0, gap)
-            };
-            tlp.Controls.Add(title, 0, 0);
-
+            // 5. 监控目标
+            AddTitle(page, "监控目标", fh); AddGap(page, gap);
             _targetListBox = new CheckedListBox
             {
-                Dock = DockStyle.Fill,
+                Dock = DockStyle.Top,
+                Height = fh * 8,
                 CheckOnClick = true,
                 IntegralHeight = false,
                 BorderStyle = BorderStyle.FixedSingle
             };
             foreach (string key in _targetClassKeys)
                 _targetListBox.Items.Add(CocoClassMap.EnZh[key], key == "person");
-            tlp.Controls.Add(_targetListBox, 0, 1);
-            _tabTargets.Controls.Add(tlp);
+            page.Controls.Add(_targetListBox);
+            page.Controls.SetChildIndex(_targetListBox, 0);
+
+            _tabSettings.Controls.Add(page);
         }
 
         // ════════════════════════════════════════════════════════════
@@ -281,11 +270,13 @@ namespace VisionGuard
             connRow.Controls.Add(_btnRetry);
             connRow.Controls.Add(_lblConnState);
             page.Controls.Add(connRow);
+            page.Controls.SetChildIndex(connRow, 0);
             AddGap(page, gap * 3);
 
             // Separator
             var sep = new Label { Dock = DockStyle.Top, Height = 1, BorderStyle = BorderStyle.Fixed3D };
             page.Controls.Add(sep);
+            page.Controls.SetChildIndex(sep, 0);
             AddGap(page, gap * 3);
 
             AddTitle(page, "设备名称", fh); AddGap(page, gap);
@@ -297,6 +288,7 @@ namespace VisionGuard
             nameRow.Controls.Add(btnApplyName);
             nameRow.Controls.Add(_txtDeviceName);
             page.Controls.Add(nameRow);
+            page.Controls.SetChildIndex(nameRow, 0);
 
             // Hidden detail label (still assigned by WireServerPushEvents)
             _lblConnDetail = new Label { Visible = false };
@@ -357,13 +349,16 @@ namespace VisionGuard
 
         private static void AddGap(Control parent, int h)
         {
-            parent.Controls.Add(new Panel { Dock = DockStyle.Top, Height = h });
+            var p = new Panel { Dock = DockStyle.Top, Height = h };
+            parent.Controls.Add(p);
+            parent.Controls.SetChildIndex(p, 0);
         }
 
         private static Button AddBtn(Control parent, string text, int h)
         {
             var btn = new Button { Text = text, Dock = DockStyle.Top, Height = h };
             parent.Controls.Add(btn);
+            parent.Controls.SetChildIndex(btn, 0);
             return btn;
         }
 
@@ -371,12 +366,14 @@ namespace VisionGuard
         {
             var lbl = new Label { Text = text, Dock = DockStyle.Top, Height = fh + 4, Font = new Font(parent.Font, FontStyle.Bold) };
             parent.Controls.Add(lbl);
+            parent.Controls.SetChildIndex(lbl, 0);
         }
 
         private static Label AddVal(Control parent, string text, int fh)
         {
             var lbl = new Label { Text = text, Dock = DockStyle.Top, Height = fh + 2 };
             parent.Controls.Add(lbl);
+            parent.Controls.SetChildIndex(lbl, 0);
             return lbl;
         }
 
@@ -384,6 +381,7 @@ namespace VisionGuard
         {
             var tb = new TrackBar { Minimum = min, Maximum = max, Value = val, TickFrequency = tick, Dock = DockStyle.Top, Height = h };
             parent.Controls.Add(tb);
+            parent.Controls.SetChildIndex(tb, 0);
             return tb;
         }
 

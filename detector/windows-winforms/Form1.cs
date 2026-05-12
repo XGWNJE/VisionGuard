@@ -29,7 +29,7 @@ namespace VisionGuard
 
         // Tab control
         private TabControl _tabControl;
-        private TabPage _tabCapture, _tabParams, _tabTargets, _tabServer;
+        private TabPage _tabCapture, _tabSettings, _tabServer;
 
         // Capture page
         private Label  _lblRegionInfo;
@@ -107,8 +107,7 @@ namespace VisionGuard
             Text = "VisionGuard";
 
             BuildCapturePage();
-            BuildParamsPage();
-            BuildTargetsPage();
+            BuildSettingsPage();
             BuildServerPage();
 
             WireEvents();
