@@ -14,28 +14,23 @@ using System.Runtime.InteropServices;
 namespace VisionGuard.Inference
 {
     /// <summary>
-    /// 将 Bitmap 转换为 YOLOv5nu 所需的 float[1,3,H,W] CHW RGB 张量。
+    /// 将 Bitmap 转换为 YOLOv5 所需的 float[1,3,H,W] CHW RGB 张量。
     /// </summary>
     public static class ImagePreprocessor
     {
-        /// <summary>模型输入尺寸（统一常量，YoloOutputParser 也引用此值）</summary>
-        public const int ModelInputSize = 320;
-        private const int ModelSize = ModelInputSize;
-
         /// <summary>
         /// 将 <paramref name="source"/> 缩放并转换为 float 张量（CHW, RGB, [0,1]）。
         /// 不修改 source，不持有 source 引用。
         /// </summary>
-        public static float[] ToTensor(Bitmap source)
+        public static float[] ToTensor(Bitmap source, int modelSize)
         {
-            // 缩放到 320x320，Format24bppRgb 确保字节布局固定（BGR, 无 padding 问题需注意 stride）
-            using (Bitmap resized = Resize(source, ModelSize, ModelSize))
+            using (Bitmap resized = Resize(source, modelSize, modelSize))
             {
                 return ExtractCHW(resized);
             }
         }
 
-        public static int[] InputShape => new[] { 1, 3, ModelSize, ModelSize };
+        public static int[] GetInputShape(int modelSize) => new[] { 1, 3, modelSize, modelSize };
 
         // ── private ─────────────────────────────────────────────────
 

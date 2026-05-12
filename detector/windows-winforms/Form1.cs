@@ -80,7 +80,7 @@ namespace VisionGuard
         private Rectangle  _windowSubRegion;
 
         // Model
-        private string _selectedModel = "yolov5nu";
+        private string _selectedModel = "yolov5nu_320";
         private string ModelPath => Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory, "Assets", $"{_selectedModel}.onnx");
 

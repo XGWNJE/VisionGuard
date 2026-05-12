@@ -18,6 +18,7 @@ import com.xgwnje.visionguard_android.data.model.ScreenshotData
 import com.xgwnje.visionguard_android.data.model.WsAuthMessage
 import com.xgwnje.visionguard_android.data.model.WsCommandMessage
 import com.xgwnje.visionguard_android.data.model.WsSetConfigMessage
+import com.xgwnje.visionguard_android.data.model.WsScreenshotDataMessage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -149,6 +150,15 @@ class WebSocketClient {
     fun sendSetConfig(targetDeviceId: String, key: String, value: String) {
         val msg = WsSetConfigMessage(targetDeviceId = targetDeviceId, key = key, value = value)
         session?.ws?.send(gson.toJson(msg))
+    }
+
+    fun requestScreenshot(alertId: String, deviceId: String): Boolean {
+        if (session?.ws == null) return false
+        val msg = WsScreenshotDataMessage(
+            alertId = alertId,
+            targetDeviceId = deviceId
+        )
+        return session!!.ws.send(gson.toJson(msg))
     }
 
     // ═════════════════════════════════════════════════════════

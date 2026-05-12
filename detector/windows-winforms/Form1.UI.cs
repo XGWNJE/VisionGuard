@@ -221,9 +221,24 @@ namespace VisionGuard
             // 4. 模型选择
             AddTitle(page, "模型选择", fh); AddGap(page, gap);
             _cmbModel = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Top };
-            _cmbModel.Items.AddRange(new object[] { "YOLOv5nu 320 (轻量 ~10MB)" });
+            _cmbModel.Items.AddRange(new object[] {
+                "YOLOv5nu 320 (极速 ~10MB)",
+                "YOLOv5nu 640 (极速高精 ~10MB)",
+                "YOLOv5su 320 (快速 ~35MB)",
+                "YOLOv5su 640 (快速高精 ~35MB)",
+                "YOLOv5mu 320 (均衡 ~96MB)",
+                "YOLOv5mu 640 (均衡高精 ~96MB)",
+                "YOLOv5lu 640 (高精度 ~203MB)",
+                "YOLOv5xu 640 (最高精度 ~371MB)",
+            });
             _cmbModel.SelectedIndex = 0;
-            _cmbModel.SelectedIndexChanged += (s, e) => { _selectedModel = "yolov5nu"; };
+            _cmbModel.SelectedIndexChanged += (s, e) => {
+                string[] keys = { "yolov5nu_320","yolov5nu_640","yolov5su_320","yolov5su_640",
+                                  "yolov5mu_320","yolov5mu_640","yolov5lu_640","yolov5xu_640" };
+                if (_cmbModel.SelectedIndex >= 0 && _cmbModel.SelectedIndex < keys.Length)
+                    _selectedModel = keys[_cmbModel.SelectedIndex];
+                SaveSettings();
+            };
             page.Controls.Add(_cmbModel);
             page.Controls.SetChildIndex(_cmbModel, 0);
             AddGap(page, gap * 2);

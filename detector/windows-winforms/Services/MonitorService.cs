@@ -133,14 +133,15 @@ namespace VisionGuard.Services
                 if (cfg.MaskRegions != null && cfg.MaskRegions.Count > 0)
                     MaskApplier.ApplyMasks(frame, cfg.MaskRegions);
 
-                // 2. 预处理（内部 resize + 转张量）
+                // 2. 预处理（resize + 转张量，尺寸由模型决定）
                 sw.Restart();
-                float[] tensor = ImagePreprocessor.ToTensor(frame);
+                int modelSize = _engine.ModelInputSize;
+                float[] tensor = ImagePreprocessor.ToTensor(frame, modelSize);
                 long preprocessMs = sw.ElapsedMilliseconds;
 
                 // 3. 推理
                 sw.Restart();
-                float[] rawOutput = _engine.Run(tensor, ImagePreprocessor.InputShape);
+                float[] rawOutput = _engine.Run(tensor, ImagePreprocessor.GetInputShape(modelSize));
                 long inferMs = sw.ElapsedMilliseconds;
 
                 // 4. 解析（使用实际帧尺寸，避免窗口缩放导致坐标偏移）
@@ -148,6 +149,7 @@ namespace VisionGuard.Services
                 var frameRegion = new Rectangle(0, 0, frame.Width, frame.Height);
                 List<Detection> detections = YoloOutputParser.Parse(
                     rawOutput,
+                    modelSize,
                     frameRegion,
                     cfg.ConfidenceThreshold,
                     cfg.IouThreshold,

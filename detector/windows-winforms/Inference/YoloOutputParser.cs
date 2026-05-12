@@ -13,34 +13,32 @@ using VisionGuard.Models;
 
 namespace VisionGuard.Inference
 {
-    /// <summary>
-    /// 解析 YOLOv5nu ONNX 输出张量为 Detection 列表。
+    /// 解析 YOLOv5 ONNX 输出张量为 Detection 列表。
     ///
-    /// 输出格式 [1, 84, 2100]（320px 输入）：
-    ///   - 84 = 4(xywh 中心格式, 绝对像素坐标) + 80(class scores)
-    ///   - 2100 = 40x40 + 20x20 + 10x10 anchor grid
-    ///   - 坐标已是绝对像素值（相对 320x320），无需解码
+    /// 输出格式 [1, 84, N]（N 随输入尺寸变化）：
+    ///   - 84 = 4(xywh 中心格式) + 80(class scores)
+    ///   - N = 输出总元素数 / 84，由模型实际输出决定
+    ///   - 坐标已是绝对像素值，无需解码
     ///
     /// 前5置信度顺序匹配：所有候选按置信度降序，取前5名，再 NMS
     /// </summary>
     public static class YoloOutputParser
     {
-        private static int ModelSize => ImagePreprocessor.ModelInputSize;
-
         private static List<string> CocoLabels => CocoClassMap.EnglishNames;
 
         public static List<Detection> Parse(
             float[]         rawOutput,
+            int             modelSize,
             Rectangle       captureRegion,
             float           confThreshold,
             float           iouThreshold,
             HashSet<string> watchedClasses)
         {
-            const int numAnchors  = 2100;
             const int numChannels = 84;
+            int numAnchors = rawOutput.Length / numChannels;
 
-            float scaleX = captureRegion.Width  / (float)ModelSize;
-            float scaleY = captureRegion.Height / (float)ModelSize;
+            float scaleX = captureRegion.Width  / (float)modelSize;
+            float scaleY = captureRegion.Height / (float)modelSize;
 
             var allCandidates = new List<Detection>();
 

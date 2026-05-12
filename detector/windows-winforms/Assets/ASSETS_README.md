@@ -1,40 +1,45 @@
 # Assets 目录说明
 
-此目录存放运行时依赖的二进制资源文件。
+此目录存放运行时依赖的 YOLOv5 ONNX 模型文件。
 
-## yolov8n_320.onnx（默认）
+## 模型列表
 
-- **模型**：YOLOv8n ultralytics 版，COCO 80类
-- **用途**：目标检测，轻量高速
-- **输入形状**：`[1, 3, 320, 320]` float32，CHW，RGB，归一化到 [0,1]
-- **输出形状**：`[1, 84, 2100]`（原始输出，未内置 NMS）
-- **Opset**：16（兼容 ONNX Runtime 1.11.1 / Windows 7）
-- **文件大小**：约 12.7 MB
+| 模型文件 | 输入 | 大小 | 速度 | 精度 |
+|----------|------|------|------|------|
+| yolov5nu_320.onnx | 320×320 | ~10 MB | 极快 | 低 |
+| yolov5nu_640.onnx | 640×640 | ~10 MB | 快 | 中 |
+| yolov5su_320.onnx | 320×320 | ~35 MB | 快 | 中 |
+| yolov5su_640.onnx | 640×640 | ~35 MB | 中 | 较高 |
+| yolov5mu_320.onnx | 320×320 | ~96 MB | 中 | 较高 |
+| yolov5mu_640.onnx | 640×640 | ~96 MB | 较慢 | 高 |
+| yolov5lu_640.onnx | 640×640 | ~203 MB | 慢 | 很高 |
+| yolov5xu_640.onnx | 640×640 | ~371 MB | 最慢 | 最高 |
 
-## yolov8s_320.onnx（可选）
+> 输入形状：`[1, 3, H, W]` float32，CHW，RGB，归一化到 [0,1]。
+> 输出形状：`[1, 84, N]` — 84 = 4 bbox + 80 COCO 类别。
+> N 随输入尺寸变化：320→2100，640→8400。
+> Opset 12（兼容 ONNX Runtime 1.1.0 / Windows 7）。
 
-- **模型**：YOLOv8s ultralytics 版，COCO 80类
-- **用途**：目标检测，精度更高
-- **输入形状**：`[1, 3, 320, 320]` float32，CHW，RGB，归一化到 [0,1]
-- **输出形状**：`[1, 84, 2100]`（原始输出，未内置 NMS）
-- **Opset**：16
-- **文件大小**：约 42.7 MB
+## 模型选择建议
 
-> 输出格式：84 = 4 (bbox: cx,cy,w,h 中心格式) + 80 (COCO 类别 logits，需 sigmoid)。
-> 坐标基于网格相对位置，需解码为像素坐标。NMS 由代码手动实现。
+- 实时监控、低配机器 → **yolov5nu_320** 或 **yolov5su_320**
+- 均衡精度与速度 → **yolov5mu_320** 或 **yolov5mu_640**
+- 高精度场景、小目标检测 → **yolov5lu_640** 或 **yolov5xu_640**
 
-### 重新导出
+## 重新导出
+
+源模型位于 `D:\ObjectCode\YOLO\models\`，使用 ultralytics 导出：
 
 ```bash
-pip install ultralytics onnxslim
+pip install ultralytics
 python -c "
 from ultralytics import YOLO
-YOLO('yolov8n.pt').export(format='onnx', imgsz=320, opset=16, simplify=True)
-YOLO('yolov8s.pt').export(format='onnx', imgsz=320, opset=16, simplify=True)
+# 示例：导出 yolov5nu 320
+YOLO('yolov5nu.pt').export(format='onnx', imgsz=320, opset=16, simplify=True)
 "
 ```
 
-导出后用 [Netron](https://netron.app) 验证 Input/Output shape 正确。
+导出后复制 .onnx 到本 Assets 目录，程序启动时自动识别。
 
 ### Windows 7 兼容性
 

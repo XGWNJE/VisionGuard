@@ -106,6 +106,14 @@ namespace VisionGuard
             // 服务器页：恢复设备名
             _txtDeviceName.Text = SettingsStore.GetString("DeviceName", Environment.MachineName);
 
+            // 模型选择
+            string savedModel = SettingsStore.GetString("SelectedModel", "yolov5nu_320");
+            _selectedModel = savedModel;
+            string[] modelKeys = { "yolov5nu_320","yolov5nu_640","yolov5su_320","yolov5su_640",
+                                   "yolov5mu_320","yolov5mu_640","yolov5lu_640","yolov5xu_640" };
+            for (int i = 0; i < modelKeys.Length; i++)
+                if (modelKeys[i] == savedModel) { _cmbModel.SelectedIndex = i; break; }
+
             // 启动时自动连接（服务器地址/Key 已硬编码）
             {
                 string deviceId = EnsureDeviceId();
@@ -148,6 +156,7 @@ namespace VisionGuard
 
             // 服务器设置：只保存设备名
             SettingsStore.Set("DeviceName", _txtDeviceName.Text.Trim());
+            SettingsStore.Set("SelectedModel", _selectedModel);
 
             if (_targetWindow != null)
             {

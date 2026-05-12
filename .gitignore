@@ -73,3 +73,6 @@ detector/windows/**/.vs/
 detector/windows/**/bin/
 detector/windows/**/obj/
 
+# 模型文件（大文件，通过导出脚本生成）
+detector/windows-winforms/Assets/*.onnx
+
