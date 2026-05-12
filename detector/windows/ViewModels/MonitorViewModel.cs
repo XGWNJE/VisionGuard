@@ -131,21 +131,38 @@ namespace VisionGuard.ViewModels
 
         internal void StartMonitor(bool remote = false)
         {
-            if (!remote)
+            var config = BuildConfig();
+
+            // 校验已选定有效捕获源
+            if (config.CaptureMode == CaptureMode.ScreenRegion)
             {
-                // 未选任何区域时，默认使用主屏幕全屏
-                if (TargetWindow == null && !HasCaptureTarget)
+                if (config.CaptureRegion.Width < 32 || config.CaptureRegion.Height < 32)
                 {
-                    using var primary = ScreenCapturer.CapturePrimaryScreen();
-                    if (primary != null)
+                    string msg = "请先选择捕获区域（最小 32×32）。";
+                    if (remote)
                     {
-                        ScreenRegion = new Rectangle(0, 0, primary.Width, primary.Height);
-                        RegionInfo = $"X:0  Y:0  {ScreenRegion.Width}×{ScreenRegion.Height}";
+                        _serverPushService.SendCommandAck("resume", false, msg);
+                        return;
                     }
+                    MessageBox.Show(msg, "VisionGuard", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+            }
+            else if (config.CaptureMode == CaptureMode.WindowHandle)
+            {
+                if (config.TargetWindowHandle == IntPtr.Zero)
+                {
+                    string msg = "请先点击「选择窗口…」选择目标窗口。";
+                    if (remote)
+                    {
+                        _serverPushService.SendCommandAck("resume", false, msg);
+                        return;
+                    }
+                    MessageBox.Show(msg, "VisionGuard", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
                 }
             }
 
-            var config = BuildConfig();
             var modelPath = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", _settingsVm.SelectedModelName + ".onnx");
 
             if (!System.IO.File.Exists(modelPath))
@@ -160,8 +177,20 @@ namespace VisionGuard.ViewModels
                 return;
             }
 
-            _monitorService.Start(modelPath, config);
-            IsMonitoring = true;
+            try
+            {
+                _monitorService.Start(modelPath, config);
+                IsMonitoring = true;
+            }
+            catch (Exception ex)
+            {
+                string fullMsg = BuildExceptionMessage(ex);
+                if (remote)
+                    _serverPushService.SendCommandAck("resume", false, "启动异常：" + ex.Message);
+                else
+                    MessageBox.Show(fullMsg, "启动失败", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
 
             if (remote)
                 _serverPushService.SendCommandAck("resume", true);
@@ -246,6 +275,21 @@ namespace VisionGuard.ViewModels
             MaskInfo = "当前遮罩：—";
         }
 
+        private static string BuildExceptionMessage(Exception ex)
+        {
+            var sb = new System.Text.StringBuilder();
+            Exception cur = ex;
+            int depth = 0;
+            while (cur != null && depth < 6)
+            {
+                if (depth > 0) sb.AppendLine("\n--- InnerException ---");
+                sb.AppendLine(cur.GetType().Name + ": " + cur.Message);
+                cur = cur.InnerException;
+                depth++;
+            }
+            return sb.ToString();
+        }
+
         private void ResetWindow()
         {
             TargetWindow = null;
@@ -259,7 +303,8 @@ namespace VisionGuard.ViewModels
 
         private void PickWindow()
         {
-            var picker = new WindowPickerWindow { Owner = Application.Current.MainWindow };
+            var mainHwnd = new System.Windows.Interop.WindowInteropHelper(Application.Current.MainWindow).Handle;
+            var picker = new WindowPickerWindow(mainHwnd) { Owner = Application.Current.MainWindow };
             if (picker.ShowDialog() == true && picker.SelectedWindow != null)
             {
                 TargetWindow = picker.SelectedWindow;
@@ -318,6 +363,13 @@ namespace VisionGuard.ViewModels
 
         private void EditMasks()
         {
+            if (TargetWindow == null && !HasCaptureTarget)
+            {
+                MessageBox.Show("请先选择监控区域或目标窗口。",
+                    "未选择捕获目标", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
             BitmapSource? bg = null;
             try
             {
@@ -411,7 +463,8 @@ namespace VisionGuard.ViewModels
                 string title = SettingsStore.GetString("TargetWindowTitle", string.Empty);
                 if (!string.IsNullOrEmpty(title))
                 {
-                    var windows = WindowEnumerator.GetWindows(System.IntPtr.Zero);
+                    var mainHwnd = new System.Windows.Interop.WindowInteropHelper(Application.Current.MainWindow).Handle;
+                    var windows = WindowEnumerator.GetWindows(mainHwnd);
                     foreach (var w in windows)
                     {
                         if (w.Title.Equals(title, StringComparison.OrdinalIgnoreCase))

@@ -176,7 +176,9 @@ namespace VisionGuard
             _lblMaskInfo = new Label { Text = "当前遮罩：-", Dock = DockStyle.Top, Height = fh + 4 };
             page.Controls.Add(_lblMaskInfo);
             page.Controls.SetChildIndex(_lblMaskInfo, 0);
-            AddGap(page, gap * 2);
+            AddGap(page, gap);
+
+            _btnResetCapture = AddBtn(page, "重置", fh + 12); AddGap(page, gap * 2);
 
             var title2 = new Label { Text = "监控控制", Dock = DockStyle.Top, Height = fh + 4, Font = new Font(Font, FontStyle.Bold) };
             page.Controls.Add(title2);
@@ -329,6 +331,7 @@ namespace VisionGuard
             _btnSelectRegion.Click += BtnSelectRegion_Click;
             _btnPickWindow.Click   += BtnPickWindow_Click;
             _btnEditMasks.Click    += BtnEditMasks_Click;
+            _btnResetCapture.Click += BtnResetCapture_Click;
             _btnStart.Click        += BtnStart_Click;
             _btnStop.Click         += BtnStop_Click;
 

@@ -16,6 +16,7 @@ namespace VisionGuard.UI
         private bool      _dragging;
         private Point     _startPoint;
         private Rectangle _draggingRect;
+        private int       _selectedMaskIndex = -1;
 
         private Panel   _toolbar;
         private Panel   _canvas;
@@ -143,6 +144,19 @@ namespace VisionGuard.UI
                     DialogResult = DialogResult.Cancel;
                     Close();
                 }
+                else if (e.KeyCode == Keys.Delete || e.KeyCode == Keys.Back)
+                {
+                    if (_selectedMaskIndex >= 0 && _selectedMaskIndex < _masks.Count)
+                    {
+                        _masks.RemoveAt(_selectedMaskIndex);
+                        _selectedMaskIndex = -1;
+                        _canvas.Invalidate();
+                    }
+                    else
+                    {
+                        Undo();
+                    }
+                }
             };
         }
 
@@ -156,6 +170,21 @@ namespace VisionGuard.UI
         private void Canvas_MouseDown(object sender, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left) return;
+
+            // 反向遍历检查是否命中已有遮罩（后绘制的在上层）
+            for (int i = _masks.Count - 1; i >= 0; i--)
+            {
+                Rectangle rc = ImageToCanvas(_masks[i]);
+                if (rc.Contains(e.Location))
+                {
+                    _selectedMaskIndex = i;
+                    _canvas.Invalidate();
+                    return;
+                }
+            }
+
+            // 未命中任何遮罩：开始绘制新遮罩
+            _selectedMaskIndex = -1;
             _dragging     = true;
             _startPoint   = e.Location;
             _draggingRect = new Rectangle(e.Location, Size.Empty);
@@ -199,14 +228,17 @@ namespace VisionGuard.UI
 
             g.DrawImage(_background, 0, 0, _canvas.ClientSize.Width, _canvas.ClientSize.Height);
 
-            using (var fill = new SolidBrush(Color.FromArgb(100, Color.Red)))
-            using (var pen  = new Pen(Color.Red, 2f))
+            using (var normalFill = new SolidBrush(Color.FromArgb(100, Color.Red)))
+            using (var normalPen  = new Pen(Color.Red, 2f))
+            using (var selectFill = new SolidBrush(Color.FromArgb(140, Color.Gold)))
+            using (var selectPen  = new Pen(Color.Gold, 3f))
             {
-                foreach (var m in _masks)
+                for (int i = 0; i < _masks.Count; i++)
                 {
-                    Rectangle rc = ImageToCanvas(m);
-                    g.FillRectangle(fill, rc);
-                    g.DrawRectangle(pen, rc);
+                    Rectangle rc = ImageToCanvas(_masks[i]);
+                    bool isSel = i == _selectedMaskIndex;
+                    g.FillRectangle(isSel ? selectFill : normalFill, rc);
+                    g.DrawRectangle(isSel ? selectPen  : normalPen,  rc);
                 }
             }
 
@@ -242,6 +274,7 @@ namespace VisionGuard.UI
         {
             if (_masks.Count == 0) return;
             _masks.RemoveAt(_masks.Count - 1);
+            _selectedMaskIndex = -1;
             _canvas.Invalidate();
         }
 
@@ -249,6 +282,7 @@ namespace VisionGuard.UI
         {
             if (_masks.Count == 0) return;
             _masks.Clear();
+            _selectedMaskIndex = -1;
             _canvas.Invalidate();
         }
 

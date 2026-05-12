@@ -37,6 +37,7 @@ namespace VisionGuard
         private Button _btnPickWindow;
         private Button _btnStart, _btnStop;
         private Button _btnEditMasks;
+        private Button _btnResetCapture;
         private Label  _lblMaskInfo;
 
         // Params page
@@ -60,7 +61,8 @@ namespace VisionGuard
 
         // Server constants
         private const string ServerUrl = "https://xgwnje.cn";
-        private const string ServerApiKey = "XG-VisionGuard-2024";
+        private static readonly string ServerApiKey =
+            System.Environment.GetEnvironmentVariable("VISIONGUARD_API_KEY") ?? "XG-VisionGuard-2024";
 
         // ServerPushService + heartbeat
         private ServerPushService _serverPushService;
@@ -167,6 +169,7 @@ namespace VisionGuard
             _btnSelectRegion.Enabled  = !started;
             _btnPickWindow.Enabled    = !started;
             if (_btnEditMasks != null) _btnEditMasks.Enabled = !started;
+            if (_btnResetCapture != null) _btnResetCapture.Enabled = !started;
             _sliderSamplingRate.Enabled = !started;
             _sliderCooldown.Enabled     = !started;
             _trkThreshold.Enabled       = !started;

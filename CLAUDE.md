@@ -74,7 +74,7 @@ WS 消息协议（关键）：
 | ↔ | `request-screenshot` / `screenshot-data` | 截图按需拉取（**4.0 将移除**） |
 | ↔ | `disconnect-reason` / `session-info` | 客户端断开诊断上报 |
 
-版本门控：`minClientVersion = '3.5.0'`，低版本 WS 认证直接拒绝。当前全端版本 `3.7.0`，根目录 `VERSION` 文件为权威来源。Android 端版本号由 `build.gradle.kts:versionName` 驱动，`WsMessage.kt` 通过 `BuildConfig.VERSION_NAME` 动态读取。
+版本门控：`minClientVersion = '4.0.0'`，低版本 WS 认证直接拒绝。当前全端版本 `4.0.0`，根目录 `VERSION` 文件为权威来源。Android 端版本号由 `build.gradle.kts:versionName` 驱动，`WsMessage.kt` 通过 `BuildConfig.VERSION_NAME` 动态读取。
 
 幽灵检测：`deviceOfflineMs = 75_000` + 应用层 ping + WS 协议层 ping 双层探测。幽灵清理使用 `<=` 比较确保边界一致。
 
@@ -118,7 +118,7 @@ MVVM + 前台 Service（`foregroundServiceType="remoteMessaging"`）。**无独�
 | 常量 | 位置 |
 |------|------|
 | `SERVER_URL = "https://xgwnje.cn"` | 两端 `AppConstants.kt` + WinForms `Form1.cs` + WPF `AppConfig.cs` |
-| `API_KEY = "XG-VisionGuard-2024"` | 两端 `AppConstants.kt` |
+| `API_KEY` | 环境变量 `VISIONGUARD_API_KEY`（C#两端）+ `AppConstants.kt`（Android两端） |
 | 检测端包名 `com.xgwnje.visionguard` | `app_name = "VG 检测"` |
 | 接收端包名 `com.xgwnje.visionguard_android` | `app_name = "VG 接收"` |
 

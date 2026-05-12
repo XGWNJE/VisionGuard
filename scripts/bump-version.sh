@@ -100,24 +100,38 @@ if [ -f "$DT_GRADLE" ]; then
     UPDATE_LOG="${UPDATE_LOG}\n  ✓ detector/android/build.gradle.kts (code=$NEW_VERSION_CODE)"
 fi
 
-# 4. Windows: VisionGuard.csproj
-CSPROJ="$REPO_ROOT/detector/windows/VisionGuard.csproj"
-if [ -f "$CSPROJ" ]; then
-    sed -i 's|<ApplicationVersion>.*</ApplicationVersion>|<ApplicationVersion>'"$NEW_VERSION"'.%2a</ApplicationVersion>|' "$CSPROJ"
-    sed -i 's|<ApplicationRevision>[0-9]*</ApplicationRevision>|<ApplicationRevision>0</ApplicationRevision>|' "$CSPROJ"
-    UPDATE_LOG="${UPDATE_LOG}\n  ✓ windows/VisionGuard.csproj"
+# 4. Windows WinForms: VisionGuard.csproj
+WF_CSPROJ="$REPO_ROOT/detector/windows-winforms/VisionGuard.csproj"
+if [ -f "$WF_CSPROJ" ]; then
+    sed -i 's|<ApplicationVersion>.*</ApplicationVersion>|<ApplicationVersion>'"$NEW_VERSION"'.%2a</ApplicationVersion>|' "$WF_CSPROJ"
+    sed -i 's|<ApplicationRevision>[0-9]*</ApplicationRevision>|<ApplicationRevision>0</ApplicationRevision>|' "$WF_CSPROJ"
+    UPDATE_LOG="${UPDATE_LOG}\n  ✓ windows-winforms/VisionGuard.csproj"
 fi
 
-# 5. Windows: AssemblyInfo.cs
-ASMINFO="$REPO_ROOT/detector/windows/Properties/AssemblyInfo.cs"
-if [ -f "$ASMINFO" ]; then
+# 5. Windows WinForms: AssemblyInfo.cs
+WF_ASMINFO="$REPO_ROOT/detector/windows-winforms/Properties/AssemblyInfo.cs"
+if [ -f "$WF_ASMINFO" ]; then
     ASM_VERSION="$NEW_VERSION.0"
-    sed -i 's/AssemblyVersion("'"$CURRENT_VERSION"'\.[0-9]*")/AssemblyVersion("'"$ASM_VERSION"'")/' "$ASMINFO"
-    sed -i 's/AssemblyFileVersion("'"$CURRENT_VERSION"'\.[0-9]*")/AssemblyFileVersion("'"$ASM_VERSION"'")/' "$ASMINFO"
-    UPDATE_LOG="${UPDATE_LOG}\n  ✓ windows/Properties/AssemblyInfo.cs"
+    sed -i 's/AssemblyVersion("[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*")/AssemblyVersion("'"$ASM_VERSION"'")/' "$WF_ASMINFO"
+    sed -i 's/AssemblyFileVersion("[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*")/AssemblyFileVersion("'"$ASM_VERSION"'")/' "$WF_ASMINFO"
+    UPDATE_LOG="${UPDATE_LOG}\n  ✓ windows-winforms/Properties/AssemblyInfo.cs"
 fi
 
-# 6. VERSION 文件
+# 6. Windows WinForms: ServerPushService.cs
+WF_SPS="$REPO_ROOT/detector/windows-winforms/Services/ServerPushService.cs"
+if [ -f "$WF_SPS" ]; then
+    sed -i 's/"version"] = "'"$CURRENT_VERSION"'"/"version"] = "'"$NEW_VERSION"'"/' "$WF_SPS"
+    UPDATE_LOG="${UPDATE_LOG}\n  ✓ windows-winforms/Services/ServerPushService.cs"
+fi
+
+# 7. Windows WPF: ServerPushService.cs
+WPF_SPS="$REPO_ROOT/detector/windows/Services/ServerPushService.cs"
+if [ -f "$WPF_SPS" ]; then
+    sed -i 's/"version"] = "'"$CURRENT_VERSION"'"/"version"] = "'"$NEW_VERSION"'"/' "$WPF_SPS"
+    UPDATE_LOG="${UPDATE_LOG}\n  ✓ windows/Services/ServerPushService.cs"
+fi
+
+# 8. VERSION 文件
 echo "$NEW_VERSION" > "$VERSION_FILE"
 UPDATE_LOG="${UPDATE_LOG}\n  ✓ VERSION"
 
@@ -126,5 +140,5 @@ echo "版本号已更新: $CURRENT_VERSION → $NEW_VERSION"
 echo -e "$UPDATE_LOG"
 echo ""
 echo "运行以下命令提交版本变更:"
-echo "  git add VERSION server/package.json receiver/android/app/build.gradle.kts detector/android/app/build.gradle.kts detector/windows/VisionGuard.csproj detector/windows/Properties/AssemblyInfo.cs"
+echo "  git add VERSION server/package.json receiver/android/app/build.gradle.kts detector/android/app/build.gradle.kts detector/windows-winforms/VisionGuard.csproj detector/windows-winforms/Properties/AssemblyInfo.cs detector/windows-winforms/Services/ServerPushService.cs detector/windows/Services/ServerPushService.cs"
 echo "  git commit -m \"chore: bump version to $NEW_VERSION [no-bump]\""

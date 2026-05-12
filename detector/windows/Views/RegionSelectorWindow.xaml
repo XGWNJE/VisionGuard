@@ -24,6 +24,9 @@
                        Stroke="LimeGreen" StrokeThickness="2"
                        Fill="Transparent"
                        Visibility="Collapsed"/>
+            <TextBlock x:Name="DimensionLabel" Text=""
+                       Foreground="#FF00FF00" FontSize="13" FontFamily="Consolas"
+                       Visibility="Collapsed"/>
         </Canvas>
     </Grid>
 </Window>

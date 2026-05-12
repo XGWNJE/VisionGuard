@@ -13,30 +13,38 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Text="双击选中窗口，或单击后点击确定" Style="{StaticResource CaptionText}" Margin="0,0,0,8" Grid.Row="0"/>
+        <TextBlock x:Name="HeaderText" Text="双击选中窗口，或单击后点击确定"
+                   Style="{StaticResource CaptionText}" Margin="0,0,0,8" Grid.Row="0"/>
 
         <Border Style="{StaticResource CardBorder}" Grid.Row="1" Padding="0" Margin="0,0,0,12">
-            <ListBox x:Name="WindowList" Background="Transparent" BorderThickness="0"
-                     MouseDoubleClick="WindowList_MouseDoubleClick">
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
-                        <StackPanel Orientation="Horizontal" Margin="4,2">
-                            <TextBlock Text="{Binding Title}" Foreground="{StaticResource TextPrimary}" FontSize="13"/>
-                            <TextBlock Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="8,0,0,0">
-                                <TextBlock.Text>
-                                    <MultiBinding StringFormat=" ({0}x{1})">
-                                        <Binding Path="Bounds.Width"/>
-                                        <Binding Path="Bounds.Height"/>
-                                    </MultiBinding>
-                                </TextBlock.Text>
-                            </TextBlock>
-                        </StackPanel>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
+            <Grid>
+                <ListBox x:Name="WindowList" Background="Transparent" BorderThickness="0"
+                         MouseDoubleClick="WindowList_MouseDoubleClick">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="4,2">
+                                <TextBlock Text="{Binding Title}" Foreground="{StaticResource TextPrimary}" FontSize="13"/>
+                                <TextBlock Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="8,0,0,0">
+                                    <TextBlock.Text>
+                                        <MultiBinding StringFormat=" ({0}x{1})">
+                                            <Binding Path="Bounds.Width"/>
+                                            <Binding Path="Bounds.Height"/>
+                                        </MultiBinding>
+                                    </TextBlock.Text>
+                                </TextBlock>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <TextBlock x:Name="LoadingIndicator" Text="正在枚举窗口..."
+                           Foreground="{StaticResource TextSecondary}" FontSize="12"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Visibility="Collapsed"/>
+            </Grid>
         </Border>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="刷新" Style="{StaticResource DarkButton}" Width="80" Margin="0,0,8,0" Click="Refresh_Click"/>
             <Button Content="确定" Style="{StaticResource PrimaryButton}" Width="80" Margin="0,0,8,0" Click="Ok_Click"/>
             <Button Content="取消" Style="{StaticResource DarkButton}" Width="80" Click="Cancel_Click"/>
         </StackPanel>

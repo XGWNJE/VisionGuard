@@ -4,7 +4,8 @@ namespace VisionGuard.Utils
     internal static class AppConfig
     {
         public const string ServerUrl = "https://xgwnje.cn";
-        public const string ApiKey    = "XG-VisionGuard-2024";
+        public static readonly string ApiKey =
+            System.Environment.GetEnvironmentVariable("VISIONGUARD_API_KEY") ?? "XG-VisionGuard-2024";
 
         /// <summary>运行时设备唯一 ID（UUID，首次生成后持久化到 settings.ini）。</summary>
         public static string DeviceId

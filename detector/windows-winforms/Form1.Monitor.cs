@@ -88,6 +88,19 @@ namespace VisionGuard
             }
         }
 
+        // ── 重置捕获选择 ─────────────────────────────────────────────
+
+        private void BtnResetCapture_Click(object sender, EventArgs e)
+        {
+            _targetWindow = null;
+            _windowSubRegion = Rectangle.Empty;
+            _screenRegion = Rectangle.Empty;
+            _maskRegions.Clear();
+            _lblRegionInfo.Text = "未选择区域";
+            _lblMaskInfo.Text = "当前遮罩：-";
+            SaveSettings();
+        }
+
         // ── 编辑遮罩区域 ─────────────────────────────────────────────
 
         private void BtnEditMasks_Click(object sender, EventArgs e)

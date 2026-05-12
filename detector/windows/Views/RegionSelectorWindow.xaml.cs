@@ -46,9 +46,14 @@ namespace VisionGuard.Views
             }
             else
             {
-                // 全屏区域模式：最大化，半透明黑覆盖全屏
+                // 全屏区域模式：覆盖所有显示器
                 IsWindowMode = false;
-                WindowState = WindowState.Maximized;
+                WindowState = WindowState.Normal;
+                ResizeMode = ResizeMode.NoResize;
+                Left = SystemParameters.VirtualScreenLeft;
+                Top = SystemParameters.VirtualScreenTop;
+                Width = SystemParameters.VirtualScreenWidth;
+                Height = SystemParameters.VirtualScreenHeight;
                 BackgroundImage.Visibility = Visibility.Collapsed;
             }
 
@@ -91,6 +96,10 @@ namespace VisionGuard.Views
             Canvas.SetTop(SelectionRect, y);
             SelectionRect.Width = w;
             SelectionRect.Height = h;
+            DimensionLabel.Visibility = Visibility.Visible;
+            DimensionLabel.Text = $"{(int)w} × {(int)h}";
+            Canvas.SetLeft(DimensionLabel, x + w + 4);
+            Canvas.SetTop(DimensionLabel, y + h + 4);
         }
 
         private void OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -111,6 +120,8 @@ namespace VisionGuard.Views
             top    = Math.Max(0, Math.Min(top,    canvasH));
             width  = Math.Max(0, Math.Min(width,  canvasW - left));
             height = Math.Max(0, Math.Min(height, canvasH - top));
+
+            DimensionLabel.Visibility = Visibility.Collapsed;
 
             if (width < 4 || height < 4)
             {
