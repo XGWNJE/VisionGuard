@@ -126,6 +126,9 @@ class DetectorForegroundService : LifecycleService() {
         super.onCreate()
         Log.i(TAG, "DetectorForegroundService onCreate")
 
+        // 后台检查自动更新（不阻塞 Service 启动）
+        serviceScope.launch { com.xgwnje.visionguard.util.AutoUpdater.checkAndUpdate(applicationContext) }
+
         // 1. 通知渠道
         NotificationHelper.createChannels(this)
 

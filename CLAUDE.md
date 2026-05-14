@@ -46,7 +46,16 @@ WS 三角色：`windows` / `android` / `android-detector`
 - 全端幽灵阈值统一 **45s** — 无消息则判定失联、断开重连
 - 无传输层 ping，应用层心跳已覆盖连接检测
 
-**版本门控**：`minClientVersion = '4.0.0'`。根目录 `VERSION` 文件为权威来源。
+**自动更新**：
+- Server 提供 `/api/update?platform=xxx&version=xxx` 查询接口（读取 `data/releases.json`）
+- Server 通过 `/releases/*` 静态文件路由提供 ZIP/APK 下载
+- 客户端启动时主动查询，有更新则下载安装：
+  - WinForms/WPF：下载 ZIP → 解压到 `%TEMP%\VisionGuardUpdate` → 启动 `updater.bat` → 主程序退出 → 替换文件 → 重启
+  - Android：DownloadManager 下载 APK → 完成后通过 `Intent.ACTION_VIEW` 触发系统安装器
+- Server WS 认证扩展：版本低于 `minClientVersion` 时返回 `reason: "needs-update"` + `latestVersion`，客户端强制升级
+- 发布流程：`node scripts/release.js <version>` 一键编译+复制+生成 releases.json
+
+**版本门控**：`minClientVersion = '4.0.0'`。根目录 `VERSION` 文件为权威来源，`scripts/sync-version.js` 一键同步全端。
 
 **Android 接收端**：MVVM + 前台 Service（`foregroundServiceType="remoteMessaging"`）。**无独立 Settings 屏**，远控参数散落在各 Screen 内联。
 

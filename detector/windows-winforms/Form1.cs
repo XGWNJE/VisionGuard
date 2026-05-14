@@ -121,6 +121,9 @@ namespace VisionGuard
                 await Utils.NtpSync.SyncAsync();
             });
 
+            // 后台检查更新（fire-and-forget，避免阻塞 UI）
+            Task.Run(() => Utils.AutoUpdater.CheckUpdate(ServerApiKey));
+
             _log.Info("VisionGuard 已就绪，请选择捕获区域或目标窗口后点击「开始」。");
         }
 

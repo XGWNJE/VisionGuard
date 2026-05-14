@@ -18,7 +18,9 @@ import alertsQueryRouter from './routes/alerts';
 import { handleConnection, getConnectionCount } from './services/ConnectionManager';
 import { cleanupExpiredAlerts } from './services/AlertStore';
 import screenshotRouter from './routes/screenshot';
+import updateRouter from './routes/update';
 import { startCleanupTimer, cleanupScreenshots } from './services/ScreenshotCleanup';
+import path from 'path';
 
 // ── Express app ────────────────────────────────────────────
 
@@ -51,6 +53,10 @@ app.get('/health', healthLimiter, (_req, res) => {
 app.use(alertRouter);
 app.use(alertsQueryRouter);
 app.use(screenshotRouter);
+app.use(updateRouter);
+
+// 更新包静态文件下载
+app.use('/releases', express.static(path.resolve(__dirname, '..', 'data', 'releases')));
 
 // ── HTTP + WebSocket 服务器 ────────────────────────────────
 

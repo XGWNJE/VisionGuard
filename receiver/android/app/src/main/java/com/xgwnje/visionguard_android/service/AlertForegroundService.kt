@@ -108,6 +108,11 @@ class AlertForegroundService : LifecycleService() {
         screenshotCache = ScreenshotCache(applicationContext)
         networkMonitor = NetworkMonitor(applicationContext)
 
+        // 后台检查自动更新（不阻塞 Service 启动）
+        lifecycleScope.launch {
+            com.xgwnje.visionguard_android.util.AutoUpdater.checkAndUpdate(applicationContext)
+        }
+
         // 从本地 DataStore 恢复报警历史（Service 被杀后重启时保留）
         lifecycleScope.launch {
             val saved = settingsRepo.loadAlerts()

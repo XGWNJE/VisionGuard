@@ -18,6 +18,9 @@ namespace VisionGuard
             // 后台同步 NTP 时钟（fire-and-forget，不阻塞 UI 启动）
             _ = Utils.NtpSync.SyncAsync();
 
+            // 后台检查更新（fire-and-forget）
+            _ = Utils.AutoUpdater.CheckUpdateAsync();
+
             base.OnStartup(e);
         }
 

@@ -340,7 +340,13 @@ function handleAuth(
 
   if (!meetsMinVersion(msg.version, config.minClientVersion)) {
     console.log(`[ws][${ts}] 认证失败: 版本过低 role=${msg.role} deviceId=${msg.deviceId} version=${msg.version ?? 'unknown'} min=${config.minClientVersion}`);
-    sendJson(ws, { type: 'auth-result', success: false, reason: `version too old, require >= ${config.minClientVersion}` });
+    // 返回 needs-update，客户端收到后进入强制更新流程
+    sendJson(ws, {
+      type: 'auth-result',
+      success: false,
+      reason: 'needs-update',
+      latestVersion: config.minClientVersion,
+    });
     ws.close();
     return;
   }

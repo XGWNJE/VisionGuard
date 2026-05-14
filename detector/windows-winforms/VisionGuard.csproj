@@ -302,6 +302,7 @@
     <Compile Include="Utils\SettingsStore.cs" />
     <Compile Include="Utils\NtpSync.cs" />
     <Compile Include="Utils\SimpleJson.cs" />
+    <Compile Include="Utils\AutoUpdater.cs" />
     <Compile Include="Utils\SnapshotRenderer.cs" />
     <EmbeddedResource Include="Properties\Resources.resx">
       <SubType>Designer</SubType>
