@@ -230,7 +230,7 @@ namespace VisionGuard
             _heartbeatTimer?.Stop();
             _heartbeatTimer?.Dispose();
             _serverPushService?.Dispose();
-            _alertService?.StopAlarm();
+            _alertService?.Dispose();
             _monitorService?.Stop();
             _monitorService?.Dispose();
             _notifyIcon?.Dispose();

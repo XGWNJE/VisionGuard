@@ -2,7 +2,7 @@
 // │ AlertService.cs                                         │
 // │ 角色：报警判定（冷却逻辑）+ 截图本地缓存管理              │
 // │ 依赖：无（纯逻辑层）                                    │
-// │ 对外 API：Evaluate(), IsAlarming, GetSnapshotPath()      │
+// │ 对外 API：Evaluate(), GetSnapshotPath()                  │
 // │ 缓存策略：1GB / 7天 / 5000张上限，LRU 清理               │
 // └─────────────────────────────────────────────────────────┘
 using System;
