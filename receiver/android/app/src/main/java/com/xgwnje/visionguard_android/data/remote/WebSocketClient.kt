@@ -46,8 +46,8 @@ private const val TAG = "VG_WsClient"
 // 重连退避：1 → 2 → 3 → 5 → 10 秒
 private val BACKOFF_SECONDS = longArrayOf(1, 2, 3, 5, 10)
 
-// 心跳间隔：20 秒（与服务端 75 秒幽灵阈值配合）
-private const val HEARTBEAT_INTERVAL_MS = 20_000L
+// 心跳间隔：3 秒（全端统一）
+private const val HEARTBEAT_INTERVAL_MS = 3_000L
 
 // 幽灵检测：45 秒无任何消息视为连接已死
 private const val GHOST_THRESHOLD_MS = 45_000L

@@ -94,12 +94,6 @@ namespace VisionGuard.Services
             AlertTriggered?.Invoke(this, new AlertEvent(alertId, detections.AsReadOnly(), snapshot, timings));
         }
 
-        /// <summary>当前是否处于报警状态（始终 false，保留接口兼容）</summary>
-        public bool IsAlarming => false;
-
-        /// <summary>保留空方法（调用方兼容）</summary>
-        public void StopAlarm() { }
-
         // ── 截图缓存管理 ─────────────────────────────────────────────
 
         private static void TrySaveSnapshot(Bitmap bmp, string alertId)

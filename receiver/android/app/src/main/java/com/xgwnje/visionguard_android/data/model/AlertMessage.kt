@@ -33,8 +33,8 @@ data class AlertMessage(
     val serverRelayedAt: String? = null,
     val screenshotBase64: String? = null,  // v4.0.0: 检测端内嵌截图 (Base64 JPEG)
     val capturedAt: String? = null,         // v4.0.0: 检测端捕获帧 NTP 时间戳
-    @Transient var receivedAt: Long = 0L,
-    @Transient var notifiedAt: Long = 0L
+    var receivedAt: Long? = null,
+    var notifiedAt: Long? = null
 )
 
 data class ScreenshotData(

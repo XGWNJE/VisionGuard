@@ -23,22 +23,29 @@ object NtpSync {
 
     fun now(): Long = System.currentTimeMillis() + offsetMs
 
+    /** 同步 NTP 时间。失败后自动重试最多 3 轮（间隔 5 秒），应对启动时网络未就绪的情况。 */
     suspend fun sync() = withContext(Dispatchers.IO) {
         val servers = listOf("ntp.aliyun.com", "cn.pool.ntp.org", "ntp.tencent.com")
-        for (server in servers) {
-            try {
-                val offset = queryOffset(server)
-                // 偏移>5min视为服务器异常，拒绝并尝试下一个
-                if (kotlin.math.abs(offset) > 300_000) {
-                    Log.w(TAG, "$server 返回异常偏移 ${offset}ms (>5min)，已拒绝")
-                    continue
+        repeat(3) { attempt ->
+            for (server in servers) {
+                try {
+                    val offset = queryOffset(server)
+                    // 偏移>5min视为服务器异常，拒绝并尝试下一个
+                    if (kotlin.math.abs(offset) > 300_000) {
+                        Log.w(TAG, "$server 返回异常偏移 ${offset}ms (>5min)，已拒绝")
+                        continue
+                    }
+                    offsetMs = offset
+                    isSynced = true
+                    Log.i(TAG, "同步成功 server=$server offset=${offset}ms")
+                    return@withContext
+                } catch (e: Exception) {
+                    Log.w(TAG, "$server 失败: ${e.message}")
                 }
-                offsetMs = offset
-                isSynced = true
-                Log.i(TAG, "同步成功 server=$server offset=${offset}ms")
-                return@withContext
-            } catch (e: Exception) {
-                Log.w(TAG, "$server 失败: ${e.message}")
+            }
+            if (attempt < 2) {
+                Log.i(TAG, "NTP 同步第 ${attempt + 1} 轮失败，5s 后重试…")
+                Thread.sleep(5000)
             }
         }
         Log.w(TAG, "所有服务器均失败，使用本地时钟")

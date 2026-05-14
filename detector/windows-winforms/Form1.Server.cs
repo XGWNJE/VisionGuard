@@ -216,12 +216,6 @@ namespace VisionGuard
                             _lblConnDetail.Text     = "WebSocket 已就绪，报警推送正常";
                             _lblConnDetail.ForeColor = Color.FromArgb(150, 255, 150);
                             _btnRetry.Enabled = true;
-                            // 连接服务器成功 → 强制关闭本地铃声（由远程统一管控）
-                            if (_alertService.IsAlarming)
-                            {
-                                _alertService.StopAlarm();
-                                _log.Info("[Server] 已连接服务器，本地铃声已自动关闭。");
-                            }
                             break;
                         case "connecting":
                             _lblConnState.Text      = "◌ 连接中…";
@@ -256,16 +250,7 @@ namespace VisionGuard
                             break;
 
                         case "stop-alarm":
-                            if (!_alertService.IsAlarming)
-                            {
-                                _serverPushService.SendCommandAck(cmd, false, "当前无报警");
-                            }
-                            else
-                            {
-                                _alertService.StopAlarm();
-                                _serverPushService.SendCommandAck(cmd, true);
-                                _log.Info("[Server] 收到命令：停止报警。");
-                            }
+                            _serverPushService.SendCommandAck(cmd, false, "检测端无本地报警功能");
                             break;
                     }
                     _serverPushService.UpdateHeartbeatParams(

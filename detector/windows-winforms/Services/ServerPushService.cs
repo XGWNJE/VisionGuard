@@ -36,7 +36,7 @@ namespace VisionGuard.Services
         public event EventHandler<KeyValuePair<string, string>> SetConfigReceived;
 
         // ── 常量 ─────────────────────────────────────────────────────
-        private const int HEARTBEAT_INTERVAL_MS = 15_000;
+        private const int HEARTBEAT_INTERVAL_MS = 3_000;
         private const int GHOST_THRESHOLD_MS = 60_000;
         private const int AUTH_TIMEOUT_MS = 12_000;
         private const int SEND_TIMEOUT_MS = 5_000;
@@ -67,10 +67,6 @@ namespace VisionGuard.Services
         private string _hbTargets = "";
 
         private bool _disposed;
-
-        // 报警本地队列（WS 断连时缓存，恢复后批量重发）
-        private readonly ConcurrentQueue<AlertEvent> _pendingAlerts = new ConcurrentQueue<AlertEvent>();
-        private const int MAX_PENDING_ALERTS = 50;
 
         // 网络变化防抖：30 秒内只处理一次，且只在从"无网络"变为"有网络"时才重连
         private DateTime _lastNetworkChangeHandled = DateTime.MinValue;
@@ -170,11 +166,7 @@ namespace VisionGuard.Services
             var s = _session;
             if (s == null || _state != WsState.Connected)
             {
-                // 断连时缓存报警，超容量丢弃最旧的
-                _pendingAlerts.Enqueue(alert);
-                while (_pendingAlerts.Count > MAX_PENDING_ALERTS)
-                    _pendingAlerts.TryDequeue(out _);
-                LogManager.StaticWarn($"[Server] WS 未连接，报警入队 (队列 {_pendingAlerts.Count}/{MAX_PENDING_ALERTS}): {alert.AlertId}");
+                LogManager.StaticWarn($"[Server] WS 未连接，报警丢弃: {alert.AlertId}");
                 return;
             }
             DoPushAlert(s, alert);
@@ -259,23 +251,6 @@ namespace VisionGuard.Services
                     return Convert.ToBase64String(ms.ToArray());
                 }
             }
-        }
-
-        private void DrainPendingAlerts()
-        {
-            var s = _session;
-            if (s == null || _state != WsState.Connected) return;
-            int count = 0;
-            while (_pendingAlerts.TryDequeue(out var alert) && count < MAX_PENDING_ALERTS)
-            {
-                // 丢弃超过 5 分钟的旧报警
-                if ((DateTime.UtcNow - alert.Timestamp).TotalMinutes > 5)
-                    continue;
-                DoPushAlert(s, alert);
-                count++;
-            }
-            if (count > 0)
-                LogManager.StaticInfo($"[Server] 已从队列重发 {count} 条报警");
         }
 
         public void SendCommandAck(string command, bool success, string reason = "")
@@ -444,7 +419,6 @@ namespace VisionGuard.Services
                 _attempt = 0;
                 SetState(WsState.Connected);
                 s.StartHeartbeat();
-                DrainPendingAlerts();
             }
             else
             {

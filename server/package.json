@@ -16,6 +16,9 @@
   ],
   "author": "",
   "license": "ISC",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "commonjs",
   "devDependencies": {
     "@types/express": "^5.0.6",

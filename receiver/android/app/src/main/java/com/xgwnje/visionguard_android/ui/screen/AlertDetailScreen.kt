@@ -261,7 +261,7 @@ private fun computeE2ELatencyMs(alert: AlertMessage): Long? {
     val capturedAt = try {
         alert.capturedAt?.let { java.time.Instant.parse(it).toEpochMilli() }
     } catch (_: Exception) { null }
-    val notified = alert.notifiedAt.takeIf { it > 0L }
+    val notified = alert.notifiedAt
     return if (capturedAt != null && notified != null) notified - capturedAt else null
 }
 

@@ -54,14 +54,7 @@ class ServerPushService(
 
     val wsClient = WebSocketClient()
 
-    // 报警本地队列（WS 断连时缓存，恢复后批量重发）
-    private val pendingAlerts = java.util.concurrent.ConcurrentLinkedQueue<PendingAlert>()
-    private data class PendingAlert(
-        val alertId: String,
-        val detections: List<com.xgwnje.visionguard.data.model.Detection>,
-        val timestampMs: Long,
-        val timings: Map<String, Long>
-    )
+
 
     val connectionState: StateFlow<WsState>
         get() = wsClient.connectionState
@@ -101,14 +94,6 @@ class ServerPushService(
                     }
                 )
 
-                // 监听连接状态，恢复后重发队列中的报警
-                scope.launch {
-                    wsClient.connectionState.collect { state ->
-                        if (state == WsState.CONNECTED) {
-                            drainPendingAlerts()
-                        }
-                    }
-                }
             } catch (e: Exception) {
                 Log.e(TAG, "连接服务器失败", e)
             }
@@ -123,13 +108,13 @@ class ServerPushService(
     }
 
     /**
-     * v4.0.0: 推送报警（WS，内嵌截图 Base64）。
+     * v4.0.0: 推送报警（WS，内嵌截图 Base64）。断连时直接丢弃。
      *
      * @param alertId 报警 ID
      * @param detections 检测结果
      * @param timestampMs 报警发生时间戳（毫秒）
      * @param timings 链路耗时统计
-     * @param bitmap 报警帧截图（可空，断连入队时跳过）
+     * @param bitmap 报警帧截图（可空）
      */
     fun pushAlert(
         alertId: String,
@@ -139,9 +124,7 @@ class ServerPushService(
         bitmap: Bitmap? = null
     ) {
         if (wsClient.connectionState.value != WsState.CONNECTED) {
-            while (pendingAlerts.size >= 50) pendingAlerts.poll()
-            pendingAlerts.add(PendingAlert(alertId, detections, timestampMs, timings))
-            Log.w(TAG, "WS 未连接，报警入队 (队列 ${pendingAlerts.size}/50): $alertId")
+            Log.w(TAG, "WS 未连接，报警丢弃: $alertId")
             return
         }
         doPushAlert(alertId, detections, timestampMs, timings, bitmap)
@@ -219,18 +202,6 @@ class ServerPushService(
         } catch (e: Exception) {
             Log.w(TAG, "截图编码异常 alertId=$alertId: ${e.message}")
         }
-    }
-
-    private fun drainPendingAlerts() {
-        var count = 0
-        while (true) {
-            val pending = pendingAlerts.poll() ?: break
-            if (System.currentTimeMillis() - pending.timestampMs > 5 * 60 * 1000L) continue
-            doPushAlert(pending.alertId, pending.detections, pending.timestampMs, pending.timings)
-            count++
-            if (count >= 50) break
-        }
-        if (count > 0) Log.i(TAG, "已从队列重发 $count 条报警")
     }
 
     /**

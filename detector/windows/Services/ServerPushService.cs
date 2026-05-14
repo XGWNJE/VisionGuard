@@ -36,7 +36,7 @@ namespace VisionGuard.Services
         public event EventHandler<KeyValuePair<string, string>> SetConfigReceived;
 
         // ── 常量 ─────────────────────────────────────────────────────
-        private const int HEARTBEAT_INTERVAL_MS = 15_000;
+        private const int HEARTBEAT_INTERVAL_MS = 3_000;
         private const int GHOST_THRESHOLD_MS = 60_000;
         private const int AUTH_TIMEOUT_MS = 12_000;
         private const int SEND_TIMEOUT_MS = 5_000;
@@ -427,7 +427,7 @@ namespace VisionGuard.Services
                 ["role"] = "windows",
                 ["deviceId"] = _deviceId,
                 ["deviceName"] = _deviceName,
-                ["version"] = "4.0.0",
+                ["version"] = AppConfig.Version,
             });
         }
 
