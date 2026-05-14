@@ -1,130 +1,101 @@
 # VisionGuard
 
-![Version](https://img.shields.io/badge/version-v4.0.0-blue)
+[![Version](https://img.shields.io/badge/version-v4.0.0-blue)](VERSION)
+[![License](https://img.shields.io/badge/license-MIT-green)]()
 
-基于 AI 的实时监控系统。支持 Windows PC 和 Android 手机作为检测端，通过自建服务器将报警实时推送至 Android 接收端。
+> AI 实时监控系统。检测端发现目标 → 服务器秒级推送 → 接收端报警通知。
+>
+> 支持 **Windows PC**（WinForms 主力线 / WPF 视觉线）和 **Android 手机**（检测端 / 接收端）。
+
+---
+
+## 系统架构
+
+```
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│ Windows 检测  │    │              │    │ Android 接收  │
+│ Win7+ WinForms│───▶│   VPS 服务器  │───▶│ 实时报警通知  │
+│ Win10+ WPF    │    │  WebSocket   │    │ 远程控制     │
+│               │    │  报警记录    │    │              │
+└──────────────┘    └──────────────┘    └──────────────┘
+        ▲                                      │
+        │           ┌──────────────┐           │
+        └───────────│ Android 检测  │◀──────────┘
+                    │ 后置摄像头    │
+                    │ 实时推理     │
+                    └──────────────┘
+```
 
 ## 下载
 
-前往 [Releases](https://github.com/XGWNJE/VisionGuard-RemoteAlarm/releases/latest) 获取最新发行版：
+前往 [Releases](https://github.com/XGWNJE/VisionGuard-RemoteAlarm/releases/latest) 获取最新版本。
 
-| 平台 | 文件 |
-|---|---|
-| Android 接收端 | `VisionGuard-Receiver-vX.X.X.apk` |
-| Android 检测端 | `VisionGuard-Detector-vX.X.X.apk` |
-| Windows 检测端 | `VisionGuard-Windows-vX.X.X.zip` |
-
-## 架构
-
-```
-detector/windows-winforms/ detector/android/         server/                    receiver/android/
-  (Win检测端 WinForms)       (安卓检测端)       ──►  VPS 中继服务器  ──►         (接收端)
-detector/windows/            后置摄像头 + ONNX          Node.js / WebSocket          Android 手机
-  (Win检测端 WPF)            YOLO26 目标检测            HTTP REST + WS               查看报警 / 远程控制
-  屏幕/窗口捕获
-  YOLOv5nu 目标检测
-```
-
-| 目录 | 技术栈 | 功能 |
+| 端 | 平台 | 文件 |
 |---|---|---|
-| `detector/windows-winforms/` | C# / .NET Framework 4.7.2 / WinForms | YOLOv5nu + ORT 1.1.0，Win7 兼容 |
-| `detector/windows/` | C# / .NET 9 / WPF | YOLO26 + MVVM 架构，Win10+ |
-| `detector/android/` | Kotlin / Jetpack Compose / CameraX / ONNX Runtime Mobile | 后置摄像头 + YOLO26 推理 + 报警推送 + 本地截图缓存 |
-| `server/` | Node.js / TypeScript / Express / ws | 中继服务器：设备管理、报警转发、报警记录持久化、截图按需中继 |
-| `receiver/android/` | Kotlin / Jetpack Compose / OkHttp | 接收报警通知、查看截图、历史报警列表、远程控制检测端 |
-
-## 功能特性
-
-### 检测端（Windows / Android）
-- **实时检测** — YOLOv5nu / YOLO26 ONNX 推理
-- **Win7 兼容** — WinForms 版支持 Windows 7 及以上，WPF 版支持 Windows 10 及以上
-- **多平台支持** — Windows 屏幕捕获 或 Android 后置摄像头
-- **本地截图缓存** — 报警截图本地压缩缓存（7天/100MB/2000张），供接收端按需拉取
-- **冷却期控制** — 可配置报警推送冷却时间，避免重复通知
-- **目标过滤** — 支持按类别过滤（人、车、卡车、客车、自行车、摩托车等）
-
-### 服务端
-- **报警记录持久化** — 内存循环缓冲 + 磁盘持久化（`data/alerts.json`），支持历史查询
-- **按需截图中继** — 接收端请求截图 → 服务端转发 → 检测端回传 base64
-- **轻量 WS Alert** — 报警仅推送 meta 信息，截图按需拉取，降低带宽
-- **可选 HTTP 截图上传** — `ENABLE_HTTP_SCREENSHOT_UPLOAD=true` 时兼容旧模式
-- **设备管理** — 心跳检测、设备列表广播、三角色支持（windows / android / android-detector）
-
-### 接收端（Android）
-- **报警列表** — 实时推送 + 历史记录恢复（最近 7 天），上新下旧排序
-- **按需查看截图** — 列表纯文本展示，详情页从检测端实时拉取截图
-- **远程控制** — 暂停/恢复监控、调整置信度、冷却时间、目标类别
-- **网络自适应** — 网络切换时自动重建连接，退避重连 + 幽灵检测
-- **端到端计时** — 完整追踪报警从检测到送达的各环节耗时
-
-## 部署环境
-
-| 端 | 最低系统要求 |
-|---|---|
-| Server | Ubuntu 20.04+ / Debian 11+，Node.js 20+ |
-| Windows 检测端 (WinForms) | **Windows 7 及以上**（.NET Framework 4.7.2，x64） |
-| Windows 检测端 (WPF) | **Windows 10 及以上**（.NET 9，x64） |
-| Android 检测端 | Android 9.0+（API 28+），推荐骁龙 7/8 Gen 或天玑 8/9 系列 |
-| Android 接收端 | Android 9.0+（API 28+） |
+| 检测端 | Windows (Win7+) | `VisionGuard-Windows-vX.X.X.zip` |
+| 检测端 | Windows (Win10+) | `VisionGuard-WPF-vX.X.X.zip` |
+| 检测端 | Android (API 28+) | `VisionGuard-Detector-vX.X.X.apk` |
+| 接收端 | Android (API 28+) | `VisionGuard-Receiver-vX.X.X.apk` |
 
 ## 快速开始
 
-### Server
+### 1. 部署服务器
 
 ```bash
 cd server
 cp .env.example .env
-# 编辑 .env 配置 API_KEY、PORT 等
+# 编辑 .env 设置 API_KEY（必须）和 PORT（默认 3000）
 npm install
 npm run build
 npm start
 ```
 
-**部署到 VPS**（一键脚本）：
-```bash
-bash server/deploy.sh        # 仅同步 src/ 并重建
-bash server/deploy.sh --full # 同时同步 package.json 并 npm install
+### 2. 启动检测端
+
+- Windows：解压运行 `VisionGuard.exe`
+- Android：安装 APK，打开后选择模型开始检测
+
+### 3. 启动接收端
+
+安装 APK 后打开，自动连接服务器接收报警。
+
+## 核心功能
+
+| 检测端 | 接收端 | 服务器 |
+|---|---|---|
+| 屏幕捕获 / 后置摄像头推理 | 实时报警推送 | 设备管理 + 心跳 |
+| 遮罩区域排除（隐私保护） | 查看截图 + 端到端延迟 | 报警记录持久化 |
+| 目标类别过滤（人/车/动物等） | 远程控制（暂停/恢复/调参） | 截图 HTTP 下载 |
+| 本地截图缓存（7天 TTL） | 历史报警列表（7天） | 三角色隔离 |
+| 多模型切换（YOLOv5nu / YOLO26） | 网络自适应重连 | 72h 截图清理 |
+
+## 部署要求
+
+| 端 | 最低要求 |
+|---|---|
+| Server | Ubuntu 20.04+ / Debian 11+，Node.js 20+ |
+| WinForms 检测 | Windows 7+，x64，.NET Framework 4.7.2 |
+| WPF 检测 | Windows 10+，x64，.NET 9 |
+| Android 检测 | Android 9.0+，推荐骁龙 7/8 Gen 或天玑 8/9 |
+| Android 接收 | Android 9.0+ |
+
+## 项目结构
+
+```
+VisionGuard/
+├── detector/
+│   ├── windows-winforms/    C# / .NET Framework 4.7.2 / WinForms
+│   ├── windows/             C# / .NET 9 / WPF / MVVM
+│   └── android/             Kotlin / CameraX / ONNX Runtime
+├── server/                  Node.js 20+ / TypeScript / Express / ws
+└── receiver/
+    └── android/             Kotlin / Jetpack Compose / OkHttp
 ```
 
-### Windows 检测端
+## 版本
 
-**WinForms 主力线（Win7 兼容）**：
-1. Visual Studio 2022 打开 `detector/windows-winforms/VisionGuard.csproj`
-2. 确保 `Assets/yolov5nu.onnx` 已放置
-3. 生成 → 发布
-
-**WPF 视觉升级线（Win10+）**：
-```bash
-cd detector/windows
-dotnet build -c Release
-```
-
-### Android 检测端
-
-```bash
-cd detector/android
-# 确保 local.properties 中有 SDK 路径
-./gradlew assembleRelease
-```
-
-### Android 接收端
-
-```bash
-cd receiver/android
-# 确保 local.properties 中有 SDK 路径
-./gradlew assembleRelease
-```
-
-## 版本管理
-
-当前版本：见 [VERSION](VERSION)（纯人工备忘，无自动同步）。
-
-版本号规则：
-- `feat:` → 次版本 +1
-- `fix:` / `refactor:` / `perf:` → 修订号 +1
-- `chore:` / `docs:` / `style:` → 不升级版本
-- `BREAKING CHANGE` → 主版本 +1
+当前版本见 [VERSION](VERSION) 文件。
 
 ## License
 
-私有项目，保留所有权利。
+MIT © [xgwnje](https://github.com/xgwnje)
