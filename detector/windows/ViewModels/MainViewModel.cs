@@ -88,6 +88,7 @@ namespace VisionGuard.ViewModels
         public ServerViewModel ServerVm { get; }
 
         private readonly ServerPushService _serverPushService;
+        private readonly System.Windows.Threading.DispatcherTimer _heartbeatTimer;
 
         public MainViewModel()
         {
@@ -184,6 +185,14 @@ namespace VisionGuard.ViewModels
             NavigateToMonitorCommand = new RelayCommand(() => CurrentPage = PageType.Monitor);
             NavigateToSettingsCommand = new RelayCommand(() => CurrentPage = PageType.Settings);
             NavigateToServerCommand = new RelayCommand(() => CurrentPage = PageType.Server);
+
+            // 心跳参数定时刷新(3s,与 WinForms 对齐): 确保 isMonitoring/cooldown/confidence/targets 实时同步到接收端
+            _heartbeatTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = System.TimeSpan.FromSeconds(3)
+            };
+            _heartbeatTimer.Tick += (s, e) => RefreshHeartbeat(_serverPushService);
+            _heartbeatTimer.Start();
         }
 
         /// <summary>由 MonitorViewModel 在 UI 线程调用，更新预览画面与检测框。</summary>
@@ -219,6 +228,9 @@ namespace VisionGuard.ViewModels
         /// <summary>程序退出前清理资源。</summary>
         public void Shutdown()
         {
+            // 停止心跳定时器
+            _heartbeatTimer?.Stop();
+
             // 强制保存一次当前设置
             SettingsVm.Save();
             MonitorVm.Save();
@@ -240,7 +252,7 @@ namespace VisionGuard.ViewModels
             var targets = SettingsVm.GetWatchedClasses();
             sps.UpdateHeartbeatParams(
                 isMonitoring: MonitorVm.IsMonitoring,
-                isReady: MonitorVm.IsMonitoring, // 运行中即为就绪
+                isReady: MonitorVm.HasCaptureTarget, // 选区已设定即就绪，与 WinForms 对齐
                 cooldown: SettingsVm.Cooldown,
                 confidence: SettingsVm.Threshold / 100f,
                 targets: string.Join(",", targets));

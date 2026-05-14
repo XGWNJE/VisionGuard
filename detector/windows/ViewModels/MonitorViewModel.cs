@@ -71,7 +71,7 @@ namespace VisionGuard.ViewModels
         public bool CanResetWindow => !IsMonitoring && TargetWindow != null;
 
         /// <summary>是否已设定有效的捕获目标（窗口 或 屏幕区域）。</summary>
-        private bool HasCaptureTarget => TargetWindow != null ||
+        public bool HasCaptureTarget => TargetWindow != null ||
             (ScreenRegion != Rectangle.Empty && ScreenRegion.Width >= 32 && ScreenRegion.Height >= 32);
 
         // 运行时状态

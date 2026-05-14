@@ -15,6 +15,9 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import com.xgwnje.visionguard_android.data.model.AlertMessage
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -29,6 +32,7 @@ class SettingsRepository(private val context: Context) {
         val COOLDOWN    = intPreferencesKey("cooldown")    // 秒，默认 5
         val CONFIDENCE  = floatPreferencesKey("confidence") // 0.0-1.0，默认 0.45
         val TARGETS     = stringPreferencesKey("targets")  // 逗号分隔的 COCO 类名
+        val ALERTS_HISTORY = stringPreferencesKey("alerts_history") // Gson JSON，最多 50 条
     }
 
     companion object {
@@ -85,4 +89,22 @@ class SettingsRepository(private val context: Context) {
     suspend fun getCooldown(): Int = cooldownFlow.first()
     suspend fun getConfidence(): Float = confidenceFlow.first()
     suspend fun getTargets(): String = targetsFlow.first()
+
+    /** 持久化报警历史列表（上限 50 条，避免 DataStore 过大） */
+    suspend fun saveAlerts(alerts: List<AlertMessage>) {
+        val toSave = alerts.take(50)
+        val json = Gson().toJson(toSave)
+        context.dataStore.edit { prefs -> prefs[Keys.ALERTS_HISTORY] = json }
+    }
+
+    /** 从 DataStore 恢复报警历史 */
+    suspend fun loadAlerts(): List<AlertMessage> {
+        val json = context.dataStore.data.map { it[Keys.ALERTS_HISTORY] ?: "[]" }.first()
+        return try {
+            val type = object : TypeToken<List<AlertMessage>>() {}.type
+            Gson().fromJson(json, type) ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
 }

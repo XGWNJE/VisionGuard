@@ -91,6 +91,13 @@ class AlertForegroundService : LifecycleService() {
     fun requestScreenshot(alertId: String, deviceId: String): Boolean =
         wsClient.requestScreenshot(alertId, deviceId)
 
+    /** 将当前报警列表持久化到 DataStore（上限 50 条，避免过大） */
+    private fun persistAlerts() {
+        lifecycleScope.launch {
+            settingsRepo.saveAlerts(_alerts.value)
+        }
+    }
+
     // ── 生命周期 ──────────────────────────────────────────────
 
     override fun onCreate() {
@@ -100,6 +107,15 @@ class AlertForegroundService : LifecycleService() {
         settingsRepo = SettingsRepository(applicationContext)
         screenshotCache = ScreenshotCache(applicationContext)
         networkMonitor = NetworkMonitor(applicationContext)
+
+        // 从本地 DataStore 恢复报警历史（Service 被杀后重启时保留）
+        lifecycleScope.launch {
+            val saved = settingsRepo.loadAlerts()
+            if (saved.isNotEmpty()) {
+                _alerts.value = saved
+                Log.i(TAG, "报警历史已恢复: ${saved.size} 条")
+            }
+        }
 
         // 注入网络检测器：心跳循环中主动检测网络可达性
         val cm = getSystemService(CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
@@ -162,6 +178,7 @@ class AlertForegroundService : LifecycleService() {
                 }
 
                 _alerts.value = (listOf(alert) + _alerts.value).take(200)
+                persistAlerts()
                 sendAlertNotification(alert)
             }
         }
@@ -272,6 +289,7 @@ class AlertForegroundService : LifecycleService() {
 
     fun clearAlerts() {
         _alerts.value = emptyList()
+        persistAlerts()
         screenshotCache.clearAll()
     }
 
@@ -305,6 +323,7 @@ class AlertForegroundService : LifecycleService() {
                                 if (newAlerts.isNotEmpty()) {
                                     val merged = (newAlerts + _alerts.value).distinctBy { it.alertId }
                                     _alerts.value = merged.take(200)
+                                    persistAlerts()
                                     Log.i(TAG, "历史报警已同步: ${newAlerts.size} 条")
                                 }
                                 true
