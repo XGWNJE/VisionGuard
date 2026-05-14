@@ -11,11 +11,7 @@ import android.graphics.Bitmap
 import android.net.ConnectivityManager
 import android.util.Log
 import com.xgwnje.visionguard.AppConstants
-import com.xgwnje.visionguard.data.model.AlertEvent
-import com.xgwnje.visionguard.data.model.AlertMeta
 import com.xgwnje.visionguard.util.NtpSync
-import com.xgwnje.visionguard.data.model.Bbox
-import com.xgwnje.visionguard.data.model.ServerDetection
 import com.xgwnje.visionguard.data.model.WsCommandMessage
 import com.xgwnje.visionguard.data.model.WsSetConfigMessage
 import com.xgwnje.visionguard.data.remote.WebSocketClient
@@ -42,7 +38,6 @@ import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 
 private const val TAG = "VG_ServerPush"
 
@@ -51,7 +46,6 @@ class ServerPushService(
     private val settingsRepo: SettingsRepository,
     private val scope: CoroutineScope
 ) {
-
     val wsClient = WebSocketClient()
 
 

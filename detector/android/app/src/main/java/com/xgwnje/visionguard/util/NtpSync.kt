@@ -45,7 +45,7 @@ object NtpSync {
             }
             if (attempt < 2) {
                 Log.i(TAG, "NTP 同步第 ${attempt + 1} 轮失败，5s 后重试…")
-                Thread.sleep(5000)
+                kotlinx.coroutines.delay(5000)
             }
         }
         Log.w(TAG, "所有服务器均失败，使用本地时钟")
