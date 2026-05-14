@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "VisionGuard_Android"
+rootProject.name = "VG_Receiver"
 include(":app")

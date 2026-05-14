@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "VisionGuard_Detector"
+rootProject.name = "VG_Detector"
 include(":app")

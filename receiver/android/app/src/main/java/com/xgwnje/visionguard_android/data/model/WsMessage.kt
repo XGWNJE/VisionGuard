@@ -64,3 +64,16 @@ data class WsScreenshotDataMessage(
     val width: Int = 0,
     val height: Int = 0
 )
+
+/**
+ * 服务器 → Android：检测端独立推送的截图(协议分离)。
+ * 与 alert 消息解耦,接收端拿到后用同一 alertId 静默更新通知 BigPicture。
+ */
+data class WsScreenshotDataPush(
+    val type: String = "screenshot-data",
+    val alertId: String = "",
+    val deviceId: String = "",
+    val imageBase64: String = "",
+    val width: Int = 0,
+    val height: Int = 0
+)

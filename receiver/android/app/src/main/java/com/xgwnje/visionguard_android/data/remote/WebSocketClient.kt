@@ -514,8 +514,13 @@ class WebSocketClient {
                     }
                 }
                 "screenshot-data" -> {
-                    // v4.0.0: 截图已通过 alert 消息内嵌推送，此类型不再使用
-                    // 保留处理以兼容旧版服务器
+                    // 协议分离: 检测端独立推送的截图,解析后通过 onScreenshotData 异步分发
+                    val push = gson.fromJson(text, com.xgwnje.visionguard_android.data.model.WsScreenshotDataPush::class.java)
+                    if (push.alertId.isNotEmpty() && push.imageBase64.isNotEmpty()) {
+                        scope.launch { _onScreenshotData.emit(
+                            ScreenshotData(push.alertId, push.imageBase64, push.width, push.height)
+                        ) }
+                    }
                 }
             }
         } catch (e: Exception) {

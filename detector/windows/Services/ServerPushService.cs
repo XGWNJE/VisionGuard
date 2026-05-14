@@ -184,23 +184,19 @@ namespace VisionGuard.Services
                     ["capturedAt"] = NtpSync.UtcNow.ToString("o"),
                 };
 
-                // v4.0.0: 内嵌截图 Base64（自动推送，去 HTTP 上传和按需拉取）
-                if (alert.Snapshot != null)
-                {
-                    try
-                    {
-                        msg["screenshotBase64"] = EncodeScreenshotBase64(alert.Snapshot);
-                    }
-                    catch { /* 编码失败不阻塞报警 */ }
-                }
-
+                // 协议分离: alert 元数据先发(最高优先级)
                 var labels = string.Join(",", alert.Detections.Select(d => d.Label));
                 var totalMs = alert.Timings.TryGetValue("totalProcessMs", out var t) ? $"{t}ms" : "N/A";
-                var hasScreenshot = msg.ContainsKey("screenshotBase64") ? "+screenshot" : "";
                 if (s.SendJson(msg))
-                    LogManager.StaticInfo($"[Server] 报警已推送: alertId={alert.AlertId}, targets={alert.Detections.Count}, [{labels}], total={totalMs} {hasScreenshot}");
+                {
+                    LogManager.StaticInfo($"[Server] 报警已推送: alertId={alert.AlertId}, targets={alert.Detections.Count}, [{labels}], total={totalMs}");
+                    // 截图独立异步推送(复用现有 SendScreenshotData,从磁盘读取避免 Bitmap 生命周期问题)
+                    Task.Run(() => SendScreenshotData(alert.AlertId));
+                }
                 else
+                {
                     LogManager.StaticWarn($"[Server] 报警推送失败 alertId={alert.AlertId}");
+                }
             }
         }
 

@@ -194,27 +194,48 @@ namespace VisionGuard.Services
                 ["capturedAt"] = NtpSync.UtcNow.ToString("o"),
             };
 
-            // v4.0.0: 内嵌截图 Base64（自动推送，去按需拉取）
-            try
-            {
-                string path = AlertService.GetSnapshotPath(alert.AlertId);
-                if (File.Exists(path))
-                {
-                    using (var bmp = new Bitmap(path))
-                    {
-                        msg["screenshotBase64"] = EncodeScreenshotBase64(bmp);
-                    }
-                }
-            }
-            catch { /* 截图编码失败不阻塞报警推送 */ }
-
+            // 协议分离: alert 元数据先发(最高优先级)
             var labels = string.Join(",", alert.Detections.Select(d => d.Label));
             var totalMs = alert.Timings.TryGetValue("totalProcessMs", out var t) ? $"{t}ms" : "N/A";
-            var hasScreenshot = msg.ContainsKey("screenshotBase64") ? "+screenshot" : "";
             if (s.SendJson(msg))
-                LogManager.StaticInfo($"[Server] 报警已推送: alertId={alert.AlertId}, targets={alert.Detections.Count}, [{labels}], total={totalMs} {hasScreenshot}");
+            {
+                LogManager.StaticInfo($"[Server] 报警已推送: alertId={alert.AlertId}, targets={alert.Detections.Count}, [{labels}], total={totalMs}");
+                // 截图独立异步推送(不阻塞 alert,编码失败不影响通知到达)
+                ThreadPool.QueueUserWorkItem(_ => PushScreenshotData(s, alert.AlertId));
+            }
             else
+            {
                 LogManager.StaticWarn($"[Server] 报警推送失败 alertId={alert.AlertId}");
+            }
+        }
+
+        private void PushScreenshotData(Session s, string alertId)
+        {
+            try
+            {
+                string path = AlertService.GetSnapshotPath(alertId);
+                if (!File.Exists(path)) return;
+                string base64;
+                using (var bmp = new Bitmap(path))
+                {
+                    base64 = EncodeScreenshotBase64(bmp);
+                }
+                var msg = new Dictionary<string, object>
+                {
+                    ["type"] = "screenshot-data",
+                    ["alertId"] = alertId,
+                    ["deviceId"] = _deviceId,
+                    ["imageBase64"] = base64,
+                };
+                if (s.SendJson(msg))
+                    LogManager.StaticInfo($"[Server] 截图已推送: alertId={alertId} size={base64.Length}");
+                else
+                    LogManager.StaticWarn($"[Server] 截图推送失败 alertId={alertId}");
+            }
+            catch (Exception ex)
+            {
+                LogManager.StaticWarn($"[Server] 截图编码异常 alertId={alertId}: {ex.Message}");
+            }
         }
 
         private static string EncodeScreenshotBase64(Bitmap bmp)

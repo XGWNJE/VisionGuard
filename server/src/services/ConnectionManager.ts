@@ -12,7 +12,7 @@ import { validateApiKey } from '../middleware/auth';
 import { addAlert } from '../services/AlertStore';
 import type {
   WsAuthMessage, WsHeartbeat, WsHeartbeatAndroid, WsCommand, WsSetConfig,
-  DetectorClient, ReceiverClient, WsAlertPush,
+  DetectorClient, ReceiverClient, WsAlertPush, WsScreenshotDataPush,
   DeviceStatus, WsCommandRelay, WsSetConfigRelay, WsCommandAck,
   WsDisconnectReason, WsSessionInfo,
 } from '../models/types';
@@ -105,11 +105,11 @@ function scheduleBroadcast(): void {
   }, 50);
 }
 
-// ── 截图推送队列 (v4.0.0: 按接收端串行推送，500ms stagger) ──
-const screenshotQueues = new Map<string, Array<{ alertId: string; payload: WsAlertPush }>>();
+// ── 截图推送队列 (协议分离: 截图独立异步,按接收端串行 500ms stagger) ──
+const screenshotQueues = new Map<string, Array<{ alertId: string; payload: WsScreenshotDataPush }>>();
 const screenshotProcessing = new Map<string, boolean>();
 
-function enqueueScreenshotPush(receiverId: string, alertId: string, payload: WsAlertPush): void {
+function enqueueScreenshotPush(receiverId: string, alertId: string, payload: WsScreenshotDataPush): void {
   let q = screenshotQueues.get(receiverId);
   if (!q) { q = []; screenshotQueues.set(receiverId, q); }
   // 队列上限 32，超出丢弃最旧的
@@ -262,6 +262,13 @@ export function handleConnection(ws: WebSocket): void {
           broadcastAlert(alert);
         }
         break;
+      case 'screenshot-data':
+        if (role === 'windows' || role === 'android-detector') {
+          const payload = msg as WsScreenshotDataPush;
+          if (!payload.alertId || !payload.imageBase64) break;
+          broadcastScreenshotData(payload);
+        }
+        break;
       case 'command':
         if (role === 'android') handleCommand(ws, msg as WsCommand);
         break;
@@ -332,18 +339,20 @@ export function handleConnection(ws: WebSocket): void {
 
 export function broadcastAlert(alert: WsAlertPush): void {
   alert.serverRelayedAt = new Date().toISOString();
+  // 协议分离: alert 元数据 <1KB,永远并行广播,不入串行队列
+  const result = broadcastToReceivers(alert, `alert:${alert.alertId}`);
+  console.log(`[ws][${new Date().toISOString()}] 报警广播: alertId=${alert.alertId} 接收端=${receiverClients.size} 成功=${result.success}/${result.success + result.failed}`);
+}
 
-  if (alert.screenshotBase64) {
-    // 有截图：队列推送给每个接收端（避免并发推送撑爆接收端）
-    for (const [rid] of receiverClients) {
-      enqueueScreenshotPush(rid, alert.alertId, alert);
-    }
-  } else {
-    // 无截图：直接广播
-    broadcastToReceivers(alert, `alert:${alert.alertId}`);
+/**
+ * 截图独立异步广播 — 走 500ms 串行队列,防止多接收端并发下行拥塞。
+ * 协议分离后,alert 已先行送达,本函数仅负责补传 BigPicture。
+ */
+export function broadcastScreenshotData(payload: WsScreenshotDataPush): void {
+  for (const [rid] of receiverClients) {
+    enqueueScreenshotPush(rid, payload.alertId, payload);
   }
-  const totalReceivers = receiverClients.size;
-  console.log(`[ws][${new Date().toISOString()}] 报警广播: alertId=${alert.alertId} 接收端=${totalReceivers} hasScreenshot=${!!alert.screenshotBase64}`);
+  console.log(`[ws][${new Date().toISOString()}] 截图广播入队: alertId=${payload.alertId} 接收端=${receiverClients.size}`);
 }
 
 // ════════════════════════════════════════════════════════════

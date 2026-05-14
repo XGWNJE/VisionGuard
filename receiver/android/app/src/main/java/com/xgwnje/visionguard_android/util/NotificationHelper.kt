@@ -60,7 +60,8 @@ object NotificationHelper {
         context: Context,
         alert: AlertMessage,
         notifId: Int,
-        largeIcon: Bitmap? = null
+        largeIcon: Bitmap? = null,
+        silentUpdate: Boolean = false
     ): Notification {
         val openIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -95,7 +96,14 @@ object NotificationHelper {
             .setAutoCancel(true)
             .setContentIntent(pi)
             .setFullScreenIntent(fullScreenPi, true)  // 亮屏显示通知
-            .setDefaults(NotificationCompat.DEFAULT_ALL)  // 声音+振动+呼吸灯
+
+        if (silentUpdate) {
+            // 协议分离: 截图后到达时静默更新已弹出的通知,不再次震动/响铃
+            builder.setOnlyAlertOnce(true)
+                .setDefaults(0)
+        } else {
+            builder.setDefaults(NotificationCompat.DEFAULT_ALL)  // 声音+振动+呼吸灯
+        }
 
         if (largeIcon != null) {
             builder.setLargeIcon(largeIcon)

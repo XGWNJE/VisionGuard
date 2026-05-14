@@ -62,7 +62,7 @@ export interface WsHeartbeatAndroid {
   deviceId: string;
 }
 
-/** 服务器 → 接收端：报警推送 (v4.0.0: 内嵌截图) */
+/** 服务器 → 接收端：报警推送 (v4.0.0+: 元数据 only, 截图走独立 screenshot-data 消息) */
 export interface WsAlertPush {
   type: 'alert';
   alertId: string;
@@ -70,16 +70,27 @@ export interface WsAlertPush {
   deviceName: string;
   timestamp: string;
   detections: Detection[];
-  screenshotUrl: string;
+  screenshotUrl?: string;
   timings?: Record<string, number>;
   /** @deprecated since 4.0.0 — 使用 capturedAt 替代 */
   wsSentAt?: string;
   /** v4.0.0: 检测端捕获帧的 NTP 时间戳 (ISO8601) */
   capturedAt?: string;
-  /** v4.0.0: 报警截图 JPEG Base64 (自动推送，不再按需拉取) */
-  screenshotBase64?: string;
   serverReceivedAt?: string;
   serverRelayedAt?: string;
+}
+
+/**
+ * 检测端 → 服务器 → 接收端：截图独立异步推送 (协议分离: alert 元数据先行,截图后到)
+ * 接收端收到后用同一 alertId 静默更新已弹出的通知 BigPicture。
+ */
+export interface WsScreenshotDataPush {
+  type: 'screenshot-data';
+  alertId: string;
+  deviceId: string;
+  imageBase64: string;
+  width?: number;
+  height?: number;
 }
 
 export interface DeviceStatus {

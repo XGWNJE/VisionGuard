@@ -181,21 +181,43 @@ class ServerPushService(
                 "timings" to timings,
                 "capturedAt" to isoFormat(NtpSync.now())
             )
-            // v4.0.0: 内嵌截图 Base64
-            if (bitmap != null) {
-                try {
-                    val jpegBytes = bmpToJpeg(bitmap)
-                    msg["screenshotBase64"] = android.util.Base64.encodeToString(jpegBytes, android.util.Base64.NO_WRAP)
-                } catch (e: Exception) {
-                    Log.w(TAG, "截图编码失败: ${e.message}")
-                }
-            }
+            // 协议分离: alert 元数据先发(最高优先级,不含截图)
             val sent = wsClient.sendRawJson(gson.toJson(msg))
             if (sent) {
-                Log.i(TAG, "报警已推送(WS): alertId=$alertId targets=${detections.size} hasScreenshot=${bitmap != null}")
+                Log.i(TAG, "报警已推送(WS): alertId=$alertId targets=${detections.size}")
+                // 截图独立异步推送(OkHttp WS send 内部串行队列,后发安全)
+                if (bitmap != null) {
+                    launch { doPushScreenshotData(alertId, deviceId, bitmap, gson) }
+                }
             } else {
                 Log.w(TAG, "报警推送失败(WS): alertId=$alertId")
             }
+        }
+    }
+
+    private fun doPushScreenshotData(
+        alertId: String,
+        deviceId: String,
+        bitmap: Bitmap,
+        gson: com.google.gson.Gson
+    ) {
+        try {
+            val jpegBytes = bmpToJpeg(bitmap)
+            val base64 = android.util.Base64.encodeToString(jpegBytes, android.util.Base64.NO_WRAP)
+            val msg = mapOf(
+                "type" to "screenshot-data",
+                "alertId" to alertId,
+                "deviceId" to deviceId,
+                "imageBase64" to base64
+            )
+            val sent = wsClient.sendRawJson(gson.toJson(msg))
+            if (sent) {
+                Log.i(TAG, "截图已推送(WS): alertId=$alertId size=${base64.length}")
+            } else {
+                Log.w(TAG, "截图推送失败(WS): alertId=$alertId")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "截图编码异常 alertId=$alertId: ${e.message}")
         }
     }
 

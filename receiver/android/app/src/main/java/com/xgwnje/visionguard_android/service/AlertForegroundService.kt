@@ -11,6 +11,7 @@ package com.xgwnje.visionguard_android.service
 
 import android.app.NotificationManager
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.os.Binder
 import android.os.IBinder
 import android.os.PowerManager
@@ -38,6 +39,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -69,6 +71,7 @@ class AlertForegroundService : LifecycleService() {
     private lateinit var settingsRepo: SettingsRepository
     private lateinit var nm: NotificationManager
     private val notifIdCounter = AtomicInteger(1000)
+    private val alertNotifIdMap = ConcurrentHashMap<String, Int>()  // 协议分离: alertId → notifId,用于截图后到时静默更新通知
     private var wakeLock: PowerManager.WakeLock? = null
     private lateinit var screenshotCache: ScreenshotCache
     private lateinit var networkMonitor: NetworkMonitor  // 网络状态监听
@@ -142,12 +145,12 @@ class AlertForegroundService : LifecycleService() {
             }
         }
 
-        // 订阅报警 (v4.0.0: 内嵌截图)
+        // 订阅报警 (协议分离: alert 元数据,立即通知,截图由独立 screenshot-data 异步补传)
         lifecycleScope.launch {
             wsClient.onAlert.collect { alert ->
                 Log.i(TAG, "收到报警: ${alert.deviceName} - ${alert.detections.size} 个目标")
 
-                // v4.0.0: 从 alert 中提取内嵌截图
+                // 兼容老服务器: 若仍内嵌截图,直接消化
                 if (!alert.screenshotBase64.isNullOrEmpty()) {
                     try {
                         val bytes = Base64.decode(alert.screenshotBase64, Base64.DEFAULT)
@@ -160,6 +163,28 @@ class AlertForegroundService : LifecycleService() {
 
                 _alerts.value = (listOf(alert) + _alerts.value).take(200)
                 sendAlertNotification(alert)
+            }
+        }
+
+        // 订阅截图独立推送 (协议分离: 解码 → 缓存 → 静默更新通知 BigPicture)
+        lifecycleScope.launch {
+            wsClient.onScreenshotData.collect { data ->
+                try {
+                    val bytes = Base64.decode(data.imageBase64, Base64.DEFAULT)
+                    screenshotCache.save(data.alertId, bytes)
+                    _onScreenshotData.emit(data)  // 触发 UI 即时刷新
+
+                    val notifId = alertNotifIdMap[data.alertId] ?: return@collect
+                    val alert = _alerts.value.firstOrNull { it.alertId == data.alertId } ?: return@collect
+                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@collect
+                    val notif = NotificationHelper.buildAlertNotification(
+                        this@AlertForegroundService, alert, notifId, bitmap, silentUpdate = true
+                    )
+                    nm.notify(notifId, notif)
+                    Log.i(TAG, "截图已静默更新通知: alertId=${data.alertId}")
+                } catch (e: Exception) {
+                    Log.w(TAG, "截图处理异常: alertId=${data.alertId} ${e.message}")
+                }
             }
         }
 
@@ -341,6 +366,12 @@ class AlertForegroundService : LifecycleService() {
             return
         }
         val notifId = notifIdCounter.incrementAndGet()
+        alertNotifIdMap[alert.alertId] = notifId  // 协议分离: 记录映射,供后到的截图静默更新通知
+        // 清理已被 LRU 驱逐的 alert 的映射(_alerts 上限 200)
+        if (alertNotifIdMap.size > 256) {
+            val keep = _alerts.value.map { it.alertId }.toHashSet()
+            alertNotifIdMap.keys.removeAll { it !in keep }
+        }
         val notif = NotificationHelper.buildAlertNotification(
             this@AlertForegroundService, alert, notifId, null
         )
