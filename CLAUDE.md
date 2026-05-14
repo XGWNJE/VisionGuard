@@ -40,6 +40,12 @@ receiver/android/            Kotlin / Jetpack Compose / OkHttp       安卓接�
 
 WS 三角色：`windows` / `android` / `android-detector`
 
+**心跳设计**：
+- 检测端（WinForms/WPF/Android检测）每 **3s** 发心跳，携带业务状态（isMonitoring/cooldown/confidence/targets）
+- 接收端每 **30s** 发心跳，仅保活（不携带业务状态）
+- 全端幽灵阈值统一 **45s** — 无消息则判定失联、断开重连
+- 无传输层 ping，应用层心跳已覆盖连接检测
+
 **版本门控**：`minClientVersion = '4.0.0'`。根目录 `VERSION` 文件为权威来源。
 
 **Android 接收端**：MVVM + 前台 Service（`foregroundServiceType="remoteMessaging"`）。**无独立 Settings 屏**，远控参数散落在各 Screen 内联。

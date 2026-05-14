@@ -15,7 +15,7 @@ import { WebSocketServer } from 'ws';
 import { config, validateConfig } from './config';
 import alertRouter from './routes/alert';
 import alertsQueryRouter from './routes/alerts';
-import { handleConnection, initPing, getConnectionCount } from './services/ConnectionManager';
+import { handleConnection, getConnectionCount } from './services/ConnectionManager';
 import { cleanupExpiredAlerts } from './services/AlertStore';
 import screenshotRouter from './routes/screenshot';
 import { startCleanupTimer, cleanupScreenshots } from './services/ScreenshotCleanup';
@@ -67,8 +67,6 @@ wss.on('connection', (ws, req) => {
   }
   handleConnection(ws);
 });
-initPing();
-
 // ── 启动 ──────────────────────────────────────────────────
 
 validateConfig();

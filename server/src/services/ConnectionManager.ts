@@ -133,40 +133,6 @@ function processScreenshotQueue(receiverId: string): void {
   setTimeout(() => processScreenshotQueue(receiverId), 500);
 }
 
-// ── Ping / 健康检测 ─────────────────────────────────────────
-const PING_INTERVAL_MS = 30_000;
-const aliveClients = new WeakSet<WebSocket>();
-
-function markAlive(ws: WebSocket): void {
-  aliveClients.add(ws);
-}
-
-export function initPing(): void {
-  setInterval(() => {
-    for (const clients of [detectorWindowsClients, detectorAndroidClients]) {
-      for (const [, client] of clients) {
-        if (!aliveClients.has(client.ws)) {
-          const roleLabel = client.clientType === 'android-detector' ? 'Android检测端' : 'Windows';
-          console.log(`[ws][${new Date().toISOString()}] Ping 超时终止: ${roleLabel} ${client.deviceName} (${client.deviceId})`);
-          client.ws.terminate();
-          continue;
-        }
-        aliveClients.delete(client.ws);
-        client.ws.ping();
-      }
-    }
-    for (const [, client] of receiverClients) {
-      if (!aliveClients.has(client.ws)) {
-        console.log(`[ws][${new Date().toISOString()}] Ping 超时终止: 接收端 ${client.deviceId}`);
-        client.ws.terminate();
-        continue;
-      }
-      aliveClients.delete(client.ws);
-      client.ws.ping();
-    }
-  }, PING_INTERVAL_MS);
-}
-
 // ── Close Code 翻译 ─────────────────────────────────────────
 const CloseCodeNames: Record<number, string> = {
   1000: '正常关闭', 1001: '服务器关闭 (Going Away)', 1002: '协议错误',
@@ -209,9 +175,6 @@ export function handleConnection(ws: WebSocket): void {
   const remoteIp = (ws as any).socket?.remoteAddress ?? 'unknown';
 
   console.log(`[ws][${ts}] 新连接 ← ${remoteIp} (等待认证, 超时 ${config.wsAuthTimeoutMs}ms)`);
-
-  markAlive(ws);
-  ws.on('pong', () => markAlive(ws));
 
   const authTimer = setTimeout(() => {
     if (!authenticated) {
@@ -454,10 +417,6 @@ function handleAuth(
       console.log(`[ws][${ts}] 接收端 首次连接: ${msg.deviceId} | 接收端在线=${receiverClients.size}`);
     }
 
-    ws.on('ping', () => {
-      const c = receiverClients.get(pingDeviceId);
-      if (c) c.lastSeen = new Date();
-    });
     console.log(`[ws][${ts}] 接收端 上线: ${msg.deviceId}`);
   } else {
     console.log(`[ws][${ts}] 认证失败: 无效 role=${msg.role}`);
@@ -714,13 +673,6 @@ setInterval(() => {
         clients.delete(id);
         _heartbeatCounter.delete(id);
       }
-    }
-  }
-
-  // keep-alive
-  for (const clients of [detectorWindowsClients, detectorAndroidClients]) {
-    for (const client of clients.values()) {
-      sendJson(client.ws, { type: 'ping' });
     }
   }
 

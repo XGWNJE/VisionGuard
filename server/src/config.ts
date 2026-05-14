@@ -29,8 +29,8 @@ export const config = {
   wsAuthTimeoutMs: 5000,
 
   /** 设备离线判定 / 幽灵清理阈值 (毫秒)。超过此时间无消息则终止连接并标记离线。
-   *  全端心跳统一 3s, 取 20s 为安全阈值。 */
-  deviceOfflineMs: 20_000,
+   *  检测端心跳 3s, 接收端心跳 30s, 统一取 45s 为安全阈值。 */
+  deviceOfflineMs: 45_000,
 
   /** 每设备最大报警记录数 (循环缓冲) */
   maxAlertsPerDevice: 200,
@@ -47,8 +47,8 @@ export const config = {
   /** WS 最大并发连接数 (所有角色合计)，防止连接洪水 */
   maxWsConnections: parseInt(process.env.MAX_WS_CONNECTIONS || '100', 10),
 
-  /** 接收端幽灵清理阈值 (毫秒)。心跳 3s + OkHttp ping 20s，取 30s */
-  receiverGhostThresholdMs: 30_000,
+  /** 接收端幽灵清理阈值 (毫秒)。心跳 30s，取 45s 为安全阈值。 */
+  receiverGhostThresholdMs: 45_000,
 } as const;
 
 export function validateConfig(): void {

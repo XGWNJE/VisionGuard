@@ -37,7 +37,7 @@ namespace VisionGuard.Services
 
         // ── 常量 ─────────────────────────────────────────────────────
         private const int HEARTBEAT_INTERVAL_MS = 3_000;
-        private const int GHOST_THRESHOLD_MS = 60_000;
+        private const int GHOST_THRESHOLD_MS = 45_000;
         private const int AUTH_TIMEOUT_MS = 12_000;
         private const int SEND_TIMEOUT_MS = 5_000;
         private static readonly int[] BackoffSeconds = { 1, 2, 3, 5, 10, 20 };

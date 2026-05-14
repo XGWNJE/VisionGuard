@@ -46,8 +46,8 @@ private const val TAG = "VG_WsClient"
 // 重连退避：1 → 2 → 3 → 5 → 10 秒
 private val BACKOFF_SECONDS = longArrayOf(1, 2, 3, 5, 10)
 
-// 心跳间隔：3 秒（全端统一）
-private const val HEARTBEAT_INTERVAL_MS = 3_000L
+// 心跳间隔：30 秒（接收端仅保活，无需高频状态同步）
+private const val HEARTBEAT_INTERVAL_MS = 30_000L
 
 // 幽灵检测：45 秒无任何消息视为连接已死
 private const val GHOST_THRESHOLD_MS = 45_000L
@@ -108,7 +108,6 @@ class WebSocketClient {
     var networkChecker: (() -> Boolean)? = null
 
     private val http = OkHttpClient.Builder()
-        .pingInterval(20, TimeUnit.SECONDS)
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()

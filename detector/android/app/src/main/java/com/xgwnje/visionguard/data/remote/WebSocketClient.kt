@@ -130,7 +130,6 @@ class WebSocketClient {
     var networkChecker: (() -> Boolean)? = null
 
     private val http = OkHttpClient.Builder()
-        .pingInterval(20, TimeUnit.SECONDS)
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
