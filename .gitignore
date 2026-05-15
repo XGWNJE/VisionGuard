@@ -58,7 +58,6 @@ Desktop.ini
 *.log
 *.tmp
 *.cache
-.claude/
 
 # ===== 设计文件（大文件，按需跟踪）=====
 *.apk
