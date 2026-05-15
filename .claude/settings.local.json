@@ -134,7 +134,10 @@
       "Bash(git -C d:/ObjectCode/VisionGuard status)",
       "Bash(git -C d:/ObjectCode/VisionGuard log --oneline -3)",
       "Bash(git -C d:/ObjectCode/VisionGuard add .claude/settings.local.json)",
-      "Bash(git -C d:/ObjectCode/VisionGuard commit -m \"chore: settings.local.json lint 自动格式化\")"
+      "Bash(git -C d:/ObjectCode/VisionGuard commit -m \"chore: settings.local.json lint 自动格式化\")",
+      "Bash(git -C d:/ObjectCode/VisionGuard ls-files \"*.onnx\")",
+      "Bash(git -C d:/ObjectCode/VisionGuard add .gitignore CLAUDE.md .claude/settings.local.json)",
+      "Bash(git -C d:/ObjectCode/VisionGuard commit -m \"chore: 所有.onnx模型文件从版本控制中移除 + gitignore + 模型清单文档\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Administrator\\.claude\\skills",

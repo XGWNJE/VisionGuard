@@ -23,10 +23,18 @@ receiver/android/            Kotlin / Jetpack Compose / OkHttp       安卓接�
 | | WinForms | WPF |
 |---|---|---|
 | 框架 | .NET Framework 4.7.2 | .NET 9 |
-| 模型 | YOLOv5nu (`[1,84,2100]`, 无内置 NMS) | YOLO26 (`[1,300,6]`) |
+| 模型 | YOLOv5 nu/su/mu (`[1,84,2100]`, 无内置 NMS) | YOLO26 n/s/m (`[1,300,6]`) |
 | ORT | 1.1.0 统一包（Managed 1.2.0 版本暂不处理） | 1.19.0 |
 | WS | websocket-sharp | System.Net.WebSockets |
 | 架构 | 事件驱动 Form1 partial class | MVVM (ViewModels/) |
+
+**模型清单**（.onnx 不入版本控制，需通过导出脚本生成）：
+
+| 端 | 系列 | 可选模型（文件名） |
+|----|------|-------------------|
+| WinForms | YOLOv5 | `yolov5nu_320` `yolov5nu_640` `yolov5su_320` `yolov5su_640` `yolov5mu_320` `yolov5mu_640` |
+| WPF | YOLO26 | `yolo26n_320` `yolo26n_640` `yolo26s_320` `yolo26s_640` `yolo26m_320` `yolo26m_640` |
+| Android 检测 | YOLO26 | `yolo26n_320` `yolo26n_640` `yolo26s_320` `yolo26s_640`（m 模型可选，需酌情加入） |
 
 **Android 检测端特有**：
 - 数码裁切变焦 1x–5x：纯软件中心裁切，不调 CameraX API。zoom≥3→1920×1080，zoom≥2→1280×960

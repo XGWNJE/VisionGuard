@@ -73,6 +73,8 @@ detector/windows-wpf/**/bin/
 detector/windows-wpf/**/obj/
 detector/windows-wpf/test-*/
 
-# 模型文件（大文件，通过导出脚本生成）
+# 模型文件（大文件，通过导出脚本生成，不入版本控制）
 detector/windows-winforms/Assets/*.onnx
+detector/windows-wpf/Assets/*.onnx
+detector/android/app/src/main/assets/models/*.onnx
 
