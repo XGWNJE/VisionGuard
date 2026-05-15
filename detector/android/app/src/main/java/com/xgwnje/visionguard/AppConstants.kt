@@ -8,7 +8,7 @@ package com.xgwnje.visionguard
 
 object AppConstants {
     /** 应用版本号（与根目录 VERSION 文件保持一致） */
-    const val VERSION = "4.0.1"
+    const val VERSION = "4.1.0"
 
     /** 服务器地址（不含末尾斜杠） */
     const val SERVER_URL = "https://xgwnje.cn"

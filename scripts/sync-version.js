@@ -37,7 +37,7 @@ function main() {
 
   // 3. WPF AppConfig.cs
   replaceInFile(
-    path.join(ROOT, 'detector', 'windows', 'Utils', 'AppConfig.cs'),
+    path.join(ROOT, 'detector', 'windows-wpf', 'Utils', 'AppConfig.cs'),
     /Version = "[\d.]+"/,
     `Version = "${newVersion}"`
   );
@@ -85,17 +85,17 @@ function main() {
 
   // 10. WPF .csproj (Version/FileVersion/AssemblyVersion)
   replaceInFile(
-    path.join(ROOT, 'detector', 'windows', 'VisionGuard.csproj'),
+    path.join(ROOT, 'detector', 'windows-wpf', 'VisionGuard.csproj'),
     /<Version>[\d.]+<\/Version>/,
     `<Version>${newVersion}</Version>`
   );
   replaceInFile(
-    path.join(ROOT, 'detector', 'windows', 'VisionGuard.csproj'),
+    path.join(ROOT, 'detector', 'windows-wpf', 'VisionGuard.csproj'),
     /<FileVersion>[\d.]+<\/FileVersion>/,
     `<FileVersion>${newVersion}</FileVersion>`
   );
   replaceInFile(
-    path.join(ROOT, 'detector', 'windows', 'VisionGuard.csproj'),
+    path.join(ROOT, 'detector', 'windows-wpf', 'VisionGuard.csproj'),
     /<AssemblyVersion>[\d.]+<\/AssemblyVersion>/,
     `<AssemblyVersion>${newVersion}</AssemblyVersion>`
   );
@@ -124,7 +124,7 @@ function main() {
 
   // 12. WPF ServerPushService.cs 硬编码版本
   replaceInFile(
-    path.join(ROOT, 'detector', 'windows', 'Services', 'ServerPushService.cs'),
+    path.join(ROOT, 'detector', 'windows-wpf', 'Services', 'ServerPushService.cs'),
     /\["version"\] = "[\d.]+"/,
     `["version"] = "${newVersion}"`
   );
@@ -138,7 +138,7 @@ function main() {
 
   // 14. WPF AutoUpdater.cs
   replaceInFile(
-    path.join(ROOT, 'detector', 'windows', 'Utils', 'AutoUpdater.cs'),
+    path.join(ROOT, 'detector', 'windows-wpf', 'Utils', 'AutoUpdater.cs'),
     /private const string CurrentVersion = "[\d.]+"/,
     `private const string CurrentVersion = "${newVersion}"`
   );

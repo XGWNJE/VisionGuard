@@ -16,9 +16,9 @@
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
     <AllowedReferenceRelatedFileExtensions>.allowedextension</AllowedReferenceRelatedFileExtensions>
     <Platforms>AnyCPU;x86</Platforms>
-    <Version>4.0.1</Version>
-    <FileVersion>4.0.1</FileVersion>
-    <AssemblyVersion>4.0.1</AssemblyVersion>
+    <Version>4.1.0</Version>
+    <FileVersion>4.1.0</FileVersion>
+    <AssemblyVersion>4.1.0</AssemblyVersion>
   </PropertyGroup>
 
   <ItemGroup>

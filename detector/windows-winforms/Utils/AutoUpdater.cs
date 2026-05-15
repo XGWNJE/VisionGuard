@@ -13,7 +13,7 @@ namespace VisionGuard.Utils
 {
     public static class AutoUpdater
     {
-        private const string CurrentVersion = "4.0.1";
+        private const string CurrentVersion = "4.1.0";
         private const string ServerBase = "https://xgwnje.cn";
 
         public static void CheckUpdate(string apiKey)

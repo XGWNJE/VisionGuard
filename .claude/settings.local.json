@@ -139,7 +139,22 @@
       "Bash(git -C d:/ObjectCode/VisionGuard add .gitignore CLAUDE.md .claude/settings.local.json)",
       "Bash(git -C d:/ObjectCode/VisionGuard commit -m \"chore: 所有.onnx模型文件从版本控制中移除 + gitignore + 模型清单文档\")",
       "Bash(git -C d:/ObjectCode/VisionGuard for-each-ref --format='%\\(refname\\)' refs/original/)",
-      "Bash(git -C d:/ObjectCode/VisionGuard commit -m \"chore: settings.local.json lint 格式化\")"
+      "Bash(git -C d:/ObjectCode/VisionGuard commit -m \"chore: settings.local.json lint 格式化\")",
+      "Bash(git -C d:/ObjectCode/VisionGuard remote -v)",
+      "Bash(git -C d:/ObjectCode/VisionGuard push --force origin master)",
+      "Bash(git -C d:/ObjectCode/VisionGuard ls-files \"server/data/releases/\")",
+      "Bash(git -C d:/ObjectCode/VisionGuard filter-branch --force --index-filter \"git rm --cached --ignore-unmatch 'server/data/releases/*.zip'\" --prune-empty --tag-name-filter cat -- --all)",
+      "Bash(git -C d:/ObjectCode/VisionGuard stash)",
+      "Bash(git -C d:/ObjectCode/VisionGuard stash pop)",
+      "Bash(git -C d:/ObjectCode/VisionGuard reflog --oneline -10)",
+      "Bash(git -C d:/ObjectCode/VisionGuard show 23baa3b:server/data/releases/VisionGuard-WPF-v4.0.1.zip)",
+      "Bash(git -C d:/ObjectCode/VisionGuard show 23baa3b:server/data/releases/VisionGuard-v4.0.1.zip)",
+      "PowerShell($env:JAVA_HOME = if \\($env:JAVA_HOME\\) { $env:JAVA_HOME } else { \"C:\\\\Android\\\\Android Studio\\\\jbr\" }; Set-Location \"d:\\\\ObjectCode\\\\VisionGuard\\\\detector\\\\android\"; .\\\\gradlew.bat assembleRelease --console=plain 2>&1)",
+      "PowerShell($env:JAVA_HOME = if \\($env:JAVA_HOME\\) { $env:JAVA_HOME } else { \"C:\\\\Android\\\\Android Studio\\\\jbr\" }; Set-Location \"d:\\\\ObjectCode\\\\VisionGuard\\\\receiver\\\\android\"; .\\\\gradlew.bat assembleRelease --console=plain 2>&1)",
+      "PowerShell($env:JAVA_HOME = if \\($env:JAVA_HOME\\) { $env:JAVA_HOME } else { \"C:\\\\Android\\\\Android Studio\\\\jbr\" }; Set-Location \"d:\\\\ObjectCode\\\\VisionGuard\\\\receiver\\\\android\"; .\\\\gradlew.bat assembleDebug --console=plain 2>&1)",
+      "Bash(node \"d:/ObjectCode/VisionGuard/scripts/sync-version.js\" 4.1.0)",
+      "Bash(git -C d:/ObjectCode/VisionGuard commit -m \"release: v4.1.0 全端版本升级 + sync-version.js路径修复 + 发行包更新\")",
+      "Bash(git -C d:/ObjectCode/VisionGuard push origin master)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Administrator\\.claude\\skills",
