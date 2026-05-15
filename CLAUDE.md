@@ -84,7 +84,7 @@ WS 三角色：`windows` / `android` / `android-detector`
 | `visionguard-build` | 五端编译（Server/WinForms/WPF/Android-Detector/Android-Receiver） | `/visionguard-build` 或"编译" |
 | `version-alignment` | 全端版本号检查与批量修改 | `/version-alignment` 或"版本对齐" |
 
-Agent 清单（`.claude/agents/`）：`architect` / `debugger` / `protocol-designer` / `scanner` / `build-validator` / `style-checker` / `refactor-batch`
+Agent 清单（`.claude/agents/`）：`scanner`（搜索/审查/扫描）/ `builder`（编译验证）
 
 ## 详细文档
 
