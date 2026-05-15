@@ -70,11 +70,11 @@ function main() {
     `versionName = "${newVersion}"`
   );
 
-  // 8. Android 接收端 AutoUpdater.kt
+  // 8. Android 接收端 AppConstants.kt (VERSION)
   replaceInFile(
-    path.join(ROOT, 'receiver', 'android', 'app', 'src', 'main', 'java', 'com', 'xgwnje', 'visionguard_android', 'util', 'AutoUpdater.kt'),
-    /CURRENT_VERSION = "[\d.]+"/,
-    `CURRENT_VERSION = "${newVersion}"`
+    path.join(ROOT, 'receiver', 'android', 'app', 'src', 'main', 'java', 'com', 'xgwnje', 'visionguard_android', 'AppConstants.kt'),
+    /VERSION = "[\d.]+"/,
+    `VERSION = "${newVersion}"`
   );
 
   // 9. Server package.json

@@ -59,7 +59,6 @@ namespace VisionGuard.Utils
             {
                 if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
                 Directory.CreateDirectory(tempDir);
-                var logPath = Path.Combine(tempDir, "update.log");
 
                 var zipPath = Path.Combine(tempDir, "update.zip");
                 LogManager.StaticInfo($"[AutoUpdater] 正在下载更新包…");
@@ -76,36 +75,40 @@ namespace VisionGuard.Utils
 
                 var appDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
                 var appExe = Path.Combine(appDir, "VisionGuard.exe");
-                var script = $@"@echo off
-echo [updater] Waiting for old process to exit... >> ""{logPath}""
-ping -n 4 127.0.0.1 >nul
-echo [updater] Copying files from {extractDir}... >> ""{logPath}""
-xcopy /E /Y /Q ""{extractDir}\*"" ""{appDir}\"" >> ""{logPath}"" 2>&1
-echo [updater] xcopy exit code: %ERRORLEVEL% >> ""{logPath}""
-echo [updater] Starting new version... >> ""{logPath}""
-""{appExe}""
-echo [updater] Done. >> ""{logPath}""
+                var psScript = $@"
+$host.UI.RawUI.WindowTitle = 'VisionGuard Updater'
+Write-Host 'Waiting for old app to exit...'
+Start-Sleep -Seconds 3
+
+Write-Host 'Copying files...'
+Copy-Item -Recurse -Force '{extractDir}\*' '{appDir}\' -ErrorAction Stop
+
+Write-Host 'Cleaning up temp files...'
+Remove-Item -Recurse -Force '{tempDir}' -ErrorAction SilentlyContinue
+
+Write-Host 'Starting new version...'
+Start-Process '{appExe}'
 ";
 
-                var batPath = Path.Combine(tempDir, "updater.bat");
-                File.WriteAllText(batPath, script, System.Text.Encoding.Default);
+                var psPath = Path.Combine(tempDir, "updater.ps1");
+                File.WriteAllText(psPath, psScript, System.Text.Encoding.Default);
 
                 LogManager.StaticInfo("[AutoUpdater] 启动 updater，主程序退出…");
                 Process.Start(new ProcessStartInfo
                 {
-                    FileName = "cmd.exe",
-                    Arguments = $"/c \"{batPath}\"",
-                    WorkingDirectory = tempDir,
+                    FileName = "powershell.exe",
+                    Arguments = $"-NoProfile -ExecutionPolicy Bypass -File \"{psPath}\"",
                     UseShellExecute = true,
-                    WindowStyle = ProcessWindowStyle.Minimized,
                 });
 
+                // 500ms 缓冲确保 PowerShell 进程完全启动
+                System.Threading.Thread.Sleep(500);
                 Environment.Exit(0);
             }
             catch (Exception ex)
             {
                 LogManager.StaticWarn($"[AutoUpdater] 更新失败: {ex.Message}");
-                MessageBox.Show($"更新失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxImage.Error);
+                MessageBox.Show($"更新失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); } catch { }
             }
         }

@@ -35,7 +35,7 @@ object AutoUpdater {
     /** 检查并执行更新（在 Service 启动时调用） */
     suspend fun checkAndUpdate(context: Context) = withContext(Dispatchers.IO) {
         try {
-            val url = "${AppConstants.SERVER_URL}/api/update?platform=$PLATFORM&version=4.0.0"
+            val url = "${AppConstants.SERVER_URL}/api/update?platform=$PLATFORM&version=${AppConstants.VERSION}"
             val request = Request.Builder().url(url).header("X-API-Key", AppConstants.API_KEY).build()
             val response = http.newCall(request).execute()
             if (!response.isSuccessful) return@withContext
@@ -90,7 +90,7 @@ object AutoUpdater {
                 context,
                 receiver,
                 IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
-                ContextCompat.RECEIVER_NOT_EXPORTED
+                ContextCompat.RECEIVER_EXPORTED
             )
 
             // 再 enqueue

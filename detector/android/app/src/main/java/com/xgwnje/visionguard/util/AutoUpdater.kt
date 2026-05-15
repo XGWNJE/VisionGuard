@@ -91,7 +91,7 @@ object AutoUpdater {
                 context,
                 receiver,
                 IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
-                ContextCompat.RECEIVER_NOT_EXPORTED
+                ContextCompat.RECEIVER_EXPORTED
             )
 
             // 再 enqueue（API 文档保证此时注册已完成）
