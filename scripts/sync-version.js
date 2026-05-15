@@ -83,7 +83,24 @@ function main() {
   pkg.version = newVersion;
   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 
-  // 10. Server releases.json
+  // 10. WPF .csproj (Version/FileVersion/AssemblyVersion)
+  replaceInFile(
+    path.join(ROOT, 'detector', 'windows', 'VisionGuard.csproj'),
+    /<Version>[\d.]+<\/Version>/,
+    `<Version>${newVersion}</Version>`
+  );
+  replaceInFile(
+    path.join(ROOT, 'detector', 'windows', 'VisionGuard.csproj'),
+    /<FileVersion>[\d.]+<\/FileVersion>/,
+    `<FileVersion>${newVersion}</FileVersion>`
+  );
+  replaceInFile(
+    path.join(ROOT, 'detector', 'windows', 'VisionGuard.csproj'),
+    /<AssemblyVersion>[\d.]+<\/AssemblyVersion>/,
+    `<AssemblyVersion>${newVersion}</AssemblyVersion>`
+  );
+
+  // 11. Server releases.json
   const releasesPath = path.join(ROOT, 'server', 'data', 'releases.json');
   if (fs.existsSync(releasesPath)) {
     const releases = JSON.parse(fs.readFileSync(releasesPath, 'utf-8'));

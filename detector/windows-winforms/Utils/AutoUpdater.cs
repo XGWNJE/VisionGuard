@@ -59,8 +59,9 @@ namespace VisionGuard.Utils
             {
                 if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
                 Directory.CreateDirectory(tempDir);
+                var logPath = Path.Combine(tempDir, "update.log");
 
-                var zipPath = Path.Combine(tempDir, $"VisionGuard-v{newVersion}.zip");
+                var zipPath = Path.Combine(tempDir, "update.zip");
                 LogManager.StaticInfo($"[AutoUpdater] 正在下载更新包…");
                 using (var wc = new WebClient())
                 {
@@ -76,32 +77,35 @@ namespace VisionGuard.Utils
                 var appDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
                 var appExe = Path.Combine(appDir, "VisionGuard.exe");
                 var script = $@"@echo off
-timeout /t 2 /nobreak >nul
-echo [updater] Replacing files...
-xcopy /E /Y /Q ""{extractDir}\*"" ""{appDir}\""
-echo [updater] Launching new version...
-start """""" ""{appExe}""
+echo [updater] Waiting for old process to exit... >> ""{logPath}""
+ping -n 4 127.0.0.1 >nul
+echo [updater] Copying files from {extractDir}... >> ""{logPath}""
+xcopy /E /Y /Q ""{extractDir}\*"" ""{appDir}\"" >> ""{logPath}"" 2>&1
+echo [updater] xcopy exit code: %ERRORLEVEL% >> ""{logPath}""
+echo [updater] Starting new version... >> ""{logPath}""
+""{appExe}""
+echo [updater] Done. >> ""{logPath}""
 ";
 
-                File.WriteAllText(Path.Combine(tempDir, "updater.bat"), script, System.Text.Encoding.Default);
+                var batPath = Path.Combine(tempDir, "updater.bat");
+                File.WriteAllText(batPath, script, System.Text.Encoding.Default);
 
-                LogManager.StaticInfo("[AutoUpdater] 启动 updater，主程序即将退出…");
+                LogManager.StaticInfo("[AutoUpdater] 启动 updater，主程序退出…");
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = "cmd.exe",
-                    Arguments = $"/c \"{Path.Combine(tempDir, "updater.bat")}\"",
+                    Arguments = $"/c \"{batPath}\"",
                     WorkingDirectory = tempDir,
-                    CreateNoWindow = true,
-                    UseShellExecute = false,
-                    WindowStyle = ProcessWindowStyle.Hidden,
+                    UseShellExecute = true,
+                    WindowStyle = ProcessWindowStyle.Minimized,
                 });
 
-                Application.Exit();
+                Environment.Exit(0);
             }
             catch (Exception ex)
             {
                 LogManager.StaticWarn($"[AutoUpdater] 更新失败: {ex.Message}");
-                MessageBox.Show($"更新失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"更新失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxImage.Error);
                 try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); } catch { }
             }
         }
