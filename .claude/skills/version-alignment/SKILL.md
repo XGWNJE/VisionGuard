@@ -26,7 +26,7 @@ description: 全端版本号对齐检查与批量修改。跨 5 个子项目统�
 
 | 文件 | 位置 | 格式 |
 |---|---|---|
-| `detector/windows/Services/ServerPushService.cs` | WS 认证硬编码 | `["version"] = "4.0.0"` |
+| `detector/windows-wpf/Services/ServerPushService.cs` | WS 认证硬编码 | `["version"] = "4.0.0"` |
 
 无 `.csproj` 版本字段，无 `AssemblyInfo.cs`。仅 WS 认证字符串一处。
 
@@ -88,7 +88,7 @@ bash scripts/bump-version.sh          # 交互式
 - `server/package-lock.json`
 - `server/src/config.ts`
 - `server/src/index.ts`
-- `detector/windows/Services/ServerPushService.cs`（WPF）
+- `detector/windows-wpf/Services/ServerPushService.cs`（WPF）
 - `detector/windows-winforms/Properties/AssemblyInfo.cs`（WinForms）
 - `detector/windows-winforms/VisionGuard.csproj`（WinForms）
 - `detector/windows-winforms/Services/ServerPushService.cs`（WinForms）

@@ -44,14 +44,14 @@ node scripts/sync-version.js <新版本号>
 
 | 端 | 编译命令 |
 |---|---|
-| WPF | `dotnet build detector\windows -c Release` |
+| WPF | `dotnet build detector\windows-wpf -c Release` |
 | WinForms | `msbuild detector\windows-winforms /p:Configuration=Release /p:Platform=x64` |
 | Android 检测 | `cd detector\android && gradlew assembleRelease` |
 | Android 接收 | `cd receiver\android && gradlew assembleRelease` |
 | Server | `cd server && npm run build` |
 
 产物位置：
-- WPF: `detector\windows\bin\x64\Release\`
+- WPF: `detector\windows-wpf\bin\x64\Release\`
 - WinForms: `detector\windows-winforms\bin\x64\Release\`
 - Android: `app\build\outputs\apk\release\`
 

@@ -41,8 +41,12 @@
                 <StackPanel>
                     <TextBlock Text="模型选择" Style="{StaticResource BodyText}" Margin="0,0,0,8"/>
                     <ComboBox Style="{StaticResource DarkComboBox}" SelectedIndex="{Binding SelectedModelIndex}">
-                        <ComboBoxItem>YOLO26n (轻量 ~5MB)</ComboBoxItem>
-                        <ComboBoxItem>YOLO26s (精准 ~20MB)</ComboBoxItem>
+                        <ComboBoxItem>YOLO26n 320 (9MB)</ComboBoxItem>
+                        <ComboBoxItem>YOLO26n 640 (10MB)</ComboBoxItem>
+                        <ComboBoxItem>YOLO26s 320 (36MB)</ComboBoxItem>
+                        <ComboBoxItem>YOLO26s 640 (37MB)</ComboBoxItem>
+                        <ComboBoxItem>YOLO26m 320 (78MB)</ComboBoxItem>
+                        <ComboBoxItem>YOLO26m 640 (78MB)</ComboBoxItem>
                     </ComboBox>
                 </StackPanel>
             </Border>

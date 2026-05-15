@@ -53,10 +53,8 @@ namespace VisionGuard.Views
 
         protected override void OnClosing(CancelEventArgs e)
         {
-            // 不直接退出，最小化到托盘
-            e.Cancel = true;
-            WindowState = WindowState.Minimized;
-            Hide();
+            // 直接退出程序（与 WinForms 行为对齐）
+            ExitApp();
         }
 
         private void ShowFromTray()

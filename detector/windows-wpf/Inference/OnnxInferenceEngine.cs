@@ -24,6 +24,9 @@ namespace VisionGuard.Inference
         private readonly string  _outputName;
         private bool _disposed;
 
+        /// <summary>模型期望的输入尺寸（宽=高）。从 ONNX input shape 提取。</summary>
+        public int ModelInputSize { get; }
+
         public OnnxInferenceEngine(string modelPath, int intraOpNumThreads = 2)
         {
             var opts = new SessionOptions();
@@ -35,6 +38,9 @@ namespace VisionGuard.Inference
             _session    = new InferenceSession(modelPath, opts);
             _inputName  = _session.InputMetadata.Keys.First();
             _outputName = _session.OutputMetadata.Keys.First();
+
+            var shape = _session.InputMetadata[_inputName].Dimensions;
+            ModelInputSize = shape.Length >= 4 ? shape[2] : 320;
         }
 
         /// <summary>

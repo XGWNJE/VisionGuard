@@ -110,8 +110,17 @@ namespace VisionGuard.ViewModels
             WatchTruck      = all || set.Contains("truck");
         }
 
-        /// <summary>模型文件名（yolo26n 或 yolo26s）。</summary>
-        public string SelectedModelName => SelectedModelIndex == 0 ? "yolo26n" : "yolo26s";
+        /// <summary>模型文件名（yolo26n_320 到 yolo26m_640，6 档）。</summary>
+        public string SelectedModelName => SelectedModelIndex switch
+        {
+            0 => "yolo26n_320",
+            1 => "yolo26n_640",
+            2 => "yolo26s_320",
+            3 => "yolo26s_640",
+            4 => "yolo26m_320",
+            5 => "yolo26m_640",
+            _ => "yolo26n_320"
+        };
 
         public string ThresholdText => $"{Threshold}%";
         public string SamplingRateText => $"{SamplingRate} 次/秒";

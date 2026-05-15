@@ -68,10 +68,10 @@ Desktop.ini
 detector/android/.key/det
 
 # WPF windows detector
-detector/windows/**/.vs/
-detector/windows/**/bin/
-detector/windows/**/obj/
-detector/windows/test-*/
+detector/windows-wpf/**/.vs/
+detector/windows-wpf/**/bin/
+detector/windows-wpf/**/obj/
+detector/windows-wpf/test-*/
 
 # 模型文件（大文件，通过导出脚本生成）
 detector/windows-winforms/Assets/*.onnx

@@ -125,7 +125,7 @@ if [ -f "$WF_SPS" ]; then
 fi
 
 # 7. Windows WPF: ServerPushService.cs
-WPF_SPS="$REPO_ROOT/detector/windows/Services/ServerPushService.cs"
+WPF_SPS="$REPO_ROOT/detector/windows-wpf/Services/ServerPushService.cs"
 if [ -f "$WPF_SPS" ]; then
     sed -i 's/"version"] = "'"$CURRENT_VERSION"'"/"version"] = "'"$NEW_VERSION"'"/' "$WPF_SPS"
     UPDATE_LOG="${UPDATE_LOG}\n  ✓ windows/Services/ServerPushService.cs"
@@ -140,5 +140,5 @@ echo "版本号已更新: $CURRENT_VERSION → $NEW_VERSION"
 echo -e "$UPDATE_LOG"
 echo ""
 echo "运行以下命令提交版本变更:"
-echo "  git add VERSION server/package.json receiver/android/app/build.gradle.kts detector/android/app/build.gradle.kts detector/windows-winforms/VisionGuard.csproj detector/windows-winforms/Properties/AssemblyInfo.cs detector/windows-winforms/Services/ServerPushService.cs detector/windows/Services/ServerPushService.cs"
+echo "  git add VERSION server/package.json receiver/android/app/build.gradle.kts detector/android/app/build.gradle.kts detector/windows-winforms/VisionGuard.csproj detector/windows-winforms/Properties/AssemblyInfo.cs detector/windows-winforms/Services/ServerPushService.cs detector/windows-wpf/Services/ServerPushService.cs"
 echo "  git commit -m \"chore: bump version to $NEW_VERSION [no-bump]\""

@@ -18,24 +18,20 @@ namespace VisionGuard.Inference
     /// </summary>
     public static class ImagePreprocessor
     {
-        /// <summary>模型输入尺寸（统一常量，YoloOutputParser 也引用此值）</summary>
-        public const int ModelInputSize = 320;
-        private const int ModelSize = ModelInputSize;
-
         /// <summary>
         /// 将 <paramref name="source"/> 缩放并转换为 float 张量（CHW, RGB, [0,1]）。
         /// 不修改 source，不持有 source 引用。
+        /// <param name="modelSize">模型输入尺寸（宽=高），从 ONNX 模型 input shape 提取</param>
         /// </summary>
-        public static float[] ToTensor(Bitmap source)
+        public static float[] ToTensor(Bitmap source, int modelSize)
         {
-            // 缩放到 320x320，Format24bppRgb 确保字节布局固定（BGR, 无 padding 问题需注意 stride）
-            using (Bitmap resized = Resize(source, ModelSize, ModelSize))
+            using (Bitmap resized = Resize(source, modelSize, modelSize))
             {
                 return ExtractCHW(resized);
             }
         }
 
-        public static int[] InputShape => new[] { 1, 3, ModelSize, ModelSize };
+        public static int[] InputShape(int modelSize) => new[] { 1, 3, modelSize, modelSize };
 
         // ── private ─────────────────────────────────────────────────
 

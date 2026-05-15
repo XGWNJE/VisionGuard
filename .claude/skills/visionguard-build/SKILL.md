@@ -48,10 +48,10 @@ Set-Location "d:\ObjectCode\VisionGuard\server"
 npm run build 2>&1
 ```
 
-**WPF** (`d:\ObjectCode\VisionGuard\detector\windows`):
+**WPF** (`d:\ObjectCode\VisionGuard\detector\windows-wpf`):
 ```powershell
 Set-Location "d:\ObjectCode\VisionGuard"
-dotnet build "detector\windows\VisionGuard.csproj" -c Release -v minimal 2>&1
+dotnet build "detector\windows-wpf\VisionGuard.csproj" -c Release -v minimal 2>&1
 ```
 （`--config debug` 时改用 `-c Debug`）
 
@@ -141,7 +141,7 @@ Summary: X/Y passed, Z failed, W code errors
 
 ### 3. WPF 检测端 (C# / .NET 9)
 
-- **路径**: `detector/windows/`
+- **路径**: `detector/windows-wpf/`
 - **工具**: `dotnet` CLI
 - **命令**: `dotnet build -c Release`
 - **产物**: `bin/Release/net9.0-windows/VisionGuard.dll`

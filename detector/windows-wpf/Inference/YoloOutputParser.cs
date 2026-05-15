@@ -27,9 +27,6 @@ namespace VisionGuard.Inference
     /// </summary>
     public static class YoloOutputParser
     {
-        // ModelSize 统一引用 ImagePreprocessor 定义的常量
-        private static int ModelSize => ImagePreprocessor.ModelInputSize;
-
         // COCO 80 类名：引用 CocoClassMap 消除重复
         private static List<string> CocoLabels => CocoClassMap.EnglishNames;
 
@@ -40,18 +37,20 @@ namespace VisionGuard.Inference
         /// <param name="captureRegion">原始捕获区域（用于将坐标映射回屏幕）</param>
         /// <param name="confThreshold">置信度阈值</param>
         /// <param name="watchedClasses">只保留这些类名（null 或空集合 = 全部）</param>
+        /// <param name="modelSize">模型输入尺寸（宽=高）</param>
         public static List<Detection> Parse(
             float[]         rawOutput,
             Rectangle       captureRegion,
             float           confThreshold,
-            HashSet<string> watchedClasses)
+            HashSet<string> watchedClasses,
+            int             modelSize)
         {
             // rawOutput 展平自 [1, 300, 6]
             const int numDetections = 300;
             const int valuesPerBox  = 6;   // [x1, y1, x2, y2, confidence, class_id]
 
-            float scaleX = captureRegion.Width  / (float)ModelSize;
-            float scaleY = captureRegion.Height / (float)ModelSize;
+            float scaleX = captureRegion.Width  / (float)modelSize;
+            float scaleY = captureRegion.Height / (float)modelSize;
 
             var allCandidates = new List<Detection>();
 

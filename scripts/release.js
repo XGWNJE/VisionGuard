@@ -35,7 +35,7 @@ function main() {
 
   // WPF
   console.log('  🔨 WPF…');
-  execSync('dotnet build "detector/windows/VisionGuard.csproj" -c Release -v minimal', { cwd: ROOT, stdio: 'inherit' });
+  execSync('dotnet build "detector/windows-wpf/VisionGuard.csproj" -c Release -v minimal', { cwd: ROOT, stdio: 'inherit' });
 
   // WinForms
   console.log('  🔨 WinForms…');
@@ -71,10 +71,10 @@ function main() {
       sourceDir: path.join(ROOT, 'detector', 'windows-winforms', 'bin', 'Release'),
     },
     {
-      src: path.join(ROOT, 'detector', 'windows', 'bin', 'Release', 'net9.0-windows', 'VisionGuard.exe'),
+      src: path.join(ROOT, 'detector', 'windows-wpf', 'bin', 'Release', 'net9.0-windows', 'VisionGuard.exe'),
       dest: path.join(RELEASES_DIR, `VisionGuard-WPF-v${version}.zip`),
       isZip: true,
-      sourceDir: path.join(ROOT, 'detector', 'windows', 'bin', 'Release', 'net9.0-windows'),
+      sourceDir: path.join(ROOT, 'detector', 'windows-wpf', 'bin', 'Release', 'net9.0-windows'),
     },
     {
       src: path.join(ROOT, 'detector', 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release-unsigned.apk'),

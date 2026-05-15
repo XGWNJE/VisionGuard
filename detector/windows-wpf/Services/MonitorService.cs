@@ -145,13 +145,14 @@ namespace VisionGuard.Services
                     MaskApplier.ApplyMasks(frame, cfg.MaskRegions);
 
                 // 2. 预处理（内部 resize + 转张量）
+                int modelSize = _engine.ModelInputSize;
                 sw.Restart();
-                float[] tensor = ImagePreprocessor.ToTensor(frame);
+                float[] tensor = ImagePreprocessor.ToTensor(frame, modelSize);
                 long preprocessMs = sw.ElapsedMilliseconds;
 
                 // 3. 推理
                 sw.Restart();
-                float[] rawOutput = _engine.Run(tensor, ImagePreprocessor.InputShape);
+                float[] rawOutput = _engine.Run(tensor, ImagePreprocessor.InputShape(modelSize));
                 long inferMs = sw.ElapsedMilliseconds;
 
                 // 4. 解析（使用实际帧尺寸，避免窗口缩放导致坐标偏移）
@@ -161,7 +162,8 @@ namespace VisionGuard.Services
                     rawOutput,
                     frameRegion,
                     cfg.ConfidenceThreshold,
-                    cfg.WatchedClasses);
+                    cfg.WatchedClasses,
+                    modelSize);
                 long parseMs = sw.ElapsedMilliseconds;
 
                 // 5. 报警评估（使用推理帧绘制检测框，确保坐标匹配）

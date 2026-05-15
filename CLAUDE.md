@@ -6,7 +6,7 @@
 
 ```
 detector/windows-winforms/   C# / .NET Framework 4.7.2 / WinForms   主力线 (Win7+)
-detector/windows/            C# / .NET 9 / WPF / MVVM               视觉升级线 (Win10+)
+detector/windows-wpf/        C# / .NET 9 / WPF / MVVM               视觉升级线 (Win10+)
 detector/android/            Kotlin / CameraX / ONNX Runtime Mobile  安卓检测端
 server/                      Node.js 20+ / TypeScript / Express / ws  中继服务器
 receiver/android/            Kotlin / Jetpack Compose / OkHttp       安卓接收端
@@ -88,4 +88,4 @@ Agent 清单（`.claude/agents/`）：`scanner`（搜索/审查/扫描）/ `buil
 
 ## 详细文档
 
-- WPF 迁移进度与约束：[MIGRATION_PROGRESS.md](detector/windows/MIGRATION_PROGRESS.md)
+- WPF 迁移进度与约束：[MIGRATION_PROGRESS.md](detector/windows-wpf/MIGRATION_PROGRESS.md)

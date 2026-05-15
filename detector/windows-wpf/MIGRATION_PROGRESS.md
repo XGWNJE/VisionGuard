@@ -2,7 +2,7 @@
 
 > 分支：`feat/wpf-migration-kimi`  
 > 框架：`net9.0-windows` + WPF  
-> 旧项目：`detector/windows/`（.NET Framework 4.7.2 + WinForms，保留为参考）  
+> 旧项目：`detector/windows-winforms/`（.NET Framework 4.7.2 + WinForms，保留为参考）  
 > 最后更新：2026-05-04
 
 ---
