@@ -110,7 +110,7 @@ namespace VisionGuard
             string savedModel = SettingsStore.GetString("SelectedModel", "yolov5nu_320");
             _selectedModel = savedModel;
             string[] modelKeys = { "yolov5nu_320","yolov5nu_640","yolov5su_320","yolov5su_640",
-                                   "yolov5mu_320","yolov5mu_640","yolov5lu_640","yolov5xu_640" };
+                                   "yolov5mu_320","yolov5mu_640" };
             for (int i = 0; i < modelKeys.Length; i++)
                 if (modelKeys[i] == savedModel) { _cmbModel.SelectedIndex = i; break; }
 

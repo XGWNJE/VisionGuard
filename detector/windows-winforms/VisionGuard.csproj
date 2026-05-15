@@ -342,12 +342,7 @@
     <Content Include="Assets\yolov5mu_640.onnx">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="Assets\yolov5lu_640.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\yolov5xu_640.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+
     <Content Include="Assets\ASSETS_README.md">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </Content>

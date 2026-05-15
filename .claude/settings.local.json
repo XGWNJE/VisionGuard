@@ -124,7 +124,8 @@
       "Edit(/.claude/skills/push-update/**)",
       "Bash(git -C d:/ObjectCode/VisionGuard commit -m \"chore: .claude/文件夹加入版本控制 + push-update/wpf-update技能文件\")",
       "Bash(rm d:/ObjectCode/VisionGuard/.claude/agents/*.md)",
-      "Bash(git -C d:/ObjectCode/VisionGuard commit -m 'refactor: 精简子智能体 7→2，全部haiku模型 *)"
+      "Bash(git -C d:/ObjectCode/VisionGuard commit -m 'refactor: 精简子智能体 7→2，全部haiku模型 *)",
+      "Bash(Get-ChildItem -Path \"d:\\\\ObjectCode\\\\VisionGuard\" -Name -Depth 0)"
     ],
     "additionalDirectories": [
       "C:\\Users\\Administrator\\.claude\\skills",
