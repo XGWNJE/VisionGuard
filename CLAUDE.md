@@ -40,25 +40,13 @@ receiver/android/            Kotlin / Jetpack Compose / OkHttp       安卓接�
 
 WS 三角色：`windows` / `android` / `android-detector`
 
-**心跳设计**：
-- 检测端（WinForms/WPF/Android检测）每 **3s** 发心跳，携带业务状态（isMonitoring/cooldown/confidence/targets）
-- 接收端每 **30s** 发心跳，仅保活（不携带业务状态）
-- 全端幽灵阈值统一 **45s** — 无消息则判定失联、断开重连
-- 无传输层 ping，应用层心跳已覆盖连接检测
+**心跳**：检测端 **3s**（带业务状态），接收端 **30s**（仅保活），幽灵阈值统一 **45s**，无传输层 ping。
 
-**自动更新**：
-- Server 提供 `/api/update?platform=xxx&version=xxx` 查询接口（读取 `data/releases.json`）
-- Server 通过 `/releases/*` 静态文件路由提供 ZIP/APK 下载
-- 客户端启动时主动查询，有更新则下载安装：
-  - WinForms/WPF：下载 ZIP → 解压到 `%TEMP%\VisionGuardUpdate` → 启动 PowerShell updater.ps1 → 主程序退出（Shutdown + Exit 双保险） → 替换文件 → 重启
-  - Android：DownloadManager 下载 APK → 完成后通过 `Intent.ACTION_VIEW` 触发系统安装器
-- Server WS 认证扩展：版本低于 `minClientVersion` 时返回 `reason: "needs-update"` + `latestVersion`，客户端强制升级
-- 发布流程：`node scripts/release.js <version>` 一键编译+复制+生成 releases.json
-- WPF .csproj 需显式配置 `<Version>`/`<FileVersion>`/`<AssemblyVersion>`，否则文件属性显示 1.0
+**自动更新**：Server 提供 `/api/update` 查询接口 + `/releases/*` 静态文件下载。客户端启动时主动查询，有更新则下载安装（Windows 用 PowerShell updater.ps1 替换，Android 用 DownloadManager + 系统安装器）。WS 认证版本过低返回 `needs-update` 强制升级。发布：`node scripts/release.js <version>`。
 
-**版本门控**：`minClientVersion = '4.0.0'`。根目录 `VERSION` 文件为权威来源，`scripts/sync-version.js` 一键同步全端。
+**版本**：根目录 `VERSION` 为权威来源，`scripts/sync-version.js` 一键同步全端。
 
-**Android 接收端**：MVVM + 前台 Service（`foregroundServiceType="remoteMessaging"`）。**无独立 Settings 屏**，远控参数散落在各 Screen 内联。
+**Android 接收端**：MVVM + 前台 Service（`foregroundServiceType="remoteMessaging"`），无独立 Settings 屏。
 
 ## 约束与注意事项
 
