@@ -131,7 +131,10 @@
       "Bash(git -C d:/ObjectCode/VisionGuard log --oneline -5)",
       "Bash(git -C d:/ObjectCode/VisionGuard add detector/windows-wpf/Assets/yolo26n_320.onnx detector/windows-wpf/Assets/yolo26n_640.onnx detector/windows-wpf/Assets/yolo26s_320.onnx detector/windows-wpf/Assets/yolo26s_640.onnx detector/windows-wpf/Assets/yolo26m_320.onnx detector/windows-wpf/Assets/yolo26m_640.onnx)",
       "Bash(git -C d:/ObjectCode/VisionGuard commit -m ' *)",
-      "Bash(git -C d:/ObjectCode/VisionGuard status)"
+      "Bash(git -C d:/ObjectCode/VisionGuard status)",
+      "Bash(git -C d:/ObjectCode/VisionGuard log --oneline -3)",
+      "Bash(git -C d:/ObjectCode/VisionGuard add .claude/settings.local.json)",
+      "Bash(git -C d:/ObjectCode/VisionGuard commit -m \"chore: settings.local.json lint 自动格式化\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Administrator\\.claude\\skills",
