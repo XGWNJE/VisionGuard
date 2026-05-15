@@ -83,7 +83,19 @@ function main() {
   pkg.version = newVersion;
   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 
-  // 10. WPF .csproj (Version/FileVersion/AssemblyVersion)
+  // 10. Server config.ts / index.ts 硬编码版本
+  replaceInFile(
+    path.join(ROOT, 'server', 'src', 'config.ts'),
+    /minClientVersion: '[\d.]+'/,
+    `minClientVersion: '${newVersion}'`
+  );
+  replaceInFile(
+    path.join(ROOT, 'server', 'src', 'index.ts'),
+    /v[\d.]+/g,
+    `v${newVersion}`
+  );
+
+  // 11. WPF .csproj (Version/FileVersion/AssemblyVersion) — 同旧标识 10
   replaceInFile(
     path.join(ROOT, 'detector', 'windows-wpf', 'VisionGuard.csproj'),
     /<Version>[\d.]+<\/Version>/,

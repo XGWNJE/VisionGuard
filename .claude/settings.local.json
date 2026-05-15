@@ -154,7 +154,8 @@
       "PowerShell($env:JAVA_HOME = if \\($env:JAVA_HOME\\) { $env:JAVA_HOME } else { \"C:\\\\Android\\\\Android Studio\\\\jbr\" }; Set-Location \"d:\\\\ObjectCode\\\\VisionGuard\\\\receiver\\\\android\"; .\\\\gradlew.bat assembleDebug --console=plain 2>&1)",
       "Bash(node \"d:/ObjectCode/VisionGuard/scripts/sync-version.js\" 4.1.0)",
       "Bash(git -C d:/ObjectCode/VisionGuard commit -m \"release: v4.1.0 全端版本升级 + sync-version.js路径修复 + 发行包更新\")",
-      "Bash(git -C d:/ObjectCode/VisionGuard push origin master)"
+      "Bash(git -C d:/ObjectCode/VisionGuard push origin master)",
+      "Bash(bash \"d:/ObjectCode/VisionGuard/server/deploy.sh\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\Administrator\\.claude\\skills",
