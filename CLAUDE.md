@@ -50,6 +50,7 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 ## 约束与注意事项
 
+0. **版本号不能自动变更**：`sync-version.js`、`release.js`、修改 `VERSION` 文件等操作必须由开发者明确指令触发。禁止在编译、修复 bug、提交代码时自动升级版本号。
 1. 修改 `server/` 和 Android 端代码前确认影响范围（多端协议耦合）
 2. Server 截图路径 `data/screenshots/<alertId>.png`，通过 HTTP 下载（需 `X-API-Key`）
 3. NTP 时钟同步：Windows 端启动时同步；Android 接收端也同步（显示端到端耗时）
