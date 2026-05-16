@@ -3,7 +3,8 @@ namespace VisionGuard.Utils
     /// <summary>应用级常量配置。</summary>
     internal static class AppConfig
     {
-        public const string Version = "4.1.0";
+        public static readonly string Version =
+            System.Environment.GetEnvironmentVariable("VISIONGUARD_TEST_VERSION") ?? "4.1.0";
         public const string ServerUrl = "https://xgwnje.cn";
         public static readonly string ApiKey =
             System.Environment.GetEnvironmentVariable("VISIONGUARD_API_KEY") ?? "XG-VisionGuard-2024";

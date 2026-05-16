@@ -2,12 +2,12 @@
   "winforms": {
     "version": "4.1.0",
     "url": "/releases/VisionGuard-v4.1.0.zip",
-    "size": 250710686
+    "size": 250760928
   },
   "wpf": {
     "version": "4.1.0",
     "url": "/releases/VisionGuard-WPF-v4.1.0.zip",
-    "size": 336355206
+    "size": 336343871
   },
   "android-detector": {
     "version": "4.1.0",
@@ -17,6 +17,6 @@
   "android-receiver": {
     "version": "4.1.0",
     "url": "/releases/VisionGuard-Receiver-v4.1.0.apk",
-    "size": 66402737
+    "size": 48562726
   }
 }

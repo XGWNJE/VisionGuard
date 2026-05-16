@@ -38,8 +38,8 @@ function main() {
   // 3. WPF AppConfig.cs
   replaceInFile(
     path.join(ROOT, 'detector', 'windows-wpf', 'Utils', 'AppConfig.cs'),
-    /Version = "[\d.]+"/,
-    `Version = "${newVersion}"`
+    /\?\? "[\d.]+"/,
+    `?? "${newVersion}"`
   );
 
   // 4. Android 检测端 build.gradle.kts
@@ -139,20 +139,6 @@ function main() {
     path.join(ROOT, 'detector', 'windows-wpf', 'Services', 'ServerPushService.cs'),
     /\["version"\] = "[\d.]+"/,
     `["version"] = "${newVersion}"`
-  );
-
-  // 13. WinForms AutoUpdater.cs
-  replaceInFile(
-    path.join(ROOT, 'detector', 'windows-winforms', 'Utils', 'AutoUpdater.cs'),
-    /private const string CurrentVersion = "[\d.]+"/,
-    `private const string CurrentVersion = "${newVersion}"`
-  );
-
-  // 14. WPF AutoUpdater.cs
-  replaceInFile(
-    path.join(ROOT, 'detector', 'windows-wpf', 'Utils', 'AutoUpdater.cs'),
-    /private const string CurrentVersion = "[\d.]+"/,
-    `private const string CurrentVersion = "${newVersion}"`
   );
 
   console.log('✅ 版本号同步完成');
