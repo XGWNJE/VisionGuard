@@ -40,8 +40,7 @@ object AutoUpdater {
     /** 检查并执行更新（在 Service 启动时调用） */
     suspend fun checkAndUpdate(context: Context) = withContext(Dispatchers.IO) {
         try {
-            val version = getVersion(context)
-            val url = "${AppConstants.SERVER_URL}/api/update?platform=$PLATFORM&version=$version"
+            val url = "${AppConstants.SERVER_URL}/api/update?platform=$PLATFORM&version=${AppConstants.VERSION}"
             val request = Request.Builder().url(url).header("X-API-Key", AppConstants.API_KEY).build()
             val response = http.newCall(request).execute()
             if (!response.isSuccessful) return@withContext
@@ -55,7 +54,7 @@ object AutoUpdater {
             val downloadUrl = json.optString("downloadUrl", "")
             if (downloadUrl.isEmpty()) return@withContext
 
-            Log.i(TAG, "发现新版本 $latestVersion (当前 $version)")
+            Log.i(TAG, "发现新版本 $latestVersion (当前 ${AppConstants.VERSION})")
 
             Handler(Looper.getMainLooper()).post {
                 Toast.makeText(context, "发现新版本 $latestVersion，正在下载…", Toast.LENGTH_LONG).show()
@@ -65,17 +64,6 @@ object AutoUpdater {
         } catch (e: Exception) {
             Log.w(TAG, "检查更新失败: ${e.message}")
         }
-    }
-
-    /**
-     * 获取当前版本号。
-     * 测试时可通过 SharedPreferences 伪装旧版本触发更新：
-     *   在 Device Explorer 中编辑 shared_prefs/vg_debug.xml，添加 force_version="0.0.0"
-     * 生产环境该 key 不存在 → 正常返回 AppConstants.VERSION
-     */
-    private fun getVersion(context: Context): String {
-        val prefs = context.getSharedPreferences("vg_debug", Context.MODE_PRIVATE)
-        return prefs.getString("force_version", null) ?: AppConstants.VERSION
     }
 
     @Suppress("DEPRECATION")

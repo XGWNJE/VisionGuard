@@ -83,12 +83,7 @@ function main() {
   pkg.version = newVersion;
   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 
-  // 10. Server config.ts / index.ts 硬编码版本
-  replaceInFile(
-    path.join(ROOT, 'server', 'src', 'config.ts'),
-    /minClientVersion: '[\d.]+'/,
-    `minClientVersion: '${newVersion}'`
-  );
+  // 10. Server index.ts 硬编码版本
   replaceInFile(
     path.join(ROOT, 'server', 'src', 'index.ts'),
     /v[\d.]+/g,

@@ -35,10 +35,6 @@ export const config = {
   /** 每设备最大报警记录数 (循环缓冲) */
   maxAlertsPerDevice: 200,
 
-  /** 客户端最低版本要求 (语义化版本)。低于此版本的连接将在认证时被拒绝。 */
-  /** TODO: 暂时禁用版本门控，修复 AutoUpdater 后重新启用 */
-  minClientVersion: '0.0.0',
-
   /** 是否接收检测端 HTTP POST 截图上传。false = 纯 WS 按需模型，截图仅存在检测端本地 */
   enableHttpScreenshotUpload: process.env.ENABLE_HTTP_SCREENSHOT_UPLOAD === 'true',
 

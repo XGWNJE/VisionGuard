@@ -15,7 +15,6 @@ namespace VisionGuard.Utils
     public static class AutoUpdater
     {
         private static readonly string CurrentVersion =
-            System.Environment.GetEnvironmentVariable("VISIONGUARD_TEST_VERSION") ??
             System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
         private const string ServerBase = "https://xgwnje.cn";
 

@@ -74,19 +74,6 @@ interface AndroidSession {
 }
 const androidSessions = new Map<string, AndroidSession>();
 
-function meetsMinVersion(clientVersion: string | undefined, minVersion: string): boolean {
-  if (!clientVersion) return false;
-  const parse = (v: string) => v.split('.').map(Number);
-  const client = parse(clientVersion);
-  const min = parse(minVersion);
-  for (let i = 0; i < min.length; i++) {
-    const c = client[i] ?? 0;
-    if (c > min[i]) return true;
-    if (c < min[i]) return false;
-  }
-  return true;
-}
-
 const SessionEndReasonNames: Record<string, string> = {
   'user-close': '用户主动关闭',
   'network-lost': '网络中断（被系统杀后台/锁屏休眠）',
@@ -334,19 +321,6 @@ function handleAuth(
   if (!validateApiKey(msg.apiKey)) {
     console.log(`[ws][${ts}] 认证失败: API Key 无效 role=${msg.role} deviceId=${msg.deviceId}`);
     sendJson(ws, { type: 'auth-result', success: false, reason: 'invalid api key' });
-    ws.close();
-    return;
-  }
-
-  if (!meetsMinVersion(msg.version, config.minClientVersion)) {
-    console.log(`[ws][${ts}] 认证失败: 版本过低 role=${msg.role} deviceId=${msg.deviceId} version=${msg.version ?? 'unknown'} min=${config.minClientVersion}`);
-    // 返回 needs-update，客户端收到后进入强制更新流程
-    sendJson(ws, {
-      type: 'auth-result',
-      success: false,
-      reason: 'needs-update',
-      latestVersion: config.minClientVersion,
-    });
     ws.close();
     return;
   }
