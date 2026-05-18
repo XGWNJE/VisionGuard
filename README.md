@@ -1,101 +1,91 @@
 # VisionGuard
 
-[![Version](https://img.shields.io/badge/version-v4.0.0-blue)](VERSION)
-[![License](https://img.shields.io/badge/license-MIT-green)]()
+> 面向 Windows、Android 与中继服务的 AI 实时监控系统。
 
-> AI 实时监控系统。检测端发现目标 → 服务器秒级推送 → 接收端报警通知。
->
-> 支持 **Windows PC**（WinForms 主力线 / WPF 视觉线）和 **Android 手机**（检测端 / 接收端）。
+[![Version](https://img.shields.io/badge/version-4.1.1-1f6feb)](./VERSION)
+[![Stack](https://img.shields.io/badge/技术栈-Windows%20%7C%20Android%20%7C%20Node.js-0f766e)](#项目结构)
+[![Docs](https://img.shields.io/badge/文档-已验真-f59e0b)](./docs/codex/00-index.md)
 
----
+VisionGuard 是一个多端联动的 AI 监控项目，围绕一条统一链路运作：
 
-## 系统架构
+`Windows / Android 检测端 -> 中继服务器 -> Android 接收端`
 
-```
-┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│ Windows 检测  │    │              │    │ Android 接收  │
-│ Win7+ WinForms│───▶│   VPS 服务器  │───▶│ 实时报警通知  │
-│ Win10+ WPF    │    │  WebSocket   │    │ 远程控制     │
-│               │    │  报警记录    │    │              │
-└──────────────┘    └──────────────┘    └──────────────┘
-        ▲                                      │
-        │           ┌──────────────┐           │
-        └───────────│ Android 检测  │◀──────────┘
-                    │ 后置摄像头    │
-                    │ 实时推理     │
-                    └──────────────┘
-```
+它将本地推理、隐私遮罩、实时告警中继、截图传输与更新分发整合在同一套工程中。
 
-## 下载
+## 核心能力
 
-前往 [Releases](https://github.com/XGWNJE/VisionGuard-RemoteAlarm/releases/latest) 获取最新版本。
-
-| 端 | 平台 | 文件 |
-|---|---|---|
-| 检测端 | Windows (Win7+) | `VisionGuard-Windows-vX.X.X.zip` |
-| 检测端 | Windows (Win10+) | `VisionGuard-WPF-vX.X.X.zip` |
-| 检测端 | Android (API 28+) | `VisionGuard-Detector-vX.X.X.apk` |
-| 接收端 | Android (API 28+) | `VisionGuard-Receiver-vX.X.X.apk` |
-
-## 快速开始
-
-### 1. 部署服务器
-
-```bash
-cd server
-cp .env.example .env
-# 编辑 .env 设置 API_KEY（必须）和 PORT（默认 3000）
-npm install
-npm run build
-npm start
-```
-
-### 2. 启动检测端
-
-- Windows：解压运行 `VisionGuard.exe`
-- Android：安装 APK，打开后选择模型开始检测
-
-### 3. 启动接收端
-
-安装 APK 后打开，自动连接服务器接收报警。
-
-## 核心功能
-
-| 检测端 | 接收端 | 服务器 |
-|---|---|---|
-| 屏幕捕获 / 后置摄像头推理 | 实时报警推送 | 设备管理 + 心跳 |
-| 遮罩区域排除（隐私保护） | 查看截图 + 端到端延迟 | 报警记录持久化 |
-| 目标类别过滤（人/车/动物等） | 远程控制（暂停/恢复/调参） | 截图 HTTP 下载 |
-| 本地截图缓存（7天 TTL） | 历史报警列表（7天） | 三角色隔离 |
-| 多模型切换（YOLOv5nu / YOLO26） | 网络自适应重连 | 72h 截图清理 |
-
-## 部署要求
-
-| 端 | 最低要求 |
+| 模块 | 作用 |
 |---|---|
-| Server | Ubuntu 20.04+ / Debian 11+，Node.js 20+ |
-| WinForms 检测 | Windows 7+，x64，.NET Framework 4.7.2 |
-| WPF 检测 | Windows 10+，x64，.NET 9 |
-| Android 检测 | Android 9.0+，推荐骁龙 7/8 Gen 或天玑 8/9 |
-| Android 接收 | Android 9.0+ |
+| `Windows 检测端` | 屏幕/窗口捕获、ONNX 推理、告警生成 |
+| `Android 检测端` | CameraX 采集、ONNX Runtime Mobile 推理、移动端告警上报 |
+| `中继服务器` | HTTP + WebSocket 中继、设备状态、告警历史、截图访问 |
+| `Android 接收端` | 设备列表、告警流、截图查看、远程控制 |
+
+## 核心链路
+
+所有检测端统一遵循这条运行链路：
+
+`Capture -> MaskApply -> Preprocess -> ONNX Inference -> Parse -> AlertDecision -> Push`
+
+稳定约束：
+
+- 遮罩使用归一化坐标 `[0,1]`
+- 遮罩同时影响推理结果与报警截图
+- `server/` 与 Android 端协议强耦合
+- `VERSION` 是权威版本源，不能被隐式修改
 
 ## 项目结构
 
+```text
+detector/windows-winforms/   Windows 主力检测端（.NET Framework 4.7.2）
+detector/windows-wpf/        Windows 升级检测端（.NET 9, WPF, MVVM）
+detector/android/            Android 检测端
+server/                      HTTP + WebSocket 中继服务
+receiver/android/            Android 接收端
+docs/codex/                  当前维护中的已验真项目文档
+AGENTS.md                    顶层协作约束
+VERSION                      权威版本号来源
 ```
-VisionGuard/
-├── detector/
-│   ├── windows-winforms/    C# / .NET Framework 4.7.2 / WinForms
-│   ├── windows/             C# / .NET 9 / WPF / MVVM
-│   └── android/             Kotlin / CameraX / ONNX Runtime
-├── server/                  Node.js 20+ / TypeScript / Express / ws
-└── receiver/
-    └── android/             Kotlin / Jetpack Compose / OkHttp
-```
 
-## 版本
+## 平台概览
 
-当前版本见 [VERSION](VERSION) 文件。
+| 端 | 运行时 | 说明 |
+|---|---|---|
+| `windows-winforms` | .NET Framework 4.7.2 | 主力线，YOLOv5 |
+| `windows-wpf` | .NET 9 | 升级线，WPF + MVVM |
+| `android detector` | Android 9+ | CameraX + ONNX Runtime Mobile |
+| `android receiver` | Android 9+ | Compose + 前台服务 |
+| `server` | Node.js 20+ | Express + ws |
 
-## License
+## 快速入口
 
-MIT © [xgwnje](https://github.com/xgwnje)
+### 建议先看
+
+- [docs/codex/00-index.md](./docs/codex/00-index.md)
+- [docs/codex/90-verification-report.md](./docs/codex/90-verification-report.md)
+- [AGENTS.md](./AGENTS.md)
+
+### 构建入口
+
+- Server：`cd server && npm ci && npm run build`
+- WinForms：打开 `detector/windows-winforms/VisionGuard.slnx`
+- WPF：打开 `detector/windows-wpf/VisionGuard.sln`
+- Android：分别使用 `detector/android/` 与 `receiver/android/`
+
+## 文档入口
+
+当前可维护文档统一放在 `docs/codex/`：
+
+- `00-index.md`：总入口
+- `20-server.md`：中继服务器
+- `30-windows-detector.md`：Windows 检测端
+- `35-model-assets.md`：模型、目标类、COCO 映射
+- `40-android-detector.md`：Android 检测端
+- `50-android-receiver.md`：Android 接收端
+- `60-operations.md`：构建、验证、发布边界
+- `90-verification-report.md`：源码验真结论
+
+## 说明
+
+根目录 `README.md` 保持“项目首页”定位，强调可读性和入口性。
+更细的工程事实统一维护在 `docs/codex/`，避免双份文档长期失同步。

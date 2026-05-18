@@ -85,15 +85,16 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 ## Skill 与工程管理
 
-> 详细构建流程、版本管理、子智能体规则已迁移到独立 skill。CLAUDE.md 只保留架构与约束知识，执行流程见 skill。
+> 详细构建流程、版本管理、子智能体规则已迁移到独立 skill。AGENTS.md 只保留架构与约束知识，执行流程见 skill。
 
 | Skill | 用途 | 触发 |
 |-------|------|------|
 | `visionguard-build` | 五端编译（Server/WinForms/WPF/Android-Detector/Android-Receiver） | `/visionguard-build` 或"编译" |
 | `version-alignment` | 全端版本号检查与批量修改 | `/version-alignment` 或"版本对齐" |
 
-Agent 清单（`.claude/agents/`）：`scanner`（搜索/审查/扫描）/ `builder`（编译验证）
+Agent 清单（`.Codex/agents/`）：`scanner`（搜索/审查/扫描）/ `builder`（编译验证）
 
 ## 详细文档
 
-- WPF 迁移进度与约束：[MIGRATION_PROGRESS.md](detector/windows-wpf/MIGRATION_PROGRESS.md)
+- 当前解释性文档入口：[docs/codex/00-index.md](docs/codex/00-index.md)
+- Windows 检测端专题：[docs/codex/30-windows-detector.md](docs/codex/30-windows-detector.md)
