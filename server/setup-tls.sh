@@ -1,11 +1,11 @@
 #!/bin/bash
 # VisionGuard TLS 证书申请脚本
-# 域名: xgwnje.cn
+# 域名: visionguard.xgwnje.cn
 # 使用: bash setup-tls.sh
 
 set -e
 
-DOMAIN="xgwnje.cn"
+DOMAIN="visionguard.xgwnje.cn"
 EMAIL="admin@xgwnje.cn"   # 修改为你的邮箱
 
 echo "=== VisionGuard TLS Setup ==="
@@ -28,8 +28,8 @@ mkdir -p /var/www/certbot
 
 # 3. 部署 Nginx 配置 (先 HTTP only，certbot 需要验证)
 echo "[3/5] 部署初始 Nginx 配置..."
-cp nginx-visionguard.conf /etc/nginx/sites-available/xgwnje.cn
-ln -sf /etc/nginx/sites-available/xgwnje.cn /etc/nginx/sites-enabled/
+cp nginx-visionguard.conf /etc/nginx/sites-available/visionguard.xgwnje.cn
+ln -sf /etc/nginx/sites-available/visionguard.xgwnje.cn /etc/nginx/sites-enabled/visionguard.xgwnje.cn
 rm -f /etc/nginx/sites-enabled/default
 nginx -t && systemctl reload nginx
 echo "   Nginx 配置已部署 (HTTP 模式)"
@@ -42,7 +42,6 @@ fi
 
 certbot --nginx \
     -d "$DOMAIN" \
-    -d "www.$DOMAIN" \
     --non-interactive \
     --agree-tos \
     --email "$EMAIL" \

@@ -4,7 +4,7 @@ namespace VisionGuard.Utils
     internal static class AppConfig
     {
         public const string Version = "4.1.1";
-        public const string ServerUrl = "https://xgwnje.cn";
+        public const string ServerUrl = "https://visionguard.xgwnje.cn";
         public static readonly string ApiKey =
             System.Environment.GetEnvironmentVariable("VISIONGUARD_API_KEY") ?? "XG-VisionGuard-2024";
 

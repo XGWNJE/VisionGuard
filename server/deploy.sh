@@ -13,7 +13,7 @@ set -euo pipefail
 #   Port <实际端口>
 #   User root
 #   IdentityFile ~/.ssh/id_ed25519
-VPS_ALIAS="visionguard"
+VPS_ALIAS="xgwnje"
 VPS_PATH="/opt/visionguard/VisionGuard_Server"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -60,8 +60,8 @@ fi
 # 4. Nginx 配置 (--nginx)
 if $NGINX; then
     echo "[4/6] 同步 Nginx 配置..."
-    scp "$SCRIPT_DIR/nginx-visionguard.conf" "$VPS_ALIAS:/etc/nginx/sites-available/xgwnje.cn"
-    ssh "$VPS_ALIAS" "ln -sf /etc/nginx/sites-available/xgwnje.cn /etc/nginx/sites-enabled/ && nginx -t && systemctl reload nginx"
+    scp "$SCRIPT_DIR/nginx-visionguard.conf" "$VPS_ALIAS:/etc/nginx/sites-available/visionguard.xgwnje.cn"
+    ssh "$VPS_ALIAS" "ln -sf /etc/nginx/sites-available/visionguard.xgwnje.cn /etc/nginx/sites-enabled/visionguard.xgwnje.cn && nginx -t && systemctl reload nginx"
     echo "  OK"
     echo ""
 else

@@ -60,7 +60,7 @@ namespace VisionGuard
         private Button  _btnRetry;
 
         // Server constants
-        private const string ServerUrl = "https://xgwnje.cn";
+        private const string ServerUrl = "https://visionguard.xgwnje.cn";
         private static readonly string ServerApiKey =
             System.Environment.GetEnvironmentVariable("VISIONGUARD_API_KEY") ?? "XG-VisionGuard-2024";
 

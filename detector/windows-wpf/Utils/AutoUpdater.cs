@@ -13,7 +13,7 @@ namespace VisionGuard.Utils
 {
     public static class AutoUpdater
     {
-        private const string ServerBase = "https://xgwnje.cn";
+        private const string ServerBase = "https://visionguard.xgwnje.cn";
 
         public static async Task CheckUpdateAsync()
         {

@@ -78,7 +78,7 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 | 常量 | 位置 |
 |------|------|
-| `SERVER_URL = "https://xgwnje.cn"` | 两端 `AppConstants.kt` + WinForms `Form1.cs` + WPF `AppConfig.cs` |
+| `SERVER_URL = "https://visionguard.xgwnje.cn"` | 两端 `AppConstants.kt` + WinForms `Form1.cs` + WPF `AppConfig.cs` |
 | `API_KEY` | 环境变量 `VISIONGUARD_API_KEY`（C#两端）+ `AppConstants.kt`（Android两端） |
 | 检测端包名 `com.xgwnje.visionguard` | `app_name = "VG 检测"` |
 | 接收端包名 `com.xgwnje.visionguard_android` | `app_name = "VG 接收"` |

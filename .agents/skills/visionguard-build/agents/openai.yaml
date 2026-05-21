@@ -1,0 +1,6 @@
+interface:
+  display_name: "VisionGuard Build"
+  short_description: "Run VisionGuard five-end build verification."
+  default_prompt: "Use $visionguard-build to compile all VisionGuard targets and report pass/fail results."
+policy:
+  allow_implicit_invocation: true

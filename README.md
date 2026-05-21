@@ -12,6 +12,8 @@ VisionGuard 是一个多端联动的 AI 监控项目，围绕一条统一链路�
 
 它将本地推理、隐私遮罩、实时告警中继、截图传输与更新分发整合在同一套工程中。
 
+当前正式服务域名为 `https://visionguard.xgwnje.cn`。根域 `https://xgwnje.cn` 留给个人主页；旧客户端可短期通过根域兼容路径访问更新文件，但新客户端和项目配置应统一使用项目子域名。
+
 ## 核心能力
 
 | 模块 | 作用 |
@@ -56,6 +58,14 @@ VERSION                      权威版本号来源
 | `android detector` | Android 9+ | CameraX + ONNX Runtime Mobile |
 | `android receiver` | Android 9+ | Compose + 前台服务 |
 | `server` | Node.js 20+ | Express + ws |
+
+## 服务地址
+
+- 正式服务域名：`https://visionguard.xgwnje.cn`
+- WebSocket：由客户端基于正式域名拼接 `/ws`
+- 健康检查：`https://visionguard.xgwnje.cn/health`
+- 更新查询：`https://visionguard.xgwnje.cn/api/update`
+- 更新文件：`https://visionguard.xgwnje.cn/releases/*`
 
 ## 快速入口
 

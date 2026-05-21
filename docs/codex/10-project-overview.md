@@ -23,12 +23,15 @@ VisionGuard 是一个三端联动的 AI 实时监控系统。
 - 遮罩使用相对坐标 `[0,1]`
 - 遮罩在推理前涂黑，同时影响识别结果与告警截图
 - WS 角色固定为 `windows`、`android`、`android-detector`
+- VisionGuard 正式服务域名固定为 `https://visionguard.xgwnje.cn`
+- 根域 `https://xgwnje.cn` 属于个人主页，不再作为新客户端的 VisionGuard 服务地址
 
 ## 不变边界
 
 - `VERSION` 是权威版本源，不能自动 bump
 - `server/` 和 Android 端是强耦合，协议变更必须联动核对
 - 心跳策略按当前实现固定：检测端 3s、接收端 30s、幽灵阈值 45s
+- 客户端 `SERVER_URL`、自动更新地址和 Nginx 部署目标必须保持同一项目子域名
 
 ## 文档可信度规则
 

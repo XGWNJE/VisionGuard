@@ -16,7 +16,7 @@ namespace VisionGuard.Utils
     {
         private static readonly string CurrentVersion =
             System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
-        private const string ServerBase = "https://xgwnje.cn";
+        private const string ServerBase = "https://visionguard.xgwnje.cn";
 
         public static async Task CheckUpdate(string apiKey)
         {
