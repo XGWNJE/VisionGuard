@@ -1,0 +1,3 @@
+detector/windows-winforms/tools/stunnel/ca-certs.pem text eol=lf
+detector/windows-winforms/tools/stunnel/*.dll binary
+detector/windows-winforms/tools/stunnel/*.exe binary
