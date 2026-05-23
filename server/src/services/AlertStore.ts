@@ -12,7 +12,7 @@ import { config } from '../config';
 import type { AlertRecord } from '../models/types';
 
 /** 持久化文件路径 */
-const PERSIST_PATH = path.resolve(__dirname, '..', 'data', 'alerts.json');
+const PERSIST_PATH = path.resolve(process.cwd(), 'data', 'alerts.json');
 
 /** deviceId → AlertRecord[] (最多 maxAlertsPerDevice 条) */
 const store = new Map<string, AlertRecord[]>();

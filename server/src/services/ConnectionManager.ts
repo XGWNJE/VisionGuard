@@ -501,6 +501,11 @@ function handleHeartbeatReceiver(msg: WsHeartbeatAndroid): void {
     return;
   }
   client.lastSeen = new Date();
+  sendJson(client.ws, {
+    type: 'heartbeat-ack',
+    deviceId: msg.deviceId,
+    serverTime: client.lastSeen.toISOString(),
+  }, `heartbeat-ack:${msg.deviceId}`);
 }
 
 // ════════════════════════════════════════════════════════════

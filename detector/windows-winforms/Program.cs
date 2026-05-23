@@ -3,6 +3,7 @@
 // │ 角色：程序入口点，高 DPI 兜底 + 启动 Form1              │
 // └─────────────────────────────────────────────────────────┘
 using System;
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -20,6 +21,8 @@ namespace VisionGuard
         [STAThread]
         static void Main()
         {
+            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+
             // 旧版兜底（Win7 / Aero 关闭场景）；Win10/11 已由 manifest 处理
             try { SetProcessDPIAware(); } catch { }
 

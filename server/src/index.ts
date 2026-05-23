@@ -25,6 +25,7 @@ import path from 'path';
 // ── Express app ────────────────────────────────────────────
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.json());
 
 // 全局速率限制：所有 API 路由 100 req/15min per IP
