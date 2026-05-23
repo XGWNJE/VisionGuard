@@ -21,9 +21,41 @@ import type {
 const detectorWindowsClients = new Map<string, DetectorClient>();
 const detectorAndroidClients = new Map<string, DetectorClient>();
 const receiverClients = new Map<string, ReceiverClient>();
+const pendingDetectorRemoval = new Map<string, NodeJS.Timeout>();
+const DETECTOR_RECONNECT_GRACE_MS = 10_000;
 
 export function getConnectionCount(): number {
   return detectorWindowsClients.size + detectorAndroidClients.size + receiverClients.size;
+}
+
+function detectorRemovalKey(clientType: string, deviceId: string): string {
+  return `${clientType}:${deviceId}`;
+}
+
+function clearPendingDetectorRemoval(clientType: string, deviceId: string): void {
+  const key = detectorRemovalKey(clientType, deviceId);
+  const timer = pendingDetectorRemoval.get(key);
+  if (!timer) return;
+  clearTimeout(timer);
+  pendingDetectorRemoval.delete(key);
+}
+
+function scheduleDetectorRemoval(
+  clients: Map<string, DetectorClient>,
+  clientType: 'windows' | 'android-detector',
+  deviceId: string,
+  ws: WebSocket,
+): void {
+  clearPendingDetectorRemoval(clientType, deviceId);
+  const timer = setTimeout(() => {
+    pendingDetectorRemoval.delete(detectorRemovalKey(clientType, deviceId));
+    const existing = clients.get(deviceId);
+    if (!existing || existing.ws !== ws) return;
+    clients.delete(deviceId);
+    _heartbeatCounter.delete(deviceId);
+    scheduleBroadcast();
+  }, DETECTOR_RECONNECT_GRACE_MS);
+  pendingDetectorRemoval.set(detectorRemovalKey(clientType, deviceId), timer);
 }
 
 // ── 输入校验 ────────────────────────────────────────────────
@@ -245,18 +277,16 @@ export function handleConnection(ws: WebSocket): void {
       if (role === 'windows') {
         const existing = detectorWindowsClients.get(deviceId);
         if (existing && existing.ws === ws) {
-          detectorWindowsClients.delete(deviceId);
           console.log(`[ws][${ts2}] Windows 断开: ${deviceId} code=${code}(${codeName}) Win检测端在线=${detectorWindowsClients.size}`);
-          scheduleBroadcast();
+          scheduleDetectorRemoval(detectorWindowsClients, 'windows', deviceId, ws);
         } else {
           console.log(`[ws][${ts2}] Windows 旧连接关闭（已被新连接替代）: ${deviceId} code=${code}(${codeName})`);
         }
       } else if (role === 'android-detector') {
         const existing = detectorAndroidClients.get(deviceId);
         if (existing && existing.ws === ws) {
-          detectorAndroidClients.delete(deviceId);
           console.log(`[ws][${ts2}] Android检测端 断开: ${deviceId} code=${code}(${codeName}) 安卓检测端在线=${detectorAndroidClients.size}`);
-          scheduleBroadcast();
+          scheduleDetectorRemoval(detectorAndroidClients, 'android-detector', deviceId, ws);
         } else {
           console.log(`[ws][${ts2}] Android检测端 旧连接关闭: ${deviceId} code=${code}(${codeName})`);
         }
@@ -271,7 +301,6 @@ export function handleConnection(ws: WebSocket): void {
           }
           receiverClients.delete(deviceId);
           console.log(`[ws][${ts2}] 接收端 断开: ${deviceId} code=${code}(${codeName}) 推断原因=${endReason} 接收端在线=${receiverClients.size}`);
-          scheduleBroadcast();
         } else {
           console.log(`[ws][${ts2}] 接收端 旧连接关闭: ${deviceId} code=${code}(${codeName})`);
         }
@@ -339,6 +368,7 @@ function handleAuth(
   }
 
   if (msg.role === 'windows') {
+    clearPendingDetectorRemoval('windows', msg.deviceId);
     const existing = detectorWindowsClients.get(msg.deviceId);
     if (existing) {
       console.log(`[ws][${ts}] Windows 重复连接: ${msg.deviceName} (${msg.deviceId}) 踢掉旧连接`);
@@ -354,6 +384,7 @@ function handleAuth(
     detectorWindowsClients.set(msg.deviceId, client);
     console.log(`[ws][${ts}] Windows 上线: ${msg.deviceName} (${msg.deviceId}) | Win:${detectorWindowsClients.size} AdrDet:${detectorAndroidClients.size} Recv:${receiverClients.size}`);
   } else if (msg.role === 'android-detector') {
+    clearPendingDetectorRemoval('android-detector', msg.deviceId);
     const existing = detectorAndroidClients.get(msg.deviceId);
     if (existing) {
       console.log(`[ws][${ts}] Android检测端 重复连接: ${msg.deviceName} (${msg.deviceId}) 踢掉旧连接`);
@@ -409,7 +440,9 @@ function handleAuth(
   sendJson(ws, { type: 'auth-result', success: true });
   onSuccess(msg.role, msg.deviceId);
   sendJson(ws, { type: 'device-list', devices: buildDeviceList() });
-  scheduleBroadcast();
+  if (msg.role === 'windows' || msg.role === 'android-detector') {
+    scheduleBroadcast();
+  }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -453,6 +486,11 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   }
 
   client.lastSeen = new Date();
+  sendJson(client.ws, {
+    type: 'heartbeat-ack',
+    deviceId: msg.deviceId,
+    serverTime: client.lastSeen.toISOString(),
+  }, `heartbeat-ack:${msg.deviceId}`);
   if (changed) scheduleBroadcast();
 }
 
@@ -569,8 +607,17 @@ function handleCommandAck(ack: WsCommandAck, detectorDeviceId: string): void {
 // 广播
 // ════════════════════════════════════════════════════════════
 
+let lastDeviceListSignature = '';
+
+function buildDeviceListSignature(list: DeviceStatus[]): string {
+  return JSON.stringify(list.map(({ lastSeen, ...stable }) => stable));
+}
+
 function broadcastDeviceList(): void {
   const list = buildDeviceList();
+  const signature = buildDeviceListSignature(list);
+  if (signature === lastDeviceListSignature) return;
+  lastDeviceListSignature = signature;
   const msg = { type: 'device-list', devices: list };
   broadcastToReceivers(msg, 'device-list');
 }
@@ -629,6 +676,7 @@ setInterval(() => {
   const ts = new Date().toISOString();
   const detectorDeadline = now - config.deviceOfflineMs;
   const receiverDeadline = now - config.receiverGhostThresholdMs;
+  let detectorCleaned = false;
 
   // 接收端幽灵清理（阈值更长，容忍移动网络抖动）
   for (const [id, client] of receiverClients) {
@@ -652,12 +700,13 @@ setInterval(() => {
         client.ws.terminate();
         clients.delete(id);
         _heartbeatCounter.delete(id);
+        detectorCleaned = true;
       }
     }
   }
 
-  if (receiverClients.size > 0 || detectorWindowsClients.size > 0 || detectorAndroidClients.size > 0) {
+  if (detectorCleaned && (receiverClients.size > 0 || detectorWindowsClients.size > 0 || detectorAndroidClients.size > 0)) {
     broadcastDeviceList();
-    console.log(`[ws][${ts}] 定时推送 → 接收端:${receiverClients.size} / Windows:${detectorWindowsClients.size} / Android检测端:${detectorAndroidClients.size}`);
+    console.log(`[ws][${ts}] 设备清理后推送 → 接收端:${receiverClients.size} / Windows:${detectorWindowsClients.size} / Android检测端:${detectorAndroidClients.size}`);
   }
 }, 30_000);
