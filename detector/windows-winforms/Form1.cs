@@ -66,6 +66,7 @@ namespace VisionGuard
 
         // ServerPushService + heartbeat
         private ServerPushService _serverPushService;
+        private LegacyTlsTunnelService _legacyTlsTunnelService;
         private System.Windows.Forms.Timer _heartbeatTimer;
 
         // StatusBar
@@ -96,6 +97,7 @@ namespace VisionGuard
             _monitorService = new MonitorService(_alertService);
             _log            = new LogManager();
             _serverPushService = new ServerPushService();
+            _legacyTlsTunnelService = new LegacyTlsTunnelService();
 
             _alertService.AlertTriggered   += OnAlertTriggered;
             _monitorService.FrameProcessed += OnFrameProcessed;
@@ -233,6 +235,7 @@ namespace VisionGuard
             _heartbeatTimer?.Stop();
             _heartbeatTimer?.Dispose();
             _serverPushService?.Dispose();
+            _legacyTlsTunnelService?.Dispose();
             _alertService?.Dispose();
             _monitorService?.Stop();
             _monitorService?.Dispose();

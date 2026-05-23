@@ -117,9 +117,10 @@ namespace VisionGuard
             // 启动时自动连接（服务器地址/Key 已硬编码）
             {
                 string deviceId = EnsureDeviceId();
+                string serverUrl = ResolveServerUrlForCurrentSystem();
                 WireServerPushEvents();
                 _serverPushService.Configure(
-                    ServerUrl,
+                    serverUrl,
                     ServerApiKey,
                     deviceId,
                     _txtDeviceName.Text.Trim());
@@ -136,6 +137,24 @@ namespace VisionGuard
                     confidence:    _trkThreshold.Value / 100f,
                     targets:       GetWatchedClassesString());
             _heartbeatTimer.Start();
+        }
+
+        private string ResolveServerUrlForCurrentSystem()
+        {
+            bool isWin7 = Environment.OSVersion.Version.Major == 6
+                && Environment.OSVersion.Version.Minor == 1;
+            bool enabled = SettingsStore.GetBool("UseLegacyTlsTunnel", isWin7);
+            if (!enabled)
+                return ServerUrl;
+
+            if (_legacyTlsTunnelService.TryStart())
+            {
+                _log.Info("[LegacyTlsTunnel] enabled, server url switched to local tunnel");
+                return LegacyTlsTunnelService.LocalServerUrl;
+            }
+
+            _log.Warn("[LegacyTlsTunnel] unavailable, fallback to direct server url");
+            return ServerUrl;
         }
 
         private void SaveSettings()

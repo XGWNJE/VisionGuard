@@ -316,8 +316,9 @@ namespace VisionGuard
             {
                 string name     = _txtDeviceName.Text.Trim();
                 string deviceId = EnsureDeviceId();
+                string serverUrl = ResolveServerUrlForCurrentSystem();
                 _serverPushService.Disconnect();
-                _serverPushService.Configure(ServerUrl, ServerApiKey, deviceId, name);
+                _serverPushService.Configure(serverUrl, ServerApiKey, deviceId, name);
                 _log.Info("[Server] 手动重试连接...");
             };
 
@@ -328,8 +329,9 @@ namespace VisionGuard
                 SettingsStore.Set("DeviceName", name);
                 SettingsStore.Save();
                 string deviceId = EnsureDeviceId();
+                string serverUrl = ResolveServerUrlForCurrentSystem();
                 _serverPushService.Disconnect();
-                _serverPushService.Configure(ServerUrl, ServerApiKey, deviceId, name);
+                _serverPushService.Configure(serverUrl, ServerApiKey, deviceId, name);
                 _log.Info($"[Server] 设备名已更新为「{name}」，重新连接中...");
             };
         }
