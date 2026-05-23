@@ -13,6 +13,8 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Net.NetworkInformation;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 using System.Threading.Tasks;
 using WebSocketSharp;
@@ -517,6 +519,7 @@ namespace VisionGuard.Services
         {
             private readonly ServerPushService _parent;
             private readonly string _wsUrl;
+            private readonly string _expectedHost;
             private WebSocket _ws;
             private readonly object _sendLock = new object();
             private Thread _heartbeatThread;
@@ -529,11 +532,13 @@ namespace VisionGuard.Services
             {
                 _parent = parent;
                 _wsUrl = wsUrl;
+                _expectedHost = new Uri(wsUrl).Host;
             }
 
             public void Start()
             {
                 _ws = new WebSocket(_wsUrl);
+                _ws.ServerCertificateValidationCallback = ValidateServerCertificate;
                 _ws.OnOpen += (_, __) =>
                 {
                     if (_shutdown) return;
@@ -582,6 +587,38 @@ namespace VisionGuard.Services
                 })
                 { IsBackground = true, Name = "VG_AuthTimeout" };
                 _authTimeoutThread.Start();
+            }
+
+            private bool ValidateServerCertificate(
+                object sender,
+                X509Certificate certificate,
+                X509Chain chain,
+                SslPolicyErrors sslPolicyErrors)
+            {
+                if (sslPolicyErrors == SslPolicyErrors.None)
+                    return true;
+
+                var cert2 = certificate as X509Certificate2;
+                if (cert2 == null && certificate != null)
+                    cert2 = new X509Certificate2(certificate);
+
+                var dnsName = cert2?.GetNameInfo(X509NameType.DnsName, false) ?? "";
+                var chainStatus = chain == null
+                    ? "none"
+                    : string.Join(",", chain.ChainStatus.Select(s => s.Status.ToString()).ToArray());
+
+                LogManager.StaticWarn(
+                    $"[Server] TLS certificate warning host={_expectedHost} certDns={dnsName} errors={sslPolicyErrors} chain={chainStatus}");
+
+                var onlyChainErrors = sslPolicyErrors == SslPolicyErrors.RemoteCertificateChainErrors;
+                var hostMatches = string.Equals(dnsName, _expectedHost, StringComparison.OrdinalIgnoreCase);
+                if (onlyChainErrors && hostMatches)
+                {
+                    LogManager.StaticWarn("[Server] TLS certificate chain ignored for matched server host (Win7 root store compatibility)");
+                    return true;
+                }
+
+                return false;
             }
 
             public void StartHeartbeat()
