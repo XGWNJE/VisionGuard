@@ -3,10 +3,12 @@ package com.xgwnje.visionguard.util
 // ┌─────────────────────────────────────────────────────────┐
 // │ AutoUpdater.kt                                          │
 // │ 角色：自动更新检查与下载                                  │
-// │ 职责：启动时检查新版本 → 下载 APK → 调用系统安装器覆盖安装 │
+// │ 职责：检查新版本 → 通知/对话框 → 下载 APK → 安装         │
 // └─────────────────────────────────────────────────────────┘
 
 import android.app.DownloadManager
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -19,8 +21,11 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.widget.Toast
+import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.xgwnje.visionguard.AppConstants
+import com.xgwnje.visionguard.MainActivity
+import com.xgwnje.visionguard.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -30,6 +35,9 @@ import java.util.concurrent.TimeUnit
 
 private const val TAG = "VG_AutoUpdater"
 private const val PLATFORM = "android-detector"
+private const val UPDATE_NOTIF_ID = 2001
+
+data class UpdateInfo(val version: String, val downloadUrl: String)
 
 object AutoUpdater {
 
@@ -38,37 +46,68 @@ object AutoUpdater {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    /** 检查并执行更新（在 Service 启动时调用） */
-    suspend fun checkAndUpdate(context: Context) = withContext(Dispatchers.IO) {
+    /** 仅检查更新，返回 UpdateInfo 或 null */
+    suspend fun checkUpdate(context: Context): UpdateInfo? = withContext(Dispatchers.IO) {
         try {
             val url = "${AppConstants.SERVER_URL}/api/update?platform=$PLATFORM&version=${AppConstants.VERSION}"
             val request = Request.Builder().url(url).header("X-API-Key", AppConstants.API_KEY).build()
             val response = http.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext
+            if (!response.isSuccessful) return@withContext null
 
-            val body = response.body?.string() ?: return@withContext
+            val body = response.body?.string() ?: return@withContext null
             val json = JSONObject(body)
-            if (!json.optBoolean("ok", false)) return@withContext
-            if (!json.optBoolean("hasUpdate", false)) return@withContext
+            if (!json.optBoolean("ok", false)) return@withContext null
+            if (!json.optBoolean("hasUpdate", false)) return@withContext null
 
             val latestVersion = json.optString("latestVersion", "")
             val downloadUrl = json.optString("downloadUrl", "")
-            if (downloadUrl.isEmpty()) return@withContext
+            if (downloadUrl.isEmpty()) return@withContext null
+
+            val fullUrl = if (downloadUrl.startsWith("http", true)) downloadUrl
+                else AppConstants.SERVER_URL + downloadUrl
 
             Log.i(TAG, "发现新版本 $latestVersion (当前 ${AppConstants.VERSION})")
-
-            Handler(Looper.getMainLooper()).post {
-                Toast.makeText(context, "发现新版本 $latestVersion，正在下载…", Toast.LENGTH_LONG).show()
-            }
-
-            downloadApk(context, downloadUrl, latestVersion)
+            UpdateInfo(latestVersion, fullUrl)
         } catch (e: Exception) {
             Log.w(TAG, "检查更新失败: ${e.message}")
+            null
         }
     }
 
+    /** 自动检查（Service 启动时）：有更新则发通知 */
+    suspend fun checkAndNotify(context: Context) {
+        val info = checkUpdate(context) ?: return
+        showUpdateNotification(context, info)
+    }
+
+    private fun showUpdateNotification(context: Context, info: UpdateInfo) {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("navigateTo", "settings")
+            putExtra("showUpdate", true)
+        }
+        val pending = PendingIntent.getActivity(
+            context, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val channelId = NotificationHelper.FOREGROUND_CHANNEL_ID
+        val notification = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(R.mipmap.ic_launcher_foreground)
+            .setContentTitle("VisionGuard 检测端更新")
+            .setContentText("发现新版本 ${info.version}，点击查看")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pending)
+            .build()
+
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.notify(UPDATE_NOTIF_ID, notification)
+    }
+
+    /** 下载 APK（公开，供手动触发） */
     @Suppress("DEPRECATION")
-    private fun downloadApk(context: Context, url: String, version: String) {
+    fun downloadApk(context: Context, url: String, version: String) {
         val fileName = "VisionGuard-Detector-v$version.apk"
         val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         var downloadId = -1L
@@ -86,7 +125,6 @@ object AutoUpdater {
             val request = DownloadManager.Request(Uri.parse(url)).apply {
                 setTitle("VisionGuard 检测端更新")
                 setDescription("正在下载新版本 $version…")
-                // 使用公共 Downloads 目录，确保用户可在文件管理器中手动找到并安装
                 setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 addRequestHeader("X-API-Key", AppConstants.API_KEY)
@@ -107,8 +145,7 @@ object AutoUpdater {
         }
     }
 
-    private fun installApk(context: Context, dm: DownloadManager, downloadId: Long, fileName: String) {
-        // 1. 检查安装未知应用权限 (Android 8+)
+    fun installApk(context: Context, dm: DownloadManager, downloadId: Long, fileName: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (!context.packageManager.canRequestPackageInstalls()) {
                 Handler(Looper.getMainLooper()).post {
@@ -121,7 +158,6 @@ object AutoUpdater {
             }
         }
 
-        // 2. 尝试通过 DownloadManager content URI 安装
         try {
             val uri = dm.getUriForDownloadedFile(downloadId)
             if (uri != null) {
@@ -141,7 +177,6 @@ object AutoUpdater {
             Log.w(TAG, "自动安装失败: ${e.message}")
         }
 
-        // 3. 回退：提示用户并打开系统下载列表
         Handler(Looper.getMainLooper()).post {
             Toast.makeText(context,
                 "安装器未响应，请打开文件管理器 →「下载」→ 点击 $fileName 手动安装",

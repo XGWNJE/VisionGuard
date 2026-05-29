@@ -21,8 +21,36 @@ namespace VisionGuard.ViewModels
             set => SetProperty(ref _deviceName, value);
         }
 
+        public string VersionText => $"当前版本 {AppConfig.Version}";
+
+        private string _updateStatusText = "";
+        public string UpdateStatusText
+        {
+            get => _updateStatusText;
+            set => SetProperty(ref _updateStatusText, value);
+        }
+
+        private bool _isCheckingUpdate;
+        public bool IsCheckingUpdate
+        {
+            get => _isCheckingUpdate;
+            set
+            {
+                if (SetProperty(ref _isCheckingUpdate, value))
+                {
+                    OnPropertyChanged(nameof(IsUpdateButtonEnabled));
+                    OnPropertyChanged(nameof(UpdateButtonText));
+                }
+            }
+        }
+
+        public bool IsUpdateButtonEnabled => !_isCheckingUpdate;
+
+        public string UpdateButtonText => _isCheckingUpdate ? "检查中…" : "检查更新";
+
         public RelayCommand RetryCommand { get; }
         public RelayCommand ApplyNameCommand { get; }
+        public RelayCommand CheckUpdateCommand { get; }
 
         // ── 持久化 ───────────────────────────────────────────────────
 
@@ -41,7 +69,6 @@ namespace VisionGuard.ViewModels
         {
             _serverPushService = serverPushService;
 
-            // 监听连接状态变化
             _serverPushService.ConnectionStateChanged += OnConnectionStateChanged;
 
             RetryCommand = new RelayCommand(() =>
@@ -56,6 +83,23 @@ namespace VisionGuard.ViewModels
                     AppConfig.ApiKey,
                     AppConfig.DeviceId,
                     DeviceName);
+            });
+
+            CheckUpdateCommand = new RelayCommand(async () =>
+            {
+                if (_isCheckingUpdate) return;
+                IsCheckingUpdate = true;
+                UpdateStatusText = "正在检查更新…";
+
+                try
+                {
+                    await AutoUpdater.CheckUpdateAsync();
+                }
+                finally
+                {
+                    UpdateStatusText = "";
+                    IsCheckingUpdate = false;
+                }
             });
         }
 

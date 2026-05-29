@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -50,6 +51,7 @@ import com.xgwnje.visionguard_android.service.AlertForegroundService
 import com.xgwnje.visionguard_android.ui.screen.AlertDetailScreen
 import com.xgwnje.visionguard_android.ui.screen.AlertListScreen
 import com.xgwnje.visionguard_android.ui.screen.DeviceListScreen
+import com.xgwnje.visionguard_android.ui.screen.SettingsScreen
 import com.xgwnje.visionguard_android.ui.theme.VisionGuard_AndroidTheme
 
 class MainActivity : ComponentActivity() {
@@ -213,6 +215,18 @@ fun MainScreen(
                     icon = { Icon(Icons.Default.PhoneAndroid, contentDescription = null) },
                     label = { Text("设备") }
                 )
+                NavigationBarItem(
+                    selected = currentDest?.hierarchy?.any { it.route == "settings" } == true,
+                    onClick = {
+                        tabNavController.navigate("settings") {
+                            popUpTo(tabNavController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                    label = { Text("设置") }
+                )
             }
         }
     ) { padding ->
@@ -229,6 +243,9 @@ fun MainScreen(
             }
             composable("deviceList") {
                 DeviceListScreen(service = service)
+            }
+            composable("settings") {
+                SettingsScreen(service = service)
             }
         }
     }

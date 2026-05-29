@@ -14,7 +14,7 @@ namespace VisionGuard.Utils
 {
     public static class AutoUpdater
     {
-        private static readonly string CurrentVersion =
+        public static readonly string CurrentVersion =
             System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
         private const string ServerBase = "https://visionguard.xgwnje.cn";
 
@@ -48,18 +48,16 @@ namespace VisionGuard.Utils
                 if (string.IsNullOrEmpty(relUrl)) return;
 
                 var msg = $"发现新版本 {latest}（当前 {CurrentVersion}）。\n\n" +
-                          $"为保持兼容性，必须更新后才能继续使用。\n" +
-                          $"点击「确定」立即下载并安装。";
+                          $"点击「确定」立即下载并安装，或点击「取消」稍后更新。";
 
-                // MessageBox 必须在 UI 线程（从 Task.Run 调用，需 Invoke）
                 DialogResult result = DialogResult.None;
                 var owner = Application.OpenForms.Count > 0 ? Application.OpenForms[0] : null;
                 if (owner != null && owner.InvokeRequired)
                     owner.Invoke((Action)(() => result = MessageBox.Show(owner, msg,
-                        "VisionGuard 强制更新", MessageBoxButtons.OK, MessageBoxIcon.Warning)));
+                        "VisionGuard 更新", MessageBoxButtons.OKCancel, MessageBoxIcon.Information)));
                 else
-                    result = MessageBox.Show(msg, "VisionGuard 强制更新",
-                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    result = MessageBox.Show(msg, "VisionGuard 更新",
+                        MessageBoxButtons.OKCancel, MessageBoxIcon.Information);
 
                 if (result != DialogResult.OK) return;
 

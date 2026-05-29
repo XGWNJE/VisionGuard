@@ -35,14 +35,13 @@ namespace VisionGuard.Utils
                 if (string.IsNullOrEmpty(relUrl)) return;
 
                 var msg = $"发现新版本 {latest}（当前 {AppConfig.Version}）。\n\n" +
-                          $"为保持兼容性，必须更新后才能继续使用。\n" +
-                          $"点击「确定」立即下载并安装。";
+                          $"点击「确定」立即下载并安装，或点击「取消」稍后更新。";
 
                 var result = MessageBoxResult.None;
                 await Application.Current.Dispatcher.InvokeAsync(() =>
                 {
-                    result = MessageBox.Show(msg, "VisionGuard 强制更新",
-                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    result = MessageBox.Show(msg, "VisionGuard 更新",
+                        MessageBoxButton.OKCancel, MessageBoxImage.Information);
                 });
                 if (result != MessageBoxResult.OK) return;
 

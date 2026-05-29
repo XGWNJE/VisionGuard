@@ -21,6 +21,18 @@
                             Command="{Binding ApplyNameCommand}"/>
                 </StackPanel>
             </Border>
+
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="版本更新" Style="{StaticResource BodyText}" FontWeight="Bold" Margin="0,0,0,8"/>
+                    <TextBlock Text="{Binding VersionText}" Style="{StaticResource CaptionText}" Margin="0,0,0,8"/>
+                    <TextBlock Text="{Binding UpdateStatusText}" Style="{StaticResource CaptionText}"
+                               Foreground="{StaticResource Primary}" Margin="0,0,0,8"
+                               Visibility="{Binding IsCheckingUpdate, Converter={StaticResource BoolToVis}}"/>
+                    <Button Content="{Binding UpdateButtonText}" Style="{StaticResource DarkButton}" Width="110" HorizontalAlignment="Left"
+                            Command="{Binding CheckUpdateCommand}" IsEnabled="{Binding IsUpdateButtonEnabled}"/>
+                </StackPanel>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

@@ -1,11 +1,11 @@
 package com.xgwnje.visionguard.ui.screen
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +20,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -31,21 +33,27 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.Color
-import com.xgwnje.visionguard.inference.SocWhitelist
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import com.xgwnje.visionguard.AppConstants
 import com.xgwnje.visionguard.data.model.MonitorConfig
 import com.xgwnje.visionguard.data.remote.WsState
+import com.xgwnje.visionguard.inference.SocWhitelist
+import com.xgwnje.visionguard.util.AutoUpdater
+import com.xgwnje.visionguard.util.UpdateInfo
+import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(
@@ -271,6 +279,66 @@ fun SettingsScreen(
                         Text("重连")
                     }
                 }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 版本更新
+            ConfigSectionTitle(title = "版本更新")
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val scope = rememberCoroutineScope()
+            var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+            var showUpdateDialog by remember { mutableStateOf(false) }
+            var isChecking by remember { mutableStateOf(false) }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "当前版本 ${AppConstants.VERSION}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Button(
+                    onClick = {
+                        if (isChecking) return@Button
+                        isChecking = true
+                        scope.launch {
+                            val result = AutoUpdater.checkUpdate(context)
+                            isChecking = false
+                            if (result != null) {
+                                updateInfo = result
+                                showUpdateDialog = true
+                            } else {
+                                android.widget.Toast.makeText(context, "已是最新版本", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    enabled = !isChecking
+                ) {
+                    Text(if (isChecking) "检查中…" else "检查更新")
+                }
+            }
+
+            if (showUpdateDialog && updateInfo != null) {
+                AlertDialog(
+                    onDismissRequest = { showUpdateDialog = false },
+                    title = { Text("发现新版本") },
+                    text = {
+                        Text("发现新版本 ${updateInfo!!.version}\n当前版本 ${AppConstants.VERSION}\n\n是否立即下载更新？")
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showUpdateDialog = false
+                            AutoUpdater.downloadApk(context, updateInfo!!.downloadUrl, updateInfo!!.version)
+                        }) { Text("更新") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showUpdateDialog = false }) { Text("稍后") }
+                    }
+                )
             }
         }
     }

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using VisionGuard.Data;
 using VisionGuard.Models;
@@ -304,6 +305,43 @@ namespace VisionGuard
             nameRow.Controls.Add(_txtDeviceName);
             page.Controls.Add(nameRow);
             page.Controls.SetChildIndex(nameRow, 0);
+            AddGap(page, gap * 3);
+
+            // Separator
+            var sep2 = new Label { Dock = DockStyle.Top, Height = 1, BorderStyle = BorderStyle.Fixed3D };
+            page.Controls.Add(sep2);
+            page.Controls.SetChildIndex(sep2, 0);
+            AddGap(page, gap * 3);
+
+            AddTitle(page, "版本更新", fh); AddGap(page, gap);
+
+            // Row: version label + check update button
+            var updateRow = new Panel { Dock = DockStyle.Top, Height = fh + 12 };
+            var lblVersion = new Label
+            {
+                Text = $"当前版本 {Utils.AutoUpdater.CurrentVersion}",
+                Dock = DockStyle.Left, AutoSize = true,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            var btnCheckUpdate = new Button { Text = "检查更新", Dock = DockStyle.Right, Width = 96 };
+            btnCheckUpdate.Click += (s, e) =>
+            {
+                btnCheckUpdate.Enabled = false;
+                btnCheckUpdate.Text = "检查中…";
+                    Task.Run(async () =>
+                    {
+                        await Utils.AutoUpdater.CheckUpdate(ServerApiKey);
+                        this.Invoke((Action)(() =>
+                        {
+                            btnCheckUpdate.Text = "检查更新";
+                            btnCheckUpdate.Enabled = true;
+                        }));
+                    });
+            };
+            updateRow.Controls.Add(btnCheckUpdate);
+            updateRow.Controls.Add(lblVersion);
+            page.Controls.Add(updateRow);
+            page.Controls.SetChildIndex(updateRow, 0);
 
             // Hidden detail label (still assigned by WireServerPushEvents)
             _lblConnDetail = new Label { Visible = false };
