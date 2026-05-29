@@ -447,6 +447,15 @@ class DetectorForegroundService : LifecycleService() {
         updateWsHeartbeatStatus()
         serverPushService.wsClient.sendHeartbeatNow()
 
+        if (!success) {
+            Log.e(TAG, "All model load attempts failed")
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            nm.notify(
+                NotificationHelper.FOREGROUND_NOTIF_ID,
+                NotificationHelper.buildForegroundNotification(this, "模型下载失败，请检查网络后重启")
+            )
+        }
+
         // 从 DataStore 完整恢复配置，并同步到 currentConfigFlow
         val confidence = settingsRepo.getConfidence()
         val cooldown = settingsRepo.getCooldown()

@@ -4,14 +4,17 @@ import android.content.Context
 import android.util.Log
 import ai.onnxruntime.*
 import com.xgwnje.visionguard.util.InferenceDiagnostics
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.FloatBuffer
+import java.util.concurrent.TimeUnit
 
 /**
  * ONNX Runtime Mobile 推理引擎封装。
  *
- * 负责从 assets 复制模型到内部存储并加载 ONNX 会话，
+ * 负责从服务器下载模型到内部存储并加载 ONNX 会话，
  * 提供 run() 方法执行推理。
  */
 class OnnxInferenceEngine(private val context: Context) {
@@ -50,10 +53,14 @@ class OnnxInferenceEngine(private val context: Context) {
 
             val modelFile = File(localDir, modelFileName)
 
-            // 如果本地不存在，或文件为空，从 assets 复制
+            // 如果本地不存在，或文件为空，从服务器下载
             if (!modelFile.exists() || modelFile.length() == 0L) {
-                Log.i(TAG, "Model not found locally, copying from assets: $modelFileName")
-                copyModelFromAssets(modelFileName, modelFile)
+                Log.i(TAG, "Model not found locally, downloading from server: $modelFileName")
+                if (!downloadModel(modelFileName, modelFile)) {
+                    Log.e(TAG, "Failed to download model")
+                    if (modelFile.exists()) modelFile.delete()
+                    return false
+                }
             }
 
             if (!modelFile.exists() || modelFile.length() == 0L) {
@@ -92,7 +99,7 @@ class OnnxInferenceEngine(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load model: $modelFileName", e)
             close()
-            // 删除可能损坏的本地文件，下次启动会重新复制
+            // 删除可能损坏的本地文件，下次启动会重新下载
             try {
                 val modelFile = File(File(context.filesDir, LOCAL_MODEL_DIR), modelFileName)
                 if (modelFile.exists()) {
@@ -178,26 +185,35 @@ class OnnxInferenceEngine(private val context: Context) {
         currentModelPath = null
     }
 
-    /** 从 assets 复制模型到本地文件 */
-    private fun copyModelFromAssets(assetName: String, destFile: File) {
-        try {
-            // 删除已存在的旧文件（可能不完整）
-            if (destFile.exists()) {
-                destFile.delete()
-            }
+    private val downloadHttp = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(300, TimeUnit.SECONDS)
+        .build()
 
-            context.assets.open("$ASSETS_MODEL_DIR/$assetName").use { input ->
-                FileOutputStream(destFile).use { output ->
+    private fun downloadModel(fileName: String, destFile: File): Boolean {
+        return try {
+            if (destFile.exists()) destFile.delete()
+            val url = "${com.xgwnje.visionguard.AppConstants.SERVER_URL}/models/$fileName"
+            val request = Request.Builder().url(url).build()
+            val response = downloadHttp.newCall(request).execute()
+            if (!response.isSuccessful) {
+                Log.w(TAG, "Model download failed: HTTP ${response.code}")
+                return false
+            }
+            val body = response.body ?: return false
+            val tmpFile = File(destFile.parent, "$fileName.tmp")
+            body.byteStream().use { input ->
+                FileOutputStream(tmpFile).use { output ->
                     input.copyTo(output)
                     output.flush()
                 }
             }
-
-            Log.i(TAG, "Model copied to: ${destFile.absolutePath} (${destFile.length()} bytes)")
+            tmpFile.renameTo(destFile)
+            Log.i(TAG, "Model downloaded: ${destFile.absolutePath} (${destFile.length()} bytes)")
+            true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to copy model from assets: $assetName", e)
-            destFile.delete()
-            throw e
+            Log.w(TAG, "Model download error: ${e.message}")
+            false
         }
     }
 }

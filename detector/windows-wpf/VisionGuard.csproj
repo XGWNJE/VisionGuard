@@ -16,10 +16,31 @@
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
     <AllowedReferenceRelatedFileExtensions>.allowedextension</AllowedReferenceRelatedFileExtensions>
     <Platforms>AnyCPU;x86</Platforms>
-    <Version>4.1.2</Version>
-    <FileVersion>4.1.2</FileVersion>
-    <AssemblyVersion>4.1.2</AssemblyVersion>
+    <Version>4.2.0</Version>
+    <FileVersion>4.2.0</FileVersion>
+    <AssemblyVersion>4.2.0</AssemblyVersion>
   </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+
+  <!-- 发布时清理冗余文件，将原生 DLL 提到根目录 -->
+  <Target Name="StripUnusedOutput" AfterTargets="Build">
+    <!-- 将 runtimes/win-x64/native/* 移到根目录 -->
+    <Exec Command="powershell -Command &quot;$src='$(OutputPath)runtimes\win-x64\native'; if (Test-Path $src) { Get-ChildItem $src | Move-Item -Destination '$(OutputPath)' -Force }&quot;" ContinueOnError="true" />
+    <!-- 删除整个 runtimes 目录 -->
+    <Exec Command="powershell -Command &quot;Remove-Item '$(OutputPath)runtimes' -Recurse -Force -ErrorAction SilentlyContinue&quot;" ContinueOnError="true" />
+    <!-- 删除非 win-x64 的残留（兜底） -->
+    <Exec Command="powershell -Command &quot;Get-ChildItem '$(OutputPath)runtimes' -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'win-x64' } | Remove-Item -Recurse -Force&quot;" ContinueOnError="true" />
+    <!-- 删除 .lib 导入库 -->
+    <Exec Command="powershell -Command &quot;Get-ChildItem '$(OutputPath)' -Recurse -Filter '*.lib' -ErrorAction SilentlyContinue | Remove-Item -Force&quot;" ContinueOnError="true" />
+    <!-- 删除 .pdb 调试符号 -->
+    <Exec Command="powershell -Command &quot;Get-ChildItem '$(OutputPath)' -Recurse -Filter '*.pdb' -ErrorAction SilentlyContinue | Remove-Item -Force&quot;" ContinueOnError="true" />
+    <!-- 删除 .NET 9 无用的 binding redirects config -->
+    <Exec Command="powershell -Command &quot;Get-ChildItem '$(OutputPath)' -Filter '*.dll.config' -ErrorAction SilentlyContinue | Remove-Item -Force&quot;" ContinueOnError="true" />
+    <Message Importance="high" Text="✓ 已清理冗余输出文件" />
+  </Target>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.19.0" />
@@ -29,24 +50,12 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="Assets\yolo26n_320.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\yolo26n_640.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\yolo26s_320.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\yolo26s_640.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\yolo26m_320.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\yolo26m_640.onnx">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
+    <Content Include="Assets\yolo26n_320.onnx" />
+    <Content Include="Assets\yolo26n_640.onnx" />
+    <Content Include="Assets\yolo26s_320.onnx" />
+    <Content Include="Assets\yolo26s_640.onnx" />
+    <Content Include="Assets\yolo26m_320.onnx" />
+    <Content Include="Assets\yolo26m_640.onnx" />
     <Content Include="Assets\**\*.png" Exclude="Assets\screenshot.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>Assets\%(RecursiveDir)%(Filename)%(Extension)</Link>
@@ -55,6 +64,33 @@
     <Content Include="favicon.ico" />
     <Content Include="VisionGuard.ico" />
     <None Include="app.manifest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Update="Properties\Resources.Designer.cs">
+      <DesignTime>True</DesignTime>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
+    <Compile Update="Properties\Settings.Designer.cs">
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>Settings.settings</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Update="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Properties\Settings.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
+    </None>
   </ItemGroup>
 
 </Project>

@@ -236,11 +236,47 @@ namespace VisionGuard
                                   "yolov5mu_320","yolov5mu_640" };
                 if (_cmbModel.SelectedIndex >= 0 && _cmbModel.SelectedIndex < keys.Length)
                     _selectedModel = keys[_cmbModel.SelectedIndex];
+                UpdateModelStatusLabel();
                 SaveSettings();
             };
             page.Controls.Add(_cmbModel);
             page.Controls.SetChildIndex(_cmbModel, 0);
+            AddGap(page, gap);
+
+            // Model status + download button
+            var modelStatusRow = new Panel { Dock = DockStyle.Top, Height = fh + 10 };
+            _lblModelStatus = new Label
+            {
+                Text = "○ 未下载",
+                Dock = DockStyle.Left, AutoSize = true,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            var btnDownloadModel = new Button { Text = "下载模型", Dock = DockStyle.Right, Width = 96 };
+            btnDownloadModel.Click += async (s, e2) =>
+            {
+                btnDownloadModel.Enabled = false;
+                btnDownloadModel.Text = "下载中...";
+                var key = _selectedModel;
+                var progress = new Progress<int>(p =>
+                {
+                    this.Invoke((Action)(() => btnDownloadModel.Text = $"{p}%"));
+                });
+                var ok = await Task.Run(() => Utils.ModelManager.DownloadModel(key, progress));
+                this.Invoke((Action)(() =>
+                {
+                    btnDownloadModel.Enabled = true;
+                    btnDownloadModel.Text = ok ? "已下载" : "重试";
+                    UpdateModelStatusLabel();
+                }));
+            };
+            modelStatusRow.Controls.Add(btnDownloadModel);
+            modelStatusRow.Controls.Add(_lblModelStatus);
+            page.Controls.Add(modelStatusRow);
+            page.Controls.SetChildIndex(modelStatusRow, 0);
             AddGap(page, gap * 2);
+
+            // Init status
+            UpdateModelStatusLabel();
 
             // 5. 监控目标
             AddTitle(page, "监控目标", fh); AddGap(page, gap);

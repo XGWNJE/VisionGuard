@@ -2,6 +2,7 @@
 using System;
 using System.Drawing;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using VisionGuard.Capture;
 using VisionGuard.Models;
@@ -171,7 +172,7 @@ namespace VisionGuard
         /// <summary>
         /// 启动监控推理。remote=true 时失败通过 command-ack 返回，不弹 MessageBox。
         /// </summary>
-        private void StartMonitor(bool remote)
+        private async void StartMonitor(bool remote)
         {
             if (_monitorService.IsStarted)
             {
@@ -181,18 +182,32 @@ namespace VisionGuard
 
             if (!File.Exists(ModelPath))
             {
-                if (remote)
+                _log.Warn($"[Monitor] 模型文件不存在: {ModelPath}，开始下载...");
+                _tsStatus.Text = "正在下载模型...";
+
+                bool downloaded = false;
+                var progress = new Progress<int>(p =>
                 {
-                    _serverPushService.SendCommandAck("resume", false, "模型文件不存在");
-                    _log.Warn("[Server] 收到 resume，但模型文件不存在。");
-                }
-                else
+                    this.Invoke((Action)(() => _tsStatus.Text = $"正在下载模型 {p}%..."));
+                });
+
+                await Task.Run(async () =>
                 {
-                    MessageBox.Show(
-                        $"找不到模型文件：\n{ModelPath}\n\n请参阅 Assets/ASSETS_README.md。",
-                        "模型缺失", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    downloaded = await Utils.ModelManager.DownloadModel(_selectedModel, progress);
+                });
+
+                if (!downloaded)
+                {
+                    _log.Error("[Monitor] 模型下载失败");
+                    this.Invoke((Action)(() =>
+                        MessageBox.Show(this, $"模型 {_selectedModel} 下载失败，请检查网络后重试。",
+                            "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)));
+                    _tsStatus.Text = "就绪";
+                    return;
                 }
-                return;
+
+                _log.Info("[Monitor] 模型下载完成");
+                this.Invoke((Action)(() => _tsStatus.Text = "就绪"));
             }
 
             MonitorConfig cfg = BuildConfig();

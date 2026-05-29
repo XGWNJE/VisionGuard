@@ -24,9 +24,13 @@ android {
         minSdk = 28
         targetSdk = 36
         versionCode = 4000
-        versionName = "4.1.2"
+        versionName = "4.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     signingConfigs {
@@ -41,7 +45,8 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -57,9 +62,6 @@ android {
         buildConfig = true
     }
 
-    androidResources {
-        noCompress += "onnx"
-    }
 }
 
 dependencies {

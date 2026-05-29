@@ -40,6 +40,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -144,6 +145,23 @@ fun SettingsScreen(
                     else "当前设备不支持高分辨率，仅骁龙 7/8 系列、天玑 8/9 系列等中高端 SoC 可用"
                 )
             }
+
+            // 模型文件状态
+            val modelDir = androidx.compose.ui.platform.LocalContext.current.filesDir.resolve("models")
+            var modelStatus by remember { mutableStateOf("") }
+
+            LaunchedEffect(config.modelName, config.inputSize) {
+                val fileName = "${config.modelName}_${config.inputSize}.onnx"
+                val modelFile = modelDir.resolve(fileName)
+                modelStatus = if (modelFile.exists() && modelFile.length() > 0) "✓ 已下载" else "○ 未下载（启动监控时自动下载）"
+            }
+
+            Text(
+                text = "模型文件: $modelStatus",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                modifier = Modifier.padding(top = 4.dp)
+            )
 
             // 置信度滑块
             ConfigSectionTitle(title = "置信度阈值")

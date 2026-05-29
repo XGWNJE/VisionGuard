@@ -1,3 +1,5 @@
+using System;
+using System.Windows;
 using VisionGuard.Services;
 using VisionGuard.Utils;
 
@@ -101,6 +103,7 @@ namespace VisionGuard.ViewModels
                     IsCheckingUpdate = false;
                 }
             });
+
         }
 
         private void OnConnectionStateChanged(object? sender, string state)

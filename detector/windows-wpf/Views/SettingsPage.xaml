@@ -48,6 +48,13 @@
                         <ComboBoxItem>YOLO26m 320 (78MB)</ComboBoxItem>
                         <ComboBoxItem>YOLO26m 640 (78MB)</ComboBoxItem>
                     </ComboBox>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <TextBlock Text="{Binding ModelStatusText}" Style="{StaticResource CaptionText}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <Button Content="下载模型" Style="{StaticResource DarkButton}" Width="90" Height="26" FontSize="11"
+                                Command="{Binding DownloadModelCommand}"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding ModelDownloadProgress}" Style="{StaticResource CaptionText}"
+                               Foreground="{StaticResource Primary}" Margin="0,4,0,0"/>
                 </StackPanel>
             </Border>
 

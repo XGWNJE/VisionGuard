@@ -31,7 +31,22 @@ namespace VisionGuard.ViewModels
         public int SelectedModelIndex
         {
             get => _selectedModelIndex;
-            set => SetProperty(ref _selectedModelIndex, value);
+            set
+            {
+                if (SetProperty(ref _selectedModelIndex, value))
+                    OnPropertyChanged(nameof(ModelStatusText));
+            }
+        }
+
+        public string ModelStatusText => Utils.ModelManager.IsDownloaded(SelectedModelName) ? "✓ 已下载" : "○ 未下载（点击下方按钮下载）";
+
+        public RelayCommand DownloadModelCommand { get; }
+
+        private string _modelDownloadProgress = "";
+        public string ModelDownloadProgress
+        {
+            get => _modelDownloadProgress;
+            set => SetProperty(ref _modelDownloadProgress, value);
         }
 
         // ── 监控目标（6 类，与旧代码行为对齐）────────────────────────
@@ -169,6 +184,27 @@ namespace VisionGuard.ViewModels
                 if (e.PropertyName == nameof(SamplingRate)) OnPropertyChanged(nameof(SamplingRateText));
                 if (e.PropertyName == nameof(Cooldown)) OnPropertyChanged(nameof(CooldownText));
             };
+
+            DownloadModelCommand = new RelayCommand(async () =>
+            {
+                var key = SelectedModelName;
+                if (Utils.ModelManager.IsDownloaded(key))
+                {
+                    ModelDownloadProgress = "已下载";
+                    return;
+                }
+
+                ModelDownloadProgress = "下载中 0%...";
+                var progress = new Progress<int>(p =>
+                {
+                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                        ModelDownloadProgress = $"下载中 {p}%...");
+                });
+
+                var ok = await Utils.ModelManager.DownloadModel(key, progress);
+                ModelDownloadProgress = ok ? "下载完成" : "下载失败，点击重试";
+                OnPropertyChanged(nameof(ModelStatusText));
+            });
         }
     }
 }

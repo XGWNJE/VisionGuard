@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 
@@ -20,6 +21,13 @@ namespace VisionGuard
 
             // 后台检查更新（fire-and-forget）
             _ = Utils.AutoUpdater.CheckUpdateAsync();
+
+            // 迁移旧 Assets 目录下的模型到 AppData
+            _ = Task.Run(() =>
+            {
+                var oldDir = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets");
+                Utils.ModelManager.MigrateOldModels(oldDir);
+            });
 
             base.OnStartup(e);
         }

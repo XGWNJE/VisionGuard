@@ -48,6 +48,7 @@ namespace VisionGuard
         private TrackBar _sliderCooldown;
         private Label    _lblCooldown;
         private ComboBox _cmbModel;
+        private Label    _lblModelStatus;
 
         // Targets page
         private CheckedListBox   _targetListBox;
@@ -82,8 +83,14 @@ namespace VisionGuard
 
         // Model
         private string _selectedModel = "yolov5nu_320";
-        private string ModelPath => Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory, "Assets", $"{_selectedModel}.onnx");
+        private string ModelPath => Utils.ModelManager.GetModelPath(_selectedModel);
+
+        private void UpdateModelStatusLabel()
+        {
+            if (_lblModelStatus == null) return;
+            var downloaded = Utils.ModelManager.IsDownloaded(_selectedModel);
+            _lblModelStatus.Text = downloaded ? "✓ 已下载" : "○ 未下载";
+        }
 
         // Mask regions (relative coords [0,1])
         private List<RectangleF> _maskRegions = new List<RectangleF>();
@@ -125,6 +132,10 @@ namespace VisionGuard
 
             // 后台检查更新（fire-and-forget，避免阻塞 UI）
             Task.Run(async () => await Utils.AutoUpdater.CheckUpdate(ServerApiKey));
+
+            // 迁移旧模型从 Assets 到 AppData
+            var oldAssetsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets");
+            Task.Run(() => Utils.ModelManager.MigrateOldModels(oldAssetsDir));
 
             _log.Info("VisionGuard 已就绪，请选择捕获区域或目标窗口后点击「开始」。");
         }

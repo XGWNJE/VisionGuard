@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using VisionGuard.Capture;
@@ -74,6 +75,20 @@ namespace VisionGuard.ViewModels
         public bool HasCaptureTarget => TargetWindow != null ||
             (ScreenRegion != Rectangle.Empty && ScreenRegion.Width >= 32 && ScreenRegion.Height >= 32);
 
+        private bool _isDownloadingModel;
+        public bool IsDownloadingModel
+        {
+            get => _isDownloadingModel;
+            set => SetProperty(ref _isDownloadingModel, value);
+        }
+
+        private string _modelDownloadStatus = "";
+        public string ModelDownloadStatus
+        {
+            get => _modelDownloadStatus;
+            set => SetProperty(ref _modelDownloadStatus, value);
+        }
+
         // 运行时状态
         public WindowInfo? TargetWindow { get; set; }
         public Rectangle ScreenRegion { get; set; }
@@ -129,7 +144,7 @@ namespace VisionGuard.ViewModels
             });
         }
 
-        internal void StartMonitor(bool remote = false)
+        internal async void StartMonitor(bool remote = false)
         {
             var config = BuildConfig();
 
@@ -163,18 +178,36 @@ namespace VisionGuard.ViewModels
                 }
             }
 
-            var modelPath = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", _settingsVm.SelectedModelName + ".onnx");
+            var modelPath = Utils.ModelManager.GetModelPath(_settingsVm.SelectedModelName);
 
             if (!System.IO.File.Exists(modelPath))
             {
-                string msg = $"模型文件不存在：{modelPath}";
                 if (remote)
                 {
-                    _serverPushService.SendCommandAck("start", false, msg);
+                    _serverPushService.SendCommandAck("start", false, "模型未下载：" + _settingsVm.SelectedModelName);
                     return;
                 }
-                MessageBox.Show(msg, "VisionGuard", MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
+
+                IsDownloadingModel = true;
+                ModelDownloadStatus = $"正在下载模型 {_settingsVm.SelectedModelName}...";
+
+                var progress = new Progress<int>(p =>
+                {
+                    Application.Current.Dispatcher.Invoke(() =>
+                        ModelDownloadStatus = $"正在下载模型 {_settingsVm.SelectedModelName} {p}%...");
+                });
+
+                bool ok = await Utils.ModelManager.DownloadModel(_settingsVm.SelectedModelName, progress);
+
+                IsDownloadingModel = false;
+                if (!ok)
+                {
+                    ModelDownloadStatus = "";
+                    MessageBox.Show($"模型 {_settingsVm.SelectedModelName} 下载失败，请检查网络后重试。",
+                        "错误", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+                ModelDownloadStatus = "";
             }
 
             try

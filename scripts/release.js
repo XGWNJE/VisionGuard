@@ -12,6 +12,7 @@ const { execSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const RELEASES_DIR = path.join(ROOT, 'server', 'data', 'releases');
+const MODELS_DIR = path.join(ROOT, 'server', 'data', 'models');
 
 function main() {
   const version = process.argv[2];
@@ -62,6 +63,23 @@ function main() {
   // 3. 复制构建产物到 releases 目录
   console.log('\n📌 步骤 3/4: 复制构建产物…');
   fs.mkdirSync(RELEASES_DIR, { recursive: true });
+  fs.mkdirSync(MODELS_DIR, { recursive: true });
+
+  // 收集各端模型文件到 server/data/models/
+  const modelSrcs = [
+    path.join(ROOT, 'detector', 'windows-winforms', 'Assets'),
+    path.join(ROOT, 'detector', 'windows-wpf', 'Assets'),
+    path.join(ROOT, 'detector', 'android', 'app', 'src', 'main', 'assets', 'models'),
+  ];
+  for (const src of modelSrcs) {
+    if (fs.existsSync(src)) {
+      const onnxFiles = fs.readdirSync(src).filter(f => f.endsWith('.onnx'));
+      for (const f of onnxFiles) {
+        fs.copyFileSync(path.join(src, f), path.join(MODELS_DIR, f));
+        console.log(`  ✓ 模型: ${f}`);
+      }
+    }
+  }
 
   const artifacts = [
     {
@@ -69,20 +87,22 @@ function main() {
       dest: path.join(RELEASES_DIR, `VisionGuard-v${version}.zip`),
       isZip: true,
       sourceDir: path.join(ROOT, 'detector', 'windows-winforms', 'bin', 'Release'),
+      zipExclude: ['Assets', 'alerts'],
     },
     {
-      src: path.join(ROOT, 'detector', 'windows-wpf', 'bin', 'Release', 'net9.0-windows', 'VisionGuard.exe'),
+      src: path.join(ROOT, 'detector', 'windows-wpf', 'bin', 'x64', 'VisionGuard.exe'),
       dest: path.join(RELEASES_DIR, `VisionGuard-WPF-v${version}.zip`),
       isZip: true,
-      sourceDir: path.join(ROOT, 'detector', 'windows-wpf', 'bin', 'Release', 'net9.0-windows'),
+      sourceDir: path.join(ROOT, 'detector', 'windows-wpf', 'bin', 'x64'),
+      zipExclude: ['Assets', 'alerts'],
     },
     {
-      src: path.join(ROOT, 'detector', 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release-unsigned.apk'),
+      src: path.join(ROOT, 'detector', 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk'),
       dest: path.join(RELEASES_DIR, `VisionGuard-Detector-v${version}.apk`),
       isZip: false,
     },
     {
-      src: path.join(ROOT, 'receiver', 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release-unsigned.apk'),
+      src: path.join(ROOT, 'receiver', 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk'),
       dest: path.join(RELEASES_DIR, `VisionGuard-Receiver-v${version}.apk`),
       isZip: false,
     },
@@ -90,8 +110,13 @@ function main() {
 
   for (const art of artifacts) {
     if (art.isZip) {
-      // 使用 PowerShell 压缩
-      execSync(`powershell -Command "Compress-Archive -Path '${art.sourceDir}\\*' -DestinationPath '${art.dest}' -Force"`, { stdio: 'inherit' });
+      // 使用 PowerShell 压缩（排除指定目录）
+      if (art.zipExclude && art.zipExclude.length > 0) {
+        const excludeArg = art.zipExclude.map(x => `'${x}'`).join(',');
+        execSync(`powershell -Command "Get-ChildItem -Path '${art.sourceDir}\\*' -Exclude ${excludeArg} | Compress-Archive -DestinationPath '${art.dest}' -Force"`, { stdio: 'inherit' });
+      } else {
+        execSync(`powershell -Command "Compress-Archive -Path '${art.sourceDir}\\*' -DestinationPath '${art.dest}' -Force"`, { stdio: 'inherit' });
+      }
     } else {
       fs.copyFileSync(art.src, art.dest);
     }
