@@ -43,18 +43,25 @@ Windows 检测端分两条线：WinForms 主力线和 WPF 视觉升级线。
 - `MonitorService` 用线程池定时器驱动捕获、推理、告警和 UI 更新
 - `ServerPushService` 负责认证、心跳、告警推送、命令和截图按需传输
 - `SettingsStore` 保持与旧版 `settings.ini` 兼容的 key 语义
+- `ModelManager` 管理模型按需下载（首次/切换时从 Server 下载到 `%APPDATA%\VisionGuard\models\`）
+- 设置页模型选择处显示下载状态（✓已下载 / ○未下载），支持手动下载和进度反馈
+- 启动时自动迁移旧 `Assets/` 路径的模型到新缓存目录
 
 ## 从旧迁移说明中保留的有效约束
 
 - WPF 仍然依赖 `System.Drawing.Common`，因为捕获和截图标注仍走 GDI 路径
 - WPF 命令可用性刷新依赖手动 `RaiseCanExecuteChanged()`
 - 遮罩是相对坐标，切换捕获范围后旧遮罩需要清空
-- 旧迁移文档里的“待完成事项”不能直接视为当前缺陷，必须以源码再核对
+- 旧迁移文档里的"待完成事项"不能直接视为当前缺陷，必须以源码再核对
 
 ## 已验证事实
 
 - WinForms 输出解析包含 NMS
 - 两条线都保留了自动更新逻辑
+- 自动更新弹窗为非强制（OK/Cancel），用户可跳过
+- 各端 Server 页提供手动"检查更新"按钮
+- 发行包通过 .csproj Target 从根源清理冗余文件（.pdb/.lib/stunnel/多余运行时）
+- WinForms 四种配置输出路径统一到 `bin\Release\` / `bin\Debug\`
 - 两条线都存在 NTP 同步与心跳同步相关代码
 - 两条线都维护与 Android 对齐的 6 类目标子集：`person`、`bicycle`、`car`、`motorcycle`、`bus`、`truck`
 

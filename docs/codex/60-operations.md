@@ -38,3 +38,8 @@
 - `README.md` 可能存在编码问题，不应作为单一真相
 - 项目内旧解释文档已迁移后删除，后续不要恢复双份维护
 - 根域存在旧客户端兼容入口，不代表根域仍是 VisionGuard 正式服务地址
+- 发行包冗余文件必须从 .csproj/gradle 根源解决，不要在 release.js 中事后删除
+- 修改构建配置或删除文件前，先 `grep` 确认无代码引用
+- 编译通过后必须 `Get-ChildItem` 检查输出目录，确保无多余文件
+- 模型文件不打包进发行包，发布时由 release.js 收集到 `server/data/models/`
+- Android Release 必须用 `assembleRelease`（不是 Debug），必须签名

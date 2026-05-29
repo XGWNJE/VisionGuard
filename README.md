@@ -2,7 +2,7 @@
 
 > 面向 Windows、Android 与中继服务的 AI 实时监控系统。
 
-[![Version](https://img.shields.io/badge/version-4.1.2-1f6feb)](./VERSION)
+[![Version](https://img.shields.io/badge/version-4.2.0-1f6feb)](./VERSION)
 [![Stack](https://img.shields.io/badge/技术栈-Windows%20%7C%20Android%20%7C%20Node.js-0f766e)](#项目结构)
 [![Docs](https://img.shields.io/badge/文档-已验真-f59e0b)](./docs/codex/00-index.md)
 
@@ -10,9 +10,20 @@ VisionGuard 是一个多端联动的 AI 监控项目，围绕一条统一链路�
 
 `Windows / Android 检测端 -> 中继服务器 -> Android 接收端`
 
-它将本地推理、隐私遮罩、实时告警中继、截图传输与更新分发整合在同一套工程中。
+它将本地推理、隐私遮罩、实时告警中继、截图传输、模型按需下载与更新分发整合在同一套工程中。
 
-当前正式服务域名为 `https://visionguard.xgwnje.cn`。根域 `https://xgwnje.cn` 留给个人主页；旧客户端可短期通过根域兼容路径访问更新文件，但新客户端和项目配置应统一使用项目子域名。
+当前正式服务域名为 `https://visionguard.xgwnje.cn`。根域 `https://xgwnje.cn` 留给个人主页。
+
+## 发行包体积（v4.2.0，不含模型）
+
+| 端 | 体积 |
+|---|---|
+| WinForms | 2.4 MB |
+| WPF | 4.7 MB |
+| Android 检测 | 39.6 MB |
+| Android 接收 | 20.9 MB |
+
+模型文件不随发行包分发，首次启动/切换模型时从 Server 按需下载（本地缓存复用）。
 
 ## 核心能力
 
@@ -62,10 +73,11 @@ VERSION                      权威版本号来源
 ## 服务地址
 
 - 正式服务域名：`https://visionguard.xgwnje.cn`
-- WebSocket：由客户端基于正式域名拼接 `/ws`
+- WebSocket：`wss://visionguard.xgwnje.cn/ws`
 - 健康检查：`https://visionguard.xgwnje.cn/health`
 - 更新查询：`https://visionguard.xgwnje.cn/api/update`
 - 更新文件：`https://visionguard.xgwnje.cn/releases/*`
+- 模型下载：`https://visionguard.xgwnje.cn/models/*`（无需鉴权）
 
 ## 快速入口
 
