@@ -141,9 +141,7 @@ namespace VisionGuard
 
         private string ResolveServerUrlForCurrentSystem()
         {
-            bool isWin7 = Environment.OSVersion.Version.Major == 6
-                && Environment.OSVersion.Version.Minor == 1;
-            bool enabled = SettingsStore.GetBool("UseLegacyTlsTunnel", isWin7);
+            bool enabled = SettingsStore.GetBool("UseLegacyTlsTunnel", false);
             if (!enabled)
                 return ServerUrl;
 

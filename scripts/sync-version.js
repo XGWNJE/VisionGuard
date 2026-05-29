@@ -38,8 +38,8 @@ function main() {
   // 3. WPF AppConfig.cs
   replaceInFile(
     path.join(ROOT, 'detector', 'windows-wpf', 'Utils', 'AppConfig.cs'),
-    /\?\? "[\d.]+"/,
-    `?? "${newVersion}"`
+    /Version\s*=\s*"[\d.]+"/,
+    `Version = "${newVersion}"`
   );
 
   // 4. Android 检测端 build.gradle.kts

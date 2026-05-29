@@ -33,8 +33,9 @@ namespace VisionGuard.Utils
                 using (var client = new HttpClient())
                 {
                     client.DefaultRequestHeaders.Add("X-API-Key", apiKey ?? "");
-                    json = await client.GetStringAsync(
-                        $"{ServerBase}/api/update?platform=winforms&version={CurrentVersion}");
+                    var updateUrl = $"{ServerBase}/api/update?platform=winforms&version={CurrentVersion}";
+                    LogManager.StaticInfo($"[AutoUpdater] 检查更新 url={updateUrl}");
+                    json = await client.GetStringAsync(updateUrl);
                 }
 
                 var d = SimpleJson.ParseDict(json);

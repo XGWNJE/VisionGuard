@@ -1,22 +1,22 @@
 {
   "winforms": {
-    "version": "4.1.1",
-    "url": "/releases/VisionGuard-v4.1.1.zip",
-    "size": 250760900
+    "version": "4.1.2",
+    "url": "/releases/VisionGuard-v4.1.2.zip",
+    "size": 253934505
   },
   "wpf": {
-    "version": "4.1.1",
-    "url": "/releases/VisionGuard-WPF-v4.1.1.zip",
-    "size": 336343851
+    "version": "4.1.2",
+    "url": "/releases/VisionGuard-WPF-v4.1.2.zip",
+    "size": 336343855
   },
   "android-detector": {
-    "version": "4.1.1",
-    "url": "/releases/VisionGuard-Detector-v4.1.1.apk",
+    "version": "4.1.2",
+    "url": "/releases/VisionGuard-Detector-v4.1.2.apk",
     "size": 219557332
   },
   "android-receiver": {
-    "version": "4.1.1",
-    "url": "/releases/VisionGuard-Receiver-v4.1.1.apk",
-    "size": 48575010
+    "version": "4.1.2",
+    "url": "/releases/VisionGuard-Receiver-v4.1.2.apk",
+    "size": 48575014
   }
 }

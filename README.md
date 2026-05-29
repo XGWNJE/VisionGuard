@@ -2,7 +2,7 @@
 
 > 面向 Windows、Android 与中继服务的 AI 实时监控系统。
 
-[![Version](https://img.shields.io/badge/version-4.1.1-1f6feb)](./VERSION)
+[![Version](https://img.shields.io/badge/version-4.1.2-1f6feb)](./VERSION)
 [![Stack](https://img.shields.io/badge/技术栈-Windows%20%7C%20Android%20%7C%20Node.js-0f766e)](#项目结构)
 [![Docs](https://img.shields.io/badge/文档-已验真-f59e0b)](./docs/codex/00-index.md)
 

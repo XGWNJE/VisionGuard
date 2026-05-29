@@ -27,6 +27,13 @@ receiver/android/            Kotlin / Jetpack Compose / OkHttp       安卓接�
 | ORT | 1.1.0 统一包（Managed 1.2.0 版本暂不处理） | 1.19.0 |
 | WS | websocket-sharp | System.Net.WebSockets |
 | 架构 | 事件驱动 Form1 partial class | MVVM (ViewModels/) |
+| 版本源 | `AssemblyInfo.cs` + `ServerPushService.cs` | `AppConfig.cs`（`const string Version`） + `.csproj`（文件属性） |
+
+**Win7 TLS 兼容**（WinForms 端）：
+
+- `Program.cs` 入口处 `AppContext.SetSwitch("Switch.System.Net.DontEnableSystemDefaultTlsVersions", true)` + `ServicePointManager.SecurityProtocol \|= Tls12`，强制 .NET 底层 SslStream 用显式 TLS 1.2 而非 Win7 OS 默认（OS 默认不含 TLS 1.2）。
+- 证书链校验回调 `ValidateServerCertificate` 允许 Win7 根证书存储过期场景（DNS 名匹配时放行）。
+- `LegacyTlsTunnelService`（stunnel 本地隧道）已改为**手动开启**（`UseLegacyTlsTunnel = true`），默认关闭。因为 stunnel 代理时 HTTP Host header 变为 `127.0.0.1`，会被 VPS 前 nginx 拒绝。
 
 **模型清单**（.onnx 不入版本控制，需通过导出脚本生成）：
 
@@ -52,7 +59,7 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 **自动更新**：Server 提供 `/api/update` 查询接口 + `/releases/*` 静态文件下载。客户端启动时主动查询，有更新则下载安装（Windows 用 PowerShell updater.ps1 替换，Android 用 DownloadManager + 系统安装器）。WS 认证版本过低返回 `needs-update` 强制升级。发布：`node scripts/release.js <version>`。
 
-**版本**：根目录 `VERSION` 为权威来源，`scripts/sync-version.js` 一键同步全端。
+**版本**：根目录 `VERSION` 为权威来源，`scripts/sync-version.js` 一键同步全端。注意：WPF 端运行时版本取自 `AppConfig.cs` 的 `Version` 常量，而非 `.csproj` 的 MSBuild 属性；`sync-version.js` 须同时更新这两处。
 
 **Android 接收端**：MVVM + 前台 Service（`foregroundServiceType="remoteMessaging"`），无独立 Settings 屏。
 

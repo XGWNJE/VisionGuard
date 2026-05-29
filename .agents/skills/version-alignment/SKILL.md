@@ -26,17 +26,16 @@ description: 全端版本号对齐检查与批量修改。跨 5 个子项目统�
 
 | 文件 | 位置 | 格式 |
 |---|---|---|
-| `detector/windows-wpf/Services/ServerPushService.cs` | WS 认证硬编码 | `["version"] = "4.0.0"` |
-
-无 `.csproj` 版本字段，无 `AssemblyInfo.cs`。仅 WS 认证字符串一处。
+| `detector/windows-wpf/Utils/AppConfig.cs` | `Version` 常量 | `"4.1.2"` |
+| `detector/windows-wpf/VisionGuard.csproj` | `<Version>` / `<FileVersion>` / `<AssemblyVersion>` | `4.1.2` |
+| `detector/windows-wpf/Services/ServerPushService.cs` | WS 认证引用 `AppConfig.Version` | 动态 |
 
 ### Windows WinForms (.NET Framework 4.7.2)
 
 | 文件 | 位置 | 格式 |
 |---|---|---|
-| `detector/windows-winforms/Properties/AssemblyInfo.cs` | `AssemblyVersion` + `AssemblyFileVersion` | `"4.0.0.0"`（4段式） |
-| `detector/windows-winforms/VisionGuard.csproj` | `<ApplicationVersion>` | `4.0.0.%2a` |
-| `detector/windows-winforms/Services/ServerPushService.cs` | WS 认证硬编码 | `["version"] = "4.0.0"` |
+| `detector/windows-winforms/Properties/AssemblyInfo.cs` | `AssemblyVersion` + `AssemblyFileVersion` | `"4.1.2.0"`（4段式） |
+| `detector/windows-winforms/Services/ServerPushService.cs` | WS 认证硬编码 | `["version"] = "4.1.2"` |
 
 ### Android 检测端 (Kotlin)
 

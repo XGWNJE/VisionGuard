@@ -21,6 +21,7 @@ namespace VisionGuard
         [STAThread]
         static void Main()
         {
+            AppContext.SetSwitch("Switch.System.Net.DontEnableSystemDefaultTlsVersions", true);
             ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
 
             // 旧版兜底（Win7 / Aero 关闭场景）；Win10/11 已由 manifest 处理

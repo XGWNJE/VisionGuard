@@ -12,6 +12,7 @@
 - [50-android-receiver.md](50-android-receiver.md) - Android 接收端、前台服务、列表/详情、WS
 - [60-operations.md](60-operations.md) - 构建、验证、发布、版本边界、常见风险
 - [90-verification-report.md](90-verification-report.md) - 已验真事实、旧说明冲突、谨慎表述点
+- [../design/README.md](../design/README.md) - 设计稿与视觉素材入口
 
 ## 维护原则
 
