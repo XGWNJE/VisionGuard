@@ -408,7 +408,7 @@ namespace VisionGuard.Services
                 ["role"] = "windows",
                 ["deviceId"] = _deviceId,
                 ["deviceName"] = _deviceName,
-                ["version"] = "4.2.0",
+                ["version"] = "4.2.1",
             });
         }
 

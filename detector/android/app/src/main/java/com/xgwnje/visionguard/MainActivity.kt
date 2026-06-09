@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity() {
 
     private var service by mutableStateOf<DetectorForegroundService?>(null)
     private var isBound by mutableStateOf(false)
+    private var serviceStartRequested = false
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -85,16 +86,18 @@ class MainActivity : ComponentActivity() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
+        val cameraGranted = results[Manifest.permission.CAMERA] == true || hasCameraPermission()
+        if (cameraGranted) {
+            startAndBindService()
+        } else {
+            Log.w("VG_MainActivity", "Camera permission denied; detector service not started")
+        }
         // 权限请求结果处理，若必要权限被拒绝可在此提示
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
-        requestRequiredPermissions()
-        ensureServiceRunning()
-        bindService()
 
         setContent {
             VisionguardTheme {
@@ -104,6 +107,8 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+
+        requestPermissionsOrStartService()
     }
 
     override fun onDestroy() {
@@ -115,11 +120,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun requestRequiredPermissions() {
+    private fun requestPermissionsOrStartService() {
         val permissions = mutableListOf<String>()
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
+        if (!hasCameraPermission()) {
             permissions.add(Manifest.permission.CAMERA)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -131,10 +134,29 @@ class MainActivity : ComponentActivity() {
         }
         if (permissions.isNotEmpty()) {
             permissionLauncher.launch(permissions.toTypedArray())
+        } else {
+            startAndBindService()
         }
     }
 
+    private fun startAndBindService() {
+        if (!hasCameraPermission()) {
+            Log.w("VG_MainActivity", "Camera permission missing; detector service not started")
+            return
+        }
+        ensureServiceRunning()
+        bindService()
+    }
+
+    private fun hasCameraPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+
     private fun ensureServiceRunning() {
+        if (serviceStartRequested) {
+            return
+        }
+        serviceStartRequested = true
         val intent = Intent(this, DetectorForegroundService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
@@ -144,6 +166,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun bindService() {
+        if (isBound) {
+            return
+        }
         val intent = Intent(this, DetectorForegroundService::class.java)
         bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
     }

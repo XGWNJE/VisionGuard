@@ -80,4 +80,6 @@ detector/android/app/src/main/assets/models/*.onnx
 
 # 发行包（大文件，不入版本控制）
 server/data/releases/
+models/
+server/data/models/
 

@@ -2,7 +2,7 @@
 
 > 面向 Windows、Android 与中继服务的 AI 实时监控系统。
 
-[![Version](https://img.shields.io/badge/version-4.2.0-1f6feb)](./VERSION)
+[![Version](https://img.shields.io/badge/version-4.2.1-1f6feb)](./VERSION)
 [![Stack](https://img.shields.io/badge/技术栈-Windows%20%7C%20Android%20%7C%20Node.js-0f766e)](#项目结构)
 [![Docs](https://img.shields.io/badge/文档-已验真-f59e0b)](./docs/codex/00-index.md)
 
@@ -14,7 +14,7 @@ VisionGuard 是一个多端联动的 AI 监控项目，围绕一条统一链路�
 
 当前正式服务域名为 `https://visionguard.xgwnje.cn`。根域 `https://xgwnje.cn` 留给个人主页。
 
-## 发行包体积（v4.2.0，不含模型）
+## 发行包体积（v4.2.1，不含模型）
 
 | 端 | 体积 |
 |---|---|
