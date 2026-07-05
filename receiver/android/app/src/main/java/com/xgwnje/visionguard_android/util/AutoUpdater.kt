@@ -51,23 +51,24 @@ object AutoUpdater {
         try {
             val url = "${AppConstants.SERVER_URL}/api/update?platform=$PLATFORM&version=${AppConstants.VERSION}"
             val request = Request.Builder().url(url).header("X-API-Key", AppConstants.API_KEY).build()
-            val response = http.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext null
+            http.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext null
 
-            val body = response.body?.string() ?: return@withContext null
-            val json = JSONObject(body)
-            if (!json.optBoolean("ok", false)) return@withContext null
-            if (!json.optBoolean("hasUpdate", false)) return@withContext null
+                val body = response.body?.string() ?: return@withContext null
+                val json = JSONObject(body)
+                if (!json.optBoolean("ok", false)) return@withContext null
+                if (!json.optBoolean("hasUpdate", false)) return@withContext null
 
-            val latestVersion = json.optString("latestVersion", "")
-            val downloadUrl = json.optString("downloadUrl", "")
-            if (downloadUrl.isEmpty()) return@withContext null
+                val latestVersion = json.optString("latestVersion", "")
+                val downloadUrl = json.optString("downloadUrl", "")
+                if (downloadUrl.isEmpty()) return@withContext null
 
-            val fullUrl = if (downloadUrl.startsWith("http", true)) downloadUrl
-                else AppConstants.SERVER_URL + downloadUrl
+                val fullUrl = if (downloadUrl.startsWith("http", true)) downloadUrl
+                    else AppConstants.SERVER_URL + downloadUrl
 
-            Log.i(TAG, "发现新版本 $latestVersion (当前 ${AppConstants.VERSION})")
-            UpdateInfo(latestVersion, fullUrl)
+                Log.i(TAG, "发现新版本 $latestVersion (当前 ${AppConstants.VERSION})")
+                UpdateInfo(latestVersion, fullUrl)
+            }
         } catch (e: Exception) {
             Log.w(TAG, "检查更新失败: ${e.message}")
             null

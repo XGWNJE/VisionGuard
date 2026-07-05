@@ -171,20 +171,25 @@ class AlertForegroundService : LifecycleService() {
             wsClient.onAlert.collect { alert ->
                 Log.i(TAG, "收到报警: ${alert.deviceName} - ${alert.detections.size} 个目标")
 
+                var alertForStorage = alert
                 // 兼容老服务器: 若仍内嵌截图,直接消化
-                if (!alert.screenshotBase64.isNullOrEmpty()) {
+                val inlineScreenshot = alert.screenshotBase64
+                if (!inlineScreenshot.isNullOrEmpty()) {
                     try {
-                        val bytes = Base64.decode(alert.screenshotBase64, Base64.DEFAULT)
+                        val bytes = Base64.decode(inlineScreenshot, Base64.DEFAULT)
                         screenshotCache.save(alert.alertId, bytes)
                         _onScreenshotData.emit(
-                            ScreenshotData(alert.alertId, alert.screenshotBase64, 0, 0)
+                            ScreenshotData(alert.alertId, inlineScreenshot, 0, 0)
                         )
-                    } catch (_: Exception) { }
+                        alertForStorage = alert.copy(screenshotBase64 = null, hasScreenshot = true)
+                    } catch (_: Exception) {
+                        alertForStorage = alert.copy(screenshotBase64 = null)
+                    }
                 }
 
-                _alerts.value = (listOf(alert) + _alerts.value).take(200)
+                _alerts.value = (listOf(alertForStorage) + _alerts.value).take(200)
                 persistAlerts()
-                sendAlertNotification(alert)
+                sendAlertNotification(alertForStorage)
             }
         }
 
@@ -257,7 +262,7 @@ class AlertForegroundService : LifecycleService() {
     override fun onDestroy() {
         super.onDestroy()
         networkMonitor.unregister()  // 注销网络监听
-        wsClient.disconnect()
+        wsClient.close()
         wakeLock?.let {
             if (it.isHeld) it.release()
         }
@@ -323,10 +328,25 @@ class AlertForegroundService : LifecycleService() {
                                     gson.fromJson(it, AlertMessage::class.java)
                                 } ?: emptyList()
                                 // 合并到现有列表，去重（按 alertId）
-                                val existingIds = _alerts.value.map { it.alertId }.toSet()
+                                val serverById = history.associateBy { it.alertId }
+                                val updatedExisting = _alerts.value.map { local ->
+                                    val remote = serverById[local.alertId]
+                                    if (remote != null &&
+                                        ((!local.hasScreenshot && remote.hasScreenshot) ||
+                                            (local.screenshotUrl.isEmpty() && remote.screenshotUrl.isNotEmpty()))
+                                    ) {
+                                        local.copy(
+                                            hasScreenshot = local.hasScreenshot || remote.hasScreenshot,
+                                            screenshotUrl = local.screenshotUrl.ifEmpty { remote.screenshotUrl }
+                                        )
+                                    } else {
+                                        local
+                                    }
+                                }
+                                val existingIds = updatedExisting.map { it.alertId }.toSet()
                                 val newAlerts = history.filter { it.alertId !in existingIds }
-                                if (newAlerts.isNotEmpty()) {
-                                    val merged = (newAlerts + _alerts.value).distinctBy { it.alertId }
+                                if (newAlerts.isNotEmpty() || updatedExisting != _alerts.value) {
+                                    val merged = (newAlerts + updatedExisting).distinctBy { it.alertId }
                                     _alerts.value = merged.take(200)
                                     persistAlerts()
                                     Log.i(TAG, "历史报警已同步: ${newAlerts.size} 条")
@@ -347,7 +367,14 @@ class AlertForegroundService : LifecycleService() {
     }
 
     /** 从服务器 HTTP 下载截图并缓存（保留作为 fallback） */
-    private suspend fun downloadScreenshot(alertId: String, screenshotUrl: String) {
+    suspend fun ensureScreenshotCached(alert: AlertMessage): File? {
+        screenshotCache.getFile(alert.alertId)?.let { return it }
+        if (!alert.hasScreenshot && alert.screenshotUrl.isEmpty()) return null
+        return downloadScreenshot(alert.alertId, alert.screenshotUrl)
+    }
+
+    private suspend fun downloadScreenshot(alertId: String, screenshotUrl: String): File? {
+        if (screenshotUrl.isEmpty()) return null
         val url = if (screenshotUrl.startsWith("http")) screenshotUrl
         else "${AppConstants.SERVER_URL}$screenshotUrl"
         val request = Request.Builder()
@@ -357,12 +384,13 @@ class AlertForegroundService : LifecycleService() {
 
         Log.d(TAG, "开始下载截图: alertId=$alertId url=$url")
         try {
+            var savedFile: File? = null
             withContext(Dispatchers.IO) {
                 httpClient.newCall(request).execute().use { response ->
                     if (response.isSuccessful) {
                         val bytes = response.body?.bytes()
                         if (bytes != null && bytes.isNotEmpty()) {
-                            screenshotCache.save(alertId, bytes)
+                            savedFile = screenshotCache.save(alertId, bytes)
                             // 同时推送到 onScreenshotData，供 AlertDetailScreen 即时显示
                             val base64 = Base64.encodeToString(bytes, Base64.DEFAULT)
                             _onScreenshotData.emit(
@@ -377,8 +405,10 @@ class AlertForegroundService : LifecycleService() {
             }
             // 触发 UI 重组，列表/详情页读取新缓存文件
             _alerts.value = _alerts.value.toList()
+            return savedFile
         } catch (e: Exception) {
             Log.w(TAG, "截图下载异常: alertId=$alertId ${e.message}", e)
+            return null
         }
     }
 

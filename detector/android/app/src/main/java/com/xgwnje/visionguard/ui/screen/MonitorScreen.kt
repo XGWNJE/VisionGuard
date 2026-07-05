@@ -94,7 +94,7 @@ fun MonitorScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp),
-                enabled = !isMonitoring
+                enabled = isReady && !isMonitoring
             ) {
                 Text(
                     text = "设置监控区域",

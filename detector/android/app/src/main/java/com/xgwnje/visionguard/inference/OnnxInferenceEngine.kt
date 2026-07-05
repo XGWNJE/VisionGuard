@@ -195,20 +195,21 @@ class OnnxInferenceEngine(private val context: Context) {
             if (destFile.exists()) destFile.delete()
             val url = "${com.xgwnje.visionguard.AppConstants.SERVER_URL}/models/$fileName"
             val request = Request.Builder().url(url).build()
-            val response = downloadHttp.newCall(request).execute()
-            if (!response.isSuccessful) {
-                Log.w(TAG, "Model download failed: HTTP ${response.code}")
-                return false
-            }
-            val body = response.body ?: return false
-            val tmpFile = File(destFile.parent, "$fileName.tmp")
-            body.byteStream().use { input ->
-                FileOutputStream(tmpFile).use { output ->
-                    input.copyTo(output)
-                    output.flush()
+            downloadHttp.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "Model download failed: HTTP ${response.code}")
+                    return false
                 }
+                val body = response.body ?: return false
+                val tmpFile = File(destFile.parent, "$fileName.tmp")
+                body.byteStream().use { input ->
+                    FileOutputStream(tmpFile).use { output ->
+                        input.copyTo(output)
+                        output.flush()
+                    }
+                }
+                tmpFile.renameTo(destFile)
             }
-            tmpFile.renameTo(destFile)
             Log.i(TAG, "Model downloaded: ${destFile.absolutePath} (${destFile.length()} bytes)")
             true
         } catch (e: Exception) {

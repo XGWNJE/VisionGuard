@@ -1,0 +1,3 @@
+display_name: VisionGuard E2E
+short_description: Device and runtime smoke checks
+default_prompt: Run VisionGuard E2E verification with the appropriate mode and report evidence.

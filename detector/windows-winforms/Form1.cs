@@ -63,7 +63,7 @@ namespace VisionGuard
         // Server constants
         private const string ServerUrl = "https://visionguard.xgwnje.cn";
         private static readonly string ServerApiKey =
-            System.Environment.GetEnvironmentVariable("VISIONGUARD_API_KEY") ?? "XG-VisionGuard-2024";
+            System.Environment.GetEnvironmentVariable("VISIONGUARD_API_KEY") ?? "";
 
         // ServerPushService + heartbeat
         private ServerPushService _serverPushService;

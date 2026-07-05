@@ -5,6 +5,8 @@
 // └─────────────────────────────────────────────────────────┘
 
 import { Router, Request, Response } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { httpAuth } from '../middleware/auth';
 import { getAlerts } from '../services/AlertStore';
 
@@ -23,14 +25,20 @@ router.get('/api/alerts', httpAuth, (req: Request, res: Response) => {
     const alerts = getAlerts(deviceId, since, limit);
 
     // 过滤掉内部字段（screenshotPath 不应暴露给客户端）
-    const sanitized = alerts.map(a => ({
-      alertId: a.alertId,
-      deviceId: a.deviceId,
-      deviceName: a.deviceName,
-      timestamp: a.timestamp,
-      detections: a.detections,
-      createdAt: a.createdAt,
-    }));
+    const sanitized = alerts.map(a => {
+      const screenshotExists = !!a.screenshotPath && fs.existsSync(a.screenshotPath);
+      const screenshotName = screenshotExists ? path.basename(a.screenshotPath!) : '';
+      return {
+        alertId: a.alertId,
+        deviceId: a.deviceId,
+        deviceName: a.deviceName,
+        timestamp: a.timestamp,
+        detections: a.detections,
+        createdAt: a.createdAt,
+        hasScreenshot: screenshotExists,
+        screenshotUrl: screenshotName ? `/screenshots/${screenshotName}` : '',
+      };
+    });
 
     res.json({ ok: true, alerts: sanitized });
   } catch (err: any) {

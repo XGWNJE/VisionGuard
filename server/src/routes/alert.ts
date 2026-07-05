@@ -16,17 +16,13 @@ import { httpAuth } from '../middleware/auth';
 import { addAlert } from '../services/AlertStore';
 import { broadcastAlert } from '../services/ConnectionManager';
 import type { AlertMeta, WsAlertPush } from '../models/types';
+import { getSafeScreenshotPath, validateAlertMeta, validateImageMagic } from '../utils/security';
 
 const router = Router();
 
-/** 校验文件头魔数：仅允许 PNG 和 JPEG */
-function validateImageMagic(buffer: Buffer): boolean {
-  if (buffer.length < 4) return false;
-  // PNG: 89 50 4E 47
-  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) return true;
-  // JPEG: FF D8 FF
-  if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return true;
-  return false;
+function removeTempUpload(req: Request): void {
+  if (!req.file?.path) return;
+  try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
 }
 
 // multer 配置：截图存到 data/screenshots/<alertId>.png
@@ -45,17 +41,10 @@ const upload = multer({
   storage,
   limits: { fileSize: config.maxUploadBytes },
   fileFilter: (_req, file, cb) => {
-    // 校验文件头魔数，而非仅信任 Content-Type
-    const buf = (file as any).buffer as Buffer | undefined;
-    if (buf && validateImageMagic(buf)) {
+    // diskStorage 的 fileFilter 无法读取完整 buffer，这里只做早期粗筛；
+    // 真正的魔数校验在 handler 读取临时文件后完成。
+    if (file.mimetype === 'image/png' || file.mimetype === 'image/jpeg') {
       cb(null, true);
-    } else if (!buf) {
-      // multer v2 可能不在 fileFilter 中提供 buffer，退而求其次检查 mimetype
-      if (file.mimetype === 'image/png' || file.mimetype === 'image/jpeg') {
-        cb(null, true);
-      } else {
-        cb(new Error('只接受 PNG/JPEG 图片文件'));
-      }
     } else {
       cb(new Error('只接受 PNG/JPEG 图片文件'));
     }
@@ -83,26 +72,40 @@ router.post(
         return;
       }
 
-      let meta: AlertMeta;
+      let parsedMeta: unknown;
       try {
-        meta = typeof metaRaw === 'string' ? JSON.parse(metaRaw) : metaRaw;
+        parsedMeta = typeof metaRaw === 'string' ? JSON.parse(metaRaw) : metaRaw;
       } catch {
+        removeTempUpload(req);
         res.status(400).json({ ok: false, error: 'invalid meta JSON' });
         return;
       }
 
+      const metaResult = validateAlertMeta(parsedMeta);
+      if (!metaResult.ok || !metaResult.value) {
+        removeTempUpload(req);
+        res.status(400).json({ ok: false, error: metaResult.error || 'invalid meta' });
+        return;
+      }
+      const meta: AlertMeta = metaResult.value;
       const alertId = crypto.randomUUID();
 
       // 截图处理：仅在开启上传开关且收到文件时保存
       let screenshotPath: string | undefined;
       if (config.enableHttpScreenshotUpload && req.file) {
-        const finalName = `${alertId}.png`;
-        const finalPath = path.join(config.screenshotDir, finalName);
-        fs.renameSync(req.file.path, finalPath);
-        screenshotPath = finalPath;
+        const head = fs.readFileSync(req.file.path, { flag: 'r' }).subarray(0, 16);
+        const contentType = validateImageMagic(head);
+        const target = contentType ? getSafeScreenshotPath(config.screenshotDir, alertId, contentType) : null;
+        if (!target) {
+          removeTempUpload(req);
+          res.status(400).json({ ok: false, error: 'invalid screenshot' });
+          return;
+        }
+        fs.renameSync(req.file.path, target.filePath);
+        screenshotPath = target.filePath;
       } else if (req.file) {
         // 开关关闭但收到了文件，清理临时文件
-        try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+        removeTempUpload(req);
       }
 
       addAlert({
@@ -123,8 +126,8 @@ router.post(
         deviceName: meta.deviceName,
         timestamp: meta.timestamp,
         detections: meta.detections,
-        screenshotUrl: screenshotPath ? `/screenshots/${alertId}.png` : '',
-        ...(meta as any).timings ? { timings: (meta as any).timings } : {},
+        screenshotUrl: screenshotPath ? `/screenshots/${path.basename(screenshotPath)}` : '',
+        ...(parsedMeta as any).timings ? { timings: (parsedMeta as any).timings } : {},
       };
       broadcastAlert(push);
 

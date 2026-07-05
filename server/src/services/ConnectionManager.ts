@@ -7,9 +7,12 @@
 // └─────────────────────────────────────────────────────────┘
 
 import WebSocket from 'ws';
+import fs from 'fs';
+import path from 'path';
 import { config } from '../config';
 import { validateApiKey } from '../middleware/auth';
-import { addAlert } from '../services/AlertStore';
+import { addAlert, markAlertScreenshot } from '../services/AlertStore';
+import { getSafeScreenshotPath, isSafeAlertId, validateAlertMeta, validateImageMagic } from '../utils/security';
 import type {
   WsAuthMessage, WsHeartbeat, WsHeartbeatAndroid, WsCommand, WsSetConfig,
   DetectorClient, ReceiverClient, WsAlertPush, WsScreenshotDataPush,
@@ -128,6 +131,33 @@ function scheduleBroadcast(): void {
 const screenshotQueues = new Map<string, Array<{ alertId: string; payload: WsScreenshotDataPush }>>();
 const screenshotProcessing = new Map<string, boolean>();
 
+function backupScreenshot(payload: WsScreenshotDataPush): void {
+  try {
+    const imageBase64 = payload.imageBase64.includes(',')
+      ? payload.imageBase64.substring(payload.imageBase64.indexOf(',') + 1)
+      : payload.imageBase64;
+    const bytes = Buffer.from(imageBase64, 'base64');
+    if (bytes.length === 0) return;
+    const contentType = validateImageMagic(bytes);
+    if (!contentType) {
+      console.warn(`[ws] screenshot backup rejected: alertId=${payload.alertId} reason=invalid-image`);
+      return;
+    }
+
+    fs.mkdirSync(config.screenshotDir, { recursive: true });
+    const target = getSafeScreenshotPath(config.screenshotDir, payload.alertId, contentType);
+    if (!target) {
+      console.warn(`[ws] screenshot backup rejected: alertId=${payload.alertId} reason=invalid-alert-id`);
+      return;
+    }
+    fs.writeFileSync(target.filePath, bytes);
+    const linked = markAlertScreenshot(payload.alertId, target.filePath);
+    console.log(`[ws][${new Date().toISOString()}] screenshot backed up: alertId=${payload.alertId} bytes=${bytes.length} linked=${linked}`);
+  } catch (err: any) {
+    console.warn(`[ws] screenshot backup failed: alertId=${payload.alertId} ${err.message}`);
+  }
+}
+
 function enqueueScreenshotPush(receiverId: string, alertId: string, payload: WsScreenshotDataPush): void {
   let q = screenshotQueues.get(receiverId);
   if (!q) { q = []; screenshotQueues.set(receiverId, q); }
@@ -217,21 +247,33 @@ export function handleConnection(ws: WebSocket): void {
       }
       return;
     }
+    const authenticatedDeviceId = deviceId;
+    if (!authenticatedDeviceId) return;
 
     switch (msg.type) {
       case 'heartbeat':
-        if (role === 'windows' || role === 'android-detector') handleHeartbeat(msg as WsHeartbeat);
+        if (role === 'windows' || role === 'android-detector') {
+          handleHeartbeat({ ...(msg as WsHeartbeat), deviceId: authenticatedDeviceId });
+        }
         break;
       case 'heartbeat-android':
-        if (role === 'android') handleHeartbeatReceiver(msg as WsHeartbeatAndroid);
+        if (role === 'android') handleHeartbeatReceiver({ ...(msg as WsHeartbeatAndroid), deviceId: authenticatedDeviceId });
         break;
       case 'alert':
         if (role === 'windows' || role === 'android-detector') {
           const alert = msg as WsAlertPush;
-          if (!Array.isArray(alert.detections) || alert.detections.length === 0) break;
-          const validDetections = alert.detections.filter(validateDetection);
-          if (validDetections.length === 0) break;
-          alert.detections = validDetections;
+          if (!isSafeAlertId(alert.alertId)) break;
+          const client = findDetector(authenticatedDeviceId);
+          const metaResult = validateAlertMeta({
+            deviceId: authenticatedDeviceId,
+            deviceName: client?.deviceName || alert.deviceName || authenticatedDeviceId,
+            timestamp: alert.timestamp,
+            detections: alert.detections,
+          });
+          if (!metaResult.ok || !metaResult.value) break;
+          alert.deviceId = metaResult.value.deviceId;
+          alert.deviceName = metaResult.value.deviceName;
+          alert.detections = metaResult.value.detections;
           alert.serverReceivedAt = new Date().toISOString();
           addAlert({
             alertId: alert.alertId,
@@ -247,7 +289,9 @@ export function handleConnection(ws: WebSocket): void {
       case 'screenshot-data':
         if (role === 'windows' || role === 'android-detector') {
           const payload = msg as WsScreenshotDataPush;
-          if (!payload.alertId || !payload.imageBase64) break;
+          if (!isSafeAlertId(payload.alertId) || !payload.imageBase64) break;
+          payload.deviceId = authenticatedDeviceId;
+          backupScreenshot(payload);
           broadcastScreenshotData(payload);
         }
         break;
@@ -256,6 +300,9 @@ export function handleConnection(ws: WebSocket): void {
         break;
       case 'set-config':
         if (role === 'android') handleSetConfig(ws, msg as WsSetConfig);
+        break;
+      case 'request-screenshot':
+        if (role === 'android') handleRequestScreenshot(ws, msg);
         break;
       case 'command-ack':
         if (role === 'windows' || role === 'android-detector') handleCommandAck(msg as WsCommandAck, deviceId!);
@@ -601,6 +648,39 @@ function handleSetConfig(senderWs: WebSocket, msg: WsSetConfig): void {
   const relay: WsSetConfigRelay = { type: 'set-config', key: msg.key, value: sanitizedValue, targetDeviceId: msg.targetDeviceId };
   sendJson(target.ws, relay, `set-config->${msg.targetDeviceId}`);
   sendJson(senderWs, { type: 'command-ack', targetDeviceId: msg.targetDeviceId, command: `set-config:${msg.key}`, success: true, reason: '已转发' }, 'set-config-ack->sender');
+}
+
+function handleRequestScreenshot(senderWs: WebSocket, msg: any): void {
+  const alertId = msg?.alertId;
+  const targetDeviceId = typeof msg?.targetDeviceId === 'string' ? msg.targetDeviceId : '';
+  if (!isSafeAlertId(alertId) || !targetDeviceId) {
+    sendJson(senderWs, {
+      type: 'command-ack',
+      targetDeviceId,
+      command: 'request-screenshot',
+      success: false,
+      reason: '无效的截图请求',
+    }, 'request-screenshot-ack->sender');
+    return;
+  }
+
+  const target = findDetector(targetDeviceId);
+  if (!target || target.ws.readyState !== WebSocket.OPEN) {
+    sendJson(senderWs, {
+      type: 'command-ack',
+      targetDeviceId,
+      command: 'request-screenshot',
+      success: false,
+      reason: '设备离线',
+    }, 'request-screenshot-ack->sender');
+    return;
+  }
+
+  sendJson(target.ws, {
+    type: 'request-screenshot',
+    alertId,
+    targetDeviceId,
+  }, `request-screenshot->${targetDeviceId}`);
 }
 
 function handleCommandAck(ack: WsCommandAck, detectorDeviceId: string): void {

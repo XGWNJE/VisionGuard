@@ -17,6 +17,10 @@ VisionGuard_Server/dist/
 VisionGuard_Server/.env
 VisionGuard_Server/.env.local
 VisionGuard_Server/data/screenshots/
+server/.env
+server/.env.*
+!server/.env.example
+server/data/screenshots/
 
 # ===== Android 端 =====
 VisionGuard_Android/*.iml
@@ -27,6 +31,7 @@ detector/android/.gradle/
 detector/android/.idea/
 detector/android/.kotlin/
 detector/android/local.properties
+receiver/android/local.properties
 detector/android/build/
 detector/android/app/build/
 detector/android/app/release/
@@ -37,6 +42,7 @@ detector/android/app/*.jks
 receiver/android/app/*.jks
 receiver/android/key/
 receiver/android/keystore.properties
+detector/android/keystore.properties
 VisionGuard_Android/keystore.properties
 VisionGuard_Android/app/*.jks
 VisionGuard_Android/.gradle/
@@ -58,6 +64,8 @@ Desktop.ini
 *.log
 *.tmp
 *.cache
+artifacts/
+.claude/settings.local.json
 
 # ===== 设计文件（大文件，按需跟踪）=====
 *.apk

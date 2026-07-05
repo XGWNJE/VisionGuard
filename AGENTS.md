@@ -122,12 +122,14 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 **原则**：从 **.csproj 根源**控制输出内容，不在 `release.js` 中事后删除。每次改动后必须编译验证并用 `Get-ChildItem` 检查输出目录。
 
-### 发行包体积参考（v4.1.2，不含模型）
+### 发行包体积参考（v4.2.1，不含模型）
 
 | 端 | 体积 | 主要组成 |
 |---|---|---|
-| WinForms | ~6 MB | exe + onnxruntime.dll + NuGet DLLs |
-| WPF | ~12 MB | exe/dll + onnxruntime.dll（根目录）+ Assets 图标 |
+| WinForms | ~2.4 MB | exe + onnxruntime.dll + NuGet DLLs，不含模型 |
+| WPF | ~4.7 MB | exe/dll + onnxruntime.dll（根目录）+ Assets 图标，不含模型 |
+| Android 检测 | ~39.6 MB | APK，不含模型 |
+| Android 接收 | ~20.9 MB | APK |
 
 ### 发布脚本
 
@@ -137,7 +139,7 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 0. **版本号不能自动变更**：`sync-version.js`、`release.js`、修改 `VERSION` 文件等操作必须由开发者明确指令触发。禁止在编译、修复 bug、提交代码时自动升级版本号。
 1. 修改 `server/` 和 Android 端代码前确认影响范围（多端协议耦合）
-2. Server 截图路径 `data/screenshots/<alertId>.png`，通过 HTTP 下载（需 `X-API-Key`）
+2. Server 截图路径 `data/screenshots/<alertId>.(png|jpg)`，通过 HTTP 下载（需 `X-API-Key`）
 3. NTP 时钟同步：Windows 端启动时同步；Android 接收端也同步（显示端到端耗时）
 4. Windows 网络恢复自动重连（30s 防抖）；Android 网络切换立即重建 WS（清除 OkHttp 连接池）
 5. Android 检测端模型文件**不打包**到 APK（`assets/models/` 为空），首次启动时从 Server 下载到 `filesDir/models/`
@@ -155,12 +157,14 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 关键 `.env` 字段：`PORT` / `API_KEY`（为空时 Server 拒绝启动）/ `SCREENSHOT_TTL_HOURS=72` / `ALERT_TTL_HOURS=168` / `MAX_UPLOAD_BYTES=2097152` / `ENABLE_HTTP_SCREENSHOT_UPLOAD=true` / `MAX_WS_CONNECTIONS=100`
 
+当前新 VPS 公共 DNS、端口、Nginx SNI 路由维护在 `D:\ObjectCode\Server-infra`。`visionguard.xgwnje.cn` 线上路径为公网 `443` -> Nginx stream SNI -> `127.0.0.1:9443` -> VisionGuard Node `127.0.0.1:3000`；不要用旧式独立 `listen 443 ssl` 站点覆盖当前架构。
+
 ## 关键常量
 
 | 常量 | 位置 |
 |------|------|
 | `SERVER_URL = "https://visionguard.xgwnje.cn"` | 两端 `AppConstants.kt` + WinForms `Form1.cs` + WPF `AppConfig.cs` |
-| `API_KEY` | 环境变量 `VISIONGUARD_API_KEY`（C#两端）+ `AppConstants.kt`（Android两端） |
+| `API_KEY` | 环境变量 `VISIONGUARD_API_KEY`（C# 两端 + Android Gradle 注入）；Android 可在各自 `local.properties` 配置同名键 |
 | 检测端包名 `com.xgwnje.visionguard` | `app_name = "VG 检测"` |
 | 接收端包名 `com.xgwnje.visionguard_android` | `app_name = "VG 接收"` |
 | 模型下载 URL | `{SERVER_URL}/models/{modelKey}.onnx` |
@@ -174,6 +178,7 @@ WS 三角色：`windows` / `android` / `android-detector`
 | Skill | 用途 | 触发 |
 |-------|------|------|
 | `visionguard-build` | 五端编译（Server/WinForms/WPF/Android-Detector/Android-Receiver） | `/visionguard-build` 或"编译" |
+| `visionguard-e2e` | 端到端 / 设备 / 模拟器 / 运行证据验证（含真机发现、AVD 兜底、logcat/截图采集） | "端到端测试"、"模拟器验证"、"实机验证"、"自动化验证" |
 | `version-alignment` | 全端版本号检查与批量修改 | `/version-alignment` 或"版本对齐" |
 | `push-update` | 推送客户端更新 | 发布新版本 |
 | `vps-server-info` | VPS 连接信息 | 部署/排查 |

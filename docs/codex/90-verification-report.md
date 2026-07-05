@@ -4,7 +4,7 @@
 
 ## 已核对范围
 
-- 根目录：`AGENTS.md`、`CODEX.md`、`README.md`、`CLAUDE.md`
+- 根目录：`AGENTS.md`、`CODEX.md`、`README.md`
 - Server：入口、配置、WS 连接管理、告警、截图、更新路由
 - Windows：WinForms / WPF 关键项目文件、配置、迁移说明
 - Android Detector：包常量、设置仓库、前台服务、消息模型
@@ -13,17 +13,17 @@
 
 ## 已验证事实
 
-- Server 当前版本实现标识为 `4.1.1`
-- WPF 当前项目版本为 `4.1.1`
-- Android Detector 当前 `versionName` 为 `4.1.1`
-- Android Receiver 当前 `versionName` 为 `4.1.1`
-- WinForms 当前 `ApplicationVersion` 仍是 `4.0.0.*`
+- 根 `VERSION` 当前为 `4.2.1`
+- Server `package.json` 当前版本为 `4.2.1`
+- Server 线上 smoke 已在 `https://visionguard.xgwnje.cn` 通过：`/health`、`/api/update`、`/releases/*`、`/models/*`、`/ws`
+- Android 接收端实机 UI 已显示可连接，后续继续观察真实告警链路
 - Server 认证失败后会关闭连接，WS 认证超时为 5000ms
 - `server/src/routes/update.ts` 当前按平台读取 `data/releases.json`
 - `server/src/routes/screenshot.ts` 当前要求 `X-API-Key`
 - `server/src/routes/alerts.ts` 当前只返回脱敏后的告警摘要
 - Android Detector 当前包名为 `com.xgwnje.visionguard`
 - Android Receiver 当前包名为 `com.xgwnje.visionguard_android`
+- Android 两端 API key 当前由 Gradle 注入 `BuildConfig.API_KEY`，本地可通过 `VISIONGUARD_API_KEY` 提供
 - Android Detector 当前前台服务类型为 `camera`
 - Android Receiver 当前前台服务类型为 `remoteMessaging`
 - Android Detector 当前使用 DataStore 持久化设置
@@ -31,9 +31,9 @@
 
 ## 旧说明与源码不一致之处
 
-1. `README.md` 和 `CLAUDE.md` 存在明显编码损坏，不能作为单一事实来源。
-2. 早期说明中如果写成 WPF `4.0.0`，现在已被源码证实为 `4.1.1`。
-3. 早期说明中如果把 Android 端 API Key 说成环境变量来源，当前源码并不支持这一说法。
+1. 早期根目录说明如果存在乱码或旧架构表述，不能作为单一事实来源。
+2. 早期说明中如果写成 `4.1.1` 或更早版本，当前根版本源已经是 `4.2.1`。
+3. 早期说明中如果把 Android API key 写成源码常量，当前实现已改为 Gradle 构建注入。
 4. 早期说明中如果把 Android Detector 说成支持 `Preview`，当前源码和实现都指向仅 `ImageAnalysis`。
 5. 早期说明中如果把 Server 截图下载描述成公开访问，当前源码要求 `X-API-Key`。
 
@@ -53,5 +53,5 @@
 
 如果要继续提升可信度，下一步应做两件事：
 
-1. 把 `README.md` 重新整理为用户版说明，不复用旧乱码内容。
-2. 为 `docs/codex/` 增加按模块的“证据链接”索引，把关键结论绑定到具体源码文件。
+1. 为 `docs/codex/` 增加按模块的“证据链接”索引，把关键结论绑定到具体源码文件。
+2. 把 Android 签名模板和发布前密钥轮换步骤整理成独立操作文档。

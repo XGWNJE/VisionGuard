@@ -15,7 +15,7 @@ import { WebSocketServer } from 'ws';
 import { config, validateConfig } from './config';
 import alertRouter from './routes/alert';
 import alertsQueryRouter from './routes/alerts';
-import { handleConnection, getConnectionCount } from './services/ConnectionManager';
+import { handleConnection } from './services/ConnectionManager';
 import { cleanupExpiredAlerts } from './services/AlertStore';
 import screenshotRouter from './routes/screenshot';
 import updateRouter from './routes/update';
@@ -65,10 +65,10 @@ app.use('/models', express.static(path.resolve(__dirname, '..', 'data', 'models'
 
 const server = http.createServer(app);
 
-const wss = new WebSocketServer({ server, maxPayload: 2 * 1024 * 1024 });
+const wss = new WebSocketServer({ server, maxPayload: config.maxUploadBytes });
 
 wss.on('connection', (ws, req) => {
-  if (getConnectionCount() >= config.maxWsConnections) {
+  if (wss.clients.size > config.maxWsConnections) {
     const ip = req.socket.remoteAddress ?? 'unknown';
     console.warn(`[ws] 连接数已达上限 ${config.maxWsConnections}，拒绝新连接 ← ${ip}`);
     ws.close(1013, 'server busy');

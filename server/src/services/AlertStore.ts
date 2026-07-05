@@ -67,6 +67,13 @@ function scheduleSaveToDisk(): void {
  * 添加报警记录，超出上限时淘汰最旧的
  */
 export function addAlert(record: AlertRecord): void {
+  if (!record.screenshotPath) {
+    const backedUpScreenshot = path.join(config.screenshotDir, `${record.alertId}.jpg`);
+    if (fs.existsSync(backedUpScreenshot)) {
+      record.screenshotPath = backedUpScreenshot;
+    }
+  }
+
   let list = store.get(record.deviceId);
   if (!list) {
     list = [];
@@ -77,6 +84,18 @@ export function addAlert(record: AlertRecord): void {
     list.shift();
   }
   scheduleSaveToDisk();
+}
+
+export function markAlertScreenshot(alertId: string, screenshotPath: string): boolean {
+  for (const list of store.values()) {
+    const record = list.find(r => r.alertId === alertId);
+    if (record) {
+      record.screenshotPath = screenshotPath;
+      scheduleSaveToDisk();
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

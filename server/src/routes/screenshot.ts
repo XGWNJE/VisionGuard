@@ -22,7 +22,8 @@ router.get('/screenshots/:filename', (req, res) => {
   // 防止目录遍历攻击
   const resolvedPath = path.resolve(filePath);
   const resolvedDir = path.resolve(config.screenshotDir);
-  if (!resolvedPath.startsWith(resolvedDir)) {
+  const relative = path.relative(resolvedDir, resolvedPath);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
     res.status(403).json({ ok: false, error: 'access denied' });
     return;
   }
@@ -32,7 +33,9 @@ router.get('/screenshots/:filename', (req, res) => {
     return;
   }
 
-  res.setHeader('Content-Type', 'image/png');
+  const ext = path.extname(filename).toLowerCase();
+  const contentType = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png';
+  res.setHeader('Content-Type', contentType);
   res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
   const stream = fs.createReadStream(filePath);
   stream.pipe(res);

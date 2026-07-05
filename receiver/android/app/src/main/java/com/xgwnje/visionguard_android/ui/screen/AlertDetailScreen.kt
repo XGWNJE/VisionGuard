@@ -73,7 +73,9 @@ fun AlertDetailScreen(
     var screenshotFailed by remember { mutableStateOf(false) }
 
     // v4.0.0: 截图优先从缓存加载，其次从 alert 内嵌字段解码
-    LaunchedEffect(alertId) {
+    LaunchedEffect(alertId, alert?.screenshotUrl, alert?.hasScreenshot) {
+        screenshotBitmap = null
+        screenshotFailed = false
         if (alert == null) return@LaunchedEffect
 
         // 先查本地缓存
@@ -95,6 +97,17 @@ fun AlertDetailScreen(
                 screenshotBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 return@LaunchedEffect
             } catch (_: Exception) { }
+        }
+
+        val downloadedFile = service.ensureScreenshotCached(alert)
+        if (downloadedFile != null && downloadedFile.exists()) {
+            val bitmap = withContext(Dispatchers.IO) {
+                BitmapFactory.decodeFile(downloadedFile.absolutePath)
+            }
+            if (bitmap != null) {
+                screenshotBitmap = bitmap
+                return@LaunchedEffect
+            }
         }
 
         screenshotFailed = true

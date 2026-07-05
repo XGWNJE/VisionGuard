@@ -13,6 +13,6 @@ object AppConstants {
     /** 服务器地址（不含末尾斜杠） */
     const val SERVER_URL = "https://visionguard.xgwnje.cn"
 
-    /** API 密钥（与服务器 .env 中 API_KEY 一致） */
-    const val API_KEY = "XG-VisionGuard-2024"
+    /** API key injected by Gradle BuildConfig. */
+    val API_KEY: String = BuildConfig.API_KEY
 }

@@ -43,6 +43,7 @@ import android.util.Base64
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -194,8 +195,8 @@ class DetectorForegroundService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
-        Log.i(TAG, "onStartCommand: START_STICKY")
-        return START_STICKY
+        Log.i(TAG, "onStartCommand: START_NOT_STICKY")
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent): IBinder {
@@ -219,14 +220,16 @@ class DetectorForegroundService : LifecycleService() {
             Log.w(TAG, "释放 wakeLock 异常", e)
         }
 
-        // 断开 WS（内部同时注销网络监听）
-        serverPushService.disconnect()
+        // 关闭 WS（内部同时注销网络监听和事件循环）
+        serverPushService.close()
 
         // 关闭 ONNX session
-        inferenceEngine.close()
+        if (::inferenceEngine.isInitialized) inferenceEngine.close()
 
         // 关闭 CameraX executor
         cameraExecutor.shutdown()
+
+        serviceScope.cancel()
     }
 
     // ═════════════════════════════════════════════════════════
@@ -283,6 +286,10 @@ class DetectorForegroundService : LifecycleService() {
 
     /** 手动抓拍当前帧到预览画布 */
     fun requestSnapshot() {
+        if (!::monitorService.isInitialized || !::preprocessor.isInitialized) {
+            Log.w(TAG, "requestSnapshot skipped: service not ready")
+            return
+        }
         monitorService.requestSnapshot()
     }
 
@@ -325,7 +332,12 @@ class DetectorForegroundService : LifecycleService() {
                         tempImageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
                             if (!frameCaptured) {
                                 frameCaptured = true
-                                val bitmap = preprocessor.toBitmap(imageProxy)
+                                val bitmap = if (::preprocessor.isInitialized) {
+                                    preprocessor.toBitmap(imageProxy)
+                                } else {
+                                    Log.w(TAG, "预览帧跳过: preprocessor not ready")
+                                    null
+                                }
                                 imageProxy.close()
 
                                 bitmap?.let {

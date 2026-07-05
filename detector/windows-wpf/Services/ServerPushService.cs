@@ -447,8 +447,24 @@ namespace VisionGuard.Services
                 SetState(WsState.AuthFailed);
                 s.Shutdown("auth-failed");
                 _session = null;
+                if (IsPermanentAuthFailure(reason))
+                {
+                    _shouldReconnect = false;
+                    LogManager.StaticWarn("[Server] 认证为永久失败，已停止自动重连");
+                    return;
+                }
                 if (_shouldReconnect) ScheduleReconnect();
             }
+        }
+
+        private static bool IsPermanentAuthFailure(string reason)
+        {
+            var r = (reason ?? "").ToLowerInvariant();
+            return r.Contains("invalid api key")
+                || r.Contains("invalid deviceid")
+                || r.Contains("invalid role")
+                || r.Contains("needs-update")
+                || r.Contains("version too old");
         }
 
         private void OnWsFailed(Session s, ushort code, string reason)

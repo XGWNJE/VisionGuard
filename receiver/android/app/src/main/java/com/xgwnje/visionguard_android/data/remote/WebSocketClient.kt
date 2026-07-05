@@ -133,6 +133,18 @@ class WebSocketClient {
         events.trySend(Event.Disconnect)
     }
 
+    fun close() {
+        shouldReconnect = false
+        pendingBackoffJob?.cancel()
+        pendingBackoffJob = null
+        session?.shutdown("client-close")
+        session = null
+        events.close()
+        try { http.connectionPool.evictAll() } catch (_: Exception) {}
+        try { http.dispatcher.executorService.shutdown() } catch (_: Exception) {}
+        scope.cancel()
+    }
+
     fun onNetworkAvailable() {
         events.trySend(Event.NetworkAvailable)
     }

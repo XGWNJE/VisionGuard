@@ -18,7 +18,8 @@ export function cleanupScreenshots(): void {
   try {
     const files = fs.readdirSync(dir);
     for (const file of files) {
-      if (!file.endsWith('.png')) continue;
+      const ext = path.extname(file).toLowerCase();
+      if (ext !== '.png' && ext !== '.jpg' && ext !== '.jpeg') continue;
       const filePath = path.join(dir, file);
       try {
         const stat = fs.statSync(filePath);

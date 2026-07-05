@@ -27,6 +27,7 @@ data class AlertMessage(
     val detections: List<Detection> = emptyList(),
     val screenshotUrl: String = "",  // 已废弃，保留兼容（Windows 不再发此字段）
     val screenshotData: ScreenshotData? = null,
+    val hasScreenshot: Boolean = false,
     val timings: Map<String, Long>? = null,
     val wsSentAt: String? = null,
     val serverReceivedAt: String? = null,

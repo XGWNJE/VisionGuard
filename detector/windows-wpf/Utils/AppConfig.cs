@@ -6,7 +6,7 @@ namespace VisionGuard.Utils
         public const string Version = "4.2.1";
         public const string ServerUrl = "https://visionguard.xgwnje.cn";
         public static readonly string ApiKey =
-            System.Environment.GetEnvironmentVariable("VISIONGUARD_API_KEY") ?? "XG-VisionGuard-2024";
+            System.Environment.GetEnvironmentVariable("VISIONGUARD_API_KEY") ?? "";
 
         /// <summary>运行时设备唯一 ID（UUID，首次生成后持久化到 settings.ini）。</summary>
         public static string DeviceId

@@ -15,8 +15,12 @@ class ScreenshotCache(context: Context) {
     }
 
     /** 保存 JPEG 字节到磁盘 */
-    fun save(alertId: String, jpegBytes: ByteArray): File {
+    fun save(alertId: String, jpegBytes: ByteArray, overwrite: Boolean = false): File {
         val file = File(cacheDir, "$alertId.jpg")
+        if (file.exists() && !overwrite) {
+            Log.d(TAG, "Screenshot cache already exists, skip overwrite: ${file.name}")
+            return file
+        }
         file.writeBytes(jpegBytes)
         Log.d(TAG, "截图已缓存: ${file.name} (${jpegBytes.size} bytes)")
         return file

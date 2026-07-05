@@ -46,7 +46,7 @@ router.get('/api/update', (req, res) => {
     latestVersion: info.version,
     downloadUrl: info.url,
     size: info.size,
-    forceUpdate: hasUpdate && compareVersion(currentVersion, info.version) < 0,
+    forceUpdate: false,
   });
 });
 

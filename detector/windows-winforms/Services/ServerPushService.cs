@@ -428,8 +428,24 @@ namespace VisionGuard.Services
                 SetState(WsState.AuthFailed);
                 s.Shutdown("auth-failed");
                 _session = null;
+                if (IsPermanentAuthFailure(reason))
+                {
+                    _shouldReconnect = false;
+                    LogManager.StaticWarn("[Server] 认证为永久失败，已停止自动重连");
+                    return;
+                }
                 if (_shouldReconnect) ScheduleReconnect();
             }
+        }
+
+        private static bool IsPermanentAuthFailure(string reason)
+        {
+            var r = (reason ?? "").ToLowerInvariant();
+            return r.Contains("invalid api key")
+                || r.Contains("invalid deviceid")
+                || r.Contains("invalid role")
+                || r.Contains("needs-update")
+                || r.Contains("version too old");
         }
 
         private void OnWsFailed(Session s, ushort code, string reason)
@@ -712,6 +728,13 @@ namespace VisionGuard.Services
                             string val = SimpleJson.GetString(d, "value");
                             if (!string.IsNullOrEmpty(key))
                                 try { _parent.SetConfigReceived?.Invoke(_parent, new KeyValuePair<string, string>(key, val)); } catch { }
+                            break;
+                        }
+                        case "request-screenshot":
+                        {
+                            string alertId = SimpleJson.GetString(d, "alertId");
+                            if (!string.IsNullOrEmpty(alertId))
+                                ThreadPool.QueueUserWorkItem(_ => _parent.PushScreenshotData(this, alertId));
                             break;
                         }
                     }

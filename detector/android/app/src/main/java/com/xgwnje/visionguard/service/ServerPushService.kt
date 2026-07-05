@@ -101,6 +101,13 @@ class ServerPushService(
         networkMonitor.unregister()
     }
 
+    /** Service 销毁时调用，关闭 WS 事件循环和底层资源。 */
+    fun close() {
+        Log.i(TAG, "关闭服务器连接资源")
+        wsClient.close()
+        networkMonitor.unregister()
+    }
+
     /**
      * v4.0.0: 推送报警（WS，内嵌截图 Base64）。断连时直接丢弃。
      *

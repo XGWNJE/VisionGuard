@@ -11,6 +11,30 @@ if (keystoreFile.exists()) {
     keystoreProperties.load(keystoreFile.inputStream())
 }
 
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(localPropertiesFile.inputStream())
+}
+
+fun secretProperty(name: String): String {
+    return localProperties.getProperty(name)
+        ?: providers.gradleProperty(name).orNull
+        ?: System.getenv(name)
+        ?: ""
+}
+
+fun quotedBuildConfigString(value: String): String {
+    return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+}
+
+val visionguardApiKey = secretProperty("VISIONGUARD_API_KEY")
+val releaseStoreFile = keystoreProperties.getProperty("storeFile")
+val hasReleaseKeystore = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+    .map { keystoreProperties.getProperty(it).orEmpty() }
+    .all { it.isNotBlank() && !it.startsWith("REPLACE_WITH") } &&
+    releaseStoreFile?.let { rootProject.file(it).exists() } == true
+
 android {
     namespace = "com.xgwnje.visionguard"
     compileSdk {
@@ -27,6 +51,7 @@ android {
         versionName = "4.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "API_KEY", quotedBuildConfigString(visionguardApiKey))
 
         ndk {
             abiFilters += "arm64-v8a"
@@ -34,17 +59,21 @@ android {
     }
 
     signingConfigs {
-        create("release") {
-            storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
-            storePassword = keystoreProperties["storePassword"] as String
-            keyAlias = keystoreProperties["keyAlias"] as String
-            keyPassword = keystoreProperties["keyPassword"] as String
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
         }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

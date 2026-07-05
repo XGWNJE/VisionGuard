@@ -5,10 +5,11 @@
 // └─────────────────────────────────────────────────────────┘
 
 import path from 'path';
+import { parsePositiveIntEnv } from './utils/security';
 
 export const config = {
   /** HTTP/WS 监听端口 */
-  port: parseInt(process.env.PORT || '3000', 10),
+  port: parsePositiveIntEnv('PORT', 3000, 1, 65535),
 
   /** 共享 API Key (所有端使用同一个) */
   apiKey: process.env.API_KEY || '',
@@ -17,13 +18,13 @@ export const config = {
   screenshotDir: path.resolve(__dirname, '..', 'data', 'screenshots'),
 
   /** 截图过期时间 (小时)，默认 72 小时 */
-  screenshotTtlHours: parseInt(process.env.SCREENSHOT_TTL_HOURS || '72', 10),
+  screenshotTtlHours: parsePositiveIntEnv('SCREENSHOT_TTL_HOURS', 72, 1, 24 * 365),
 
   /** 截图清理间隔 (毫秒)，默认 1 小时 */
-  cleanupIntervalMs: parseInt(process.env.CLEANUP_INTERVAL_MS || '3600000', 10),
+  cleanupIntervalMs: parsePositiveIntEnv('CLEANUP_INTERVAL_MS', 3600000, 1000, 24 * 3600 * 1000),
 
   /** 上传大小限制 (字节)，默认 2MB */
-  maxUploadBytes: parseInt(process.env.MAX_UPLOAD_BYTES || '2097152', 10),
+  maxUploadBytes: parsePositiveIntEnv('MAX_UPLOAD_BYTES', 2097152, 1024, 20 * 1024 * 1024),
 
   /** WS 认证超时 (毫秒) */
   wsAuthTimeoutMs: 5000,
@@ -39,10 +40,10 @@ export const config = {
   enableHttpScreenshotUpload: process.env.ENABLE_HTTP_SCREENSHOT_UPLOAD === 'true',
 
   /** 报警记录 TTL (小时)，默认 168 小时 = 7 天。与检测端本地截图缓存 TTL 对齐 */
-  alertTtlHours: parseInt(process.env.ALERT_TTL_HOURS || '168', 10),
+  alertTtlHours: parsePositiveIntEnv('ALERT_TTL_HOURS', 168, 1, 24 * 365),
 
   /** WS 最大并发连接数 (所有角色合计)，防止连接洪水 */
-  maxWsConnections: parseInt(process.env.MAX_WS_CONNECTIONS || '100', 10),
+  maxWsConnections: parsePositiveIntEnv('MAX_WS_CONNECTIONS', 100, 1, 10000),
 
   /** 接收端幽灵清理阈值 (毫秒)。心跳 30s，取 45s 为安全阈值。 */
   receiverGhostThresholdMs: 45_000,
