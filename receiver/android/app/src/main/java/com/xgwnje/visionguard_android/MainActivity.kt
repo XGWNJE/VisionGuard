@@ -20,18 +20,25 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.filled.PhoneAndroid
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,18 +47,26 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.xgwnje.visionguard_android.service.AlertForegroundService
+import com.xgwnje.visionguard_android.ui.home.buildFrostedOverlaySpec
+import com.xgwnje.visionguard_android.ui.home.receiverMainTabs
 import com.xgwnje.visionguard_android.ui.screen.AlertDetailScreen
 import com.xgwnje.visionguard_android.ui.screen.AlertListScreen
 import com.xgwnje.visionguard_android.ui.screen.DeviceListScreen
-import com.xgwnje.visionguard_android.ui.screen.SettingsScreen
+import com.xgwnje.visionguard_android.ui.theme.ReceiverBackground
+import com.xgwnje.visionguard_android.ui.theme.ReceiverMuted
+import com.xgwnje.visionguard_android.ui.theme.ReceiverPrimary
+import com.xgwnje.visionguard_android.ui.theme.ReceiverSurface
 import com.xgwnje.visionguard_android.ui.theme.VisionGuard_AndroidTheme
 
 class MainActivity : ComponentActivity() {
@@ -188,52 +203,15 @@ fun MainScreen(
     val navBackStackEntry by tabNavController.currentBackStackEntryAsState()
     val currentDest = navBackStackEntry?.destination
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = currentDest?.hierarchy?.any { it.route == "alertList" } == true,
-                    onClick = {
-                        tabNavController.navigate("alertList") {
-                            popUpTo(tabNavController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    icon = { Icon(Icons.Default.List, contentDescription = null) },
-                    label = { Text("警报") }
-                )
-                NavigationBarItem(
-                    selected = currentDest?.hierarchy?.any { it.route == "deviceList" } == true,
-                    onClick = {
-                        tabNavController.navigate("deviceList") {
-                            popUpTo(tabNavController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    icon = { Icon(Icons.Default.PhoneAndroid, contentDescription = null) },
-                    label = { Text("设备") }
-                )
-                NavigationBarItem(
-                    selected = currentDest?.hierarchy?.any { it.route == "settings" } == true,
-                    onClick = {
-                        tabNavController.navigate("settings") {
-                            popUpTo(tabNavController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                    label = { Text("设置") }
-                )
-            }
-        }
-    ) { padding ->
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(ReceiverBackground)
+    ) {
         NavHost(
             navController = tabNavController,
             startDestination = "alertList",
-            modifier = Modifier.padding(padding)
+            modifier = Modifier.fillMaxSize()
         ) {
             composable("alertList") {
                 AlertListScreen(
@@ -244,9 +222,105 @@ fun MainScreen(
             composable("deviceList") {
                 DeviceListScreen(service = service)
             }
-            composable("settings") {
-                SettingsScreen(service = service)
+        }
+
+        ReceiverBottomBar(
+            selectedRoute = currentDest?.route ?: "alertList",
+            onNavigate = { route ->
+                tabNavController.navigate(route) {
+                    popUpTo(tabNavController.graph.findStartDestination().id) { saveState = true }
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            },
+            modifier = Modifier.align(Alignment.BottomCenter)
+        )
+    }
+}
+
+@Composable
+private fun ReceiverBottomBar(
+    selectedRoute: String,
+    onNavigate: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val overlay = buildFrostedOverlaySpec()
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(start = 18.dp, end = 18.dp, bottom = 14.dp)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(76.dp),
+            shape = RoundedCornerShape(40.dp),
+            color = ReceiverSurface.copy(alpha = overlay.bottomBarAlpha),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = overlay.borderAlpha)),
+            tonalElevation = 0.dp,
+            shadowElevation = overlay.shadowElevationDp.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(6.dp)
+            ) {
+                receiverMainTabs().forEach { tab ->
+                    ReceiverBottomBarItem(
+                        selected = selectedRoute == tab.route,
+                        icon = receiverTabIcon(tab.route),
+                        label = tab.label,
+                        onClick = { onNavigate(tab.route) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
+        }
+    }
+}
+
+private fun receiverTabIcon(route: String): ImageVector =
+    when (route) {
+        "alertList" -> Icons.AutoMirrored.Filled.ListAlt
+        "deviceList" -> Icons.Default.PhoneAndroid
+        else -> Icons.AutoMirrored.Filled.ListAlt
+    }
+
+@Composable
+private fun ReceiverBottomBarItem(
+    selected: Boolean,
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val itemColor = if (selected) ReceiverPrimary.copy(alpha = 0.92f) else Color.Transparent
+    val contentColor = if (selected) Color.White else ReceiverMuted
+
+    Surface(
+        modifier = modifier
+            .fillMaxHeight()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(34.dp),
+        color = itemColor
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = contentColor
+            )
+            Text(
+                text = label,
+                color = contentColor,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }

@@ -86,14 +86,14 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 **自动更新**：Server 提供 `/api/update` 查询接口 + `/releases/*` 静态文件下载。
 - 启动时自动检查 → 弹窗提示（**非强制**，用户可跳过）
-- 各端设置/服务器页提供**手动"检查更新"按钮**
-- Windows 有更新时弹 `OK/Cancel` 对话框；Android Service 自动检查时**仅发通知**不自动下载，设置页手动检查走 AlertDialog
+- Windows / Android 检测等设置或服务器页提供**手动"检查更新"按钮**；Android 接收端在警报页连接状态条提供手动检查更新入口
+- Windows 有更新时弹 `OK/Cancel` 对话框；Android Service 自动检查时**仅发通知**不自动下载，Android 接收端手动检查走警报页状态条 + AlertDialog / Toast，提示文案必须包含当前版本号
 - WS 认证版本过低返回 `needs-update` 强制升级
 - 发布：`node scripts/release.js <version>`
 
 **版本**：根目录 `VERSION` 为权威来源，`scripts/sync-version.js` 一键同步全端。注意：WPF 端运行时版本取自 `AppConfig.cs` 的 `Version` 常量，而非 `.csproj` 的 MSBuild 属性；`sync-version.js` 须同时更新这两处。
 
-**Android 接收端**：MVVM + 前台 Service（`foregroundServiceType="remoteMessaging"`），底部 Tab：警报 / 设备 / 设置（设置 Tab 含服务器连接状态 + 检查更新按钮）。
+**Android 接收端**：MVVM + 前台 Service（`foregroundServiceType="remoteMessaging"`），底部 Tab：警报 / 设备。警报页连接状态条显示服务器连接状态和在线设备数，点击后手动检查版本更新。
 
 ## 构建与发行
 

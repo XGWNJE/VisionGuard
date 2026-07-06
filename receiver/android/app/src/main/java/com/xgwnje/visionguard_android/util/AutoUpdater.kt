@@ -13,7 +13,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -39,6 +38,12 @@ private const val UPDATE_NOTIF_ID = 2001
 
 data class UpdateInfo(val version: String, val downloadUrl: String)
 
+sealed class UpdateCheckResult {
+    data class Available(val info: UpdateInfo) : UpdateCheckResult()
+    object NoUpdate : UpdateCheckResult()
+    object Failed : UpdateCheckResult()
+}
+
 object AutoUpdater {
 
     private val http = OkHttpClient.Builder()
@@ -47,31 +52,39 @@ object AutoUpdater {
         .build()
 
     /** 仅检查更新，返回 UpdateInfo 或 null */
-    suspend fun checkUpdate(context: Context): UpdateInfo? = withContext(Dispatchers.IO) {
+    @Suppress("UNUSED_PARAMETER")
+    suspend fun checkUpdate(context: Context): UpdateInfo? =
+        when (val result = checkUpdateResult()) {
+            is UpdateCheckResult.Available -> result.info
+            UpdateCheckResult.NoUpdate,
+            UpdateCheckResult.Failed -> null
+        }
+
+    suspend fun checkUpdateResult(): UpdateCheckResult = withContext(Dispatchers.IO) {
         try {
             val url = "${AppConstants.SERVER_URL}/api/update?platform=$PLATFORM&version=${AppConstants.VERSION}"
             val request = Request.Builder().url(url).header("X-API-Key", AppConstants.API_KEY).build()
             http.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext null
+                if (!response.isSuccessful) return@withContext UpdateCheckResult.Failed
 
-                val body = response.body?.string() ?: return@withContext null
+                val body = response.body?.string() ?: return@withContext UpdateCheckResult.Failed
                 val json = JSONObject(body)
-                if (!json.optBoolean("ok", false)) return@withContext null
-                if (!json.optBoolean("hasUpdate", false)) return@withContext null
+                if (!json.optBoolean("ok", false)) return@withContext UpdateCheckResult.Failed
+                if (!json.optBoolean("hasUpdate", false)) return@withContext UpdateCheckResult.NoUpdate
 
                 val latestVersion = json.optString("latestVersion", "")
                 val downloadUrl = json.optString("downloadUrl", "")
-                if (downloadUrl.isEmpty()) return@withContext null
+                if (downloadUrl.isEmpty()) return@withContext UpdateCheckResult.Failed
 
                 val fullUrl = if (downloadUrl.startsWith("http", true)) downloadUrl
                     else AppConstants.SERVER_URL + downloadUrl
 
                 Log.i(TAG, "发现新版本 $latestVersion (当前 ${AppConstants.VERSION})")
-                UpdateInfo(latestVersion, fullUrl)
+                UpdateCheckResult.Available(UpdateInfo(latestVersion, fullUrl))
             }
         } catch (e: Exception) {
             Log.w(TAG, "检查更新失败: ${e.message}")
-            null
+            UpdateCheckResult.Failed
         }
     }
 

@@ -1,41 +1,46 @@
 package com.xgwnje.visionguard_android.ui.screen
 
-// ┌─────────────────────────────────────────────────────────┐
-// │ AlertDetailScreen.kt                                    │
-// │ 角色：报警详情，全屏截图 + 检测标签列表                   │
-// └─────────────────────────────────────────────────────────┘
-
+import android.Manifest
+import android.content.ContentValues
+import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.util.Base64
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ImageNotSupported
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,42 +48,91 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.xgwnje.visionguard_android.data.model.AlertMessage
-import com.xgwnje.visionguard_android.data.model.cocoLabelZh
+import androidx.core.content.ContextCompat
 import com.xgwnje.visionguard_android.service.AlertForegroundService
-import com.xgwnje.visionguard_android.ui.component.formatTimestamp
+import com.xgwnje.visionguard_android.ui.home.buildAlertDetailChrome
+import com.xgwnje.visionguard_android.ui.home.buildFrostedOverlaySpec
+import com.xgwnje.visionguard_android.ui.theme.ReceiverBackground
+import com.xgwnje.visionguard_android.ui.theme.ReceiverMuted
+import com.xgwnje.visionguard_android.ui.theme.ReceiverPrimary
+import com.xgwnje.visionguard_android.ui.theme.ReceiverSurface
+import com.xgwnje.visionguard_android.ui.theme.ReceiverSurfaceMuted
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AlertDetailScreen(
     service: AlertForegroundService,
     alertId: String,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val alerts by service.alerts.collectAsState()
     val alert = alerts.find { it.alertId == alertId }
+    val chrome = remember { buildAlertDetailChrome() }
 
     var screenshotBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var screenshotFailed by remember { mutableStateOf(false) }
+    var saveMessage by remember { mutableStateOf<String?>(null) }
 
-    // v4.0.0: 截图优先从缓存加载，其次从 alert 内嵌字段解码
+    fun saveCurrentScreenshot() {
+        val bitmap = screenshotBitmap ?: return
+        scope.launch {
+            val saved = saveBitmapToGallery(context, bitmap)
+            saveMessage = if (saved) "已保存到相册" else "保存失败"
+        }
+    }
+
+    val legacyStoragePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            saveCurrentScreenshot()
+        } else {
+            saveMessage = "未获得相册权限"
+        }
+    }
+
+    fun requestSaveToGallery() {
+        if (!chrome.supportsGallerySave || screenshotBitmap == null) return
+        if (
+            Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            legacyStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            return
+        }
+        saveCurrentScreenshot()
+    }
+
     LaunchedEffect(alertId, alert?.screenshotUrl, alert?.hasScreenshot) {
         screenshotBitmap = null
         screenshotFailed = false
-        if (alert == null) return@LaunchedEffect
+        if (alert == null) {
+            screenshotFailed = true
+            return@LaunchedEffect
+        }
 
-        // 先查本地缓存
         val cachedFile = service.getScreenshotFile(alertId)
         if (cachedFile != null && cachedFile.exists()) {
             val bitmap = withContext(Dispatchers.IO) {
@@ -90,13 +144,14 @@ fun AlertDetailScreen(
             }
         }
 
-        // 缓存未命中：尝试从 alert 内嵌 screenshotBase64 解码
         if (!alert.screenshotBase64.isNullOrEmpty()) {
-            try {
+            runCatching {
                 val bytes = Base64.decode(alert.screenshotBase64, Base64.DEFAULT)
-                screenshotBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            }.getOrNull()?.let { bitmap ->
+                screenshotBitmap = bitmap
                 return@LaunchedEffect
-            } catch (_: Exception) { }
+            }
         }
 
         val downloadedFile = service.ensureScreenshotCached(alert)
@@ -113,188 +168,275 @@ fun AlertDetailScreen(
         screenshotFailed = true
     }
 
-    // 监听实时截图推送（来自 AlertForegroundService）
     LaunchedEffect(Unit) {
         service.onScreenshotData.collect { data ->
             if (data.alertId == alertId && data.imageBase64.isNotEmpty()) {
-                try {
+                runCatching {
                     val bytes = Base64.decode(data.imageBase64, Base64.DEFAULT)
-                    screenshotBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                }.getOrNull()?.let { bitmap ->
+                    screenshotBitmap = bitmap
                     screenshotFailed = false
-                } catch (_: Exception) { }
+                }
             }
         }
     }
 
-    Scaffold(
-        topBar = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
-                        start = 16.dp,
-                        end = 16.dp
-                    )
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                    Text(
-                        text = alert?.deviceName ?: "报警详情",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        },
-        contentWindowInsets = WindowInsets(0, 0, 0, 0)
-    ) { padding ->
-        if (alert == null) {
-            Text(
-                text = "报警记录不存在",
-                modifier = Modifier.padding(padding).padding(16.dp)
+    LaunchedEffect(saveMessage) {
+        if (saveMessage != null) {
+            delay(1800)
+            saveMessage = null
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(ReceiverBackground)
+    ) {
+        ScreenshotViewport(
+            bitmap = screenshotBitmap,
+            isLoading = alert != null && !screenshotFailed && screenshotBitmap == null,
+            hasFailed = screenshotFailed
+        )
+
+        DetailTopControls(
+            canSave = screenshotBitmap != null && chrome.supportsGallerySave,
+            onBack = onBack,
+            onSave = ::requestSaveToGallery,
+            modifier = Modifier.align(Alignment.TopCenter)
+        )
+
+        saveMessage?.let { message ->
+            DetailToast(
+                message = message,
+                modifier = Modifier.align(Alignment.BottomCenter)
             )
-            return@Scaffold
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-        ) {
-            // 截图（按需从 Windows 拉取）
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(240.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                contentAlignment = Alignment.Center
-            ) {
-                when {
-                    screenshotBitmap != null -> {
-                        Image(
-                            bitmap = screenshotBitmap!!.asImageBitmap(),
-                            contentDescription = "报警截图",
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp))
-                        )
-                    }
-                    screenshotFailed -> {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                imageVector = Icons.Default.ImageNotSupported,
-                                contentDescription = "截图不可用",
-                                modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "截图不可用（设备离线）",
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    else -> {
-                        // 加载中
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(32.dp),
-                            strokeWidth = 2.dp
-                        )
-                    }
-                }
-            }
-
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = alert.deviceName,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = formatTimestamp(alert.timestamp),
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text("检测目标", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                Spacer(modifier = Modifier.height(8.dp))
-
-                alert.detections.forEach { d ->
-                    Text(
-                        text = "• ${cocoLabelZh(d.label)}  ${(d.confidence * 100).toInt()}%  " +
-                               "[x=${d.bbox.x}, y=${d.bbox.y}, w=${d.bbox.w}, h=${d.bbox.h}]",
-                        fontSize = 13.sp,
-                        modifier = Modifier.padding(vertical = 2.dp)
-                    )
-                }
-                if (alert.detections.isEmpty()) {
-                    Text("无检测结果", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-
-                // 链路耗时（简化：本地处理 + 网络中继 + 合计）
-                val timings = alert.timings
-                val processMs = timings?.get("processMs")
-                val e2eMs = computeE2ELatencyMs(alert)
-                if (processMs != null || e2eMs != null) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider()
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text("链路耗时", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    processMs?.let { TimingRow("本地处理", "${it}ms") }
-                    e2eMs?.let { TimingRow("端到端延迟", "${it}ms") }
-
-                    if (processMs != null && e2eMs != null) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        TimingRow("合计", "${processMs + e2eMs}ms", bold = true)
-                    }
-                }
-            }
         }
     }
-}
-
-/**
- * v4.0.0: 端到端延迟 = 接收端前台通知时间 - 检测端捕获帧时间。
- * 两端已 NTP 校准，capturedAt 来自检测端 WS alert 消息。
- */
-private fun computeE2ELatencyMs(alert: AlertMessage): Long? {
-    val capturedAt = try {
-        alert.capturedAt?.let { java.time.Instant.parse(it).toEpochMilli() }
-    } catch (_: Exception) { null }
-    val notified = alert.notifiedAt
-    return if (capturedAt != null && notified != null) notified - capturedAt else null
 }
 
 @Composable
-private fun TimingRow(label: String, value: String, bold: Boolean = false) {
-    Row(
+private fun ScreenshotViewport(
+    bitmap: Bitmap?,
+    isLoading: Boolean,
+    hasFailed: Boolean
+) {
+    var scale by remember(bitmap) { mutableStateOf(1f) }
+    var offset by remember(bitmap) { mutableStateOf(Offset.Zero) }
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        val nextScale = (scale * zoomChange).coerceIn(1f, 5f)
+        scale = nextScale
+        offset = if (nextScale == 1f) Offset.Zero else offset + panChange
+    }
+
+    Box(
         modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(bitmap) {
+                detectTapGestures(
+                    onDoubleTap = {
+                        if (scale > 1f) {
+                            scale = 1f
+                            offset = Offset.Zero
+                        } else if (bitmap != null) {
+                            scale = 2.4f
+                        }
+                    }
+                )
+            }
+            .transformable(
+                state = transformState,
+                enabled = bitmap != null
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        when {
+            bitmap != null -> {
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "报警截图",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                            translationX = offset.x
+                            translationY = offset.y
+                        }
+                )
+            }
+            isLoading -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(34.dp),
+                    strokeWidth = 2.dp,
+                    color = ReceiverPrimary
+                )
+            }
+            hasFailed -> {
+                EmptyScreenshotState()
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailTopControls(
+    canSave: Boolean,
+    onBack: () -> Unit,
+    onSave: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val statusPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
+    Row(
+        modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
+            .padding(top = statusPadding + 12.dp)
+            .padding(horizontal = 18.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        DetailIconButton(
+            icon = Icons.AutoMirrored.Filled.ArrowBack,
+            contentDescription = "返回",
+            enabled = true,
+            onClick = onBack
+        )
+        Spacer(modifier = Modifier.width(18.dp))
+        DetailIconButton(
+            icon = Icons.Default.Download,
+            contentDescription = "保存到相册",
+            enabled = canSave,
+            onClick = onSave
+        )
+    }
+}
+
+@Composable
+private fun DetailIconButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val overlay = buildFrostedOverlaySpec()
+
+    Surface(
+        modifier = Modifier
+            .size(52.dp)
+            .alpha(if (enabled) 1f else 0.46f)
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = RoundedCornerShape(22.dp),
+        color = ReceiverSurface.copy(alpha = overlay.topBannerAlpha),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = overlay.borderAlpha)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = contentDescription,
+                tint = ReceiverPrimary,
+                modifier = Modifier.size(26.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyScreenshotState() {
+    Surface(
+        shape = RoundedCornerShape(30.dp),
+        color = ReceiverSurface,
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.72f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.ImageNotSupported,
+                contentDescription = null,
+                tint = ReceiverMuted,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = "截图不可用",
+                style = MaterialTheme.typography.labelLarge,
+                color = ReceiverMuted
+            )
+        }
+    }
+}
+
+@Composable
+private fun DetailToast(
+    message: String,
+    modifier: Modifier = Modifier
+) {
+    val navigationPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
+    Surface(
+        modifier = modifier.padding(bottom = navigationPadding + 28.dp),
+        shape = RoundedCornerShape(24.dp),
+        color = ReceiverSurfaceMuted.copy(alpha = 0.94f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.72f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
     ) {
         Text(
-            text = label,
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            text = message,
+            style = MaterialTheme.typography.labelLarge,
+            color = ReceiverPrimary,
+            fontWeight = FontWeight.Black,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)
         )
-        Text(
-            text = value,
-            fontSize = 13.sp,
-            fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal
-        )
+    }
+}
+
+private suspend fun saveBitmapToGallery(
+    context: Context,
+    bitmap: Bitmap
+): Boolean = withContext(Dispatchers.IO) {
+    val fileName = "VisionGuard_${System.currentTimeMillis()}.jpg"
+    val resolver = context.contentResolver
+    val values = ContentValues().apply {
+        put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+        put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+        put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis() / 1000)
+        put(MediaStore.Images.Media.DATE_TAKEN, System.currentTimeMillis())
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/VisionGuard")
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }
+    }
+    val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+    } else {
+        MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+    }
+    val uri = resolver.insert(collection, values) ?: return@withContext false
+
+    runCatching {
+        resolver.openOutputStream(uri)?.use { output ->
+            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 95, output)) {
+                error("Bitmap compression failed")
+            }
+        } ?: error("Gallery output stream is null")
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            values.clear()
+            values.put(MediaStore.Images.Media.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+        }
+        true
+    }.getOrElse {
+        resolver.delete(uri, null, null)
+        false
     }
 }
