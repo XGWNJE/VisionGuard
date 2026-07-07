@@ -9,6 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const { findAndroidReleaseApk } = require('./release-helpers');
 
 const ROOT = path.resolve(__dirname, '..');
 const RELEASES_DIR = path.join(ROOT, 'server', 'data', 'releases');
@@ -157,17 +158,6 @@ function findMsBuild() {
   const result = execSync(`"${vswhere}" -latest -find "MSBuild\\\\**\\\\Bin\\\\MSBuild.exe"`).toString().trim();
   if (!result) throw new Error('MSBuild 未找到');
   return result.split('\n')[0];
-}
-
-function findAndroidReleaseApk(projectDir) {
-  const releaseDir = path.join(projectDir, 'app', 'build', 'outputs', 'apk', 'release');
-  const candidates = ['app-release.apk', 'app-release-unsigned.apk']
-    .map(name => path.join(releaseDir, name));
-  const apk = candidates.find(file => fs.existsSync(file));
-  if (!apk) {
-    throw new Error(`Android Release APK 未找到: ${releaseDir}`);
-  }
-  return apk;
 }
 
 main();

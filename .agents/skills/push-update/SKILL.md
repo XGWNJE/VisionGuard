@@ -58,8 +58,8 @@ $env:JAVA_HOME = 'C:\Android\Android Studio\jbr'
 |----|----------|----------|
 | **WinForms** | MSBuild (见下方) | `detector/windows-winforms/bin/Release/VisionGuard.exe` |
 | **WPF** | `dotnet build detector/windows-wpf/VisionGuard.csproj -c Release` | `detector/windows-wpf/bin/x64/VisionGuard.exe` |
-| **Detector** | `./gradlew.bat assembleRelease` (在 `detector/android/`) | `app/build/outputs/apk/release/app-release.apk` |
-| **Receiver** | `./gradlew.bat assembleRelease` (在 `receiver/android/`) | `app/build/outputs/apk/release/app-release.apk` |
+| **Detector** | `./gradlew.bat assembleRelease` (在 `detector/android/`) | `app/build/outputs/apk/release/app-release.apk`（必须已签名） |
+| **Receiver** | `./gradlew.bat assembleRelease` (在 `receiver/android/`) | `app/build/outputs/apk/release/app-release.apk`（必须已签名） |
 | **Server** | `cd server && npm run build` | `server/dist/` (仅代码，无发行包) |
 
 **WinForms MSBuild 路径发现**（vswhere 定位，避免硬编码）：
@@ -72,8 +72,9 @@ $msbuild = & "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.e
 **WPF 注意**：`.csproj` 中 `OutputPath` 是 `bin\x64\`（无 Debug/Release 子目录），`<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>`。
 
 **Android 注意**：
-- 产物固定名为 `app-release.apk`，复制时需重命名
-- 接收端已移除签名配置（与检测端一致，统一编译 unsigned APK）
+- 已签名产物固定名为 `app-release.apk`，复制时需重命名
+- 两个 Android 端都使用本地 `keystore.properties` 条件签名；缺少真实 keystore 密码时只能产出 `app-release-unsigned.apk` 作为验证产物
+- **发布包必须签名**：`app-release-unsigned.apk` 只能作为编译验证产物，不能上传到 `server/data/releases/`；`scripts/release.js` 会阻断 unsigned APK。
 - 如遇 lint 文件锁：加 `-x lintVitalAnalyzeRelease -x lintAnalyzeRelease` 跳过
 - 如遇 clean 文件锁：跳过 clean 直接 `assembleRelease`（增量编译）
 - 使用 `./gradlew.bat` 或 `./gradlew`（Windows / WSL），本项目用 `.bat`
@@ -166,6 +167,7 @@ ssh visionguard "ls -la /opt/visionguard/VisionGuard_Server/data/releases/ && ec
 | 症状 | 原因 | 解决 |
 |------|------|------|
 | Gradle `clean` 报 `Unable to delete` | 旧 daemon 或 IDE 持有文件锁 | `./gradlew.bat --stop`，跳过 clean 直接 `assembleRelease` |
+| Android 安装器报 `packageInfo is null` / 解析软件包失败 | 发布了 unsigned APK 或 APK 签名无效 | 用 `apksigner verify --verbose --print-certs` 验签；重新生成已签名 `app-release.apk` 后再上传 |
 | 接收端 `packageRelease` 报 keystore password 错误 | 签名配置密码不匹配 | 检查 `keystore.properties`，确认 keystore 密码正确 |
 | SCP 上传大文件时 `Connection closed` | VPS 并发连接限制 | 逐个串行上传，不要并行 SCP |
 | PowerShell `Get-ChildItem` 找不到 APK | 长路径或权限问题 | 改用 `bash -c "find ... -name '*.apk'"` |
@@ -198,4 +200,4 @@ $env:VISIONGUARD_TEST_VERSION = "0.0.0"
 - **按需编译** — 不需要每次五端全编
 - **releases.json 不自动提交** — 留给开发者确认后手动 git 操作
 - **所有编译产物路径以实际 .csproj / build.gradle.kts 为准**，不假设默认约定
-- **禁止用 Debug 构建充当发行包** — 发行包必须来自 Release 构建。若 Release 编译受阻（如签名配置错误），修复构建配置而非回退到 Debug
+- **禁止用 Debug 构建或 unsigned APK 充当发行包** — 发行包必须来自已签名 Release 构建。若 Release 编译受阻（如签名配置错误），修复构建配置而非回退到 Debug/unsigned

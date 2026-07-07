@@ -12,11 +12,11 @@
   "android-detector": {
     "version": "4.3.0",
     "url": "/releases/VisionGuard-Detector-v4.3.0.apk",
-    "size": 41520026
+    "size": 41537477
   },
   "android-receiver": {
     "version": "4.3.0",
     "url": "/releases/VisionGuard-Receiver-v4.3.0.apk",
-    "size": 22314846
+    "size": 22331425
   }
 }
