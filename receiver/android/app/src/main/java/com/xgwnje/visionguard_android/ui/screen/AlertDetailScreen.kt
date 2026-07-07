@@ -53,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -322,13 +323,15 @@ private fun DetailIconButton(
     onClick: () -> Unit
 ) {
     val overlay = buildFrostedOverlaySpec()
+    val shape = RoundedCornerShape(22.dp)
 
     Surface(
         modifier = Modifier
             .size(52.dp)
             .alpha(if (enabled) 1f else 0.46f)
+            .clip(shape)
             .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(22.dp),
+        shape = shape,
         color = ReceiverSurface.copy(alpha = overlay.topBannerAlpha),
         border = BorderStroke(1.dp, Color.White.copy(alpha = overlay.borderAlpha)),
         tonalElevation = 0.dp,

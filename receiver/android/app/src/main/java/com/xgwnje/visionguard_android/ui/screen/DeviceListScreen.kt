@@ -18,30 +18,41 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xgwnje.visionguard_android.data.model.RemovedDevice
 import com.xgwnje.visionguard_android.data.remote.WsState
 import com.xgwnje.visionguard_android.service.AlertForegroundService
 import com.xgwnje.visionguard_android.ui.component.DeviceCard
@@ -55,6 +66,9 @@ import com.xgwnje.visionguard_android.ui.theme.ReceiverPrimarySoft
 import com.xgwnje.visionguard_android.ui.theme.ReceiverSurface
 import com.xgwnje.visionguard_android.ui.theme.ReceiverSurfaceMuted
 import com.xgwnje.visionguard_android.ui.viewmodel.DeviceViewModel
+import kotlinx.coroutines.launch
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @Composable
 fun DeviceListScreen(
@@ -64,9 +78,19 @@ fun DeviceListScreen(
     val devices by deviceVm.devices.collectAsState()
     val wsState by service.connectionState.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val hapticFeedback = LocalHapticFeedback.current
+    val lazyListState = rememberLazyListState()
     val onlineCount = remember(devices) { devices.count { it.online } }
     val statusTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val navigationBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        val fromDeviceIndex = from.index - 1
+        val toDeviceIndex = to.index - 1
+        if (fromDeviceIndex in devices.indices && toDeviceIndex in devices.indices) {
+            deviceVm.moveDevice(fromDeviceIndex, toDeviceIndex)
+        }
+    }
 
     LaunchedEffect(Unit) {
         deviceVm.commandAck.collect { (cmd, success) ->
@@ -88,6 +112,7 @@ fun DeviceListScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 18.dp),
+            state = lazyListState,
             contentPadding = PaddingValues(
                 top = statusTopPadding + 24.dp,
                 bottom = navigationBottomPadding + 122.dp
@@ -108,17 +133,47 @@ fun DeviceListScreen(
                     )
                 }
             } else {
-                items(devices, key = { it.deviceId }) { device ->
-                    DeviceCard(
-                        device = device,
-                        initialConfig = buildDeviceConfigFromDevice(device),
-                        onCommand = { command ->
-                            deviceVm.sendCommand(device.deviceId, command)
-                        },
-                        onSetConfig = { key, value ->
-                            deviceVm.sendSetConfig(device.deviceId, key, value)
+                itemsIndexed(
+                    items = devices,
+                    key = { _, device -> device.deviceId }
+                ) { _, device ->
+                    ReorderableItem(reorderableState, key = device.deviceId) {
+                        DeviceSwipeContainer(
+                            device = device,
+                            onDelete = {
+                                val removed = deviceVm.removeOfflineDevice(device.deviceId)
+                                if (removed != null) {
+                                    scope.launch {
+                                        showDeviceRemovedSnackbar(
+                                            snackbarHost = snackbarHost,
+                                            removed = removed
+                                        )
+                                    }
+                                }
+                            }
+                        ) {
+                            DeviceCard(
+                                device = device,
+                                initialConfig = buildDeviceConfigFromDevice(device),
+                                onCommand = { command ->
+                                    deviceVm.sendCommand(device.deviceId, command)
+                                },
+                                onSetConfig = { key, value ->
+                                    deviceVm.sendSetConfig(device.deviceId, key, value)
+                                },
+                                dragHandleModifier = Modifier.longPressDraggableHandle(
+                                    onDragStarted = {
+                                        hapticFeedback.performHapticFeedback(
+                                            HapticFeedbackType.GestureThresholdActivate
+                                        )
+                                    },
+                                    onDragStopped = {
+                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.GestureEnd)
+                                    }
+                                )
+                            )
                         }
-                    )
+                    }
                 }
             }
         }
@@ -149,24 +204,6 @@ private fun DeviceListHeader(
             .padding(bottom = 2.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Surface(
-            modifier = Modifier.size(50.dp),
-            shape = RoundedCornerShape(20.dp),
-            color = ReceiverPrimarySoft,
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.72f)),
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.Default.PhoneAndroid,
-                    contentDescription = null,
-                    tint = ReceiverPrimary,
-                    modifier = Modifier.size(27.dp)
-                )
-            }
-        }
-        Spacer(modifier = Modifier.size(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = "设备",
@@ -183,6 +220,81 @@ private fun DeviceListHeader(
             )
         }
     }
+}
+
+@Composable
+private fun DeviceSwipeContainer(
+    device: com.xgwnje.visionguard_android.data.model.DeviceInfo,
+    onDelete: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    val canDelete = !device.online
+    val dismissState = rememberSwipeToDismissBoxState()
+    var dismissed by remember(device.deviceId) { mutableStateOf(false) }
+
+    if (dismissed) return
+
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = {
+            DeleteDeviceBackground(enabled = canDelete)
+        },
+        enableDismissFromStartToEnd = false,
+        enableDismissFromEndToStart = canDelete,
+        gesturesEnabled = canDelete,
+        onDismiss = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart && canDelete) {
+                dismissed = true
+                onDelete()
+            }
+        }
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun DeleteDeviceBackground(enabled: Boolean) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        shape = RoundedCornerShape(28.dp),
+        color = if (enabled) ReceiverAlertSoft else ReceiverSurfaceMuted,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = null,
+                tint = if (enabled) ReceiverAlert else ReceiverMuted,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.size(8.dp))
+            Text(
+                text = "删除",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (enabled) ReceiverAlert else ReceiverMuted,
+                fontWeight = FontWeight.Black
+            )
+        }
+    }
+}
+
+private suspend fun showDeviceRemovedSnackbar(
+    snackbarHost: SnackbarHostState,
+    removed: RemovedDevice
+) {
+    val name = removed.device.deviceName.ifBlank { "离线设备" }
+    snackbarHost.showSnackbar(
+        message = "已删除：$name",
+        duration = SnackbarDuration.Short
+    )
 }
 
 @Composable

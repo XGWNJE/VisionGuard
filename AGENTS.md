@@ -93,7 +93,7 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 **版本**：根目录 `VERSION` 为权威来源，`scripts/sync-version.js` 一键同步全端。注意：WPF 端运行时版本取自 `AppConfig.cs` 的 `Version` 常量，而非 `.csproj` 的 MSBuild 属性；`sync-version.js` 须同时更新这两处。
 
-**Android 接收端**：MVVM + 前台 Service（`foregroundServiceType="remoteMessaging"`），底部 Tab：警报 / 设备。警报页连接状态条显示服务器连接状态和在线设备数，点击后手动检查版本更新。
+**Android 接收端**：MVVM + 前台 Service（`foregroundServiceType="remoteMessaging"`），底部 Tab：警报 / 设备。警报页连接状态条显示服务器连接状态和在线设备数，点击后手动检查版本更新。设备页保留已连接过的设备，本地手动排序优先；离线设备显示离线状态并允许侧滑删除，在线设备不开放删除。
 
 ## 构建与发行
 
@@ -173,15 +173,15 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 ## Skill 与工程管理
 
-> 详细构建流程、版本管理、子智能体规则已迁移到独立 skill。AGENTS.md 只保留架构与约束知识，执行流程见 skill。
+> 只保留有脚本或多步骤发布价值的项目 skill。轻量规则直接写在本文件或 `docs/codex/` 中，避免 skill 与源码长期漂移。
 
 | Skill | 用途 | 触发 |
 |-------|------|------|
 | `visionguard-build` | 五端编译（Server/WinForms/WPF/Android-Detector/Android-Receiver） | `/visionguard-build` 或"编译" |
 | `visionguard-e2e` | 端到端 / 设备 / 模拟器 / 运行证据验证（含真机发现、AVD 兜底、logcat/截图采集） | "端到端测试"、"模拟器验证"、"实机验证"、"自动化验证" |
-| `version-alignment` | 全端版本号检查与批量修改 | `/version-alignment` 或"版本对齐" |
 | `push-update` | 推送客户端更新 | 发布新版本 |
-| `vps-server-info` | VPS 连接信息 | 部署/排查 |
+
+版本同步不再维护独立 skill；以根目录 `VERSION` 为权威，显式授权后运行 `node scripts/sync-version.js <version>`。VPS/域名/SNI 信息以 `D:\ObjectCode\Server-infra` 为准，旧全局 `vps-server-info` 如有冲突不得采用。
 
 Agent 清单（`.Codex/agents/`）：`scanner`（搜索/审查/扫描）/ `builder`（编译验证）
 

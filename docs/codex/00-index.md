@@ -9,7 +9,7 @@
 - [30-windows-detector.md](30-windows-detector.md) - WinForms / WPF 检测端差异、推理链、设置与热更新
 - [35-model-assets.md](35-model-assets.md) - ONNX 模型、COCO 类别、目标子集、资源维护约束
 - [40-android-detector.md](40-android-detector.md) - Android 检测端、前台服务、模型、DataStore、WS
-- [50-android-receiver.md](50-android-receiver.md) - Android 接收端、前台服务、列表/详情、WS
+- [50-android-receiver.md](50-android-receiver.md) - Android 接收端、设备列表、前台服务、告警详情、WS
 - [60-operations.md](60-operations.md) - 构建、验证、发布、版本边界、常见风险
 - [90-verification-report.md](90-verification-report.md) - 已验真事实、旧说明冲突、谨慎表述点
 - [../design/README.md](../design/README.md) - 设计稿与视觉素材入口

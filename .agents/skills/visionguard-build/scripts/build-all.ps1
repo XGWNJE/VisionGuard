@@ -112,7 +112,7 @@ try {
         Invoke-Step `
             -Name "WinForms" `
             -CommandText "`"$msbuild`" detector\windows-winforms\VisionGuard.csproj /p:Configuration=Release /p:Platform=x64 /m" `
-            -Artifact "detector/windows-winforms/bin/x64/Release/VisionGuard.exe" `
+            -Artifact "detector/windows-winforms/bin/Release/VisionGuard.exe" `
             -Script { & $msbuild "detector\windows-winforms\VisionGuard.csproj" /p:Configuration=Release /p:Platform=x64 /m }
     }
 

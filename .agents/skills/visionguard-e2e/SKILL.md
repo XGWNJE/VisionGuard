@@ -1,6 +1,6 @@
 ---
 name: visionguard-e2e
-description: VisionGuard end-to-end and smoke verification workflow. Use when the user asks to run E2E tests, emulator/real-device validation, automated verification, Android receiver/detector runtime checks, server smoke tests, logcat evidence capture, WSL-backed server checks, or asks whether a change should be verified with a device, emulator, desktop control, or only builds.
+description: Use when VisionGuard needs E2E tests, emulator or real-device validation, automated verification, Android runtime checks, server smoke tests, logcat evidence, WSL-backed server checks, or a build-vs-device verification decision.
 ---
 
 # VisionGuard E2E

@@ -17,6 +17,7 @@
 - Server `package.json` 当前版本为 `4.3.0`
 - Server 线上 smoke 已在 `https://visionguard.xgwnje.cn` 通过：`/health`、`/api/update`、`/releases/*`、`/models/*`、`/ws`
 - Android 接收端实机 UI 已显示可连接，后续继续观察真实告警链路
+- 2026-07-08 Android 接收端模拟器 smoke 已验证设备页 UI、手动排序持久化、离线保留、离线侧滑删除、恢复联网并回列表；证据目录为 `artifacts/e2e/20260708-004420-manual-receiver-emulator/`
 - Server 认证失败后会关闭连接，WS 认证超时为 5000ms
 - `server/src/routes/update.ts` 当前按平台读取 `data/releases.json`
 - `server/src/routes/screenshot.ts` 当前要求 `X-API-Key`

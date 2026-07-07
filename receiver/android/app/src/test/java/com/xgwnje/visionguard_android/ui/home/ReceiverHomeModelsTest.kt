@@ -285,15 +285,15 @@ class ReceiverHomeModelsTest {
         val currentVersion = "4.2.1"
 
         assertEquals(
-            "当前版本 4.2.1，已是最新版本",
+            "当前 4.2.1，已是最新",
             buildUpdateFeedbackText(UpdateFeedback.NO_UPDATE, currentVersion)
         )
         assertEquals(
-            "当前版本 4.2.1，检查更新失败",
+            "当前 4.2.1，检查失败",
             buildUpdateFeedbackText(UpdateFeedback.CHECK_FAILED, currentVersion)
         )
         assertEquals(
-            "发现新版本 4.3.0\n当前版本 4.2.1\n\n是否立即下载更新？",
+            "最新 4.3.0\n当前 4.2.1\n\n是否更新？",
             buildUpdateDialogText(latestVersion = "4.3.0", currentVersion = currentVersion)
         )
     }
@@ -303,9 +303,9 @@ class ReceiverHomeModelsTest {
         val model = buildUpdateDialogModel(latestVersion = "4.3.0", currentVersion = "4.2.1")
 
         assertEquals("发现新版本", model.title)
-        assertEquals("当前版本 4.2.1", model.currentVersionLabel)
-        assertEquals("新版本 4.3.0", model.latestVersionLabel)
-        assertEquals("是否立即下载并安装更新？", model.message)
+        assertEquals("当前 4.2.1", model.currentVersionLabel)
+        assertEquals("最新 4.3.0", model.latestVersionLabel)
+        assertEquals("是否更新？", model.message)
         assertEquals("更新", model.primaryActionLabel)
         assertEquals("稍后", model.secondaryActionLabel)
         assertEquals(UpdateDialogTone.AVAILABLE, model.tone)
@@ -316,9 +316,9 @@ class ReceiverHomeModelsTest {
         val model = buildNoUpdateDialogModel(currentVersion = "4.2.1")
 
         assertEquals("已是最新版本", model.title)
-        assertEquals("当前版本 4.2.1", model.currentVersionLabel)
-        assertEquals("无需更新", model.latestVersionLabel)
-        assertEquals("当前版本已是最新版本。", model.message)
+        assertEquals("当前 4.2.1", model.currentVersionLabel)
+        assertEquals("状态：无需更新", model.latestVersionLabel)
+        assertEquals("无需操作。", model.message)
         assertEquals("知道了", model.primaryActionLabel)
         assertEquals(null, model.secondaryActionLabel)
         assertEquals(UpdateDialogTone.CURRENT, model.tone)
@@ -328,10 +328,10 @@ class ReceiverHomeModelsTest {
     fun updateFailedDialogModelReportsCurrentVersion() {
         val model = buildUpdateFailedDialogModel(currentVersion = "4.2.1")
 
-        assertEquals("检查更新失败", model.title)
-        assertEquals("当前版本 4.2.1", model.currentVersionLabel)
-        assertEquals("服务器未返回更新信息", model.latestVersionLabel)
-        assertEquals("请稍后再试。", model.message)
+        assertEquals("检查失败", model.title)
+        assertEquals("当前 4.2.1", model.currentVersionLabel)
+        assertEquals("状态：稍后再试", model.latestVersionLabel)
+        assertEquals("暂时无法获取更新信息。", model.message)
         assertEquals("知道了", model.primaryActionLabel)
         assertEquals(null, model.secondaryActionLabel)
         assertEquals(UpdateDialogTone.FAILED, model.tone)

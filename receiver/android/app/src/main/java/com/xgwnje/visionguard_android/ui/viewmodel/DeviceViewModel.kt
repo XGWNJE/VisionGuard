@@ -8,25 +8,15 @@ package com.xgwnje.visionguard_android.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
 import com.xgwnje.visionguard_android.data.model.DeviceInfo
+import com.xgwnje.visionguard_android.data.model.RemovedDevice
 import com.xgwnje.visionguard_android.service.AlertForegroundService
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 
 class DeviceViewModel(private val service: AlertForegroundService) : ViewModel() {
 
     val devices: StateFlow<List<DeviceInfo>> = service.devices
-        .map { list ->
-            list.sortedWith(
-                compareByDescending<DeviceInfo> { it.online }
-                    .thenBy { it.deviceName }
-            )
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val commandAck: SharedFlow<Pair<String, Boolean>> = service.commandAck
 
@@ -36,6 +26,17 @@ class DeviceViewModel(private val service: AlertForegroundService) : ViewModel()
 
     fun sendSetConfig(targetDeviceId: String, key: String, value: String) {
         service.sendSetConfig(targetDeviceId, key, value)
+    }
+
+    fun moveDevice(fromIndex: Int, toIndex: Int) {
+        service.moveDevice(fromIndex, toIndex)
+    }
+
+    fun removeOfflineDevice(deviceId: String): RemovedDevice? =
+        service.removeOfflineDevice(deviceId)
+
+    fun restoreDevice(removed: RemovedDevice) {
+        service.restoreDevice(removed)
     }
 
     class Factory(private val service: AlertForegroundService) : ViewModelProvider.Factory {

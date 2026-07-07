@@ -21,11 +21,17 @@ import androidx.lifecycle.lifecycleScope
 import com.xgwnje.visionguard_android.AppConstants
 import com.xgwnje.visionguard_android.data.model.AlertMessage
 import com.xgwnje.visionguard_android.data.model.DeviceInfo
+import com.xgwnje.visionguard_android.data.model.RemovedDevice
 import com.xgwnje.visionguard_android.data.model.ScreenshotData
 import com.xgwnje.visionguard_android.data.cache.ScreenshotCache
 import com.xgwnje.visionguard_android.data.model.DeviceConfig
+import com.xgwnje.visionguard_android.data.model.DeviceRegistrySyncState
+import com.xgwnje.visionguard_android.data.model.moveDeviceInOrder
+import com.xgwnje.visionguard_android.data.model.removeOfflineDeviceById
+import com.xgwnje.visionguard_android.data.model.restoreRemovedDevice as restoreRemovedDeviceInOrder
 import com.xgwnje.visionguard_android.data.remote.WebSocketClient
 import com.xgwnje.visionguard_android.data.remote.WsState
+import com.xgwnje.visionguard_android.data.repository.DeviceRegistryRepository
 import com.xgwnje.visionguard_android.data.repository.SettingsRepository
 import com.xgwnje.visionguard_android.ui.home.mergeSortAlerts
 import com.xgwnje.visionguard_android.util.NotificationHelper
@@ -61,8 +67,8 @@ class AlertForegroundService : LifecycleService() {
     private val _alerts = MutableStateFlow<List<AlertMessage>>(emptyList())
     val alerts: StateFlow<List<AlertMessage>> = _alerts
 
-    // 设备列表直接转发 wsClient.onDeviceList
-    val devices: StateFlow<List<DeviceInfo>> get() = wsClient.onDeviceList
+    private val _devices = MutableStateFlow<List<DeviceInfo>>(emptyList())
+    val devices: StateFlow<List<DeviceInfo>> = _devices
 
     private val _commandAck = MutableSharedFlow<Pair<String, Boolean>>(extraBufferCapacity = 8)
     val commandAck: SharedFlow<Pair<String, Boolean>> = _commandAck
@@ -70,12 +76,14 @@ class AlertForegroundService : LifecycleService() {
     // ── 内部状态 ──────────────────────────────────────────────
     private val wsClient = WebSocketClient()
     private lateinit var settingsRepo: SettingsRepository
+    private lateinit var deviceRegistryRepo: DeviceRegistryRepository
     private lateinit var nm: NotificationManager
     private val notifIdCounter = AtomicInteger(1000)
     private val alertNotifIdMap = ConcurrentHashMap<String, Int>()  // 协议分离: alertId → notifId,用于截图后到时静默更新通知
     private var wakeLock: PowerManager.WakeLock? = null
     private lateinit var screenshotCache: ScreenshotCache
     private lateinit var networkMonitor: NetworkMonitor  // 网络状态监听
+    private var deviceRegistryState = DeviceRegistrySyncState()
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -106,6 +114,7 @@ class AlertForegroundService : LifecycleService() {
         nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         NotificationHelper.createChannels(this)
         settingsRepo = SettingsRepository(applicationContext)
+        deviceRegistryRepo = DeviceRegistryRepository(applicationContext)
         screenshotCache = ScreenshotCache(applicationContext)
         networkMonitor = NetworkMonitor(applicationContext)
 
@@ -120,6 +129,15 @@ class AlertForegroundService : LifecycleService() {
             if (saved.isNotEmpty()) {
                 _alerts.value = mergeSortAlerts(emptyList(), saved)
                 Log.i(TAG, "报警历史已恢复: ${saved.size} 条")
+            }
+        }
+
+        lifecycleScope.launch {
+            deviceRegistryRepo.devicesFlow.collect { savedDevices ->
+                val update = deviceRegistryState.onRegistryLoaded(savedDevices)
+                deviceRegistryState = update.state
+                _devices.value = update.visibleDevices
+                update.devicesToPersist?.let { deviceRegistryRepo.saveDevices(it) }
             }
         }
 
@@ -219,6 +237,10 @@ class AlertForegroundService : LifecycleService() {
         // 订阅设备列表
         lifecycleScope.launch {
             wsClient.onDeviceList.collect { devices ->
+                val update = deviceRegistryState.onRealtimeDevices(devices)
+                deviceRegistryState = update.state
+                _devices.value = update.visibleDevices
+                update.devicesToPersist?.let { deviceRegistryRepo.saveDevices(it) }
                 Log.d(TAG, "设备列表更新: ${devices.size} 台 [${
                     devices.joinToString { "${it.deviceName}(${if (it.online) "在" else "离"})" }
                 }]")
@@ -302,10 +324,38 @@ class AlertForegroundService : LifecycleService() {
         }
     }
 
+    fun moveDevice(fromIndex: Int, toIndex: Int) {
+        val reordered = moveDeviceInOrder(_devices.value, fromIndex, toIndex)
+        if (reordered == _devices.value) return
+        persistDevices(reordered)
+    }
+
+    fun removeOfflineDevice(deviceId: String): RemovedDevice? {
+        val result = removeOfflineDeviceById(_devices.value, deviceId)
+        val removed = result.removed ?: return null
+        persistDevices(result.devices)
+        return removed
+    }
+
+    fun restoreDevice(removed: RemovedDevice) {
+        val restored = restoreRemovedDeviceInOrder(_devices.value, removed)
+        if (restored == _devices.value) return
+        persistDevices(restored)
+    }
+
     fun clearAlerts() {
         _alerts.value = emptyList()
         persistAlerts()
         screenshotCache.clearAll()
+    }
+
+    private fun persistDevices(devices: List<DeviceInfo>) {
+        val update = deviceRegistryState.onManualDevices(devices)
+        deviceRegistryState = update.state
+        _devices.value = update.visibleDevices
+        lifecycleScope.launch {
+            update.devicesToPersist?.let { deviceRegistryRepo.saveDevices(it) }
+        }
     }
 
     /** 查询截图缓存文件，未缓存返回 null */

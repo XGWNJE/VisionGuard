@@ -388,19 +388,19 @@ private fun parseIsoMillis(value: String?): Long? {
 
 fun buildUpdateFeedbackText(feedback: UpdateFeedback, currentVersion: String): String =
     when (feedback) {
-        UpdateFeedback.NO_UPDATE -> "当前版本 $currentVersion，已是最新版本"
-        UpdateFeedback.CHECK_FAILED -> "当前版本 $currentVersion，检查更新失败"
+        UpdateFeedback.NO_UPDATE -> "当前 $currentVersion，已是最新"
+        UpdateFeedback.CHECK_FAILED -> "当前 $currentVersion，检查失败"
     }
 
 fun buildUpdateDialogText(latestVersion: String, currentVersion: String): String =
-    "发现新版本 $latestVersion\n当前版本 $currentVersion\n\n是否立即下载更新？"
+    "最新 $latestVersion\n当前 $currentVersion\n\n是否更新？"
 
 fun buildUpdateDialogModel(latestVersion: String, currentVersion: String): UpdateDialogUiModel =
     UpdateDialogUiModel(
         title = "发现新版本",
-        currentVersionLabel = "当前版本 $currentVersion",
-        latestVersionLabel = "新版本 $latestVersion",
-        message = "是否立即下载并安装更新？",
+        currentVersionLabel = "当前 $currentVersion",
+        latestVersionLabel = "最新 $latestVersion",
+        message = "是否更新？",
         primaryActionLabel = "更新",
         secondaryActionLabel = "稍后",
         tone = UpdateDialogTone.AVAILABLE
@@ -409,9 +409,9 @@ fun buildUpdateDialogModel(latestVersion: String, currentVersion: String): Updat
 fun buildNoUpdateDialogModel(currentVersion: String): UpdateDialogUiModel =
     UpdateDialogUiModel(
         title = "已是最新版本",
-        currentVersionLabel = "当前版本 $currentVersion",
-        latestVersionLabel = "无需更新",
-        message = "当前版本已是最新版本。",
+        currentVersionLabel = "当前 $currentVersion",
+        latestVersionLabel = "状态：无需更新",
+        message = "无需操作。",
         primaryActionLabel = "知道了",
         secondaryActionLabel = null,
         tone = UpdateDialogTone.CURRENT
@@ -419,10 +419,10 @@ fun buildNoUpdateDialogModel(currentVersion: String): UpdateDialogUiModel =
 
 fun buildUpdateFailedDialogModel(currentVersion: String): UpdateDialogUiModel =
     UpdateDialogUiModel(
-        title = "检查更新失败",
-        currentVersionLabel = "当前版本 $currentVersion",
-        latestVersionLabel = "服务器未返回更新信息",
-        message = "请稍后再试。",
+        title = "检查失败",
+        currentVersionLabel = "当前 $currentVersion",
+        latestVersionLabel = "状态：稍后再试",
+        message = "暂时无法获取更新信息。",
         primaryActionLabel = "知道了",
         secondaryActionLabel = null,
         tone = UpdateDialogTone.FAILED

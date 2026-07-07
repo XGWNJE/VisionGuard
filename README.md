@@ -125,7 +125,7 @@ v4.3.0 发行包不包含 ONNX 模型，首次启动或切换模型时由客户�
 | Server 编译 | `cd server && npm run build` |
 | 五端编译 | `visionguard-build` skill |
 | 端到端 / 设备 Smoke | `visionguard-e2e` skill |
-| 版本对齐 | `version-alignment` skill |
+| 版本同步 | `node scripts/sync-version.js <version>` |
 | 客户端更新发布 | `push-update` skill |
 
 发布和版本变更必须显式触发。不要在普通修复、编译或文档整理时自动修改 `VERSION`，也不要隐式运行 `scripts/sync-version.js`、`scripts/release.js` 或 `scripts/bump-version.sh`。
@@ -139,7 +139,7 @@ v4.3.0 发行包不包含 ONNX 模型，首次启动或切换模型时由客户�
 | [docs/codex/30-windows-detector.md](./docs/codex/30-windows-detector.md) | WinForms / WPF 检测端差异 |
 | [docs/codex/35-model-assets.md](./docs/codex/35-model-assets.md) | ONNX 模型、COCO 类别、目标子集 |
 | [docs/codex/40-android-detector.md](./docs/codex/40-android-detector.md) | Android 检测端 |
-| [docs/codex/50-android-receiver.md](./docs/codex/50-android-receiver.md) | Android 接收端 |
+| [docs/codex/50-android-receiver.md](./docs/codex/50-android-receiver.md) | Android 接收端、设备列表与告警 UI |
 | [docs/codex/60-operations.md](./docs/codex/60-operations.md) | 构建、验证、发布、版本边界 |
 | [docs/codex/90-verification-report.md](./docs/codex/90-verification-report.md) | 已验真事实与谨慎表述点 |
 | [docs/design/README.md](./docs/design/README.md) | 设计稿与视觉素材入口 |

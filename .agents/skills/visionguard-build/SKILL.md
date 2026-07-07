@@ -1,11 +1,11 @@
 ---
 name: visionguard-build
-description: VisionGuard 五端编译验证。Use when the user asks to compile, build, verify build, 全端编译, 编译一次, 五端构建, build all, or check whether Server, WinForms, WPF, Android Detector, and Android Receiver still compile. This skill only builds and reports results; it must not bump versions, run release scripts, publish artifacts, deploy, commit, or push unless explicitly asked.
+description: Use when VisionGuard needs build or compile verification for Server, Windows WinForms/WPF, Android Detector, Android Receiver, Windows-only, Android-only, or all targets.
 ---
 
 # VisionGuard Build
 
-Use this skill for VisionGuard build verification across:
+Use this skill for VisionGuard build verification only. It compiles targets and reports evidence; it does not publish anything.
 
 - `server/`
 - `detector/windows-winforms/`
@@ -58,7 +58,7 @@ Push-Location receiver\android; .\gradlew.bat assembleRelease; Pop-Location
 ## Expected Artifacts
 
 - Server: `server/dist/index.js`
-- WinForms: `detector/windows-winforms/bin/x64/Release/VisionGuard.exe`
+- WinForms: `detector/windows-winforms/bin/Release/VisionGuard.exe`
 - WPF: `detector/windows-wpf/bin/x64/VisionGuard.exe`
 - Android Detector: `detector/android/app/build/outputs/apk/release/app-release.apk`
 - Android Receiver: `receiver/android/app/build/outputs/apk/release/app-release.apk`
@@ -71,5 +71,5 @@ Final response should include:
 - per-target pass/fail
 - notable warnings count or blocking error
 - artifact paths for successful targets
-- explicit note that no version bump/release/deploy was performed
+- explicit note that no version bump, release, deploy, commit, or push was performed unless explicitly requested
 

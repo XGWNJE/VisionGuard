@@ -46,6 +46,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -315,11 +316,14 @@ private fun DialogActionPill(
     val containerColor = if (selected) ReceiverPrimary else ReceiverSurfaceMuted
     val contentColor = if (selected) Color.White else ReceiverPrimary
 
+    val shape = RoundedCornerShape(26.dp)
+
     Surface(
         modifier = modifier
             .height(52.dp)
+            .clip(shape)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(26.dp),
+        shape = shape,
         color = containerColor,
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.76f))
     ) {

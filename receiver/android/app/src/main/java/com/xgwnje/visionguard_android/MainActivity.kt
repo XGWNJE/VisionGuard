@@ -47,6 +47,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -299,11 +300,14 @@ private fun ReceiverBottomBarItem(
     val itemColor = if (selected) ReceiverPrimary.copy(alpha = 0.92f) else Color.Transparent
     val contentColor = if (selected) Color.White else ReceiverMuted
 
+    val shape = RoundedCornerShape(34.dp)
+
     Surface(
         modifier = modifier
             .fillMaxHeight()
+            .clip(shape)
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(34.dp),
+        shape = shape,
         color = itemColor
     ) {
         Column(

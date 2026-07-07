@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Percent
 import androidx.compose.material.icons.filled.PlayArrow
@@ -84,14 +85,16 @@ fun DeviceCard(
     device: DeviceInfo,
     initialConfig: DeviceConfig?,
     onCommand: (String) -> Unit,
-    onSetConfig: (key: String, value: String) -> Unit
+    onSetConfig: (key: String, value: String) -> Unit,
+    modifier: Modifier = Modifier,
+    dragHandleModifier: Modifier = Modifier
 ) {
     val model = remember(device) { buildDeviceCardUiModel(device) }
     val chrome = remember { buildDeviceCardChrome() }
     var showConfigEditor by remember { mutableStateOf(false) }
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(chrome.cardCornerRadiusDp.dp),
         color = ReceiverSurface,
         border = BorderStroke(1.dp, Color.White),
@@ -99,7 +102,11 @@ fun DeviceCard(
         shadowElevation = 0.dp
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            DeviceCardHero(model = model, chrome = chrome)
+            DeviceCardHero(
+                model = model,
+                chrome = chrome,
+                dragHandleModifier = dragHandleModifier
+            )
             DeviceCardActions(
                 model = model,
                 chrome = chrome,
@@ -122,7 +129,8 @@ fun DeviceCard(
 @Composable
 private fun DeviceCardHero(
     model: DeviceCardUiModel,
-    chrome: DeviceCardChrome
+    chrome: DeviceCardChrome,
+    dragHandleModifier: Modifier
 ) {
     val heroShape = RoundedCornerShape(
         topStart = chrome.cardCornerRadiusDp.dp,
@@ -177,6 +185,41 @@ private fun DeviceCardHero(
             DeviceStatusPill(
                 label = model.statusLabel,
                 tone = model.statusTone
+            )
+        }
+        DeviceDragHandle(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 14.dp, end = 14.dp),
+            dragHandleModifier = dragHandleModifier
+        )
+    }
+}
+
+@Composable
+private fun DeviceDragHandle(
+    modifier: Modifier = Modifier,
+    dragHandleModifier: Modifier = Modifier
+) {
+    val shape = RoundedCornerShape(18.dp)
+
+    Surface(
+        modifier = modifier
+            .size(42.dp)
+            .clip(shape)
+            .then(dragHandleModifier),
+        shape = shape,
+        color = ReceiverSurface.copy(alpha = 0.78f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.68f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.Default.DragHandle,
+                contentDescription = "拖拽排序",
+                tint = ReceiverMuted,
+                modifier = Modifier.size(24.dp)
             )
         }
     }
@@ -297,12 +340,15 @@ private fun DeviceActionButton(
         else -> ReceiverPrimary
     }
 
+    val shape = RoundedCornerShape((heightDp / 2).dp)
+
     Surface(
         modifier = modifier
             .height(heightDp.dp)
             .alpha(if (enabled) 1f else 0.48f)
+            .clip(shape)
             .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape((heightDp / 2).dp),
+        shape = shape,
         color = containerColor,
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.76f)),
         tonalElevation = 0.dp,
@@ -773,6 +819,7 @@ private fun StepperButton(
         modifier = Modifier
             .size(44.dp)
             .alpha(if (enabled) 1f else 0.42f)
+            .clip(RoundedCornerShape(18.dp))
             .clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         color = ReceiverSurface,
@@ -801,6 +848,7 @@ private fun QuickValueChip(
     Surface(
         modifier = Modifier
             .alpha(if (enabled) 1f else 0.46f)
+            .clip(RoundedCornerShape(22.dp))
             .clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(22.dp),
         color = if (selected) ReceiverPrimary else ReceiverSurface,
@@ -853,12 +901,15 @@ private fun SheetActionButton(
     val containerColor = if (selected) ReceiverPrimary else ReceiverSurfaceMuted
     val contentColor = if (selected) Color.White else ReceiverPrimary
 
+    val shape = RoundedCornerShape(26.dp)
+
     Surface(
         modifier = modifier
             .height(52.dp)
             .alpha(if (enabled) 1f else 0.46f)
+            .clip(shape)
             .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(26.dp),
+        shape = shape,
         color = containerColor,
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.76f)),
         tonalElevation = 0.dp,
