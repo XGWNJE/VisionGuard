@@ -13,8 +13,8 @@
 
 ## 已验证事实
 
-- 根 `VERSION` 当前为 `4.2.1`
-- Server `package.json` 当前版本为 `4.2.1`
+- 根 `VERSION` 当前为 `4.3.0`
+- Server `package.json` 当前版本为 `4.3.0`
 - Server 线上 smoke 已在 `https://visionguard.xgwnje.cn` 通过：`/health`、`/api/update`、`/releases/*`、`/models/*`、`/ws`
 - Android 接收端实机 UI 已显示可连接，后续继续观察真实告警链路
 - Server 认证失败后会关闭连接，WS 认证超时为 5000ms
@@ -23,6 +23,7 @@
 - `server/src/routes/alerts.ts` 当前只返回脱敏后的告警摘要
 - Android Detector 当前包名为 `com.xgwnje.visionguard`
 - Android Receiver 当前包名为 `com.xgwnje.visionguard_android`
+- Windows 两端当前通过共享 `ApiKeyProvider` 解析 API key：环境变量优先，未配置时保留发行兼容兜底
 - Android 两端 API key 当前由 Gradle 注入 `BuildConfig.API_KEY`，本地可通过 `VISIONGUARD_API_KEY` 提供
 - Android Detector 当前前台服务类型为 `camera`
 - Android Receiver 当前前台服务类型为 `remoteMessaging`
@@ -32,7 +33,7 @@
 ## 旧说明与源码不一致之处
 
 1. 早期根目录说明如果存在乱码或旧架构表述，不能作为单一事实来源。
-2. 早期说明中如果写成 `4.1.1` 或更早版本，当前根版本源已经是 `4.2.1`。
+2. 早期说明中如果写成 `4.2.1` 或更早版本，当前根版本源已经是 `4.3.0`。
 3. 早期说明中如果把 Android API key 写成源码常量，当前实现已改为 Gradle 构建注入。
 4. 早期说明中如果把 Android Detector 说成支持 `Preview`，当前源码和实现都指向仅 `ImageAnalysis`。
 5. 早期说明中如果把 Server 截图下载描述成公开访问，当前源码要求 `X-API-Key`。

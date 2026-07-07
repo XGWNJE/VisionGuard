@@ -306,6 +306,9 @@
     <Compile Include="Utils\SimpleJson.cs" />
     <Compile Include="Utils\AutoUpdater.cs" />
     <Compile Include="Utils\SnapshotRenderer.cs" />
+    <Compile Include="..\windows-shared\Utils\ApiKeyProvider.cs">
+      <Link>Utils\ApiKeyProvider.cs</Link>
+    </Compile>
     <EmbeddedResource Include="Properties\Resources.resx">
       <SubType>Designer</SubType>
     </EmbeddedResource>

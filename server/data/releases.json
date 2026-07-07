@@ -2,12 +2,12 @@
   "winforms": {
     "version": "4.3.0",
     "url": "/releases/VisionGuard-v4.3.0.zip",
-    "size": 2501740
+    "size": 2501893
   },
   "wpf": {
     "version": "4.3.0",
     "url": "/releases/VisionGuard-WPF-v4.3.0.zip",
-    "size": 4877074
+    "size": 4877588
   },
   "android-detector": {
     "version": "4.3.0",

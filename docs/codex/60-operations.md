@@ -20,7 +20,7 @@
 ## 本地敏感配置
 
 - Server 真实密钥放 `server/.env` 或部署环境变量，不提交。
-- Windows 两端从环境变量 `VISIONGUARD_API_KEY` 读取 API key，源码默认值为空。
+- Windows 两端优先从环境变量 `VISIONGUARD_API_KEY` 读取 API key，发行包保留兼容兜底，避免未配置环境变量的旧安装断联。
 - Android 两端从 Gradle 注入 `BuildConfig.API_KEY`；本地可在各自 `local.properties` 写 `VISIONGUARD_API_KEY=...`，也可用 Gradle property 或环境变量。
 - Android keystore 密码只放本地 `keystore.properties`，仓库内只允许模板或占位值；模板见两端的 `keystore.properties.example`。
 

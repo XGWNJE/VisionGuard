@@ -67,6 +67,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\windows-shared\Utils\ApiKeyProvider.cs" Link="Utils\ApiKeyProvider.cs" />
     <Compile Update="Properties\Resources.Designer.cs">
       <DesignTime>True</DesignTime>
       <AutoGen>True</AutoGen>

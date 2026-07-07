@@ -65,7 +65,7 @@ Server 必须提供 `API_KEY`。真实值放在 `server/.env` 或部署环境变
 | Android 检测端 | `detector/android/` | CameraX + ONNX Runtime Mobile |
 | Android 接收端 | `receiver/android/` | Compose + OkHttp + 前台服务 |
 
-Android 两端从 Gradle 注入 `BuildConfig.API_KEY`。本地可在各自 `local.properties` 写 `VISIONGUARD_API_KEY=...`，也可通过 Gradle property 或环境变量提供。
+Windows 两端优先读取环境变量 `VISIONGUARD_API_KEY`，发行包保留兼容兜底；Android 两端从 Gradle 注入 `BuildConfig.API_KEY`，本地可在各自 `local.properties` 写 `VISIONGUARD_API_KEY=...`，也可通过 Gradle property 或环境变量提供。
 
 ## 项目结构
 

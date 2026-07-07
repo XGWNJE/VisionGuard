@@ -62,8 +62,7 @@ namespace VisionGuard
 
         // Server constants
         private const string ServerUrl = "https://visionguard.xgwnje.cn";
-        private static readonly string ServerApiKey =
-            System.Environment.GetEnvironmentVariable("VISIONGUARD_API_KEY") ?? "";
+        private static readonly string ServerApiKey = ApiKeyProvider.ResolveFromEnvironment();
 
         // ServerPushService + heartbeat
         private ServerPushService _serverPushService;

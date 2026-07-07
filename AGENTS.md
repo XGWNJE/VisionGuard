@@ -164,7 +164,7 @@ WS 三角色：`windows` / `android` / `android-detector`
 | 常量 | 位置 |
 |------|------|
 | `SERVER_URL = "https://visionguard.xgwnje.cn"` | 两端 `AppConstants.kt` + WinForms `Form1.cs` + WPF `AppConfig.cs` |
-| `API_KEY` | 环境变量 `VISIONGUARD_API_KEY`（C# 两端 + Android Gradle 注入）；Android 可在各自 `local.properties` 配置同名键 |
+| `API_KEY` | C# 两端环境变量 `VISIONGUARD_API_KEY` 优先，发行包保留兼容兜底；Android 两端 Gradle 注入，可在各自 `local.properties` 配置同名键 |
 | 检测端包名 `com.xgwnje.visionguard` | `app_name = "VG 检测"` |
 | 接收端包名 `com.xgwnje.visionguard_android` | `app_name = "VG 接收"` |
 | 模型下载 URL | `{SERVER_URL}/models/{modelKey}.onnx` |
