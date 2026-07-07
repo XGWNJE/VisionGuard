@@ -74,7 +74,11 @@ data class WsHeartbeatMessage(
     val isReady: Boolean = false,
     val cooldown: Int = 5,
     val confidence: Double = 0.45,
-    val targets: String = ""
+    val targets: String = "",
+    val targetSamplingRate: Int = 3,
+    val modelKey: String = "",
+    val modelOptions: List<String> = emptyList(),
+    val canSwitchModelWhileMonitoring: Boolean = true
 )
 
 /** Android-detector / Windows → 服务器：轻量报警通知（无截图数据） */

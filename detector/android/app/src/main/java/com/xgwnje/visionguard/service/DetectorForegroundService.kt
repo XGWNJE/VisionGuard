@@ -487,6 +487,8 @@ class DetectorForegroundService : LifecycleService() {
             digitalZoom = digitalZoom
         )
         _currentConfigFlow.value = currentConfig
+        updateWsHeartbeatStatus()
+        serverPushService.wsClient.sendHeartbeatNow()
         Log.i(TAG, "配置已完整恢复: confidence=$confidence, cooldown=${cooldown}s, zoom=$digitalZoom, masks=${maskRegions.size}")
 
         monitorService = MonitorService(
@@ -662,7 +664,11 @@ class DetectorForegroundService : LifecycleService() {
             try {
                 when (configMsg.key) {
                     "cooldown" -> {
-                        val raw = configMsg.value.toIntOrNull() ?: return@launch
+                        val raw = configMsg.value.toIntOrNull()
+                        if (raw == null) {
+                            serverPushService.sendCommandAck("set-config:cooldown", false, "值无效（1-300）")
+                            return@launch
+                        }
                         val value = raw.coerceIn(1, 300)
                         if (value != raw) {
                             Log.w(TAG, "cooldown 值 $raw 超出范围，已裁剪为 $value")
@@ -670,9 +676,14 @@ class DetectorForegroundService : LifecycleService() {
                         settingsRepo.setCooldown(value)
                         val newConfig = currentConfig.copy(cooldownMs = value * 1000L)
                         updateConfig(newConfig)
+                        serverPushService.sendCommandAck("set-config:cooldown", true)
                     }
                     "confidence" -> {
-                        val raw = configMsg.value.toFloatOrNull() ?: return@launch
+                        val raw = configMsg.value.toFloatOrNull()
+                        if (raw == null) {
+                            serverPushService.sendCommandAck("set-config:confidence", false, "值无效（0.1-0.95）")
+                            return@launch
+                        }
                         val value = raw.coerceIn(0.1f, 0.95f)
                         if (value != raw) {
                             Log.w(TAG, "confidence 值 $raw 超出范围，已裁剪为 $value")
@@ -680,19 +691,50 @@ class DetectorForegroundService : LifecycleService() {
                         settingsRepo.setConfidence(value)
                         val newConfig = currentConfig.copy(confidence = value)
                         updateConfig(newConfig)
+                        serverPushService.sendCommandAck("set-config:confidence", true)
                     }
                     "targets" -> {
                         settingsRepo.setTargets(configMsg.value)
                         val targets = configMsg.value.split(",").map { it.trim() }.toSet()
                         val newConfig = currentConfig.copy(targets = targets)
                         updateConfig(newConfig)
+                        serverPushService.sendCommandAck("set-config:targets", true)
+                    }
+                    "targetSamplingRate" -> {
+                        val raw = configMsg.value.toIntOrNull()
+                        if (raw == null || raw !in 1..5) {
+                            serverPushService.sendCommandAck("set-config:targetSamplingRate", false, "值无效（1-5）")
+                            return@launch
+                        }
+                        settingsRepo.setTargetSamplingRate(raw)
+                        val newConfig = currentConfig.copy(targetSamplingRate = raw)
+                        updateConfig(newConfig)
+                        serverPushService.sendCommandAck("set-config:targetSamplingRate", true)
+                    }
+                    "modelKey" -> {
+                        val parsed = parseModelKey(configMsg.value)
+                        if (parsed == null) {
+                            serverPushService.sendCommandAck("set-config:modelKey", false, "模型不支持")
+                            return@launch
+                        }
+                        settingsRepo.setSelectedModel(parsed.modelName)
+                        settingsRepo.setUseHighResolution(parsed.inputSize == 640)
+                        val newConfig = currentConfig.copy(
+                            modelName = parsed.modelName,
+                            inputSize = parsed.inputSize,
+                            useHighResolution = parsed.inputSize == 640
+                        )
+                        updateConfig(newConfig)
+                        serverPushService.sendCommandAck("set-config:modelKey", true)
                     }
                     else -> {
                         Log.w(TAG, "未知配置项: ${configMsg.key}")
+                        serverPushService.sendCommandAck("set-config:${configMsg.key}", false, "未知配置项")
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "处理远程配置变更失败", e)
+                serverPushService.sendCommandAck("set-config:${configMsg.key}", false, e.message ?: "处理失败")
             }
         }
     }
@@ -708,6 +750,31 @@ class DetectorForegroundService : LifecycleService() {
         client.heartbeatCooldown = (currentConfig.cooldownMs / 1000).toInt()
         client.heartbeatConfidence = currentConfig.confidence.toDouble()
         client.heartbeatTargets = currentConfig.targets.joinToString(",")
+        client.heartbeatTargetSamplingRate = currentConfig.targetSamplingRate.coerceIn(1, 5)
+        client.heartbeatModelKey = currentModelKey()
+        client.heartbeatModelOptions = supportedModelKeys()
+        client.heartbeatCanSwitchModelWhileMonitoring = true
+    }
+
+    private data class ParsedModelKey(val modelName: String, val inputSize: Int)
+
+    private fun parseModelKey(modelKey: String): ParsedModelKey? {
+        if (modelKey !in supportedModelKeys()) return null
+        val splitAt = modelKey.lastIndexOf('_')
+        if (splitAt <= 0 || splitAt == modelKey.lastIndex) return null
+        val modelName = modelKey.substring(0, splitAt)
+        val inputSize = modelKey.substring(splitAt + 1).toIntOrNull() ?: return null
+        return ParsedModelKey(modelName, inputSize)
+    }
+
+    private fun currentModelKey(): String =
+        "${currentConfig.modelName}_${currentConfig.inputSize}"
+
+    private fun supportedModelKeys(): List<String> {
+        val sizes = if (SocWhitelist.isHighEndSoc()) listOf(320, 640) else listOf(320)
+        return listOf("yolo26n", "yolo26s").flatMap { model ->
+            sizes.map { size -> "${model}_$size" }
+        }
     }
 
     // ═════════════════════════════════════════════════════════

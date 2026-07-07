@@ -129,13 +129,7 @@ namespace VisionGuard
 
             // 启动心跳定时器（3秒）—— 连接建立后立即开始，无论监控是否运行
             _heartbeatTimer = new System.Windows.Forms.Timer { Interval = 3000 };
-            _heartbeatTimer.Tick += (s, ev) =>
-                _serverPushService.UpdateHeartbeatParams(
-                    isMonitoring: _monitorService.IsStarted,
-                    isReady:       IsRegionReady,
-                    cooldown:      _sliderCooldown.Value,
-                    confidence:    _trkThreshold.Value / 100f,
-                    targets:       GetWatchedClassesString());
+            _heartbeatTimer.Tick += (s, ev) => UpdateServerHeartbeatParams();
             _heartbeatTimer.Start();
         }
 
@@ -270,12 +264,7 @@ namespace VisionGuard
                             _serverPushService.SendCommandAck(cmd, false, "检测端无本地报警功能");
                             break;
                     }
-                    _serverPushService.UpdateHeartbeatParams(
-                        isMonitoring: _monitorService.IsStarted,
-                        isReady:      IsRegionReady,
-                        cooldown:     _sliderCooldown.Value,
-                        confidence:   _trkThreshold.Value / 100f,
-                        targets:      GetWatchedClassesString());
+                    UpdateServerHeartbeatParams();
                     _serverPushService.SendHeartbeatNow();
                 }));
             };
@@ -285,21 +274,30 @@ namespace VisionGuard
                 BeginInvoke(new Action(() =>
                 {
                     ApplyRemoteConfig(kv.Key, kv.Value);
-                    _serverPushService.UpdateHeartbeatParams(
-                        isMonitoring: _monitorService.IsStarted,
-                        isReady:      IsRegionReady,
-                        cooldown:     _sliderCooldown.Value,
-                        confidence:   _trkThreshold.Value / 100f,
-                        targets:      GetWatchedClassesString());
+                    UpdateServerHeartbeatParams();
                     _serverPushService.SendHeartbeatNow();
                 }));
             };
         }
 
+        private void UpdateServerHeartbeatParams()
+        {
+            _serverPushService.UpdateHeartbeatParams(
+                isMonitoring: _monitorService.IsStarted,
+                isReady: IsRegionReady,
+                cooldown: _sliderCooldown.Value,
+                confidence: _trkThreshold.Value / 100f,
+                targets: GetWatchedClassesString(),
+                targetSamplingRate: _sliderSamplingRate.Value,
+                modelKey: _selectedModel,
+                modelOptions: Utils.ModelManager.ModelKeys,
+                canSwitchModelWhileMonitoring: false);
+        }
+
 
         /// <summary>
         /// 应用 Android 端下发的参数调整命令（set-config）。
-        /// 支持的 key：cooldown / confidence / targets
+        /// 支持的 key：cooldown / confidence / targets / targetSamplingRate / modelKey
         /// </summary>
         private void ApplyRemoteConfig(string key, string value)
         {
@@ -362,6 +360,43 @@ namespace VisionGuard
                         _monitorService.UpdateConfig(BuildConfig());
                     _serverPushService.SendCommandAck("set-config:targets", true);
                     _log.Info($"[Server] 远程调整监控目标 → {(classes.Count == 0 ? "全部" : string.Join(",", classes))}");
+                    SaveSettings();
+                    break;
+
+                case "targetSamplingRate":
+                    if (int.TryParse(value, out int rate) && rate >= 1 && rate <= 5)
+                    {
+                        _sliderSamplingRate.Value = Math.Max(_sliderSamplingRate.Minimum,
+                            Math.Min(_sliderSamplingRate.Maximum, rate));
+                        _lblSamplingRate.Text = $"{_sliderSamplingRate.Value} 次/秒";
+                        if (_monitorService.IsStarted)
+                            _monitorService.UpdateConfig(BuildConfig());
+                        _serverPushService.SendCommandAck("set-config:targetSamplingRate", true);
+                        _log.Info($"[Server] 远程调整采样率 → {rate} 次/秒");
+                        SaveSettings();
+                    }
+                    else
+                    {
+                        _serverPushService.SendCommandAck("set-config:targetSamplingRate", false, "值无效（1-5）");
+                    }
+                    break;
+
+                case "modelKey":
+                    if (_monitorService.IsStarted)
+                    {
+                        _serverPushService.SendCommandAck("set-config:modelKey", false, "请先停止监控再切换模型");
+                        break;
+                    }
+                    int modelIndex = Array.IndexOf(Utils.ModelManager.ModelKeys, value);
+                    if (modelIndex < 0)
+                    {
+                        _serverPushService.SendCommandAck("set-config:modelKey", false, "模型不支持");
+                        break;
+                    }
+                    _selectedModel = value;
+                    _cmbModel.SelectedIndex = modelIndex;
+                    _serverPushService.SendCommandAck("set-config:modelKey", true);
+                    _log.Info($"[Server] 远程切换模型 → {value}");
                     SaveSettings();
                     break;
 

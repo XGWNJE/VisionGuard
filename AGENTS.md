@@ -122,14 +122,14 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 **原则**：从 **.csproj 根源**控制输出内容，不在 `release.js` 中事后删除。每次改动后必须编译验证并用 `Get-ChildItem` 检查输出目录。
 
-### 发行包体积参考（v4.2.1，不含模型）
+### 发行包体积参考（v4.3.0，不含模型）
 
 | 端 | 体积 | 主要组成 |
 |---|---|---|
-| WinForms | ~2.4 MB | exe + onnxruntime.dll + NuGet DLLs，不含模型 |
-| WPF | ~4.7 MB | exe/dll + onnxruntime.dll（根目录）+ Assets 图标，不含模型 |
-| Android 检测 | ~39.6 MB | APK，不含模型 |
-| Android 接收 | ~20.9 MB | APK |
+| WinForms | ~2.5 MB | exe + onnxruntime.dll + NuGet DLLs，不含模型 |
+| WPF | ~4.9 MB | exe/dll + onnxruntime.dll（根目录）+ Assets 图标，不含模型 |
+| Android 检测 | ~41.5 MB | APK，不含模型 |
+| Android 接收 | ~22.3 MB | APK |
 
 ### 发布脚本
 

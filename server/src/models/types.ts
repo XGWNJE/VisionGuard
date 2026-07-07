@@ -54,6 +54,10 @@ export interface WsHeartbeat {
   cooldown?: number;
   confidence?: number;
   targets?: string;
+  targetSamplingRate?: number;
+  modelKey?: string;
+  modelOptions?: string[];
+  canSwitchModelWhileMonitoring?: boolean;
 }
 
 /** 接收端 → 服务器：心跳 (每 20 秒) */
@@ -70,6 +74,7 @@ export interface WsAlertPush {
   deviceName: string;
   timestamp: string;
   detections: Detection[];
+  createdAt?: number;
   screenshotUrl?: string;
   timings?: Record<string, number>;
   /** @deprecated since 4.0.0 — 使用 capturedAt 替代 */
@@ -103,6 +108,10 @@ export interface DeviceStatus {
   cooldown: number;
   confidence: number;
   targets: string;
+  targetSamplingRate: number;
+  modelKey: string;
+  modelOptions: string[];
+  canSwitchModelWhileMonitoring: boolean;
   clientType: string;
 }
 
@@ -176,6 +185,10 @@ export interface DetectorClient {
   cooldown: number;
   confidence: number;
   targets: string;
+  targetSamplingRate: number;
+  modelKey: string;
+  modelOptions: string[];
+  canSwitchModelWhileMonitoring: boolean;
 }
 
 export interface ReceiverClient {

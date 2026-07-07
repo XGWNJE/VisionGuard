@@ -42,7 +42,7 @@ data class WsCommandMessage(
 data class WsSetConfigMessage(
     val type: String = "set-config",
     val targetDeviceId: String,
-    val key: String,    // "cooldown" | "confidence" | "targets"
+    val key: String,    // "cooldown" | "confidence" | "targets" | "targetSamplingRate" | "modelKey"
     val value: String   // 字符串形式的值
 )
 

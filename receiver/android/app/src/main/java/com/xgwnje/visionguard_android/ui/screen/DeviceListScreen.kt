@@ -42,10 +42,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.xgwnje.visionguard_android.data.model.DeviceConfig
 import com.xgwnje.visionguard_android.data.remote.WsState
 import com.xgwnje.visionguard_android.service.AlertForegroundService
 import com.xgwnje.visionguard_android.ui.component.DeviceCard
+import com.xgwnje.visionguard_android.ui.home.buildDeviceConfigFromDevice
 import com.xgwnje.visionguard_android.ui.theme.ReceiverAlert
 import com.xgwnje.visionguard_android.ui.theme.ReceiverAlertSoft
 import com.xgwnje.visionguard_android.ui.theme.ReceiverBackground
@@ -111,11 +111,7 @@ fun DeviceListScreen(
                 items(devices, key = { it.deviceId }) { device ->
                     DeviceCard(
                         device = device,
-                        initialConfig = DeviceConfig(
-                            cooldown = device.cooldown,
-                            confidence = device.confidence,
-                            targets = device.targets
-                        ),
+                        initialConfig = buildDeviceConfigFromDevice(device),
                         onCommand = { command ->
                             deviceVm.sendCommand(device.deviceId, command)
                         },

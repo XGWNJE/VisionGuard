@@ -255,13 +255,17 @@ fun buildDeviceConfigEditorUiModel(
     initialConfig: DeviceConfig,
     editedCooldown: Float,
     editedConfidence: Float,
-    selectedTargets: Set<String>
+    selectedTargets: Set<String>,
+    editedTargetSamplingRate: Int = initialConfig.targetSamplingRate,
+    editedModelKey: String = initialConfig.modelKey
 ): DeviceConfigEditorUiModel {
     val hasChanges = buildDeviceConfigChanges(
         initialConfig = initialConfig,
         editedCooldown = editedCooldown,
         editedConfidence = editedConfidence,
-        selectedTargets = selectedTargets
+        selectedTargets = selectedTargets,
+        editedTargetSamplingRate = editedTargetSamplingRate,
+        editedModelKey = editedModelKey
     ).isNotEmpty()
 
     return DeviceConfigEditorUiModel(
@@ -279,7 +283,9 @@ fun buildDeviceConfigChanges(
     initialConfig: DeviceConfig,
     editedCooldown: Float,
     editedConfidence: Float,
-    selectedTargets: Set<String>
+    selectedTargets: Set<String>,
+    editedTargetSamplingRate: Int = initialConfig.targetSamplingRate,
+    editedModelKey: String = initialConfig.modelKey
 ): List<DeviceConfigChange> {
     val normalizedTargets = selectedTargets
         .map { it.trim() }
@@ -293,6 +299,8 @@ fun buildDeviceConfigChanges(
     val changes = mutableListOf<DeviceConfigChange>()
     val cooldown = editedCooldown.roundToInt().coerceIn(1, 300)
     val confidence = editedConfidence.coerceIn(0.10f, 0.95f)
+    val targetSamplingRate = editedTargetSamplingRate.coerceIn(1, 5)
+    val modelKey = editedModelKey.trim()
 
     if (cooldown != initialConfig.cooldown) {
         changes += DeviceConfigChange("cooldown", cooldown.toString())
@@ -306,8 +314,76 @@ fun buildDeviceConfigChanges(
     if (normalizedTargets != initialTargets) {
         changes += DeviceConfigChange("targets", normalizedTargets.joinToString(","))
     }
+    if (targetSamplingRate != initialConfig.targetSamplingRate) {
+        changes += DeviceConfigChange("targetSamplingRate", targetSamplingRate.toString())
+    }
+    if (modelKey.isNotEmpty() && modelKey != initialConfig.modelKey) {
+        changes += DeviceConfigChange("modelKey", modelKey)
+    }
 
     return changes
+}
+
+fun buildDeviceConfigFromDevice(device: DeviceInfo): DeviceConfig =
+    DeviceConfig(
+        cooldown = device.cooldown,
+        confidence = device.confidence,
+        targets = device.targets.orEmpty(),
+        targetSamplingRate = device.targetSamplingRate.takeIf { it in 1..5 } ?: 3,
+        modelKey = device.modelKey.orEmpty()
+    )
+
+fun mergeSortAlerts(
+    existing: List<AlertMessage>,
+    incoming: List<AlertMessage>,
+    limit: Int = 200
+): List<AlertMessage> {
+    val mergedById = linkedMapOf<String, AlertMessage>()
+    (existing + incoming).forEach { alert ->
+        val key = alert.alertId.ifBlank {
+            "${alert.deviceId}:${alert.timestamp}:${alert.receivedAt ?: 0L}"
+        }
+        mergedById[key] = mergedById[key]?.let { mergeAlertMetadata(it, alert) } ?: alert
+    }
+    return mergedById.values
+        .sortedWith(
+            compareByDescending<AlertMessage> { alertSortMillis(it) }
+                .thenByDescending { it.receivedAt ?: 0L }
+                .thenByDescending { it.alertId }
+        )
+        .take(limit)
+}
+
+private fun mergeAlertMetadata(first: AlertMessage, second: AlertMessage): AlertMessage {
+    val primary = if (alertSortMillis(second) > alertSortMillis(first)) second else first
+    val secondary = if (primary === first) second else first
+    return primary.copy(
+        hasScreenshot = first.hasScreenshot || second.hasScreenshot,
+        screenshotUrl = primary.screenshotUrl.ifBlank { secondary.screenshotUrl },
+        screenshotData = primary.screenshotData ?: secondary.screenshotData,
+        screenshotBase64 = primary.screenshotBase64?.takeIf { it.isNotBlank() }
+            ?: secondary.screenshotBase64?.takeIf { it.isNotBlank() },
+        receivedAt = primary.receivedAt ?: secondary.receivedAt,
+        notifiedAt = primary.notifiedAt ?: secondary.notifiedAt
+    )
+}
+
+private fun alertSortMillis(alert: AlertMessage): Long =
+    alert.createdAt
+        ?: parseIsoMillis(alert.serverReceivedAt)
+        ?: parseIsoMillis(alert.timestamp)
+        ?: alert.receivedAt
+        ?: 0L
+
+private fun parseIsoMillis(value: String?): Long? {
+    if (value.isNullOrBlank()) return null
+    return runCatching {
+        OffsetDateTime.parse(value).toInstant().toEpochMilli()
+    }.getOrElse {
+        runCatching {
+            Instant.parse(value).toEpochMilli()
+        }.getOrNull()
+    }
 }
 
 fun buildUpdateFeedbackText(feedback: UpdateFeedback, currentVersion: String): String =

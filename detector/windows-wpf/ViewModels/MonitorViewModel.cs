@@ -250,7 +250,7 @@ namespace VisionGuard.ViewModels
             _monitorService.Resume();
         }
 
-        /// <summary>远控参数调整（cooldown / confidence / targets）。</summary>
+        /// <summary>远控参数调整（cooldown / confidence / targets / targetSamplingRate / modelKey）。</summary>
         public void ApplyRemoteConfig(string key, string value)
         {
             switch (key)
@@ -288,6 +288,36 @@ namespace VisionGuard.ViewModels
                     if (_monitorService.IsStarted)
                         _monitorService.UpdateConfig(BuildConfig());
                     _serverPushService.SendCommandAck("set-config:targets", true);
+                    break;
+
+                case "targetSamplingRate":
+                    if (int.TryParse(value, out int rate) && rate >= 1 && rate <= 5)
+                    {
+                        _settingsVm.SamplingRate = rate;
+                        if (_monitorService.IsStarted)
+                            _monitorService.UpdateConfig(BuildConfig());
+                        _settingsVm.Save();
+                        _serverPushService.SendCommandAck("set-config:targetSamplingRate", true);
+                    }
+                    else
+                        _serverPushService.SendCommandAck("set-config:targetSamplingRate", false, "值无效（1–5）");
+                    break;
+
+                case "modelKey":
+                    if (_monitorService.IsStarted)
+                    {
+                        _serverPushService.SendCommandAck("set-config:modelKey", false, "请先停止监控再切换模型");
+                        break;
+                    }
+                    int modelIndex = Array.IndexOf(Utils.ModelManager.ModelKeys, value);
+                    if (modelIndex < 0)
+                    {
+                        _serverPushService.SendCommandAck("set-config:modelKey", false, "模型不支持");
+                        break;
+                    }
+                    _settingsVm.SelectedModelIndex = modelIndex;
+                    _settingsVm.Save();
+                    _serverPushService.SendCommandAck("set-config:modelKey", true);
                     break;
 
                 default:

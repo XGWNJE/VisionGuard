@@ -19,6 +19,10 @@ data class DeviceInfo(
     val cooldown: Int = 5,
     val confidence: Double = 0.45,
     val targets: String = "",
+    val targetSamplingRate: Int = 3,
+    val modelKey: String = "",
+    val modelOptions: List<String> = emptyList(),
+    val canSwitchModelWhileMonitoring: Boolean = false,
     /** 客户端类型："windows" / "android-detector"，供 UI 差异化展示使用 */
     val clientType: String = "windows"
 )
@@ -27,5 +31,7 @@ data class DeviceInfo(
 data class DeviceConfig(
     val cooldown: Int = 5,           // 秒
     val confidence: Double = 0.45,   // 0.10–0.95
-    val targets: String = ""         // 英文逗号分隔，如 "person,car"
+    val targets: String = "",        // 英文逗号分隔，如 "person,car"
+    val targetSamplingRate: Int = 3,  // 次/秒
+    val modelKey: String = ""
 )

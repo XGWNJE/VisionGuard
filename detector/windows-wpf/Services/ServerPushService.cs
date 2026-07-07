@@ -65,6 +65,10 @@ namespace VisionGuard.Services
         private int _hbCooldown = 5;
         private float _hbConfidence = 0.45f;
         private string _hbTargets = "";
+        private int _hbTargetSamplingRate = 3;
+        private string _hbModelKey = "";
+        private string[] _hbModelOptions = Array.Empty<string>();
+        private bool _hbCanSwitchModelWhileMonitoring;
 
         private bool _disposed;
 
@@ -153,7 +157,9 @@ namespace VisionGuard.Services
         }
 
         public void UpdateHeartbeatParams(bool isMonitoring, bool isReady,
-            int cooldown, float confidence, string targets)
+            int cooldown, float confidence, string targets,
+            int targetSamplingRate = 3, string modelKey = "",
+            string[]? modelOptions = null, bool canSwitchModelWhileMonitoring = false)
         {
             lock (_hbParamsLock)
             {
@@ -162,6 +168,10 @@ namespace VisionGuard.Services
                 _hbCooldown = cooldown;
                 _hbConfidence = confidence;
                 _hbTargets = targets ?? "";
+                _hbTargetSamplingRate = Math.Max(1, Math.Min(5, targetSamplingRate));
+                _hbModelKey = modelKey ?? "";
+                _hbModelOptions = modelOptions == null ? Array.Empty<string>() : (string[])modelOptions.Clone();
+                _hbCanSwitchModelWhileMonitoring = canSwitchModelWhileMonitoring;
             }
         }
 
@@ -242,6 +252,10 @@ namespace VisionGuard.Services
             int cooldown;
             float confidence;
             string targets;
+            int targetSamplingRate;
+            string modelKey;
+            string[] modelOptions;
+            bool canSwitchModelWhileMonitoring;
             lock (_hbParamsLock)
             {
                 isMonitoring = _hbIsMonitoring;
@@ -249,6 +263,10 @@ namespace VisionGuard.Services
                 cooldown = _hbCooldown;
                 confidence = _hbConfidence;
                 targets = _hbTargets;
+                targetSamplingRate = _hbTargetSamplingRate;
+                modelKey = _hbModelKey;
+                modelOptions = (string[])_hbModelOptions.Clone();
+                canSwitchModelWhileMonitoring = _hbCanSwitchModelWhileMonitoring;
             }
             s.SendJson(new Dictionary<string, object>
             {
@@ -260,6 +278,10 @@ namespace VisionGuard.Services
                 ["cooldown"] = cooldown,
                 ["confidence"] = confidence,
                 ["targets"] = targets,
+                ["targetSamplingRate"] = targetSamplingRate,
+                ["modelKey"] = modelKey,
+                ["modelOptions"] = modelOptions,
+                ["canSwitchModelWhileMonitoring"] = canSwitchModelWhileMonitoring,
             });
         }
 
@@ -682,6 +704,10 @@ namespace VisionGuard.Services
                     int cooldown;
                     float confidence;
                     string targets;
+                    int targetSamplingRate;
+                    string modelKey;
+                    string[] modelOptions;
+                    bool canSwitchModelWhileMonitoring;
                     lock (_parent._hbParamsLock)
                     {
                         isMonitoring = _parent._hbIsMonitoring;
@@ -689,6 +715,10 @@ namespace VisionGuard.Services
                         cooldown = _parent._hbCooldown;
                         confidence = _parent._hbConfidence;
                         targets = _parent._hbTargets;
+                        targetSamplingRate = _parent._hbTargetSamplingRate;
+                        modelKey = _parent._hbModelKey;
+                        modelOptions = (string[])_parent._hbModelOptions.Clone();
+                        canSwitchModelWhileMonitoring = _parent._hbCanSwitchModelWhileMonitoring;
                     }
 
                     SendJson(new Dictionary<string, object>
@@ -701,6 +731,10 @@ namespace VisionGuard.Services
                         ["cooldown"] = cooldown,
                         ["confidence"] = confidence,
                         ["targets"] = targets,
+                        ["targetSamplingRate"] = targetSamplingRate,
+                        ["modelKey"] = modelKey,
+                        ["modelOptions"] = modelOptions,
+                        ["canSwitchModelWhileMonitoring"] = canSwitchModelWhileMonitoring,
                     });
                     // 注意：发送心跳后绝不更新 _lastMessageAtTicks
                 }

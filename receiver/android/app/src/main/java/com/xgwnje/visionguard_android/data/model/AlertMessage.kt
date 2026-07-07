@@ -25,6 +25,7 @@ data class AlertMessage(
     val deviceName: String = "",
     val timestamp: String = "",      // ISO 8601
     val detections: List<Detection> = emptyList(),
+    val createdAt: Long? = null,      // 服务器接收时间戳，排序权威字段
     val screenshotUrl: String = "",  // 已废弃，保留兼容（Windows 不再发此字段）
     val screenshotData: ScreenshotData? = null,
     val hasScreenshot: Boolean = false,

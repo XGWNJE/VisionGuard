@@ -17,6 +17,8 @@ function main() {
     console.error('❌ 版本号格式错误，应为 x.y.z');
     process.exit(1);
   }
+  const [major, minor, patch] = newVersion.split('.').map(Number);
+  const versionCode = major * 1000 + minor * 100 + patch;
 
   console.log(`🔄 同步版本号到全端: ${newVersion}`);
 
@@ -48,6 +50,11 @@ function main() {
     /versionName = "[\d.]+"/,
     `versionName = "${newVersion}"`
   );
+  replaceInFile(
+    path.join(ROOT, 'detector', 'android', 'app', 'build.gradle.kts'),
+    /versionCode = \d+/,
+    `versionCode = ${versionCode}`
+  );
 
   // 5. Android 检测端 AppConstants.kt
   replaceInFile(
@@ -69,6 +76,11 @@ function main() {
     /versionName = "[\d.]+"/,
     `versionName = "${newVersion}"`
   );
+  replaceInFile(
+    path.join(ROOT, 'receiver', 'android', 'app', 'build.gradle.kts'),
+    /versionCode = \d+/,
+    `versionCode = ${versionCode}`
+  );
 
   // 8. Android 接收端 AppConstants.kt (VERSION)
   replaceInFile(
@@ -82,6 +94,18 @@ function main() {
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
   pkg.version = newVersion;
   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+
+  // 9.1 Server package-lock.json
+  const lockPath = path.join(ROOT, 'server', 'package-lock.json');
+  if (fs.existsSync(lockPath)) {
+    const lock = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
+    lock.version = newVersion;
+    if (lock.packages && lock.packages['']) {
+      lock.packages[''].version = newVersion;
+    }
+    fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
+    console.log(`  ✓ ${path.relative(ROOT, lockPath)}`);
+  }
 
   // 10. Server index.ts 硬编码版本
   replaceInFile(
@@ -127,6 +151,13 @@ function main() {
     path.join(ROOT, 'detector', 'windows-winforms', 'Services', 'ServerPushService.cs'),
     /\["version"\] = "[\d.]+"/,
     `["version"] = "${newVersion}"`
+  );
+
+  // 11.1 WinForms ClickOnce ApplicationVersion
+  replaceInFile(
+    path.join(ROOT, 'detector', 'windows-winforms', 'VisionGuard.csproj'),
+    /<ApplicationVersion>[\d.]+%2a<\/ApplicationVersion>/,
+    `<ApplicationVersion>${newVersion}.%2a</ApplicationVersion>`
   );
 
   // 12. WPF ServerPushService.cs 硬编码版本

@@ -27,6 +27,7 @@ import com.xgwnje.visionguard_android.data.model.DeviceConfig
 import com.xgwnje.visionguard_android.data.remote.WebSocketClient
 import com.xgwnje.visionguard_android.data.remote.WsState
 import com.xgwnje.visionguard_android.data.repository.SettingsRepository
+import com.xgwnje.visionguard_android.ui.home.mergeSortAlerts
 import com.xgwnje.visionguard_android.util.NotificationHelper
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
@@ -117,7 +118,7 @@ class AlertForegroundService : LifecycleService() {
         lifecycleScope.launch {
             val saved = settingsRepo.loadAlerts()
             if (saved.isNotEmpty()) {
-                _alerts.value = saved
+                _alerts.value = mergeSortAlerts(emptyList(), saved)
                 Log.i(TAG, "报警历史已恢复: ${saved.size} 条")
             }
         }
@@ -187,7 +188,7 @@ class AlertForegroundService : LifecycleService() {
                     }
                 }
 
-                _alerts.value = (listOf(alertForStorage) + _alerts.value).take(200)
+                _alerts.value = mergeSortAlerts(_alerts.value, listOf(alertForStorage))
                 persistAlerts()
                 sendAlertNotification(alertForStorage)
             }
@@ -282,6 +283,10 @@ class AlertForegroundService : LifecycleService() {
             "cooldown" -> current.copy(cooldown = value.toIntOrNull() ?: current.cooldown)
             "confidence" -> current.copy(confidence = value.toDoubleOrNull() ?: current.confidence)
             "targets" -> current.copy(targets = value)
+            "targetSamplingRate" -> current.copy(
+                targetSamplingRate = value.toIntOrNull()?.coerceIn(1, 5) ?: current.targetSamplingRate
+            )
+            "modelKey" -> current.copy(modelKey = value.ifBlank { current.modelKey })
             else -> current
         }
     }
@@ -327,29 +332,15 @@ class AlertForegroundService : LifecycleService() {
                                 val history = alertsArr?.map {
                                     gson.fromJson(it, AlertMessage::class.java)
                                 } ?: emptyList()
-                                // 合并到现有列表，去重（按 alertId）
-                                val serverById = history.associateBy { it.alertId }
-                                val updatedExisting = _alerts.value.map { local ->
-                                    val remote = serverById[local.alertId]
-                                    if (remote != null &&
-                                        ((!local.hasScreenshot && remote.hasScreenshot) ||
-                                            (local.screenshotUrl.isEmpty() && remote.screenshotUrl.isNotEmpty()))
-                                    ) {
-                                        local.copy(
-                                            hasScreenshot = local.hasScreenshot || remote.hasScreenshot,
-                                            screenshotUrl = local.screenshotUrl.ifEmpty { remote.screenshotUrl }
-                                        )
-                                    } else {
-                                        local
+                                val before = _alerts.value
+                                val merged = mergeSortAlerts(before, history)
+                                if (merged != before) {
+                                    val newCount = merged.count { mergedAlert ->
+                                        before.none { it.alertId == mergedAlert.alertId }
                                     }
-                                }
-                                val existingIds = updatedExisting.map { it.alertId }.toSet()
-                                val newAlerts = history.filter { it.alertId !in existingIds }
-                                if (newAlerts.isNotEmpty() || updatedExisting != _alerts.value) {
-                                    val merged = (newAlerts + updatedExisting).distinctBy { it.alertId }
-                                    _alerts.value = merged.take(200)
+                                    _alerts.value = merged
                                     persistAlerts()
-                                    Log.i(TAG, "历史报警已同步: ${newAlerts.size} 条")
+                                    Log.i(TAG, "历史报警已同步: $newCount 条")
                                 }
                                 true
                             } else false

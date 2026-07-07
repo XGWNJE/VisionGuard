@@ -12,6 +12,7 @@ import path from 'path';
 import { config } from '../config';
 import { validateApiKey } from '../middleware/auth';
 import { addAlert, markAlertScreenshot } from '../services/AlertStore';
+import { isValidSetConfigKey, validateSetConfigValue } from '../services/ControlProtocol';
 import { getSafeScreenshotPath, isSafeAlertId, validateAlertMeta, validateImageMagic } from '../utils/security';
 import type {
   WsAuthMessage, WsHeartbeat, WsHeartbeatAndroid, WsCommand, WsSetConfig,
@@ -63,10 +64,10 @@ function scheduleDetectorRemoval(
 
 // ── 输入校验 ────────────────────────────────────────────────
 
-const VALID_SET_CONFIG_KEYS = new Set(['cooldown', 'confidence', 'targets']);
 const MAX_DEVICE_ID_LENGTH = 128;
 const MAX_DEVICE_NAME_LENGTH = 64;
 const MAX_TARGETS_LENGTH = 500;
+const MAX_MODEL_OPTIONS = 16;
 
 function validateDetection(d: any): boolean {
   if (!d || typeof d !== 'object') return false;
@@ -99,6 +100,51 @@ function sanitizeHeartbeatTargets(v: any): string | undefined {
   if (v === undefined || v === null) return undefined;
   const s = String(v);
   return s.length > MAX_TARGETS_LENGTH ? s.slice(0, MAX_TARGETS_LENGTH) : s;
+}
+
+function sanitizeHeartbeatSamplingRate(v: any): number | undefined {
+  if (v === undefined || v === null) return undefined;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 1 || n > 5) return undefined;
+  return n;
+}
+
+function sanitizeModelKey(v: any): string | undefined {
+  if (v === undefined || v === null) return undefined;
+  const s = String(v).trim();
+  return /^[A-Za-z0-9_-]{1,64}$/.test(s) ? s : undefined;
+}
+
+function sanitizeModelOptions(v: any): string[] | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (!Array.isArray(v)) return undefined;
+  const options = v
+    .map(sanitizeModelKey)
+    .filter((s): s is string => !!s);
+  return Array.from(new Set(options)).slice(0, MAX_MODEL_OPTIONS);
+}
+
+function createDetectorClient(
+  ws: WebSocket,
+  msg: WsAuthMessage,
+  clientType: 'windows' | 'android-detector',
+): DetectorClient {
+  return {
+    ws,
+    deviceId: msg.deviceId,
+    deviceName: msg.deviceName,
+    clientType,
+    isMonitoring: false,
+    isReady: false,
+    lastSeen: new Date(),
+    cooldown: 5,
+    confidence: 0.45,
+    targets: '',
+    targetSamplingRate: 3,
+    modelKey: '',
+    modelOptions: [],
+    canSwitchModelWhileMonitoring: clientType === 'android-detector',
+  };
 }
 
 // ── 接收端 Session 追踪 ─────────────────────────────────────
@@ -274,14 +320,16 @@ export function handleConnection(ws: WebSocket): void {
           alert.deviceId = metaResult.value.deviceId;
           alert.deviceName = metaResult.value.deviceName;
           alert.detections = metaResult.value.detections;
-          alert.serverReceivedAt = new Date().toISOString();
+          const createdAt = Date.now();
+          alert.serverReceivedAt = new Date(createdAt).toISOString();
+          alert.createdAt = createdAt;
           addAlert({
             alertId: alert.alertId,
             deviceId: alert.deviceId,
             deviceName: alert.deviceName,
             timestamp: alert.timestamp,
             detections: alert.detections,
-            createdAt: Date.now(),
+            createdAt,
           });
           broadcastAlert(alert);
         }
@@ -423,11 +471,7 @@ function handleAuth(
       sendJson(existing.ws, { type: 'kicked', reason: 'duplicate connection' });
       existing.ws.terminate();
     }
-    const client: DetectorClient = {
-      ws, deviceId: msg.deviceId, deviceName: msg.deviceName, clientType: 'windows',
-      isMonitoring: false, isReady: false, lastSeen: new Date(),
-      cooldown: 5, confidence: 0.45, targets: '',
-    };
+    const client = createDetectorClient(ws, msg, 'windows');
     detectorWindowsClients.set(msg.deviceId, client);
     console.log(`[ws][${ts}] Windows 上线: ${msg.deviceName} (${msg.deviceId}) | Win:${detectorWindowsClients.size} AdrDet:${detectorAndroidClients.size} Recv:${receiverClients.size}`);
   } else if (msg.role === 'android-detector') {
@@ -439,11 +483,7 @@ function handleAuth(
       sendJson(existing.ws, { type: 'kicked', reason: 'duplicate connection' });
       existing.ws.terminate();
     }
-    const client: DetectorClient = {
-      ws, deviceId: msg.deviceId, deviceName: msg.deviceName, clientType: 'android-detector',
-      isMonitoring: false, isReady: false, lastSeen: new Date(),
-      cooldown: 5, confidence: 0.45, targets: '',
-    };
+    const client = createDetectorClient(ws, msg, 'android-detector');
     detectorAndroidClients.set(msg.deviceId, client);
     console.log(`[ws][${ts}] Android检测端 上线: ${msg.deviceName} (${msg.deviceId}) | Win:${detectorWindowsClients.size} AdrDet:${detectorAndroidClients.size} Recv:${receiverClients.size}`);
   } else if (msg.role === 'android') {
@@ -512,6 +552,10 @@ function handleHeartbeat(msg: WsHeartbeat): void {
     client.cooldown !== (msg.cooldown ?? client.cooldown) ||
     client.confidence !== (msg.confidence ?? client.confidence) ||
     client.targets !== (msg.targets ?? client.targets) ||
+    client.targetSamplingRate !== (msg.targetSamplingRate ?? client.targetSamplingRate) ||
+    client.modelKey !== (msg.modelKey ?? client.modelKey) ||
+    JSON.stringify(client.modelOptions) !== JSON.stringify(msg.modelOptions ?? client.modelOptions) ||
+    client.canSwitchModelWhileMonitoring !== (msg.canSwitchModelWhileMonitoring ?? client.canSwitchModelWhileMonitoring) ||
     nameChanged;
 
   client.isMonitoring = msg.isMonitoring;
@@ -519,6 +563,10 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   if (msg.cooldown !== undefined) client.cooldown = sanitizeHeartbeatCooldown(msg.cooldown) ?? client.cooldown;
   if (msg.confidence !== undefined) client.confidence = sanitizeHeartbeatConfidence(msg.confidence) ?? client.confidence;
   if (msg.targets !== undefined) client.targets = sanitizeHeartbeatTargets(msg.targets) ?? client.targets;
+  if (msg.targetSamplingRate !== undefined) client.targetSamplingRate = sanitizeHeartbeatSamplingRate(msg.targetSamplingRate) ?? client.targetSamplingRate;
+  if (msg.modelKey !== undefined) client.modelKey = sanitizeModelKey(msg.modelKey) ?? client.modelKey;
+  if (msg.modelOptions !== undefined) client.modelOptions = sanitizeModelOptions(msg.modelOptions) ?? client.modelOptions;
+  if (msg.canSwitchModelWhileMonitoring !== undefined) client.canSwitchModelWhileMonitoring = !!msg.canSwitchModelWhileMonitoring;
   if (nameChanged) {
     client.deviceName = msg.deviceName!;
     console.log(`[ws][${new Date().toISOString()}] 设备名称更新: ${client.deviceName} (${msg.deviceId})`);
@@ -610,32 +658,13 @@ function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
 }
 
 function handleSetConfig(senderWs: WebSocket, msg: WsSetConfig): void {
-  if (!VALID_SET_CONFIG_KEYS.has(msg.key)) {
+  if (!isValidSetConfigKey(msg.key)) {
     sendJson(senderWs, {
       type: 'command-ack', targetDeviceId: msg.targetDeviceId,
       command: `set-config:${msg.key}`, success: false, reason: `无效的配置项: ${msg.key}`,
     }, 'set-config-ack->sender');
     console.warn(`[ws][${new Date().toISOString()}] 配置更新拒绝: target=${msg.targetDeviceId} key=${msg.key} reason=invalid-key`);
     return;
-  }
-
-  let sanitizedValue = msg.value;
-  if (msg.key === 'cooldown') {
-    const v = sanitizeHeartbeatCooldown(msg.value);
-    if (v === undefined) {
-      sendJson(senderWs, { type: 'command-ack', targetDeviceId: msg.targetDeviceId, command: `set-config:${msg.key}`, success: false, reason: 'cooldown 必须是 1-300 的整数' }, 'set-config-ack->sender');
-      return;
-    }
-    sanitizedValue = String(v);
-  } else if (msg.key === 'confidence') {
-    const v = sanitizeHeartbeatConfidence(msg.value);
-    if (v === undefined) {
-      sendJson(senderWs, { type: 'command-ack', targetDeviceId: msg.targetDeviceId, command: `set-config:${msg.key}`, success: false, reason: 'confidence 必须是 0.01-1.0 的数字' }, 'set-config-ack->sender');
-      return;
-    }
-    sanitizedValue = String(v);
-  } else if (msg.key === 'targets') {
-    sanitizedValue = sanitizeHeartbeatTargets(msg.value) ?? '';
   }
 
   const target = findDetector(msg.targetDeviceId);
@@ -645,6 +674,13 @@ function handleSetConfig(senderWs: WebSocket, msg: WsSetConfig): void {
     return;
   }
 
+  const validation = validateSetConfigValue(msg.key, msg.value, target.modelOptions);
+  if (!validation.ok) {
+    sendJson(senderWs, { type: 'command-ack', targetDeviceId: msg.targetDeviceId, command: `set-config:${msg.key}`, success: false, reason: validation.reason }, 'set-config-ack->sender');
+    return;
+  }
+
+  const sanitizedValue = validation.value;
   const relay: WsSetConfigRelay = { type: 'set-config', key: msg.key, value: sanitizedValue, targetDeviceId: msg.targetDeviceId };
   sendJson(target.ws, relay, `set-config->${msg.targetDeviceId}`);
   sendJson(senderWs, { type: 'command-ack', targetDeviceId: msg.targetDeviceId, command: `set-config:${msg.key}`, success: true, reason: '已转发' }, 'set-config-ack->sender');
@@ -722,6 +758,10 @@ function buildDeviceList(): DeviceStatus[] {
         cooldown: c.cooldown,
         confidence: c.confidence,
         targets: c.targets,
+        targetSamplingRate: c.targetSamplingRate,
+        modelKey: c.modelKey,
+        modelOptions: c.modelOptions,
+        canSwitchModelWhileMonitoring: c.canSwitchModelWhileMonitoring,
         clientType: c.clientType,
       });
     }

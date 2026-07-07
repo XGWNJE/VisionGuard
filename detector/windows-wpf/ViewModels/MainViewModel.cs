@@ -255,7 +255,11 @@ namespace VisionGuard.ViewModels
                 isReady: MonitorVm.HasCaptureTarget, // 选区已设定即就绪，与 WinForms 对齐
                 cooldown: SettingsVm.Cooldown,
                 confidence: SettingsVm.Threshold / 100f,
-                targets: string.Join(",", targets));
+                targets: string.Join(",", targets),
+                targetSamplingRate: SettingsVm.SamplingRate,
+                modelKey: SettingsVm.SelectedModelName,
+                modelOptions: Utils.ModelManager.ModelKeys,
+                canSwitchModelWhileMonitoring: false);
             sps.SendHeartbeatNow();
         }
     }

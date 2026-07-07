@@ -23,13 +23,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Percent
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
@@ -343,7 +341,9 @@ private fun DeviceConfigBottomSheet(
     onSetConfig: (key: String, value: String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var cooldown by remember(initialConfig.cooldown) { mutableStateOf(initialConfig.cooldown.toFloat()) }
+    var cooldown by remember(initialConfig.cooldown) {
+        mutableStateOf(normalizeCooldownOption(initialConfig.cooldown))
+    }
     var confidence by remember(initialConfig.confidence) { mutableStateOf(initialConfig.confidence.toFloat()) }
     var selectedTargets by remember(initialConfig.targets) {
         mutableStateOf(
@@ -354,12 +354,28 @@ private fun DeviceConfigBottomSheet(
                 .toSet()
         )
     }
+    var targetSamplingRate by remember(initialConfig.targetSamplingRate) {
+        mutableStateOf(initialConfig.targetSamplingRate.coerceIn(1, 5))
+    }
+    val modelOptions = device.modelOptions.orEmpty()
+    val modelSelectionEnabled = modelOptions.isNotEmpty() &&
+        (!device.isMonitoring || device.canSwitchModelWhileMonitoring)
+    var selectedModelKey by remember(initialConfig.modelKey, modelOptions) {
+        mutableStateOf(
+            initialConfig.modelKey
+                .takeIf { it.isNotBlank() && it in modelOptions }
+                ?: if (modelSelectionEnabled) modelOptions.firstOrNull().orEmpty() else initialConfig.modelKey
+        )
+    }
+    val modelKeyForChanges = if (modelSelectionEnabled) selectedModelKey else initialConfig.modelKey
     val editorModel = buildDeviceConfigEditorUiModel(
         device = device,
         initialConfig = initialConfig,
-        editedCooldown = cooldown,
+        editedCooldown = cooldown.toFloat(),
         editedConfidence = confidence,
-        selectedTargets = selectedTargets
+        selectedTargets = selectedTargets,
+        editedTargetSamplingRate = targetSamplingRate,
+        editedModelKey = modelKeyForChanges
     )
 
     Dialog(
@@ -410,6 +426,16 @@ private fun DeviceConfigBottomSheet(
                             value = cooldown,
                             onChange = { cooldown = it }
                         )
+                        SamplingRateEditor(
+                            value = targetSamplingRate,
+                            onChange = { targetSamplingRate = it }
+                        )
+                        ModelKeyEditor(
+                            selectedModelKey = selectedModelKey,
+                            modelOptions = modelOptions,
+                            enabled = modelSelectionEnabled,
+                            onChange = { selectedModelKey = it }
+                        )
                         ConfidenceEditor(
                             value = confidence,
                             onChange = { confidence = it }
@@ -444,9 +470,11 @@ private fun DeviceConfigBottomSheet(
                             onClick = {
                                 buildDeviceConfigChanges(
                                     initialConfig = initialConfig,
-                                    editedCooldown = cooldown,
+                                    editedCooldown = cooldown.toFloat(),
                                     editedConfidence = confidence,
-                                    selectedTargets = selectedTargets
+                                    selectedTargets = selectedTargets,
+                                    editedTargetSamplingRate = targetSamplingRate,
+                                    editedModelKey = modelKeyForChanges
                                 ).forEach { change ->
                                     onSetConfig(change.key, change.value)
                                 }
@@ -532,35 +560,93 @@ private fun ConfigSheetHeader(
 
 @Composable
 private fun CooldownEditor(
-    value: Float,
-    onChange: (Float) -> Unit
+    value: Int,
+    onChange: (Int) -> Unit
 ) {
     ConfigSection(
         icon = Icons.Default.Timer,
-        title = "冷却时间",
-        valueLabel = "${value.roundToInt()} 秒"
+        title = "警报推送冷却时间",
+        valueLabel = cooldownLabel(value)
     ) {
-        Row(
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            StepperButton(
-                icon = Icons.Default.Remove,
-                enabled = value > 1f,
-                onClick = { onChange((value - 5f).coerceAtLeast(1f)) }
+            CooldownOptions.forEach { (seconds, label) ->
+                QuickValueChip(
+                    text = label,
+                    selected = value == seconds,
+                    onClick = { onChange(seconds) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SamplingRateEditor(
+    value: Int,
+    onChange: (Int) -> Unit
+) {
+    ConfigSection(
+        icon = Icons.Default.Timer,
+        title = "目标采样率",
+        valueLabel = "$value 次/秒"
+    ) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            (1..5).forEach { rate ->
+                QuickValueChip(
+                    text = "$rate 次/秒",
+                    selected = value == rate,
+                    onClick = { onChange(rate) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelKeyEditor(
+    selectedModelKey: String,
+    modelOptions: List<String>,
+    enabled: Boolean,
+    onChange: (String) -> Unit
+) {
+    val disabledText = when {
+        modelOptions.isEmpty() -> "旧端暂未上报模型列表"
+        !enabled -> "停止监控后可切换模型"
+        else -> null
+    }
+    ConfigSection(
+        icon = Icons.Default.Tune,
+        title = "模型选择",
+        valueLabel = selectedModelKey.ifBlank { "不可用" }
+    ) {
+        disabledText?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.labelLarge,
+                color = ReceiverMuted
             )
-            ReceiverSlider(
-                value = value,
-                onValueChange = onChange,
-                valueRange = 1f..300f,
-                modifier = Modifier.weight(1f)
-            )
-            StepperButton(
-                icon = Icons.Default.Add,
-                enabled = value < 300f,
-                onClick = { onChange((value + 5f).coerceAtMost(300f)) }
-            )
+        }
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            modelOptions.forEach { option ->
+                QuickValueChip(
+                    text = option.replace("_", " "),
+                    selected = selectedModelKey == option,
+                    enabled = enabled,
+                    onClick = { onChange(option) }
+                )
+            }
         }
     }
 }
@@ -709,10 +795,13 @@ private fun StepperButton(
 private fun QuickValueChip(
     text: String,
     selected: Boolean,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
     Surface(
-        modifier = Modifier.clickable(onClick = onClick),
+        modifier = Modifier
+            .alpha(if (enabled) 1f else 0.46f)
+            .clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(22.dp),
         color = if (selected) ReceiverPrimary else ReceiverSurface,
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.76f)),
@@ -792,6 +881,21 @@ private fun illustrationDrawableRes(illustration: DeviceCardIllustration): Int =
         DeviceCardIllustration.ANDROID_CAMERA -> R.drawable.device_bg_android_detector
         DeviceCardIllustration.GENERIC_VIEWFINDER -> R.drawable.device_bg_generic
     }
+
+private val CooldownOptions = listOf(
+    10 to "10秒",
+    30 to "30秒",
+    60 to "1分钟",
+    100 to "100秒",
+    120 to "2分钟",
+    180 to "3分钟"
+)
+
+private fun normalizeCooldownOption(seconds: Int): Int =
+    CooldownOptions.minByOrNull { kotlin.math.abs(it.first - seconds) }?.first ?: 10
+
+private fun cooldownLabel(seconds: Int): String =
+    CooldownOptions.firstOrNull { it.first == seconds }?.second ?: "$seconds 秒"
 
 private fun statusForeground(tone: DeviceStatusTone): Color =
     when (tone) {

@@ -263,12 +263,7 @@ namespace VisionGuard
                 }
 
                 // 状态突变后立即推送心跳，让接收端秒级感知
-                _serverPushService.UpdateHeartbeatParams(
-                    isMonitoring: _monitorService.IsStarted,
-                    isReady: IsRegionReady,
-                    cooldown: _sliderCooldown.Value,
-                    confidence: _trkThreshold.Value / 100f,
-                    targets: GetWatchedClassesString());
+                UpdateServerHeartbeatParams();
                 _serverPushService.SendHeartbeatNow();
 
                 _heartbeatTimer?.Start(); // 定时器已在 LoadSettings 创建，此处确保运行中
@@ -302,10 +297,7 @@ namespace VisionGuard
             _monitorService.Stop();
             // 不停止心跳定时器：服务器依赖心跳判断在线状态，停止心跳会导致 Android 误报掉线
             // isMonitoring=false 通过下次 tick 自动传递，同时立即发一次最终状态
-            _serverPushService.UpdateHeartbeatParams(isMonitoring: false, isReady: IsRegionReady,
-                cooldown: _sliderCooldown.Value,
-                confidence: _trkThreshold.Value / 100f,
-                targets: GetWatchedClassesString());
+            UpdateServerHeartbeatParams();
             _serverPushService.SendHeartbeatNow();
             UpdateControlState(started: false);
             _log.Info(remote ? "[Server] 收到 pause，监控推理已停止。" : "监控已停止。");

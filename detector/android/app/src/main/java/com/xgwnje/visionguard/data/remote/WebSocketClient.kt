@@ -99,6 +99,18 @@ class WebSocketClient {
     @Volatile
     var heartbeatTargets: String = ""
 
+    @Volatile
+    var heartbeatTargetSamplingRate: Int = 3
+
+    @Volatile
+    var heartbeatModelKey: String = ""
+
+    @Volatile
+    var heartbeatModelOptions: List<String> = emptyList()
+
+    @Volatile
+    var heartbeatCanSwitchModelWhileMonitoring: Boolean = true
+
     // ── 事件定义 ─────────────────────────────────────────────
     private sealed class Event {
         data class Connect(val url: String, val apiKey: String, val deviceId: String, val deviceName: String) : Event()
@@ -185,7 +197,11 @@ class WebSocketClient {
             isReady = isReady,
             cooldown = heartbeatCooldown,
             confidence = heartbeatConfidence,
-            targets = heartbeatTargets
+            targets = heartbeatTargets,
+            targetSamplingRate = heartbeatTargetSamplingRate,
+            modelKey = heartbeatModelKey,
+            modelOptions = heartbeatModelOptions,
+            canSwitchModelWhileMonitoring = heartbeatCanSwitchModelWhileMonitoring
         )
         return s.sendNow(gson.toJson(hb))
     }
@@ -516,7 +532,11 @@ class WebSocketClient {
                         isReady = isReady,
                         cooldown = heartbeatCooldown,
                         confidence = heartbeatConfidence,
-                        targets = heartbeatTargets
+                        targets = heartbeatTargets,
+                        targetSamplingRate = heartbeatTargetSamplingRate,
+                        modelKey = heartbeatModelKey,
+                        modelOptions = heartbeatModelOptions,
+                        canSwitchModelWhileMonitoring = heartbeatCanSwitchModelWhileMonitoring
                     )
                     val sent = ws.send(gson.toJson(hb))
                     if (!sent) {

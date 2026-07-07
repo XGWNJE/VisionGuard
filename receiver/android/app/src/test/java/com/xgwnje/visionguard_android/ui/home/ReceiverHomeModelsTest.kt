@@ -5,6 +5,7 @@ import com.xgwnje.visionguard_android.data.model.BoundingBox
 import com.xgwnje.visionguard_android.data.model.Detection
 import com.xgwnje.visionguard_android.data.model.DeviceConfig
 import com.xgwnje.visionguard_android.data.model.DeviceInfo
+import com.google.gson.Gson
 import java.time.ZonedDateTime
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -191,11 +192,92 @@ class ReceiverHomeModelsTest {
             initialConfig = initialConfig,
             editedCooldown = 30f,
             editedConfidence = 0.45f,
-            selectedTargets = setOf("person", "car")
+            selectedTargets = setOf("person", "car"),
+            editedTargetSamplingRate = 3,
+            editedModelKey = ""
         )
 
         assertEquals(listOf("cooldown", "targets"), changes.map { it.key })
         assertEquals(listOf("30", "car,person"), changes.map { it.value })
+    }
+
+    @Test
+    fun alertMergeSortKeepsNewestServerCreatedAtFirstAndDeduplicatesScreenshots() {
+        val newestLocal = AlertMessage(
+            alertId = "new-local",
+            deviceId = "win",
+            timestamp = "2026-07-07T12:00:00.000+08:00",
+            createdAt = 1_000L
+        )
+        val olderHistory = AlertMessage(
+            alertId = "old-history",
+            deviceId = "android",
+            timestamp = "2026-07-07T11:58:00.000+08:00",
+            createdAt = 900L
+        )
+        val screenshotUpdate = newestLocal.copy(
+            hasScreenshot = true,
+            screenshotUrl = "/screenshots/new-local.jpg"
+        )
+
+        val merged = mergeSortAlerts(
+            existing = listOf(newestLocal),
+            incoming = listOf(olderHistory, screenshotUpdate)
+        )
+
+        assertEquals(listOf("new-local", "old-history"), merged.map { it.alertId })
+        assertEquals(true, merged.first().hasScreenshot)
+        assertEquals("/screenshots/new-local.jpg", merged.first().screenshotUrl)
+    }
+
+    @Test
+    fun deviceConfigChangesIncludesDiscreteCooldownSamplingRateAndModel() {
+        val initialConfig = DeviceConfig(
+            cooldown = 10,
+            confidence = 0.45,
+            targets = "person",
+            targetSamplingRate = 3,
+            modelKey = "yolo26n_320"
+        )
+
+        val changes = buildDeviceConfigChanges(
+            initialConfig = initialConfig,
+            editedCooldown = 100f,
+            editedConfidence = 0.45f,
+            selectedTargets = setOf("person"),
+            editedTargetSamplingRate = 5,
+            editedModelKey = "yolo26s_640"
+        )
+
+        assertEquals(listOf("cooldown", "targetSamplingRate", "modelKey"), changes.map { it.key })
+        assertEquals(listOf("100", "5", "yolo26s_640"), changes.map { it.value })
+    }
+
+    @Test
+    fun deviceConfigFromDeviceToleratesLegacyDeviceListWithoutModelFields() {
+        val legacyDevice = Gson().fromJson(
+            """
+            {
+              "deviceId": "legacy-win",
+              "deviceName": "Old Windows",
+              "online": true,
+              "isMonitoring": false,
+              "isReady": true,
+              "lastSeen": "",
+              "cooldown": 30,
+              "confidence": 0.45,
+              "targets": "person",
+              "clientType": "windows"
+            }
+            """.trimIndent(),
+            DeviceInfo::class.java
+        )
+
+        val config = buildDeviceConfigFromDevice(legacyDevice)
+
+        assertEquals(30, config.cooldown)
+        assertEquals(3, config.targetSamplingRate)
+        assertEquals("", config.modelKey)
     }
 
     @Test

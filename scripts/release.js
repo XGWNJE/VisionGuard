@@ -97,12 +97,12 @@ function main() {
       zipExclude: ['Assets', 'alerts'],
     },
     {
-      src: path.join(ROOT, 'detector', 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk'),
+      src: findAndroidReleaseApk(path.join(ROOT, 'detector', 'android')),
       dest: path.join(RELEASES_DIR, `VisionGuard-Detector-v${version}.apk`),
       isZip: false,
     },
     {
-      src: path.join(ROOT, 'receiver', 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk'),
+      src: findAndroidReleaseApk(path.join(ROOT, 'receiver', 'android')),
       dest: path.join(RELEASES_DIR, `VisionGuard-Receiver-v${version}.apk`),
       isZip: false,
     },
@@ -157,6 +157,17 @@ function findMsBuild() {
   const result = execSync(`"${vswhere}" -latest -find "MSBuild\\\\**\\\\Bin\\\\MSBuild.exe"`).toString().trim();
   if (!result) throw new Error('MSBuild 未找到');
   return result.split('\n')[0];
+}
+
+function findAndroidReleaseApk(projectDir) {
+  const releaseDir = path.join(projectDir, 'app', 'build', 'outputs', 'apk', 'release');
+  const candidates = ['app-release.apk', 'app-release-unsigned.apk']
+    .map(name => path.join(releaseDir, name));
+  const apk = candidates.find(file => fs.existsSync(file));
+  if (!apk) {
+    throw new Error(`Android Release APK 未找到: ${releaseDir}`);
+  }
+  return apk;
 }
 
 main();
