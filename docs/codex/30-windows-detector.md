@@ -1,6 +1,6 @@
 # Windows Detector
 
-Windows 检测端分两条线：WinForms 主力线和 WPF 视觉升级线。
+Windows 检测端分两条线：WinForms 主力线和 WPF 视觉升级线。两条线当前 UI 都按毛坯状态看待；已清理旧探索资材，后续桌面视觉需要单独探索，不从 Android 旧原型或旧 Pencil 方案继承。
 
 ## WinForms
 

@@ -1,21 +1,15 @@
 # VisionGuard Design
 
-这个目录是仓库统一的设计稿与视觉素材入口。
+这个目录只保留当前仍有效的设计规范。旧 Android 接收端 HTML 原型、Android 检测端 Pencil 源、一次性生成脚本、Pencil 导出和未采用素材已清理，不能再作为实现依据。
 
-## 目录分工
+## 当前入口
 
-- `pencil-exports/android-receiver-alert-list-neumorphic.pen`: Android 接收端警报页 Pencil 源工程，后续还原到代码以它为准。
-- `pencil-exports/android-receiver-alert-list-neumorphic.png`: Android 接收端警报页新简约主义 Pencil 设计预览。
-- `pencil-exports/component-alert-card-variants.png`: 警报列表卡片组件变体。
-- `pencil-exports/component-metric-card-variants.png`: 在线设备等统计卡组件变体。
-- `pencil-exports/component-bottom-navigation-variants.png`: 底部导航组件变体。
-- `pencil-exports/component-empty-state-variants.png`: 空状态组件变体。
-- `pencil-exports/detection-icon-chip-library.png`: 当前 6 类监控目标的图标 chip 备选库。
-- `pencil-exports/connection-status-variants.png`: 接收端 WebSocket 连接状态条 4 种状态。
-- `assets/app-assets/`: 原根目录 `design/` 中的应用图标、参考截图和视觉素材。
+- [android-ui-guidelines.md](./android-ui-guidelines.md)：Android UI 通用规范。当前只有接收端 Compose 方案是已确认基准；Android 检测端后续迁移复用这套视觉语言，Windows 端后续另行探索。
 
 ## 维护约定
 
-- 新增通用设计稿和视觉素材优先放在 `docs/design/` 下。
-- 模块专属、会被特定工具继续编辑的源文件可以留在模块目录，例如 `detector/android/design/AndroidDetectorDesign.pen`。
-- 不要把 `docs/design/assets/app-assets/` 里的图片路径直接写进运行时代码；运行时资源应复制到对应端的正式资源目录。
+- Android UI 改动先对照规范，再查看实际 Compose token 和组件实现。
+- 新增可长期维护的通用规范放在 `docs/design/`。
+- 一次性探索稿、失败原型、未采用素材不要继续提交到仓库。
+- 运行时代码不得直接引用 `docs/design/` 下的素材。
+- 模块专属设计源只有在已明确采用并会继续维护时才保留；毛坯探索阶段不要提交 `.pen`、HTML 原型或生成脚本。

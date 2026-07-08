@@ -185,7 +185,7 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 版本同步不再维护独立 skill；以根目录 `VERSION` 为权威，显式授权后运行 `node scripts/sync-version.js <version>`。VPS/域名/SNI 信息以 `D:\ObjectCode\Server-infra` 为准，旧全局 `vps-server-info` 如有冲突不得采用。
 
-Agent 清单（`.Codex/agents/`）：`scanner`（搜索/审查/扫描）/ `builder`（编译验证）
+项目级 skill 位于 `.agents/skills/`。旧 `.claude/`、`CLAUDE.md`、`.Codex/agents/` 入口不再维护，不要恢复为事实来源。
 
 ## 详细文档
 

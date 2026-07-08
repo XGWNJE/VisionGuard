@@ -70,14 +70,22 @@ Windows 两端优先读取环境变量 `VISIONGUARD_API_KEY`，发行包保留�
 ## 项目结构
 
 ```text
-detector/windows-winforms/   C# / .NET Framework 4.7.2 / WinForms
-detector/windows-wpf/        C# / .NET 9 / WPF / MVVM
-detector/android/            Kotlin / CameraX / ONNX Runtime Mobile
-server/                      Node.js 20+ / TypeScript / Express / ws
-receiver/android/            Kotlin / Jetpack Compose / OkHttp
+detector/
+  windows-winforms/          C# / .NET Framework 4.7.2 / WinForms 主力检测端
+  windows-wpf/               C# / .NET 9 / WPF / MVVM 桌面视觉升级线
+  android/                   Kotlin / CameraX / ONNX Runtime Mobile 安卓检测端
+receiver/
+  android/                   Kotlin / Jetpack Compose / OkHttp 安卓接收端
+server/                      Node.js 20+ / TypeScript / Express / ws 中继服务
+scripts/                     版本同步、模型导出、发行与发布脚本
+tests/                       跨模块约束测试
+.agents/skills/              当前项目级 Agent 技能
 docs/codex/                  已验真的项目说明、构建、发布和验证文档
-docs/design/                 设计稿与视觉素材入口
+docs/design/                 当前设计规范入口
+icon/                        当前应用图标素材
 ```
+
+本地生成或缓存目录不作为项目结构维护：`artifacts/`、`models/`、`server/data/releases/`、`server/data/models/`、各端 `bin/`、`obj/`、`build/`、`.gradle/`、`.vs/`、`node_modules/` 均可按需重建。Android 签名、`local.properties`、`server/.env` 属于本机敏感配置，不提交也不随清理脚本删除。
 
 ## 关键能力
 
@@ -142,7 +150,7 @@ v4.3.1 发行包不包含 ONNX 模型，首次启动或切换模型时由客户�
 | [docs/codex/50-android-receiver.md](./docs/codex/50-android-receiver.md) | Android 接收端、设备列表与告警 UI |
 | [docs/codex/60-operations.md](./docs/codex/60-operations.md) | 构建、验证、发布、版本边界 |
 | [docs/codex/90-verification-report.md](./docs/codex/90-verification-report.md) | 已验真事实与谨慎表述点 |
-| [docs/design/README.md](./docs/design/README.md) | 设计稿与视觉素材入口 |
+| [docs/design/README.md](./docs/design/README.md) | 当前设计规范入口 |
 
 ## 安全边界
 

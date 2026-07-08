@@ -2,6 +2,8 @@
 
 `detector/android/` 是 Android 检测端，负责摄像头采集、推理、遮罩、告警和上传。
 
+当前 UI 仍按毛坯状态看待；旧模块专属 Pencil 设计源已清理，不再作为实现依据。后续 UI 迁移应参考 `docs/design/android-ui-guidelines.md` 的颜色、状态和组件语义，但不照搬接收端信息架构。
+
 ## 当前职责
 
 - CameraX 采集

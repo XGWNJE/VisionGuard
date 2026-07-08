@@ -42,6 +42,21 @@ test('repository entrypoints reference visionguard-release instead of push-updat
   assert.doesNotMatch(combined, /push-update/);
 });
 
+test('old Claude workflow entrypoints are not kept as canonical project files', () => {
+  assert.ok(
+    !fs.existsSync(path.join(root, '.claude/skills/push-update/SKILL.md')),
+    'old Claude push-update skill should not be tracked'
+  );
+  assert.ok(
+    !fs.existsSync(path.join(root, '.claude/skills/version-alignment/SKILL.md')),
+    'old Claude version-alignment skill should not be tracked'
+  );
+  assert.ok(
+    !fs.existsSync(path.join(root, 'scripts/hooks/check-claude-md.ps1')),
+    'old CLAUDE.md sync hook should not be tracked'
+  );
+});
+
 test('publish-release.ps1 keeps GitHub optional and release deployment reproducible', () => {
   const script = read('scripts/publish-release.ps1');
 

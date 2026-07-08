@@ -12,7 +12,26 @@ VisionGuard 是一个三端联动的 AI 实时监控系统。
 
 - `AGENTS.md` 是顶层约束，不属于待清理的旧说明
 - `docs/codex/` 是当前唯一维护的解释性文档集合
-- 历史 `README.md`、`CLAUDE.md`、模块内说明文档已迁移后清理，不再作为事实来源
+- `.agents/skills/` 是当前项目级 Agent 技能入口
+- 历史 `CLAUDE.md`、`.claude/`、`.Codex/agents/`、模块内旧说明文档已迁移后清理，不再作为事实来源
+
+## 目录职责
+
+| 目录 | 职责 |
+|---|---|
+| `detector/windows-winforms/` | WinForms 主力检测端，面向 Win7+ |
+| `detector/windows-wpf/` | WPF 桌面视觉升级线，面向 Win10+ |
+| `detector/android/` | Android CameraX 检测端 |
+| `receiver/android/` | Android Compose 接收端 |
+| `server/` | HTTP / WebSocket 中继服务 |
+| `scripts/` | 版本、构建、发行、发布和模型导出脚本 |
+| `tests/` | 跨模块约束测试 |
+| `.agents/skills/` | 当前项目级 Agent 技能 |
+| `docs/codex/` | 已验真的项目事实文档 |
+| `docs/design/` | 当前设计规范入口，不保存历史探索素材 |
+| `icon/` | 当前应用图标素材 |
+
+`artifacts/`、`models/`、`server/data/releases/`、`server/data/models/`、各端 `bin/`、`obj/`、`build/`、`.gradle/`、`.vs/`、`node_modules/` 是本地生成或缓存目录，不作为源码结构维护。
 
 ## 核心链路
 

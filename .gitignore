@@ -1,93 +1,78 @@
-# ===== 根目录 =====
-dist/
-
-# ===== Windows 端 =====
-VisionGuard_Windows/bin/
-VisionGuard_Windows/obj/
-VisionGuard_Windows/.vs/
-VisionGuard_Windows/packages/
-VisionGuard_Windows/*.user
-VisionGuard_Windows/*.suo
-VisionGuard_Windows/*.pfx
-VisionGuard_Windows/dist/
-
-# ===== 服务器端 =====
-VisionGuard_Server/node_modules/
-VisionGuard_Server/dist/
-VisionGuard_Server/.env
-VisionGuard_Server/.env.local
-VisionGuard_Server/data/screenshots/
-server/.env
-server/.env.*
-!server/.env.example
-server/data/screenshots/
-
-# ===== Android 端 =====
-VisionGuard_Android/*.iml
-receiver/android/.idea/
-
-# ===== Detector Android 端 =====
-detector/android/.gradle/
-detector/android/.idea/
-detector/android/.kotlin/
-detector/android/local.properties
-receiver/android/local.properties
-detector/android/build/
-detector/android/app/build/
-detector/android/app/release/
-detector/android/.externalNativeBuild/
-detector/android/.cxx/
-detector/android/key/
-detector/android/app/*.jks
-receiver/android/app/*.jks
-receiver/android/key/
-receiver/android/keystore.properties
-detector/android/keystore.properties
-VisionGuard_Android/keystore.properties
-VisionGuard_Android/app/*.jks
-VisionGuard_Android/.gradle/
-VisionGuard_Android/.idea/
-VisionGuard_Android/local.properties
-VisionGuard_Android/build/
-VisionGuard_Android/app/build/
-VisionGuard_Android/app/release/
-VisionGuard_Android/captures/
-VisionGuard_Android/.externalNativeBuild/
-VisionGuard_Android/.cxx/
-VisionGuard_Android/key/
-VisionGuard_Android/VisionGuard_Android
-
-# ===== 通用 =====
+# ===== 通用本地文件 =====
 .DS_Store
 Thumbs.db
 Desktop.ini
 *.log
 *.tmp
 *.cache
+dist/
 artifacts/
-.claude/settings.local.json
 
-# ===== 设计文件（大文件，按需跟踪）=====
-*.apk
-*.psd
+# 本仓库以 AGENTS.md + .agents/skills/ 为当前 Agent 入口；本地 Agent 状态不入库。
+.codex/
+.claude/
 
-# ===== release 文件夹（构建产物）=====
-**/release/ 
-detector/android/.key/det
+# ===== Server =====
+server/node_modules/
+server/dist/
+server/.env
+server/.env.*
+!server/.env.example
+server/data/screenshots/
+server/data/releases/
+server/data/models/
 
-# WPF windows detector
+# ===== Windows 检测端 =====
+detector/windows-winforms/.vs/
+detector/windows-winforms/bin/
+detector/windows-winforms/obj/
+detector/windows-winforms/packages/
+detector/windows-winforms/*.user
+detector/windows-winforms/*.suo
+detector/windows-winforms/*.pfx
+detector/windows-winforms/dist/
+detector/windows-winforms/Assets/*.onnx
+
 detector/windows-wpf/**/.vs/
 detector/windows-wpf/**/bin/
 detector/windows-wpf/**/obj/
 detector/windows-wpf/test-*/
-
-# 模型文件（大文件，通过导出脚本生成，不入版本控制）
-detector/windows-winforms/Assets/*.onnx
 detector/windows-wpf/Assets/*.onnx
+
+# ===== Android 检测端 =====
+detector/android/*.iml
+detector/android/.gradle/
+detector/android/.idea/
+detector/android/.kotlin/
+detector/android/local.properties
+detector/android/build/
+detector/android/app/build/
+detector/android/app/release/
+detector/android/.externalNativeBuild/
+detector/android/.cxx/
+detector/android/key/
+detector/android/keystore.properties
+detector/android/app/*.jks
+detector/android/.key/det
 detector/android/app/src/main/assets/models/*.onnx
 
-# 发行包（大文件，不入版本控制）
-server/data/releases/
+# ===== Android 接收端 =====
+receiver/android/*.iml
+receiver/android/.gradle/
+receiver/android/.idea/
+receiver/android/.kotlin/
+receiver/android/local.properties
+receiver/android/build/
+receiver/android/app/build/
+receiver/android/app/release/
+receiver/android/.externalNativeBuild/
+receiver/android/.cxx/
+receiver/android/key/
+receiver/android/keystore.properties
+receiver/android/app/*.jks
+
+# ===== 模型与发行产物 =====
 models/
-server/data/models/
+*.apk
+*.psd
 

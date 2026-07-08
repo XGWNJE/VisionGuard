@@ -39,6 +39,7 @@
 - UI 使用 Jetpack Compose
 - 底部 Tab 为 `警报 / 设备`
 - 警报页连接状态条显示服务器连接状态，点击后检查更新；无更新或失败也会报告当前版本号
+- Android UI 视觉规范见 `docs/design/android-ui-guidelines.md`；旧 HTML/Pencil 探索稿不再作为实现依据
 - 设置层使用 DataStore
 - WS 消息模型与检测端/Server 对齐
 - 本地也缓存 `targets`，默认值为 `person`
