@@ -47,8 +47,8 @@ android {
         applicationId = "com.xgwnje.visionguard"
         minSdk = 28
         targetSdk = 36
-        versionCode = 4300
-        versionName = "4.3.0"
+        versionCode = 4301
+        versionName = "4.3.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "API_KEY", quotedBuildConfigString(visionguardApiKey))

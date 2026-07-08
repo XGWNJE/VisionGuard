@@ -16,9 +16,9 @@
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
     <AllowedReferenceRelatedFileExtensions>.allowedextension</AllowedReferenceRelatedFileExtensions>
     <Platforms>AnyCPU;x86</Platforms>
-    <Version>4.3.0</Version>
-    <FileVersion>4.3.0</FileVersion>
-    <AssemblyVersion>4.3.0</AssemblyVersion>
+    <Version>4.3.1</Version>
+    <FileVersion>4.3.1</FileVersion>
+    <AssemblyVersion>4.3.1</AssemblyVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
