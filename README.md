@@ -2,7 +2,7 @@
 
 > Windows / Android 本地检测 + Node.js 中继 + Android 接收端告警的 AI 实时监控系统。
 
-[![Version](https://img.shields.io/badge/version-4.3.0-1f6feb)](./VERSION)
+[![Version](https://img.shields.io/badge/version-4.3.1-1f6feb)](./VERSION)
 [![License](https://img.shields.io/badge/license-MIT-0f766e)](./LICENSE)
 [![Docs](https://img.shields.io/badge/docs-verified-f59e0b)](./docs/codex/00-index.md)
 
@@ -14,7 +14,7 @@ VisionGuard 把本地视频/屏幕推理、隐私遮罩、WebSocket 告警中继
 
 | 项 | 当前值 | 来源 |
 |---|---:|---|
-| 当前版本 | `4.3.0` | [`VERSION`](./VERSION) |
+| 当前版本 | `4.3.1` | [`VERSION`](./VERSION) |
 | Server 运行时 | Node.js 20+ | [`server/package.json`](./server/package.json) |
 | 发行包 | 不内置 ONNX 模型 | [`server/data/releases.json`](./server/data/releases.json) |
 | 事实文档 | `docs/codex/` | [`docs/codex/00-index.md`](./docs/codex/00-index.md) |
@@ -106,7 +106,7 @@ docs/design/                 设计稿与视觉素材入口
 
 ## 发行与模型
 
-v4.3.0 发行包不包含 ONNX 模型，首次启动或切换模型时由客户端从 Server 下载并缓存。
+v4.3.1 发行包不包含 ONNX 模型，首次启动或切换模型时由客户端从 Server 下载并缓存。
 
 | 端 | 发行包体积 | 模型缓存 |
 |---|---:|---|
@@ -126,9 +126,9 @@ v4.3.0 发行包不包含 ONNX 模型，首次启动或切换模型时由客户�
 | 五端编译 | `visionguard-build` skill |
 | 端到端 / 设备 Smoke | `visionguard-e2e` skill |
 | 版本同步 | `node scripts/sync-version.js <version>` |
-| 客户端更新发布 | `push-update` skill |
+| 客户端更新发布 | `visionguard-release` skill |
 
-发布和版本变更必须显式触发。不要在普通修复、编译或文档整理时自动修改 `VERSION`，也不要隐式运行 `scripts/sync-version.js`、`scripts/release.js` 或 `scripts/bump-version.sh`。
+发布和版本变更必须显式触发。不要在普通修复、编译或文档整理时自动修改 `VERSION`，也不要隐式运行 `scripts/sync-version.js`、`scripts/release.js`、`scripts/publish-release.ps1` 或 `scripts/bump-version.sh`。GitHub 推送、打 tag 和 GitHub Release 默认不执行，只能在用户明确要求后加对应开关。
 
 ## 文档入口
 

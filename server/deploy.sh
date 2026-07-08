@@ -1,84 +1,161 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# VisionGuard Server — 一键同步部署脚本
-# 用法: bash server/deploy.sh [--full] [--nginx]
-#   默认:  仅同步 src/ 并重建重启
-#   --full: 同时同步 package.json 并 npm install
-#   --nginx: 同时更新 Nginx 配置并 reload
+# Dedicated VisionGuard server-code deploy.
+# Client release packages are handled by scripts/publish-release.ps1.
+#
+# Usage:
+#   bash server/deploy.sh [--install] [--dry-run]
+#
+# Reads VPS_IP / SSH_USER / SSH_PORT / SSH_PASSWORD from:
+#   SERVER_INFRA_ENV=../Server-infra/server.local.env
 
-# SSH 连接别名，定义于 ~/.ssh/config（IP/端口/密钥不硬编码在源码中）
-# Host visionguard
-#   HostName <实际IP>
-#   Port <实际端口>
-#   User root
-#   IdentityFile ~/.ssh/id_ed25519
-VPS_ALIAS="xgwnje"
-VPS_PATH="/opt/visionguard/VisionGuard_Server"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SERVER_INFRA_ENV="${SERVER_INFRA_ENV:-$REPO_ROOT/../Server-infra/server.local.env}"
+REMOTE_ROOT="${VISIONGUARD_REMOTE_ROOT:-/opt/visionguard-server}"
+SERVICE_NAME="${VISIONGUARD_SERVICE_NAME:-visionguard}"
+INSTALL=false
+DRY_RUN=false
 
-FULL=false
-NGINX=false
 for arg in "$@"; do
-    [[ "$arg" == "--full" ]] && FULL=true
-    [[ "$arg" == "--nginx" ]] && NGINX=true
+  case "$arg" in
+    --install) INSTALL=true ;;
+    --dry-run) DRY_RUN=true ;;
+    *)
+      echo "Unknown argument: $arg" >&2
+      exit 2
+      ;;
+  esac
 done
 
-echo "=== VisionGuard Server 部署 ==="
-echo "本地: $SCRIPT_DIR"
-echo "远程: $VPS_ALIAS:$VPS_PATH"
-$FULL && echo "模式: 含依赖"
-$NGINX && echo "模式: 含 Nginx"
-echo ""
+load_env() {
+  local env_file="$1"
+  if [[ ! -f "$env_file" ]]; then
+    echo "Missing Server-infra env file: $env_file" >&2
+    exit 1
+  fi
 
-# 1. 类型检查
-echo "[1/6] 本地类型检查..."
-cd "$SCRIPT_DIR" && npx tsc --noEmit
-echo "  OK"
-echo ""
+  while IFS='=' read -r key value; do
+    [[ -z "${key:-}" || "$key" =~ ^[[:space:]]*# ]] && continue
+    key="$(echo "$key" | tr -d '[:space:]')"
+    value="${value%$'\r'}"
+    value="${value#\"}"
+    value="${value%\"}"
+    value="${value#\'}"
+    value="${value%\'}"
+    case "$key" in
+      VPS_IP|SSH_USER|SSH_PORT|SSH_PASSWORD|SSH_KEY|SSH_KEY_PATH)
+        export "$key=$value"
+        ;;
+    esac
+  done < "$env_file"
+}
 
-# 2. 同步 src/
-echo "[2/6] 同步 src/ ..."
-ssh "$VPS_ALIAS" "rm -rf ${VPS_PATH}/src_new && mkdir -p ${VPS_PATH}/src_new"
-scp -r "$SCRIPT_DIR/src/" "$VPS_ALIAS:${VPS_PATH}/src_new/"
-ssh "$VPS_ALIAS" "cd ${VPS_PATH} && rm -rf src && mv src_new/src src && rm -rf src_new"
-echo "  OK"
-echo ""
+load_env "$SERVER_INFRA_ENV"
 
-# 3. 同步 package.json (--full)
-if $FULL; then
-    echo "[3/6] 同步 package.json + npm install ..."
-    scp "$SCRIPT_DIR/package.json" "$VPS_ALIAS:${VPS_PATH}/package.json"
-    ssh "$VPS_ALIAS" "cd ${VPS_PATH} && npm install"
-    echo "  OK"
-    echo ""
-else
-    echo "[3/6] 跳过依赖同步 (--full 启用)"
-    echo ""
+: "${VPS_IP:?VPS_IP missing in $SERVER_INFRA_ENV}"
+: "${SSH_USER:?SSH_USER missing in $SERVER_INFRA_ENV}"
+SSH_PORT="${SSH_PORT:-22}"
+
+ARCHIVE="$(mktemp -t visionguard-server-XXXXXX.tgz)"
+REMOTE_ARCHIVE="/tmp/visionguard-server-deploy.tgz"
+REMOTE_STAGE="/tmp/visionguard-server-deploy"
+
+cleanup() {
+  rm -f "$ARCHIVE"
+}
+trap cleanup EXIT
+
+echo "== VisionGuard server deploy =="
+echo "server: $SCRIPT_DIR"
+echo "env: $SERVER_INFRA_ENV"
+echo "remote: $SSH_USER@$VPS_IP:$SSH_PORT:$REMOTE_ROOT"
+echo "install deps: $INSTALL"
+
+if [[ "$DRY_RUN" == true ]]; then
+  echo "Dry run complete."
+  exit 0
 fi
 
-# 4. Nginx 配置 (--nginx)
-if $NGINX; then
-    echo "[4/6] 同步 Nginx 配置..."
-    scp "$SCRIPT_DIR/nginx-visionguard.conf" "$VPS_ALIAS:/etc/nginx/sites-available/visionguard.xgwnje.cn"
-    ssh "$VPS_ALIAS" "ln -sf /etc/nginx/sites-available/visionguard.xgwnje.cn /etc/nginx/sites-enabled/visionguard.xgwnje.cn && nginx -t && systemctl reload nginx"
-    echo "  OK"
-    echo ""
+echo ""
+echo "== Local build =="
+npm --prefix "$SCRIPT_DIR" run build
+
+echo ""
+echo "== Create deploy archive =="
+tar -C "$SCRIPT_DIR" -czf "$ARCHIVE" package.json package-lock.json dist
+
+REMOTE_COMMAND=$(cat <<EOF
+set -euo pipefail
+rm -rf "$REMOTE_STAGE"
+mkdir -p "$REMOTE_STAGE" "$REMOTE_ROOT"
+tar -xzf "$REMOTE_ARCHIVE" -C "$REMOTE_STAGE"
+rm -rf "$REMOTE_ROOT/dist"
+mv "$REMOTE_STAGE/dist" "$REMOTE_ROOT/dist"
+cp "$REMOTE_STAGE/package.json" "$REMOTE_ROOT/package.json"
+cp "$REMOTE_STAGE/package-lock.json" "$REMOTE_ROOT/package-lock.json"
+if $INSTALL; then
+  cd "$REMOTE_ROOT" && npm ci --omit=dev
+fi
+systemctl restart "$SERVICE_NAME"
+sleep 2
+systemctl is-active --quiet "$SERVICE_NAME"
+curl -fsS http://127.0.0.1:3000/health >/dev/null
+rm -rf "$REMOTE_STAGE" "$REMOTE_ARCHIVE"
+EOF
+)
+
+if [[ -n "${SSH_PASSWORD:-}" ]]; then
+  echo ""
+  echo "== Upload and deploy via Paramiko =="
+  export VG_DEPLOY_ARCHIVE="$ARCHIVE"
+  export VG_DEPLOY_REMOTE_ARCHIVE="$REMOTE_ARCHIVE"
+  export VG_DEPLOY_REMOTE_COMMAND="$REMOTE_COMMAND"
+  python - <<'PY'
+import os
+import sys
+
+try:
+    import paramiko
+except Exception as exc:
+    raise SystemExit("Paramiko is required for password-based deploy: " + str(exc))
+
+host = os.environ["VPS_IP"]
+user = os.environ["SSH_USER"]
+port = int(os.environ.get("SSH_PORT", "22"))
+password = os.environ.get("SSH_PASSWORD") or None
+key_filename = os.environ.get("SSH_KEY") or os.environ.get("SSH_KEY_PATH") or None
+archive = os.environ["VG_DEPLOY_ARCHIVE"]
+remote_archive = os.environ["VG_DEPLOY_REMOTE_ARCHIVE"]
+remote_command = os.environ["VG_DEPLOY_REMOTE_COMMAND"]
+
+client = paramiko.SSHClient()
+client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+client.connect(hostname=host, username=user, port=port, password=password, key_filename=key_filename, timeout=30)
+try:
+    sftp = client.open_sftp()
+    sftp.put(archive, remote_archive)
+    stdin, stdout, stderr = client.exec_command(remote_command)
+    status = stdout.channel.recv_exit_status()
+    out = stdout.read().decode("utf-8", "replace")
+    err = stderr.read().decode("utf-8", "replace")
+    if out:
+        print(out, end="")
+    if status != 0:
+        if err:
+            print(err, file=sys.stderr, end="")
+        raise SystemExit(status)
+finally:
+    client.close()
+PY
 else
-    echo "[4/6] 跳过 Nginx (--nginx 启用)"
-    echo ""
+  echo ""
+  echo "== Upload and deploy via OpenSSH =="
+  SSH_TARGET="$SSH_USER@$VPS_IP"
+  scp -P "$SSH_PORT" "$ARCHIVE" "$SSH_TARGET:$REMOTE_ARCHIVE"
+  ssh -p "$SSH_PORT" "$SSH_TARGET" "$REMOTE_COMMAND"
 fi
 
-# 5. 远程编译
-echo "[5/6] 远程编译..."
-ssh "$VPS_ALIAS" "cd ${VPS_PATH} && npm run build"
-echo "  OK"
 echo ""
-
-# 6. 重启服务
-echo "[6/6] 重启 visionguard 服务..."
-ssh "$VPS_ALIAS" "systemctl restart visionguard && sleep 2 && systemctl status visionguard --no-pager -l | head -15"
-echo ""
-
-REMOTE_VER=$(ssh "$VPS_ALIAS" "node -e \"console.log(require('${VPS_PATH}/package.json').version)\"" 2>/dev/null || echo "unknown")
-echo "=== 部署完成 — 服务器版本: ${REMOTE_VER} ==="
+echo "== Server deploy complete =="

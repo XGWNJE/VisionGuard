@@ -16,7 +16,7 @@ Use this skill for VisionGuard build verification only. It compiles targets and 
 ## Boundaries
 
 - Do not modify `VERSION`.
-- Do not run `scripts/sync-version.js`, `scripts/release.js`, or `scripts/bump-version.sh`.
+- Do not run `scripts/sync-version.js`, `scripts/release.js`, `scripts/publish-release.ps1`, or `scripts/bump-version.sh`.
 - Do not package, upload, deploy, commit, or push unless the user explicitly asks.
 - Release builds are required for client verification. Do not substitute Debug builds.
 - If Android fails only because Java is missing from the current shell, use the repo script or set `JAVA_HOME` for that command only. Do not change global environment variables.

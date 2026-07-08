@@ -89,7 +89,7 @@ WS 三角色：`windows` / `android` / `android-detector`
 - Windows / Android 检测等设置或服务器页提供**手动"检查更新"按钮**；Android 接收端在警报页连接状态条提供手动检查更新入口
 - Windows 有更新时弹 `OK/Cancel` 对话框；Android Service 自动检查时**仅发通知**不自动下载，Android 接收端手动检查走警报页状态条 + AlertDialog / Toast，提示文案必须包含当前版本号
 - WS 认证版本过低返回 `needs-update` 强制升级
-- 发布：`node scripts/release.js <version>`
+- 发布：`powershell -ExecutionPolicy Bypass -File .\scripts\publish-release.ps1 -Version <version> -Target All -UploadVps`
 
 **版本**：根目录 `VERSION` 为权威来源，`scripts/sync-version.js` 一键同步全端。注意：WPF 端运行时版本取自 `AppConfig.cs` 的 `Version` 常量，而非 `.csproj` 的 MSBuild 属性；`sync-version.js` 须同时更新这两处。
 
@@ -133,11 +133,13 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 ### 发布脚本
 
-`scripts/release.js`：同步版本 → 编译五端 → 收集模型到 `server/data/models/` → 压缩 zip/apk（排除 Assets 目录）→ 更新 `releases.json`。
+`scripts/publish-release.ps1`：同步版本 → 调用 `visionguard-build` → 收集模型到 `server/data/models/` → 处理 Android 签名 → 压缩 zip/apk（排除 Assets 目录）→ 更新 `releases.json` → 可选上传 VPS → 线上验证 `/api/update`、`HEAD 200`、`Range 206`。GitHub 推送、tag 和 GitHub Release 默认不执行，必须显式加开关。
+
+`scripts/release.js` 仅保留为旧的底层兼容脚本，不作为默认上线入口。
 
 ## 约束与注意事项
 
-0. **版本号不能自动变更**：`sync-version.js`、`release.js`、修改 `VERSION` 文件等操作必须由开发者明确指令触发。禁止在编译、修复 bug、提交代码时自动升级版本号。
+0. **版本号不能自动变更**：`sync-version.js`、`release.js`、`publish-release.ps1`、修改 `VERSION` 文件等操作必须由开发者明确指令触发。禁止在编译、修复 bug、提交代码时自动升级版本号。
 1. 修改 `server/` 和 Android 端代码前确认影响范围（多端协议耦合）
 2. Server 截图路径 `data/screenshots/<alertId>.(png|jpg)`，通过 HTTP 下载（需 `X-API-Key`）
 3. NTP 时钟同步：Windows 端启动时同步；Android 接收端也同步（显示端到端耗时）
@@ -179,7 +181,7 @@ WS 三角色：`windows` / `android` / `android-detector`
 |-------|------|------|
 | `visionguard-build` | 五端编译（Server/WinForms/WPF/Android-Detector/Android-Receiver） | `/visionguard-build` 或"编译" |
 | `visionguard-e2e` | 端到端 / 设备 / 模拟器 / 运行证据验证（含真机发现、AVD 兜底、logcat/截图采集） | "端到端测试"、"模拟器验证"、"实机验证"、"自动化验证" |
-| `push-update` | 推送客户端更新 | 发布新版本 |
+| `visionguard-release` | 客户端更新发布、VPS release 文件/元数据更新、GitHub Release 可选发布、线上更新接口验证 | "发布新版本"、"上线"、"推送更新" |
 
 版本同步不再维护独立 skill；以根目录 `VERSION` 为权威，显式授权后运行 `node scripts/sync-version.js <version>`。VPS/域名/SNI 信息以 `D:\ObjectCode\Server-infra` 为准，旧全局 `vps-server-info` 如有冲突不得采用。
 
