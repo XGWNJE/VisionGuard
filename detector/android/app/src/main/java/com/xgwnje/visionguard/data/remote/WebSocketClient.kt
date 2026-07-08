@@ -111,6 +111,9 @@ class WebSocketClient {
     @Volatile
     var heartbeatCanSwitchModelWhileMonitoring: Boolean = true
 
+    @Volatile
+    var heartbeatHasPendingConfigChanges: Boolean = false
+
     // ── 事件定义 ─────────────────────────────────────────────
     private sealed class Event {
         data class Connect(val url: String, val apiKey: String, val deviceId: String, val deviceName: String) : Event()
@@ -201,7 +204,8 @@ class WebSocketClient {
             targetSamplingRate = heartbeatTargetSamplingRate,
             modelKey = heartbeatModelKey,
             modelOptions = heartbeatModelOptions,
-            canSwitchModelWhileMonitoring = heartbeatCanSwitchModelWhileMonitoring
+            canSwitchModelWhileMonitoring = heartbeatCanSwitchModelWhileMonitoring,
+            hasPendingConfigChanges = heartbeatHasPendingConfigChanges
         )
         return s.sendNow(gson.toJson(hb))
     }
@@ -462,31 +466,31 @@ class WebSocketClient {
             val req = Request.Builder().url(wsUrl).build()
             val self = this
             ws = http.newWebSocket(req, object : WebSocketListener() {
-                override fun onOpen(ws: WebSocket, response: Response) {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
                     if (shutdown) return
                     lastMessageAt.set(System.currentTimeMillis())
                     events.trySend(Event.WsOpened(self))
                 }
 
-                override fun onMessage(ws: WebSocket, text: String) {
+                override fun onMessage(webSocket: WebSocket, text: String) {
                     if (shutdown) return
                     lastMessageAt.set(System.currentTimeMillis())
                     handleMessage(self, text)
                 }
 
-                override fun onMessage(ws: WebSocket, bytes: okio.ByteString) {
+                override fun onMessage(webSocket: WebSocket, bytes: okio.ByteString) {
                     if (shutdown) return
                     lastMessageAt.set(System.currentTimeMillis())
                 }
 
-                override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                     if (shutdown) return
                     val code = response?.code ?: -1
                     val msg = t.message ?: t.javaClass.simpleName
                     events.trySend(Event.WsFailed(self, code, msg))
                 }
 
-                override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                     if (shutdown) return
                     events.trySend(Event.WsFailed(self, code, reason))
                 }
@@ -536,7 +540,8 @@ class WebSocketClient {
                         targetSamplingRate = heartbeatTargetSamplingRate,
                         modelKey = heartbeatModelKey,
                         modelOptions = heartbeatModelOptions,
-                        canSwitchModelWhileMonitoring = heartbeatCanSwitchModelWhileMonitoring
+                        canSwitchModelWhileMonitoring = heartbeatCanSwitchModelWhileMonitoring,
+                        hasPendingConfigChanges = heartbeatHasPendingConfigChanges
                     )
                     val sent = ws.send(gson.toJson(hb))
                     if (!sent) {

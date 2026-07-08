@@ -274,7 +274,7 @@ fun buildDeviceConfigEditorUiModel(
         applyMode = DeviceConfigApplyMode.BATCH,
         hasChanges = hasChanges,
         applyEnabled = hasChanges && device.online,
-        applyActionLabel = "应用更改",
+        applyActionLabel = "保存更改",
         cancelActionLabel = "取消"
     )
 }

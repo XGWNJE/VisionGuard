@@ -20,7 +20,9 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.xgwnje.visionguard.data.model.MaskRegion
 import com.xgwnje.visionguard.data.model.MonitorConfig
+import com.xgwnje.visionguard.data.model.DeploymentOrientation
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.util.UUID
@@ -40,6 +42,8 @@ class SettingsRepository(private val context: Context) {
         val MASK_REGIONS        = stringPreferencesKey("mask_regions")         // JSON 数组，默认空
         val DIGITAL_ZOOM        = floatPreferencesKey("digital_zoom")          // 默认 1.0f
         val DEVICE_NAME         = stringPreferencesKey("device_name")          // 自定义设备名
+        val DEPLOYMENT_ORIENTATION = stringPreferencesKey("deployment_orientation")
+        val CALIBRATION_DONE    = booleanPreferencesKey("calibration_done")
     }
 
     companion object {
@@ -55,6 +59,20 @@ class SettingsRepository(private val context: Context) {
         private val gson = Gson()
         private val maskRegionType = object : TypeToken<List<MaskRegion>>() {}.type
     }
+
+    private data class StoredConfigFields(
+        val confidence: Float,
+        val cooldown: Int,
+        val targets: String,
+        val selectedModel: String,
+        val targetSamplingRate: Int
+    )
+
+    private data class StoredImageFields(
+        val useHighResolution: Boolean,
+        val maskRegions: List<MaskRegion>,
+        val digitalZoom: Float
+    )
 
     /** 读取设备 ID（首次启动时自动生成并持久化） */
     val deviceIdFlow: Flow<String> = context.dataStore.data.map { prefs ->
@@ -123,6 +141,59 @@ class SettingsRepository(private val context: Context) {
         prefs[Keys.DEVICE_NAME] ?: DEFAULT_DEVICE_NAME
     }
 
+    val deploymentOrientationFlow: Flow<DeploymentOrientation?> = context.dataStore.data.map { prefs ->
+        DeploymentOrientation.fromStorage(prefs[Keys.DEPLOYMENT_ORIENTATION])
+    }
+
+    val calibrationDoneFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[Keys.CALIBRATION_DONE] ?: false
+    }
+
+    private val storedConfigFieldsFlow = combine(
+        confidenceFlow,
+        cooldownFlow,
+        targetsFlow,
+        selectedModelFlow,
+        targetSamplingRateFlow
+    ) { confidence, cooldown, targets, selectedModel, targetSamplingRate ->
+        StoredConfigFields(
+            confidence = confidence,
+            cooldown = cooldown,
+            targets = targets,
+            selectedModel = selectedModel,
+            targetSamplingRate = targetSamplingRate
+        )
+    }
+
+    private val storedImageFieldsFlow = combine(
+        useHighResolutionFlow,
+        maskRegionsFlow,
+        digitalZoomFlow
+    ) { useHighResolution, maskRegions, digitalZoom ->
+        StoredImageFields(
+            useHighResolution = useHighResolution,
+            maskRegions = maskRegions,
+            digitalZoom = digitalZoom
+        )
+    }
+
+    val monitorConfigFlow: Flow<MonitorConfig> = combine(
+        storedConfigFieldsFlow,
+        storedImageFieldsFlow
+    ) { fields, imageFields ->
+        MonitorConfig(
+            confidence = fields.confidence,
+            cooldownMs = fields.cooldown * 1000L,
+            targets = fields.targets.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet(),
+            targetSamplingRate = fields.targetSamplingRate,
+            inputSize = if (imageFields.useHighResolution) 640 else 320,
+            modelName = fields.selectedModel,
+            useHighResolution = imageFields.useHighResolution,
+            maskRegions = imageFields.maskRegions,
+            digitalZoom = imageFields.digitalZoom
+        )
+    }
+
     suspend fun setCooldown(v: Int) {
         context.dataStore.edit { prefs -> prefs[Keys.COOLDOWN] = v }
     }
@@ -185,4 +256,16 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun getDeviceName(): String = deviceNameFlow.first()
+
+    suspend fun setDeploymentOrientation(v: DeploymentOrientation) {
+        context.dataStore.edit { prefs -> prefs[Keys.DEPLOYMENT_ORIENTATION] = v.storageValue }
+    }
+
+    suspend fun getDeploymentOrientation(): DeploymentOrientation? = deploymentOrientationFlow.first()
+
+    suspend fun setCalibrationDone(v: Boolean) {
+        context.dataStore.edit { prefs -> prefs[Keys.CALIBRATION_DONE] = v }
+    }
+
+    suspend fun getCalibrationDone(): Boolean = calibrationDoneFlow.first()
 }

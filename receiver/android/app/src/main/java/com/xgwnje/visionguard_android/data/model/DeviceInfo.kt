@@ -23,6 +23,7 @@ data class DeviceInfo(
     val modelKey: String = "",
     val modelOptions: List<String> = emptyList(),
     val canSwitchModelWhileMonitoring: Boolean = false,
+    val hasPendingConfigChanges: Boolean = false,
     /** 客户端类型："windows" / "android-detector"，供 UI 差异化展示使用 */
     val clientType: String = "windows"
 )

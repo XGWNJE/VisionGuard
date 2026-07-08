@@ -461,6 +461,9 @@ private fun DeviceConfigBottomSheet(
                         statusLabel = buildDeviceCardUiModel(device).statusLabel,
                         onDismiss = onDismiss
                     )
+                    if (device.hasPendingConfigChanges) {
+                        PendingConfigNotice()
+                    }
 
                     Column(
                         modifier = Modifier
@@ -532,6 +535,26 @@ private fun DeviceConfigBottomSheet(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PendingConfigNotice() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = ReceiverAmber.copy(alpha = 0.14f),
+        border = BorderStroke(1.dp, ReceiverAmber.copy(alpha = 0.24f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Text(
+            text = "已保存，停止后重新开启生效",
+            style = MaterialTheme.typography.labelLarge,
+            color = ReceiverAmber,
+            fontWeight = FontWeight.Black,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+        )
     }
 }
 

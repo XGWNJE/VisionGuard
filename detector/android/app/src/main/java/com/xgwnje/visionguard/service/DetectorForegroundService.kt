@@ -82,6 +82,8 @@ class DetectorForegroundService : LifecycleService() {
     private val _currentConfigFlow = MutableStateFlow(MonitorConfig())
     val currentConfigFlow: StateFlow<MonitorConfig> = _currentConfigFlow.asStateFlow()
 
+    private val _hasPendingConfigChanges = MutableStateFlow(false)
+
     /** 当前 CameraX 帧的宽高比（宽/高），用于遮罩编辑器画布尺寸 */
     private val _frameAspectRatio = MutableStateFlow(0.75f)
     val frameAspectRatio: StateFlow<Float> = _frameAspectRatio.asStateFlow()
@@ -253,6 +255,8 @@ class DetectorForegroundService : LifecycleService() {
                 }
 
                 currentConfig = config
+                _currentConfigFlow.value = config
+                _hasPendingConfigChanges.value = false
 
                 // 更新 preprocessor / parser（分辨率可能变化）
                 preprocessor = ImagePreprocessor(config.inputSize)
@@ -469,27 +473,11 @@ class DetectorForegroundService : LifecycleService() {
         }
 
         // 从 DataStore 完整恢复配置，并同步到 currentConfigFlow
-        val confidence = settingsRepo.getConfidence()
-        val cooldown = settingsRepo.getCooldown()
-        val targetsStr = settingsRepo.getTargets()
-        val samplingRate = settingsRepo.getTargetSamplingRate()
-        val maskRegions = settingsRepo.getMaskRegions()
-        val digitalZoom = settingsRepo.getDigitalZoom()
-        currentConfig = MonitorConfig(
-            confidence = confidence,
-            cooldownMs = cooldown * 1000L,
-            targets = targetsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet(),
-            targetSamplingRate = samplingRate,
-            inputSize = inputSize,
-            modelName = selectedModel,
-            useHighResolution = useHighRes,
-            maskRegions = maskRegions,
-            digitalZoom = digitalZoom
-        )
+        currentConfig = readStoredMonitorConfig(inputSizeOverride = inputSize)
         _currentConfigFlow.value = currentConfig
         updateWsHeartbeatStatus()
         serverPushService.wsClient.sendHeartbeatNow()
-        Log.i(TAG, "配置已完整恢复: confidence=$confidence, cooldown=${cooldown}s, zoom=$digitalZoom, masks=${maskRegions.size}")
+        Log.i(TAG, "配置已完整恢复: confidence=${currentConfig.confidence}, cooldown=${currentConfig.cooldownMs / 1000}s, zoom=${currentConfig.digitalZoom}, masks=${currentConfig.maskRegions.size}")
 
         monitorService = MonitorService(
             context = this,
@@ -533,6 +521,24 @@ class DetectorForegroundService : LifecycleService() {
             serverPushService.wsClient.sendHeartbeatNow()
             success
         }
+    }
+
+    private suspend fun readStoredMonitorConfig(inputSizeOverride: Int? = null): MonitorConfig {
+        val selectedModel = settingsRepo.getSelectedModel()
+        val useHighRes = settingsRepo.getUseHighResolution()
+        val inputSize = inputSizeOverride ?: if (useHighRes && SocWhitelist.isHighEndSoc()) 640 else 320
+        val targetsStr = settingsRepo.getTargets()
+        return MonitorConfig(
+            confidence = settingsRepo.getConfidence(),
+            cooldownMs = settingsRepo.getCooldown() * 1000L,
+            targets = targetsStr.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet(),
+            targetSamplingRate = settingsRepo.getTargetSamplingRate(),
+            inputSize = inputSize,
+            modelName = selectedModel,
+            useHighResolution = useHighRes,
+            maskRegions = settingsRepo.getMaskRegions(),
+            digitalZoom = settingsRepo.getDigitalZoom()
+        )
     }
 
     // ═════════════════════════════════════════════════════════
@@ -645,7 +651,9 @@ class DetectorForegroundService : LifecycleService() {
             "resume" -> {
                 // 与本地开始监控对齐：加载模型（如需）、绑定 CameraX
                 if (!isMonitoring.value) {
-                    startMonitoring(currentConfig)
+                    serviceScope.launch {
+                        startMonitoring(readStoredMonitorConfig())
+                    }
                 }
                 serverPushService.sendCommandAck("resume", true, "监控已启动")
                 // 立即推送心跳，让接收端快速同步状态
@@ -662,7 +670,7 @@ class DetectorForegroundService : LifecycleService() {
         Log.i(TAG, "收到远程配置变更: ${configMsg.key}=${configMsg.value}")
         serviceScope.launch {
             try {
-                when (configMsg.key) {
+                val saved = when (configMsg.key) {
                     "cooldown" -> {
                         val raw = configMsg.value.toIntOrNull()
                         if (raw == null) {
@@ -674,9 +682,7 @@ class DetectorForegroundService : LifecycleService() {
                             Log.w(TAG, "cooldown 值 $raw 超出范围，已裁剪为 $value")
                         }
                         settingsRepo.setCooldown(value)
-                        val newConfig = currentConfig.copy(cooldownMs = value * 1000L)
-                        updateConfig(newConfig)
-                        serverPushService.sendCommandAck("set-config:cooldown", true)
+                        true
                     }
                     "confidence" -> {
                         val raw = configMsg.value.toFloatOrNull()
@@ -689,16 +695,11 @@ class DetectorForegroundService : LifecycleService() {
                             Log.w(TAG, "confidence 值 $raw 超出范围，已裁剪为 $value")
                         }
                         settingsRepo.setConfidence(value)
-                        val newConfig = currentConfig.copy(confidence = value)
-                        updateConfig(newConfig)
-                        serverPushService.sendCommandAck("set-config:confidence", true)
+                        true
                     }
                     "targets" -> {
                         settingsRepo.setTargets(configMsg.value)
-                        val targets = configMsg.value.split(",").map { it.trim() }.toSet()
-                        val newConfig = currentConfig.copy(targets = targets)
-                        updateConfig(newConfig)
-                        serverPushService.sendCommandAck("set-config:targets", true)
+                        true
                     }
                     "targetSamplingRate" -> {
                         val raw = configMsg.value.toIntOrNull()
@@ -707,9 +708,7 @@ class DetectorForegroundService : LifecycleService() {
                             return@launch
                         }
                         settingsRepo.setTargetSamplingRate(raw)
-                        val newConfig = currentConfig.copy(targetSamplingRate = raw)
-                        updateConfig(newConfig)
-                        serverPushService.sendCommandAck("set-config:targetSamplingRate", true)
+                        true
                     }
                     "modelKey" -> {
                         val parsed = parseModelKey(configMsg.value)
@@ -719,18 +718,37 @@ class DetectorForegroundService : LifecycleService() {
                         }
                         settingsRepo.setSelectedModel(parsed.modelName)
                         settingsRepo.setUseHighResolution(parsed.inputSize == 640)
-                        val newConfig = currentConfig.copy(
-                            modelName = parsed.modelName,
-                            inputSize = parsed.inputSize,
-                            useHighResolution = parsed.inputSize == 640
-                        )
-                        updateConfig(newConfig)
-                        serverPushService.sendCommandAck("set-config:modelKey", true)
+                        true
                     }
                     else -> {
                         Log.w(TAG, "未知配置项: ${configMsg.key}")
                         serverPushService.sendCommandAck("set-config:${configMsg.key}", false, "未知配置项")
+                        false
                     }
+                }
+                if (!saved) return@launch
+
+                val draftConfig = readStoredMonitorConfig()
+                if (_isMonitoring.value) {
+                    _hasPendingConfigChanges.value = draftConfig != currentConfig
+                    updateWsHeartbeatStatus()
+                    serverPushService.wsClient.sendHeartbeatNow()
+                    serverPushService.sendCommandAck(
+                        "set-config:${configMsg.key}",
+                        true,
+                        remoteConfigAckText(isMonitoring = true)
+                    )
+                } else {
+                    currentConfig = draftConfig
+                    _currentConfigFlow.value = draftConfig
+                    _hasPendingConfigChanges.value = false
+                    updateWsHeartbeatStatus()
+                    serverPushService.wsClient.sendHeartbeatNow()
+                    serverPushService.sendCommandAck(
+                        "set-config:${configMsg.key}",
+                        true,
+                        remoteConfigAckText(isMonitoring = false)
+                    )
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "处理远程配置变更失败", e)
@@ -753,8 +771,12 @@ class DetectorForegroundService : LifecycleService() {
         client.heartbeatTargetSamplingRate = currentConfig.targetSamplingRate.coerceIn(1, 5)
         client.heartbeatModelKey = currentModelKey()
         client.heartbeatModelOptions = supportedModelKeys()
-        client.heartbeatCanSwitchModelWhileMonitoring = true
+        client.heartbeatCanSwitchModelWhileMonitoring = false
+        client.heartbeatHasPendingConfigChanges = _isMonitoring.value && _hasPendingConfigChanges.value
     }
+
+    private fun remoteConfigAckText(isMonitoring: Boolean): String =
+        if (isMonitoring) "已保存，重启监控后生效" else "已保存，下次启动监控时生效"
 
     private data class ParsedModelKey(val modelName: String, val inputSize: Int)
 

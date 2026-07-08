@@ -58,6 +58,7 @@ export interface WsHeartbeat {
   modelKey?: string;
   modelOptions?: string[];
   canSwitchModelWhileMonitoring?: boolean;
+  hasPendingConfigChanges?: boolean;
 }
 
 /** 接收端 → 服务器：心跳 (每 20 秒) */
@@ -112,6 +113,7 @@ export interface DeviceStatus {
   modelKey: string;
   modelOptions: string[];
   canSwitchModelWhileMonitoring: boolean;
+  hasPendingConfigChanges: boolean;
   clientType: string;
 }
 
@@ -189,6 +191,7 @@ export interface DetectorClient {
   modelKey: string;
   modelOptions: string[];
   canSwitchModelWhileMonitoring: boolean;
+  hasPendingConfigChanges: boolean;
 }
 
 export interface ReceiverClient {

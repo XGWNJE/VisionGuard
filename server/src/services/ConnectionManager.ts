@@ -144,6 +144,7 @@ function createDetectorClient(
     modelKey: '',
     modelOptions: [],
     canSwitchModelWhileMonitoring: clientType === 'android-detector',
+    hasPendingConfigChanges: false,
   };
 }
 
@@ -556,6 +557,7 @@ function handleHeartbeat(msg: WsHeartbeat): void {
     client.modelKey !== (msg.modelKey ?? client.modelKey) ||
     JSON.stringify(client.modelOptions) !== JSON.stringify(msg.modelOptions ?? client.modelOptions) ||
     client.canSwitchModelWhileMonitoring !== (msg.canSwitchModelWhileMonitoring ?? client.canSwitchModelWhileMonitoring) ||
+    client.hasPendingConfigChanges !== (msg.hasPendingConfigChanges ?? client.hasPendingConfigChanges) ||
     nameChanged;
 
   client.isMonitoring = msg.isMonitoring;
@@ -567,6 +569,7 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   if (msg.modelKey !== undefined) client.modelKey = sanitizeModelKey(msg.modelKey) ?? client.modelKey;
   if (msg.modelOptions !== undefined) client.modelOptions = sanitizeModelOptions(msg.modelOptions) ?? client.modelOptions;
   if (msg.canSwitchModelWhileMonitoring !== undefined) client.canSwitchModelWhileMonitoring = !!msg.canSwitchModelWhileMonitoring;
+  if (msg.hasPendingConfigChanges !== undefined) client.hasPendingConfigChanges = !!msg.hasPendingConfigChanges;
   if (nameChanged) {
     client.deviceName = msg.deviceName!;
     console.log(`[ws][${new Date().toISOString()}] 设备名称更新: ${client.deviceName} (${msg.deviceId})`);
@@ -762,6 +765,7 @@ function buildDeviceList(): DeviceStatus[] {
         modelKey: c.modelKey,
         modelOptions: c.modelOptions,
         canSwitchModelWhileMonitoring: c.canSwitchModelWhileMonitoring,
+        hasPendingConfigChanges: c.hasPendingConfigChanges,
         clientType: c.clientType,
       });
     }
