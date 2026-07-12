@@ -93,6 +93,16 @@ function Set-CommandJavaHome {
     Write-Host "JAVA_HOME=$env:JAVA_HOME"
 }
 
+function Restore-WinFormsPackages {
+    param([string]$MSBuild)
+
+    $solutionDir = (Resolve-Path "detector\windows-winforms").Path + [System.IO.Path]::DirectorySeparatorChar
+    Invoke-Step `
+        -Name "WinForms NuGet Restore" `
+        -CommandText "`"$MSBuild`" detector\windows-winforms\VisionGuard.csproj /t:Restore /p:RestorePackagesConfig=true /p:SolutionDir=$solutionDir /v:minimal" `
+        -Script { & $MSBuild "detector\windows-winforms\VisionGuard.csproj" /t:Restore /p:RestorePackagesConfig=true "/p:SolutionDir=$solutionDir" /v:minimal }
+}
+
 function Should-Run {
     param([string[]]$Names)
     return ($Target -eq "All" -or $Names -contains $Target)
@@ -109,6 +119,7 @@ try {
 
     if (Should-Run @("Windows", "WinForms")) {
         $msbuild = Get-MSBuildPath
+        Restore-WinFormsPackages -MSBuild $msbuild
         Invoke-Step `
             -Name "WinForms" `
             -CommandText "`"$msbuild`" detector\windows-winforms\VisionGuard.csproj /p:Configuration=Release /p:Platform=x64 /m" `

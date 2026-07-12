@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -57,6 +58,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -75,11 +77,15 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.xgwnje.visionguard.AppConstants
 import com.xgwnje.visionguard.data.model.MaskRegion
 import com.xgwnje.visionguard.data.model.MonitorConfig
@@ -209,16 +215,15 @@ fun CalibrationWorkspace(
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-                    .padding(14.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    .padding(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 CalibrationCanvasPanel(
                     bitmap = bitmap,
                     frameAspectRatio = frameAspectRatio,
                     masks = masks,
                     digitalZoom = digitalZoom,
+                    fillFrameHeight = true,
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
@@ -227,6 +232,7 @@ fun CalibrationWorkspace(
                     maskCount = masks.size,
                     digitalZoom = digitalZoom,
                     isCapturing = isCapturing,
+                    fillAvailableHeight = true,
                     onDigitalZoomChange = { digitalZoom = it },
                     onRetake = onRetake,
                     onUndo = { if (masks.isNotEmpty()) masks.removeAt(masks.lastIndex) },
@@ -354,6 +360,7 @@ private fun PortraitConsole(
             subtitle = lastFrameLabel,
             emptyText = state.emptyFrameText,
             onRefresh = onRefreshFrame,
+            fillFrameHeight = true,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
@@ -390,53 +397,198 @@ private fun LandscapeConsole(
     onOpenMaintenance: () -> Unit,
     onReconnect: () -> Unit
 ) {
-    Row(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(8.dp)
     ) {
-        FramePanel(
-            bitmap = lastFrame,
-            aspectRatio = frameAspectRatio,
-            title = "最近帧",
-            subtitle = lastFrameLabel,
-            emptyText = state.emptyFrameText,
-            onRefresh = onRefreshFrame,
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-        )
-        Column(
-            modifier = Modifier
-                .width(288.dp)
-                .fillMaxHeight()
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        val controlPanelWidth = when {
+            maxWidth >= 1000.dp -> 340.dp
+            maxWidth >= 760.dp -> 312.dp
+            else -> 288.dp
+        }
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            TopStatusStrip(
-                connectionState = connectionState,
-                isMonitoring = state.isMonitoring,
-                actualSamplingRate = actualSamplingRate,
-                targetSamplingRate = state.appliedConfig.targetSamplingRate
+            FramePanel(
+                bitmap = lastFrame,
+                aspectRatio = frameAspectRatio,
+                title = "最近帧",
+                subtitle = lastFrameLabel,
+                emptyText = state.emptyFrameText,
+                onRefresh = onRefreshFrame,
+                fillFrameHeight = true,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
             )
-            RuntimeSummary(
+            LandscapeControlPanel(
                 state = state,
+                connectionState = connectionState,
                 deviceName = deviceName,
                 lastAlertTime = lastAlertTime,
-                modifier = Modifier.fillMaxWidth(),
-                compact = true
-            )
-            ActionDock(
-                state = state,
+                actualSamplingRate = actualSamplingRate,
                 onToggleMonitoring = onToggleMonitoring,
                 onOpenCalibration = onOpenCalibration,
                 onOpenMaintenance = onOpenMaintenance,
                 onReconnect = onReconnect,
-                compact = true
+                modifier = Modifier
+                    .width(controlPanelWidth)
+                    .fillMaxHeight()
             )
+        }
+    }
+}
+
+@Composable
+private fun LandscapeControlPanel(
+    state: DetectorConsoleState,
+    connectionState: WsState,
+    deviceName: String,
+    lastAlertTime: String?,
+    actualSamplingRate: Float,
+    onToggleMonitoring: () -> Unit,
+    onOpenCalibration: () -> Unit,
+    onOpenMaintenance: () -> Unit,
+    onReconnect: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = DetectorSurface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, DetectorStroke),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(DetectorPrimary)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "哨位控制台",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = deviceName,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color.White,
+                            fontWeight = FontWeight.Black,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    StatusPill(label = connectionLabel(connectionState), tone = connectionTone(connectionState))
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    Column {
+                        Text(
+                            text = if (state.isMonitoring) "监控运行中" else "监控已停止",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            fontWeight = FontWeight.Black
+                        )
+                        Text(
+                            text = if (state.isMonitoring) "检测链路正在工作" else "当前可安全维护与校准",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White.copy(alpha = 0.68f)
+                        )
+                    }
+                    Text(
+                        text = if (state.isMonitoring) {
+                            "${String.format("%.1f", actualSamplingRate)}/s"
+                        } else {
+                            "目标 ${state.appliedConfig.targetSamplingRate}/s"
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White,
+                        fontWeight = FontWeight.Black
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(12.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(DetectorPrimarySoft)
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Text(
+                            text = "当前生效配置",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = DetectorMuted,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "${state.appliedConfig.modelName.uppercase()} · ${state.appliedConfig.inputSize} · ${targetLabel(state.appliedConfig.targets)} · 冷却 ${state.appliedConfig.cooldownMs / 1000}s",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = DetectorPrimary,
+                            fontWeight = FontWeight.Black,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        StatusPill(
+                            label = if (state.isReady) "模型就绪" else "模型未就绪",
+                            tone = if (state.isReady) ConsoleTone.READY else ConsoleTone.WARNING
+                        )
+                        StatusPill(
+                            label = if (lastAlertTime != null) "报警 $lastAlertTime" else "暂无报警",
+                            tone = ConsoleTone.MUTED
+                        )
+                    }
+
+                    state.pendingChangeText?.let {
+                        InlineNotice(text = it, tone = ConsoleTone.WARNING)
+                    }
+                    state.calibrationHintText?.let {
+                        InlineNotice(text = it, tone = ConsoleTone.WARNING)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                ActionControls(
+                    state = state,
+                    onToggleMonitoring = onToggleMonitoring,
+                    onOpenCalibration = onOpenCalibration,
+                    onOpenMaintenance = onOpenMaintenance,
+                    onReconnect = onReconnect,
+                    compact = true
+                )
+            }
         }
     }
 }
@@ -481,6 +633,7 @@ private fun FramePanel(
     subtitle: String,
     emptyText: String,
     onRefresh: () -> Unit,
+    fillFrameHeight: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -518,11 +671,18 @@ private fun FramePanel(
                     onClick = onRefresh
                 )
             }
-            Box(
-                modifier = Modifier
+            val frameModifier = if (fillFrameHeight) {
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            } else {
+                Modifier
                     .fillMaxWidth()
                     .heightIn(min = 220.dp)
                     .aspectRatio(aspectRatio.coerceIn(1f, 1.78f))
+            }
+            Box(
+                modifier = frameModifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(DetectorSurfaceMuted),
                 contentAlignment = Alignment.Center
@@ -613,54 +773,76 @@ private fun ActionDock(
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
-        Column(
-            modifier = Modifier.padding(if (compact) 8.dp else 12.dp),
-            verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp)
+        ActionControls(
+            state = state,
+            onToggleMonitoring = onToggleMonitoring,
+            onOpenCalibration = onOpenCalibration,
+            onOpenMaintenance = onOpenMaintenance,
+            onReconnect = onReconnect,
+            compact = compact,
+            modifier = Modifier.padding(if (compact) 8.dp else 12.dp)
+        )
+    }
+}
+
+@Composable
+private fun ActionControls(
+    state: DetectorConsoleState,
+    onToggleMonitoring: () -> Unit,
+    onOpenCalibration: () -> Unit,
+    onOpenMaintenance: () -> Unit,
+    onReconnect: () -> Unit,
+    compact: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp)
+    ) {
+        Button(
+            onClick = onToggleMonitoring,
+            enabled = state.isReady,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(if (compact) 48.dp else 56.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (state.isMonitoring) DetectorAlert else DetectorPrimary,
+                contentColor = Color.White
+            ),
+            shape = RoundedCornerShape(8.dp)
         ) {
-            Button(
-                onClick = onToggleMonitoring,
-                enabled = state.isReady,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(if (compact) 44.dp else 56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (state.isMonitoring) DetectorAlert else DetectorPrimary
-                ),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Icon(
-                    imageVector = if (state.isMonitoring) Icons.Default.Stop else Icons.Default.PlayArrow,
-                    contentDescription = null
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(state.primaryActionLabel, fontWeight = FontWeight.Black)
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedConsoleButton(
-                    text = "校准",
-                    icon = Icons.Default.Videocam,
-                    enabled = state.canEnterCalibration,
-                    onClick = onOpenCalibration,
-                    modifier = Modifier.weight(1f),
-                    height = if (compact) 38.dp else 46.dp
-                )
-                OutlinedConsoleButton(
-                    text = "参数",
-                    icon = Icons.Default.Tune,
-                    enabled = state.destination == ConsoleDestination.RUN,
-                    onClick = onOpenMaintenance,
-                    modifier = Modifier.weight(1f),
-                    height = if (compact) 38.dp else 46.dp
-                )
-                OutlinedConsoleButton(
-                    text = "重连",
-                    icon = Icons.Default.Refresh,
-                    enabled = true,
-                    onClick = onReconnect,
-                    modifier = Modifier.weight(1f),
-                    height = if (compact) 38.dp else 46.dp
-                )
-            }
+            Icon(
+                imageVector = if (state.isMonitoring) Icons.Default.Stop else Icons.Default.PlayArrow,
+                contentDescription = null
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(state.primaryActionLabel, fontWeight = FontWeight.Black)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedConsoleButton(
+                text = "校准",
+                icon = Icons.Default.Videocam,
+                enabled = state.canEnterCalibration,
+                onClick = onOpenCalibration,
+                modifier = Modifier.weight(1f),
+                height = if (compact) 44.dp else 46.dp
+            )
+            OutlinedConsoleButton(
+                text = "参数",
+                icon = Icons.Default.Tune,
+                enabled = state.destination == ConsoleDestination.RUN,
+                onClick = onOpenMaintenance,
+                modifier = Modifier.weight(1f),
+                height = if (compact) 44.dp else 46.dp
+            )
+            OutlinedConsoleButton(
+                text = "重连",
+                icon = Icons.Default.Refresh,
+                enabled = true,
+                onClick = onReconnect,
+                modifier = Modifier.weight(1f),
+                height = if (compact) 44.dp else 46.dp
+            )
         }
     }
 }
@@ -671,6 +853,7 @@ private fun CalibrationCanvasPanel(
     frameAspectRatio: Float,
     masks: MutableList<MaskRegion>,
     digitalZoom: Float,
+    fillFrameHeight: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -681,19 +864,45 @@ private fun CalibrationCanvasPanel(
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                text = "校准帧",
-                style = MaterialTheme.typography.titleMedium,
-                color = DetectorPrimary,
-                fontWeight = FontWeight.Black
-            )
+        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "校准画布",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = DetectorPrimary,
+                        fontWeight = FontWeight.Black
+                    )
+                    Text(
+                        text = "在画面中拖拽以添加遮罩区域",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = DetectorMuted
+                    )
+                }
+                Text(
+                    text = "${masks.size} 个遮罩",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = DetectorPrimary,
+                    fontWeight = FontWeight.Black
+                )
+            }
             EditableFrameCanvas(
                 bitmap = bitmap,
                 frameAspectRatio = frameAspectRatio,
                 masks = masks,
                 digitalZoom = digitalZoom,
-                modifier = Modifier.fillMaxWidth()
+                fillAvailableHeight = fillFrameHeight,
+                modifier = if (fillFrameHeight) {
+                    Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                } else {
+                    Modifier.fillMaxWidth()
+                }
             )
         }
     }
@@ -705,13 +914,19 @@ private fun EditableFrameCanvas(
     frameAspectRatio: Float,
     masks: MutableList<MaskRegion>,
     digitalZoom: Float,
+    fillAvailableHeight: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     var draggingRect by remember { mutableStateOf<Rect?>(null) }
-    Box(
-        modifier = modifier
+    val canvasModifier = if (fillAvailableHeight) {
+        modifier.fillMaxSize()
+    } else {
+        modifier
             .heightIn(min = 220.dp, max = 520.dp)
             .aspectRatio(frameAspectRatio.coerceIn(0.62f, 1.78f))
+    }
+    Box(
+        modifier = canvasModifier
             .clip(RoundedCornerShape(8.dp))
             .background(Color.Black),
         contentAlignment = Alignment.Center
@@ -814,6 +1029,7 @@ private fun CalibrationControls(
     maskCount: Int,
     digitalZoom: Float,
     isCapturing: Boolean,
+    fillAvailableHeight: Boolean = false,
     onDigitalZoomChange: (Float) -> Unit,
     onRetake: () -> Unit,
     onUndo: () -> Unit,
@@ -830,15 +1046,33 @@ private fun CalibrationControls(
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(
+            modifier = if (fillAvailableHeight) {
+                Modifier.fillMaxSize()
+            } else {
+                Modifier.fillMaxWidth()
+            }
+        ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(DetectorPrimary)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
-                    Text("架设校准", style = MaterialTheme.typography.titleMedium, color = DetectorPrimary, fontWeight = FontWeight.Black)
-                    Text("遮罩 $maskCount 个 · 数码裁切 ${String.format("%.1f", digitalZoom)}x", style = MaterialTheme.typography.labelLarge, color = DetectorMuted)
+                    Text(
+                        "架设校准",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Color.White,
+                        fontWeight = FontWeight.Black
+                    )
+                    Text(
+                        "调整裁切范围并标记屏蔽区域",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.68f)
+                    )
                 }
                 IconButtonSurface(
                     icon = Icons.Default.Refresh,
@@ -847,35 +1081,131 @@ private fun CalibrationControls(
                     onClick = onRetake
                 )
             }
-            Column {
-                Text("数码裁切", style = MaterialTheme.typography.labelLarge, color = DetectorPrimary, fontWeight = FontWeight.Black)
-                Slider(
-                    value = digitalZoom,
-                    onValueChange = { onDigitalZoomChange(it.coerceIn(1f, 5f)) },
-                    valueRange = 1f..5f,
-                    steps = 35
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedConsoleButton("撤销", Icons.AutoMirrored.Filled.Undo, maskCount > 0, onUndo, Modifier.weight(1f))
-                OutlinedConsoleButton("清空", Icons.Default.Delete, maskCount > 0, onClear, Modifier.weight(1f))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedConsoleButton("取消", Icons.Default.Close, true, onCancel, Modifier.weight(1f))
-                Button(
-                    onClick = onApply,
-                    modifier = Modifier
+
+            val calibrationFields: @Composable ColumnScope.() -> Unit = {
+                    CalibrationStepHeader(
+                        number = "01",
+                        title = "数码裁切",
+                        value = "${String.format("%.1f", digitalZoom)}×"
+                    )
+                    Slider(
+                        value = digitalZoom,
+                        onValueChange = { onDigitalZoomChange(it.coerceIn(1f, 5f)) },
+                        valueRange = 1f..5f,
+                        steps = 35
+                    )
+
+                    CalibrationStepHeader(
+                        number = "02",
+                        title = "遮罩编辑",
+                        value = "$maskCount 个"
+                    )
+                    Text(
+                        text = "在左侧画面拖拽创建遮罩；被遮区域不会参与识别或截图。",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = DetectorMuted
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedConsoleButton("撤销", Icons.AutoMirrored.Filled.Undo, maskCount > 0, onUndo, Modifier.weight(1f), 44.dp)
+                        OutlinedConsoleButton("清空", Icons.Default.Delete, maskCount > 0, onClear, Modifier.weight(1f), 44.dp)
+                    }
+                }
+
+            Column(
+                modifier = if (fillAvailableHeight) {
+                    Modifier
                         .weight(1f)
-                        .height(48.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = DetectorPrimary),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("应用配置", fontWeight = FontWeight.Black)
+                        .padding(12.dp)
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp)
+                }
+            ) {
+                if (fillAvailableHeight) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        calibrationFields()
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        calibrationFields()
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedConsoleButton("取消", Icons.Default.Close, true, onCancel, Modifier.weight(0.42f), 48.dp)
+                    Button(
+                        onClick = onApply,
+                        modifier = Modifier
+                            .weight(0.58f)
+                            .height(48.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = DetectorPrimary,
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp)
+                    ) {
+                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("应用配置", fontWeight = FontWeight.Black, maxLines = 1)
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CalibrationStepHeader(
+    number: String,
+    title: String,
+    value: String
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(7.dp))
+                    .background(DetectorPrimarySoft),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = number,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = DetectorPrimary,
+                    fontWeight = FontWeight.Black
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                color = DetectorPrimary,
+                fontWeight = FontWeight.Black
+            )
+        }
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            color = DetectorPrimary,
+            fontWeight = FontWeight.Black
+        )
     }
 }
 
@@ -896,203 +1226,407 @@ private fun MaintenanceSheet(
     var localOrientation by remember(state.deploymentOrientation) {
         mutableStateOf(state.deploymentOrientation ?: DeploymentOrientation.PORTRAIT)
     }
+    val isLandscape = state.deploymentOrientation == DeploymentOrientation.LANDSCAPE
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = !isLandscape
+        )
     ) {
+        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+        DisposableEffect(dialogWindow, isLandscape) {
+            if (isLandscape && dialogWindow != null) {
+                WindowInsetsControllerCompat(dialogWindow, dialogWindow.decorView).apply {
+                    systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    hide(WindowInsetsCompat.Type.systemBars())
+                }
+            }
+            onDispose { }
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.28f)),
-            contentAlignment = Alignment.BottomCenter
+            contentAlignment = if (isLandscape) Alignment.Center else Alignment.BottomCenter
         ) {
             Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(10.dp)
-                    .heightIn(max = 780.dp),
+                modifier = if (isLandscape) {
+                    Modifier
+                        .fillMaxSize()
+                        .padding(8.dp)
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(10.dp)
+                        .heightIn(max = 780.dp)
+                },
                 shape = RoundedCornerShape(8.dp),
-                color = DetectorSurface,
+                color = DetectorBackground,
                 border = androidx.compose.foundation.BorderStroke(1.dp, DetectorStroke),
                 tonalElevation = 0.dp,
                 shadowElevation = 0.dp
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
+                Column(modifier = Modifier.fillMaxSize()) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(DetectorPrimary)
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "维护参数",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = DetectorPrimary,
-                            fontWeight = FontWeight.Black
-                        )
+                        Column {
+                            Text(
+                                text = "设备维护",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = Color.White,
+                                fontWeight = FontWeight.Black
+                            )
+                            Text(
+                                text = "参数保存后按冷配置规则生效",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color.White.copy(alpha = 0.68f)
+                            )
+                        }
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "关闭",
-                            tint = DetectorMuted,
+                            tint = Color.White,
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(CircleShape)
                                 .clickable(onClick = onDismiss)
-                                .padding(7.dp)
+                            .padding(7.dp)
                         )
                     }
-                    Column(
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        MaintenanceSection(title = "部署方向") {
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                OrientationOption(
-                                    label = "竖屏架设",
-                                    selected = localOrientation == DeploymentOrientation.PORTRAIT,
-                                    onSelect = { localOrientation = DeploymentOrientation.PORTRAIT },
-                                    modifier = Modifier.weight(1f)
-                                )
-                                OrientationOption(
-                                    label = "横屏架设",
-                                    selected = localOrientation == DeploymentOrientation.LANDSCAPE,
-                                    onSelect = { localOrientation = DeploymentOrientation.LANDSCAPE },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
-                        MaintenanceSection(title = "设备名称") {
-                            OutlinedTextField(
-                                value = localDeviceName,
-                                onValueChange = { localDeviceName = it },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                        MaintenanceSection(title = "模型与输入尺寸") {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                ModelChip("YOLO26n", localConfig.modelName == "yolo26n") {
-                                    localConfig = localConfig.copy(modelName = "yolo26n")
-                                }
-                                ModelChip("YOLO26s", localConfig.modelName == "yolo26s") {
-                                    localConfig = localConfig.copy(modelName = "yolo26s")
-                                }
-                            }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text("高分辨率 640×640", style = MaterialTheme.typography.bodyMedium, color = DetectorPrimary)
-                                    Text(
-                                        text = if (isHighEndSoc) "精度更高，发热和耗电增加" else "当前 SoC 不在高分辨率白名单",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = DetectorMuted
-                                    )
-                                }
-                                Switch(
-                                    checked = localConfig.useHighResolution,
-                                    enabled = isHighEndSoc,
-                                    onCheckedChange = { checked ->
-                                        localConfig = localConfig.copy(
-                                            useHighResolution = checked,
-                                            inputSize = if (checked) 640 else 320
-                                        )
-                                    }
-                                )
-                            }
-                            Text(modelStatusText, style = MaterialTheme.typography.labelMedium, color = DetectorMuted)
-                        }
-                        MaintenanceSection(title = "目标类别") {
-                            TargetGrid(
-                                selectedTargets = localConfig.targets,
-                                onToggle = { target ->
-                                    localConfig = localConfig.copy(
-                                        targets = if (target in localConfig.targets) {
-                                            localConfig.targets - target
-                                        } else {
-                                            localConfig.targets + target
-                                        }
-                                    )
-                                }
-                            )
-                        }
-                        MaintenanceSection(title = "置信度") {
-                            Text("${(localConfig.confidence * 100).roundToInt()}%", style = MaterialTheme.typography.titleMedium, color = DetectorPrimary, fontWeight = FontWeight.Black)
-                            Slider(
-                                value = localConfig.confidence,
-                                onValueChange = { localConfig = localConfig.copy(confidence = it) },
-                                valueRange = 0.1f..0.95f,
-                                steps = 16
-                            )
-                        }
-                        MaintenanceSection(title = "目标采样率") {
-                            Text("${localConfig.targetSamplingRate} 次/秒", style = MaterialTheme.typography.titleMedium, color = DetectorPrimary, fontWeight = FontWeight.Black)
-                            Slider(
-                                value = localConfig.targetSamplingRate.toFloat(),
-                                onValueChange = { localConfig = localConfig.copy(targetSamplingRate = it.roundToInt().coerceIn(1, 5)) },
-                                valueRange = 1f..5f,
-                                steps = 3
-                            )
-                        }
-                        MaintenanceSection(title = "报警冷却时间") {
-                            Text("${localConfig.cooldownMs / 1000} 秒", style = MaterialTheme.typography.titleMedium, color = DetectorPrimary, fontWeight = FontWeight.Black)
-                            Slider(
-                                value = (localConfig.cooldownMs / 1000).toFloat(),
-                                onValueChange = { localConfig = localConfig.copy(cooldownMs = it.roundToInt().coerceIn(1, 300) * 1000L) },
-                                valueRange = 1f..300f,
-                                steps = 298
-                            )
-                        }
-                        MaintenanceSection(title = "服务器连接") {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                StatusPill(connectionLabel(connectionState), connectionTone(connectionState))
-                                OutlinedConsoleButton("重连", Icons.Default.Refresh, true, onReconnect, Modifier.width(112.dp))
-                            }
-                        }
-                        MaintenanceSection(title = "版本更新") {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("当前版本 ${AppConstants.VERSION}", style = MaterialTheme.typography.bodyMedium, color = DetectorPrimary)
-                                OutlinedConsoleButton("检查更新", Icons.Default.Refresh, true, onCheckUpdate, Modifier.width(132.dp))
-                            }
-                        }
-                    }
-                    state.pendingChangeText?.let {
-                        InlineNotice(text = it, tone = ConsoleTone.WARNING)
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                        OutlinedConsoleButton("取消", Icons.Default.Close, true, onDismiss, Modifier.weight(1f))
-                        Button(
-                            onClick = { onSave(localConfig, localDeviceName, localOrientation) },
+
+                    if (isLandscape) {
+                        Row(
                             modifier = Modifier
                                 .weight(1f)
-                                .height(50.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = DetectorPrimary),
-                            shape = RoundedCornerShape(8.dp)
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("保存更改", fontWeight = FontWeight.Black)
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                DeploymentMaintenanceGroup(
+                                    orientation = localOrientation,
+                                    onOrientationChange = { localOrientation = it },
+                                    deviceName = localDeviceName,
+                                    onDeviceNameChange = { localDeviceName = it },
+                                    config = localConfig,
+                                    onConfigChange = { localConfig = it },
+                                    isHighEndSoc = isHighEndSoc,
+                                    modelStatusText = modelStatusText
+                                )
+                            }
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                DetectionMaintenanceGroup(
+                                    config = localConfig,
+                                    onConfigChange = { localConfig = it }
+                                )
+                                SystemMaintenanceGroup(
+                                    connectionState = connectionState,
+                                    onReconnect = onReconnect,
+                                    onCheckUpdate = onCheckUpdate
+                                )
+                            }
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(12.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            DeploymentMaintenanceGroup(
+                                orientation = localOrientation,
+                                onOrientationChange = { localOrientation = it },
+                                deviceName = localDeviceName,
+                                onDeviceNameChange = { localDeviceName = it },
+                                config = localConfig,
+                                onConfigChange = { localConfig = it },
+                                isHighEndSoc = isHighEndSoc,
+                                modelStatusText = modelStatusText
+                            )
+                            DetectionMaintenanceGroup(
+                                config = localConfig,
+                                onConfigChange = { localConfig = it }
+                            )
+                            SystemMaintenanceGroup(
+                                connectionState = connectionState,
+                                onReconnect = onReconnect,
+                                onCheckUpdate = onCheckUpdate
+                            )
+                        }
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(DetectorSurface)
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        state.pendingChangeText?.let {
+                            InlineNotice(text = it, tone = ConsoleTone.WARNING)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                            OutlinedConsoleButton("取消", Icons.Default.Close, true, onDismiss, Modifier.weight(1f), 46.dp)
+                            Button(
+                                onClick = { onSave(localConfig, localDeviceName, localOrientation) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(46.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = DetectorPrimary,
+                                    contentColor = Color.White
+                                ),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("保存更改", fontWeight = FontWeight.Black)
+                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DeploymentMaintenanceGroup(
+    orientation: DeploymentOrientation,
+    onOrientationChange: (DeploymentOrientation) -> Unit,
+    deviceName: String,
+    onDeviceNameChange: (String) -> Unit,
+    config: MonitorConfig,
+    onConfigChange: (MonitorConfig) -> Unit,
+    isHighEndSoc: Boolean,
+    modelStatusText: String
+) {
+    MaintenanceGroupCard(title = "设备与部署", subtitle = "方向、设备身份和推理模型") {
+        MaintenanceSection(title = "部署方向") {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OrientationOption(
+                    label = "竖屏架设",
+                    selected = orientation == DeploymentOrientation.PORTRAIT,
+                    onSelect = { onOrientationChange(DeploymentOrientation.PORTRAIT) },
+                    modifier = Modifier.weight(1f)
+                )
+                OrientationOption(
+                    label = "横屏架设",
+                    selected = orientation == DeploymentOrientation.LANDSCAPE,
+                    onSelect = { onOrientationChange(DeploymentOrientation.LANDSCAPE) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+        MaintenanceSection(title = "设备名称") {
+            OutlinedTextField(
+                value = deviceName,
+                onValueChange = onDeviceNameChange,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        MaintenanceSection(title = "模型与输入尺寸") {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                ModelChip("YOLO26n", config.modelName == "yolo26n") {
+                    onConfigChange(config.copy(modelName = "yolo26n"))
+                }
+                ModelChip("YOLO26s", config.modelName == "yolo26s") {
+                    onConfigChange(config.copy(modelName = "yolo26s"))
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("高分辨率 640×640", style = MaterialTheme.typography.bodyMedium, color = DetectorPrimary)
+                    Text(
+                        text = if (isHighEndSoc) "精度更高，发热和耗电增加" else "当前 SoC 不在高分辨率白名单",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = DetectorMuted
+                    )
+                }
+                Switch(
+                    checked = config.useHighResolution,
+                    enabled = isHighEndSoc,
+                    onCheckedChange = { checked ->
+                        onConfigChange(
+                            config.copy(
+                                useHighResolution = checked,
+                                inputSize = if (checked) 640 else 320
+                            )
+                        )
+                    }
+                )
+            }
+            Text(modelStatusText, style = MaterialTheme.typography.labelMedium, color = DetectorMuted)
+        }
+    }
+}
+
+@Composable
+private fun DetectionMaintenanceGroup(
+    config: MonitorConfig,
+    onConfigChange: (MonitorConfig) -> Unit
+) {
+    MaintenanceGroupCard(title = "检测策略", subtitle = "识别目标、灵敏度和节奏") {
+        MaintenanceSection(title = "目标类别") {
+            TargetGrid(
+                selectedTargets = config.targets,
+                onToggle = { target ->
+                    onConfigChange(
+                        config.copy(
+                            targets = if (target in config.targets) config.targets - target else config.targets + target
+                        )
+                    )
+                }
+            )
+        }
+        MaintenanceValueSlider(
+            title = "置信度",
+            valueText = "${(config.confidence * 100).roundToInt()}%",
+            value = config.confidence,
+            onValueChange = { onConfigChange(config.copy(confidence = it)) },
+            valueRange = 0.1f..0.95f,
+            steps = 16
+        )
+        MaintenanceValueSlider(
+            title = "目标采样率",
+            valueText = "${config.targetSamplingRate} 次/秒",
+            value = config.targetSamplingRate.toFloat(),
+            onValueChange = { onConfigChange(config.copy(targetSamplingRate = it.roundToInt().coerceIn(1, 5))) },
+            valueRange = 1f..5f,
+            steps = 3
+        )
+        MaintenanceValueSlider(
+            title = "报警冷却时间",
+            valueText = "${config.cooldownMs / 1000} 秒",
+            value = (config.cooldownMs / 1000).toFloat(),
+            onValueChange = {
+                onConfigChange(config.copy(cooldownMs = it.roundToInt().coerceIn(1, 300) * 1000L))
+            },
+            valueRange = 1f..300f,
+            steps = 298
+        )
+    }
+}
+
+@Composable
+private fun SystemMaintenanceGroup(
+    connectionState: WsState,
+    onReconnect: () -> Unit,
+    onCheckUpdate: () -> Unit
+) {
+    MaintenanceGroupCard(title = "系统与版本", subtitle = "连接状态和客户端更新") {
+        MaintenanceSection(title = "服务器连接") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                StatusPill(connectionLabel(connectionState), connectionTone(connectionState))
+                OutlinedConsoleButton("重连", Icons.Default.Refresh, true, onReconnect, Modifier.width(112.dp))
+            }
+        }
+        MaintenanceSection(title = "版本更新") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("当前版本 ${AppConstants.VERSION}", style = MaterialTheme.typography.bodyMedium, color = DetectorPrimary)
+                OutlinedConsoleButton("检查更新", Icons.Default.Refresh, true, onCheckUpdate, Modifier.width(132.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun MaintenanceGroupCard(
+    title: String,
+    subtitle: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = DetectorSurface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, DetectorStroke),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = DetectorPrimary,
+                    fontWeight = FontWeight.Black
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = DetectorMuted
+                )
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun MaintenanceValueSlider(
+    title: String,
+    valueText: String,
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int
+) {
+    MaintenanceSection(title = title) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            Text(
+                text = valueText,
+                style = MaterialTheme.typography.titleMedium,
+                color = DetectorPrimary,
+                fontWeight = FontWeight.Black
+            )
+        }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            steps = steps
+        )
     }
 }
 
@@ -1274,6 +1808,14 @@ private fun OutlinedConsoleButton(
         enabled = enabled,
         modifier = modifier.height(height),
         shape = RoundedCornerShape(8.dp),
+        colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = DetectorPrimary,
+            disabledContentColor = DetectorMuted.copy(alpha = 0.45f)
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (enabled) DetectorPrimary.copy(alpha = 0.38f) else DetectorStroke
+        ),
         contentPadding = PaddingValues(horizontal = 6.dp)
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(17.dp))

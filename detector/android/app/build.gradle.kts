@@ -1,3 +1,4 @@
+import java.io.File
 import java.util.Properties
 
 plugins {
@@ -9,6 +10,13 @@ val keystoreProperties = Properties()
 val keystoreFile = file("../keystore.properties")
 if (keystoreFile.exists()) {
     keystoreProperties.load(keystoreFile.inputStream())
+}
+
+val repositoryRoot = rootProject.projectDir.parentFile.parentFile
+val sharedSigningProperties = Properties()
+val sharedSigningFile = repositoryRoot.resolve(".local/visionguard-release.env")
+if (sharedSigningFile.exists()) {
+    sharedSigningProperties.load(sharedSigningFile.inputStream())
 }
 
 val localProperties = Properties()
@@ -29,11 +37,55 @@ fun quotedBuildConfigString(value: String): String {
 }
 
 val visionguardApiKey = secretProperty("VISIONGUARD_API_KEY")
-val releaseStoreFile = keystoreProperties.getProperty("storeFile")
-val hasReleaseKeystore = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
-    .map { keystoreProperties.getProperty(it).orEmpty() }
-    .all { it.isNotBlank() && !it.startsWith("REPLACE_WITH") } &&
-    releaseStoreFile?.let { rootProject.file(it).exists() } == true
+
+fun signingProperty(environmentName: String, legacyName: String): String {
+    return System.getenv(environmentName)?.takeIf { it.isNotBlank() }
+        ?: sharedSigningProperties.getProperty(environmentName)?.takeIf { it.isNotBlank() }
+        ?: keystoreProperties.getProperty(legacyName).orEmpty()
+}
+
+fun resolveReleaseStoreFile(configuredPath: String): File? {
+    if (configuredPath.isBlank()) return null
+    val candidate = File(configuredPath)
+    if (candidate.isAbsolute) return candidate
+    return if (configuredPath.replace('\\', '/').startsWith(".local/")) {
+        repositoryRoot.resolve(configuredPath)
+    } else {
+        rootProject.file(configuredPath)
+    }
+}
+
+val releaseStoreFile = resolveReleaseStoreFile(
+    signingProperty("VISIONGUARD_ANDROID_STORE_FILE", "storeFile")
+)
+val releaseStorePassword = signingProperty("VISIONGUARD_ANDROID_STORE_PASSWORD", "storePassword")
+val releaseKeyAlias = signingProperty("VISIONGUARD_ANDROID_KEY_ALIAS", "keyAlias")
+val releaseKeyPassword = signingProperty("VISIONGUARD_ANDROID_KEY_PASSWORD", "keyPassword")
+val hasReleaseKeystore = releaseStoreFile?.isFile == true &&
+    listOf(releaseStorePassword, releaseKeyAlias, releaseKeyPassword)
+        .all { it.isNotBlank() && !it.startsWith("REPLACE_WITH") }
+val allowUnsignedRelease = providers.gradleProperty("VISIONGUARD_ALLOW_UNSIGNED_RELEASE")
+    .orNull
+    ?.equals("true", ignoreCase = true) == true
+val releasePackagingRequested = gradle.startParameter.taskNames
+    .map { it.substringAfterLast(':') }
+    .any { taskName ->
+        taskName.equals("build", ignoreCase = true) ||
+            taskName.equals("assemble", ignoreCase = true) ||
+            taskName.equals("bundle", ignoreCase = true) ||
+            (
+                taskName.contains("Release", ignoreCase = true) &&
+                    listOf("assemble", "bundle", "package", "install", "publish")
+                        .any { taskName.startsWith(it, ignoreCase = true) }
+                )
+    }
+
+if (releasePackagingRequested && !hasReleaseKeystore && !allowUnsignedRelease) {
+    throw GradleException(
+        "Signed Android Release is required. Run scripts/initialize-android-signing.ps1 " +
+            "or explicitly use -PVISIONGUARD_ALLOW_UNSIGNED_RELEASE=true for compile-only validation."
+    )
+}
 
 android {
     namespace = "com.xgwnje.visionguard"
@@ -47,8 +99,8 @@ android {
         applicationId = "com.xgwnje.visionguard"
         minSdk = 28
         targetSdk = 36
-        versionCode = 4301
-        versionName = "4.3.1"
+        versionCode = 4401
+        versionName = "4.4.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "API_KEY", quotedBuildConfigString(visionguardApiKey))
@@ -61,10 +113,14 @@ android {
     signingConfigs {
         if (hasReleaseKeystore) {
             create("release") {
-                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
-                storePassword = keystoreProperties.getProperty("storePassword")
-                keyAlias = keystoreProperties.getProperty("keyAlias")
-                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = releaseStoreFile
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                enableV1Signing = false
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = false
             }
         }
     }

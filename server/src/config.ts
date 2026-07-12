@@ -7,7 +7,14 @@
 import path from 'path';
 import { parsePositiveIntEnv } from './utils/security';
 
+export function parseBindHost(value: string | undefined): string {
+  return value?.trim() || '127.0.0.1';
+}
+
 export const config = {
+  /** HTTP/WS bind address; defaults to loopback to prevent direct public exposure. */
+  host: parseBindHost(process.env.BIND_HOST),
+
   /** HTTP/WS 监听端口 */
   port: parsePositiveIntEnv('PORT', 3000, 1, 65535),
 

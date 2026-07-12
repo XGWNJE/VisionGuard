@@ -19,6 +19,7 @@ Use this skill for VisionGuard build verification only. It compiles targets and 
 - Do not run `scripts/sync-version.js`, `scripts/release.js`, `scripts/publish-release.ps1`, or `scripts/bump-version.sh`.
 - Do not package, upload, deploy, commit, or push unless the user explicitly asks.
 - Release builds are required for client verification. Do not substitute Debug builds.
+- Android Release builds are signed by default from the shared `.local/visionguard-release.env`; missing signing material must fail closed. Use `-PVISIONGUARD_ALLOW_UNSIGNED_RELEASE=true` only for an explicitly compile-only unsigned validation, never for a distributable package.
 - If Android fails only because Java is missing from the current shell, use the repo script or set `JAVA_HOME` for that command only. Do not change global environment variables.
 
 ## Preferred Command
@@ -54,6 +55,8 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 Push-Location detector\android; .\gradlew.bat assembleRelease; Pop-Location
 Push-Location receiver\android; .\gradlew.bat assembleRelease; Pop-Location
 ```
+
+The normal commands above produce `app-release.apk`. If signing material is missing, initialize it with `scripts/initialize-android-signing.ps1`; do not silently accept `app-release-unsigned.apk`.
 
 ## Expected Artifacts
 

@@ -43,6 +43,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.xgwnje.visionguard.data.model.DeploymentOrientation
 import com.xgwnje.visionguard.data.model.MonitorConfig
@@ -216,7 +218,7 @@ private fun MainScreen(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(deploymentOrientation) {
-        deploymentOrientation?.let { applyDeploymentOrientation(activity, it) }
+        applyDeploymentPresentation(activity, deploymentOrientation)
     }
 
     LaunchedEffect(lastFrame, isCapturingFrame) {
@@ -299,7 +301,7 @@ private fun MainScreen(
             onSelectOrientation = { orientation ->
                 scope.launch {
                     repository.setDeploymentOrientation(orientation)
-                    applyDeploymentOrientation(activity, orientation)
+                    applyDeploymentPresentation(activity, orientation)
                 }
             },
             onToggleMonitoring = {
@@ -341,7 +343,7 @@ private fun MainScreen(
                     repository.saveMonitorConfig(newConfig)
                     repository.setDeviceName(newDeviceName)
                     repository.setDeploymentOrientation(newOrientation)
-                    applyDeploymentOrientation(activity, newOrientation)
+                    applyDeploymentPresentation(activity, newOrientation)
                     showMaintenance = false
                     Toast.makeText(context, "已保存，停止后重新开启生效", Toast.LENGTH_SHORT).show()
                 }
@@ -441,10 +443,25 @@ private fun BoxLoading(modifier: Modifier = Modifier) {
     }
 }
 
-private fun applyDeploymentOrientation(activity: Activity?, orientation: DeploymentOrientation) {
-    activity?.requestedOrientation = when (orientation) {
-        DeploymentOrientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        DeploymentOrientation.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+private fun applyDeploymentPresentation(activity: Activity?, orientation: DeploymentOrientation?) {
+    if (activity == null) return
+
+    orientation?.let {
+        activity.requestedOrientation = when (it) {
+            DeploymentOrientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            DeploymentOrientation.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
+    }
+
+    WindowInsetsControllerCompat(activity.window, activity.window.decorView).apply {
+        systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        isAppearanceLightStatusBars = true
+        isAppearanceLightNavigationBars = true
+        if (orientation == DeploymentOrientation.LANDSCAPE) {
+            hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            show(WindowInsetsCompat.Type.systemBars())
+        }
     }
 }
 

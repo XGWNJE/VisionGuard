@@ -9,6 +9,8 @@ namespace VisionGuard
     {
         protected override void OnStartup(StartupEventArgs e)
         {
+            EnsureWpfFontEnvironment();
+
             // 高 DPI 感知（PerMonitorV2）
             // .NET 9 WPF 下由 app.manifest 声明，此处无需额外调用 SetProcessDPIAware
 
@@ -30,6 +32,18 @@ namespace VisionGuard
             });
 
             base.OnStartup(e);
+        }
+
+        private static void EnsureWpfFontEnvironment()
+        {
+            if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("windir")))
+                return;
+
+            var windowsDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            if (!string.IsNullOrWhiteSpace(windowsDirectory))
+            {
+                Environment.SetEnvironmentVariable("windir", windowsDirectory, EnvironmentVariableTarget.Process);
+            }
         }
 
         private void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)

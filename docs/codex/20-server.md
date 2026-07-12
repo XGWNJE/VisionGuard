@@ -45,6 +45,7 @@ visionguard.xgwnje.cn:443
 
 ## 运行参数
 
+- `BIND_HOST`（默认 `127.0.0.1`；仅在明确需要直接对外监听时覆盖）
 - `PORT`
 - `API_KEY`
 - `SCREENSHOT_TTL_HOURS`

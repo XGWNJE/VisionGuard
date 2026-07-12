@@ -11,6 +11,7 @@ artifacts/
 # 本仓库以 AGENTS.md + .agents/skills/ 为当前 Agent 入口；本地 Agent 状态不入库。
 .codex/
 .claude/
+.local/
 
 # ===== Server =====
 server/node_modules/

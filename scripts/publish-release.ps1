@@ -10,7 +10,9 @@ param(
     [switch]$CreateTag,
     [switch]$CreateGitHubRelease,
     [switch]$DeployServer,
+    [switch]$SkipServerDeploy,
     [switch]$SkipBuild,
+    [switch]$PreflightOnly,
     [switch]$DryRun,
 
     [string]$ServerEnvPath = 'D:\ObjectCode\Server-infra\server.local.env',
@@ -115,7 +117,11 @@ function Get-AndroidTool {
 
         $tool = Get-ChildItem -LiteralPath $buildTools -Directory |
             Sort-Object Name -Descending |
-            ForEach-Object { Join-Path $_.FullName "$Name.bat" } |
+            ForEach-Object {
+                foreach ($extension in @('.bat', '.exe')) {
+                    Join-Path $_.FullName "$Name$extension"
+                }
+            } |
             Where-Object { Test-Path -LiteralPath $_ } |
             Select-Object -First 1
 
@@ -124,14 +130,69 @@ function Get-AndroidTool {
         }
     }
 
-    throw "$Name.bat was not found under Android SDK build-tools."
+    throw "$Name was not found under Android SDK build-tools."
+}
+
+function Set-AndroidJavaHome {
+    [object[]]$candidates = @(
+        $env:JAVA_HOME,
+        'C:\Android\Android Studio\jbr',
+        'C:\Program Files\Android\Android Studio\jbr',
+        'C:\Program Files\Android\Android Studio\jre'
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ 'bin\java.exe')) }
+
+    if ($candidates -and $candidates.Count -gt 0) {
+        $env:JAVA_HOME = $candidates[0]
+        $javaBin = Join-Path $env:JAVA_HOME 'bin'
+        if (($env:Path -split ';') -notcontains $javaBin) {
+            $env:Path = "$javaBin;$env:Path"
+        }
+        return
+    }
+
+    $java = Get-Command java -ErrorAction SilentlyContinue
+    if (-not $java) {
+        throw "JAVA_HOME is not set and java was not found on PATH."
+    }
+}
+
+function Get-MSBuildPath {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (Test-Path -LiteralPath $vswhere) {
+        $path = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
+        if ($path -and (Test-Path -LiteralPath $path)) {
+            return $path
+        }
+    }
+
+    foreach ($candidate in @(
+        'C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe',
+        'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe'
+    )) {
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
+        }
+    }
+
+    throw 'MSBuild.exe not found. Install Visual Studio Build Tools or Visual Studio with MSBuild.'
 }
 
 function Get-AndroidSecretMap {
     param([string]$ProjectRoot)
 
     $map = @{}
+    foreach ($file in @(
+        (Join-Path $ProjectRoot 'keystore.local.env'),
+        (Join-Path $repoRoot '.local\visionguard-release.env'),
+        'D:\ObjectCode\Server-infra\visionguard-release.local.env'
+    )) {
+        foreach ($entry in (Read-EnvFile -Path $file).GetEnumerator()) {
+            $map[$entry.Key] = $entry.Value
+        }
+    }
+
     foreach ($name in @(
+        'VISIONGUARD_ANDROID_STORE_FILE',
         'VISIONGUARD_ANDROID_STORE_PASSWORD',
         'VISIONGUARD_ANDROID_KEY_PASSWORD',
         'VISIONGUARD_ANDROID_KEY_ALIAS',
@@ -141,16 +202,6 @@ function Get-AndroidSecretMap {
         $value = [Environment]::GetEnvironmentVariable($name)
         if (-not [string]::IsNullOrWhiteSpace($value)) {
             $map[$name] = $value
-        }
-    }
-
-    foreach ($file in @(
-        (Join-Path $ProjectRoot 'keystore.local.env'),
-        (Join-Path $repoRoot '.local\visionguard-release.env'),
-        'D:\ObjectCode\Server-infra\visionguard-release.local.env'
-    )) {
-        foreach ($entry in (Read-EnvFile -Path $file).GetEnumerator()) {
-            $map[$entry.Key] = $entry.Value
         }
     }
 
@@ -180,12 +231,18 @@ function Get-KeystoreConfig {
     $keyPassword = Get-MapValue -Map $secretMap -Keys @('VISIONGUARD_ANDROID_KEY_PASSWORD', 'VG_ANDROID_KEY_PASSWORD', 'keyPassword')
 
     if (-not $storePassword -or -not $keyPassword) {
-        throw "Android signing passwords were not found. Set VISIONGUARD_ANDROID_STORE_PASSWORD and VISIONGUARD_ANDROID_KEY_PASSWORD, or create an ignored keystore.local.env."
+        throw "Android signing passwords were not found. Run scripts\initialize-android-signing.ps1 or configure .local\visionguard-release.env."
     }
 
     $candidatePaths = @()
     if ($storeFile) {
-        $candidatePaths += $(if ([System.IO.Path]::IsPathRooted($storeFile)) { $storeFile } else { Join-Path $ProjectRoot $storeFile })
+        if ([System.IO.Path]::IsPathRooted($storeFile)) {
+            $candidatePaths += $storeFile
+        }
+        else {
+            $candidatePaths += Join-Path $repoRoot $storeFile
+            $candidatePaths += Join-Path $ProjectRoot $storeFile
+        }
     }
     $candidatePaths += Join-Path $ProjectRoot 'key\vg-release.jks'
     $candidatePaths += Join-Path $ProjectRoot 'app\visonGuard.jks'
@@ -203,11 +260,78 @@ function Get-KeystoreConfig {
     }
 }
 
+function Test-PythonParamiko {
+    $python = @'
+import paramiko
+print("paramiko ok")
+'@
+    $python | python -
+    if ($LASTEXITCODE -ne 0) {
+        throw "Python Paramiko is required for VPS upload/deploy."
+    }
+}
+
+function Restore-WinFormsPackages {
+    $msbuild = Get-MSBuildPath
+    $solutionDir = (Resolve-Path -LiteralPath (Join-Path $repoRoot 'detector\windows-winforms')).Path + [System.IO.Path]::DirectorySeparatorChar
+    Invoke-Native -FilePath $msbuild -Arguments @(
+        'detector\windows-winforms\VisionGuard.csproj',
+        '/t:Restore',
+        '/p:RestorePackagesConfig=true',
+        "/p:SolutionDir=$solutionDir",
+        '/v:minimal'
+    )
+}
+
+function Invoke-ReleasePreflight {
+    param([bool]$ServerDeployPlanned)
+
+    if ($RemoteRoot -match 'VisionGuard_Server|/opt/visionguard($|/)') {
+        throw "RemoteRoot points to a legacy VisionGuard path: $RemoteRoot. Use /opt/visionguard-server."
+    }
+
+    if (($UploadVps -or $ServerDeployPlanned) -and -not (Test-Path -LiteralPath $ServerEnvPath)) {
+        throw "Server env file was not found: $ServerEnvPath"
+    }
+
+    if ($UploadVps -or $ServerDeployPlanned) {
+        Test-PythonParamiko
+    }
+
+    if (Test-TargetEnabled @('Windows', 'WinForms')) {
+        Write-Host "preflight: restoring WinForms packages.config dependencies"
+        Restore-WinFormsPackages
+    }
+
+    if (Test-TargetEnabled @('Android', 'AndroidDetector', 'AndroidReceiver')) {
+        Set-AndroidJavaHome
+        [void](Get-AndroidTool -Name 'apksigner')
+        [void](Get-AndroidTool -Name 'zipalign')
+    }
+
+    if (Test-TargetEnabled @('Android', 'AndroidDetector')) {
+        [void](Get-KeystoreConfig -ProjectRoot (Join-Path $repoRoot 'detector\android'))
+        Write-Host "preflight: Android detector signing config resolved"
+    }
+
+    if (Test-TargetEnabled @('Android', 'AndroidReceiver')) {
+        [void](Get-KeystoreConfig -ProjectRoot (Join-Path $repoRoot 'receiver\android'))
+        Write-Host "preflight: Android receiver signing config resolved"
+    }
+
+    if ($ServerDeployPlanned -and $SkipBuild -and -not (Test-Path -LiteralPath (Join-Path $repoRoot 'server\dist\index.js'))) {
+        throw "Server deploy was requested with -SkipBuild, but server\dist\index.js does not exist."
+    }
+
+    Write-Host "preflight: release prerequisites passed"
+}
+
 function Verify-AndroidApk {
     param([string]$ApkPath)
 
+    Set-AndroidJavaHome
     $apksigner = Get-AndroidTool -Name 'apksigner'
-    Invoke-Native -FilePath $apksigner -Arguments @('verify', '--verbose', '--print-certs', $ApkPath)
+    Invoke-Native -FilePath $apksigner -Arguments @('verify', '--verbose', '--print-certs', $ApkPath) | Out-Host
 }
 
 function Get-SignedAndroidApk {
@@ -230,6 +354,7 @@ function Get-SignedAndroidApk {
 
     Write-Step "Signing $Name app-release-unsigned.apk"
     $config = Get-KeystoreConfig -ProjectRoot $ProjectRoot
+    Set-AndroidJavaHome
     $apksigner = Get-AndroidTool -Name 'apksigner'
     $zipalign = Get-AndroidTool -Name 'zipalign'
     $alignedApk = Join-Path $releaseOutput 'app-release-aligned.apk'
@@ -241,7 +366,7 @@ function Get-SignedAndroidApk {
         Remove-Item -LiteralPath $signedApk -Force
     }
 
-    Invoke-Native -FilePath $zipalign -Arguments @('-p', '-f', '4', $unsignedApk, $alignedApk)
+    Invoke-Native -FilePath $zipalign -Arguments @('-P', '16', '-f', '4', $unsignedApk, $alignedApk)
 
     $oldStore = $env:VG_STORE_PASS
     $oldKey = $env:VG_KEY_PASS
@@ -254,6 +379,10 @@ function Get-SignedAndroidApk {
             '--ks-key-alias', $config.KeyAlias,
             '--ks-pass', 'env:VG_STORE_PASS',
             '--key-pass', 'env:VG_KEY_PASS',
+            '--v1-signing-enabled', 'false',
+            '--v2-signing-enabled', 'true',
+            '--v3-signing-enabled', 'true',
+            '--v4-signing-enabled', 'false',
             '--out', $signedApk,
             $alignedApk
         )
@@ -439,7 +568,11 @@ client.connect(hostname=host, port=port, username=user, password=password or Non
 
 try:
     sftp = client.open_sftp()
-    client.exec_command("mkdir -p " + shlex.quote(posixpath.join(remote_root, "data", "releases")))
+    stdin, stdout, stderr = client.exec_command("mkdir -p " + shlex.quote(posixpath.join(remote_root, "data", "releases")))
+    status = stdout.channel.recv_exit_status()
+    if status != 0:
+        error = stderr.read().decode("utf-8", "replace").strip()
+        raise SystemExit(error or "remote mkdir failed")
     for item in uploads:
         local = item["local"]
         remote = item["remote"]
@@ -466,11 +599,158 @@ finally:
 
     try {
         $python | python -
+        if ($LASTEXITCODE -ne 0) {
+            throw "VPS upload verification failed with code $LASTEXITCODE."
+        }
     }
     finally {
         Remove-Item Env:\VG_RELEASE_UPLOADS_JSON -ErrorAction SilentlyContinue
         Remove-Item Env:\VG_SERVER_ENV_PATH -ErrorAction SilentlyContinue
         Remove-Item Env:\VG_REMOTE_ROOT -ErrorAction SilentlyContinue
+    }
+}
+
+function Deploy-ServerCode {
+    $serverDist = Join-Path $repoRoot 'server\dist\index.js'
+    if (-not (Test-Path -LiteralPath $serverDist)) {
+        throw "Server dist was not found: $serverDist. Build the Server target before deployment."
+    }
+    if (-not (Test-Path -LiteralPath $ServerEnvPath)) {
+        throw "Server env file was not found: $ServerEnvPath"
+    }
+
+    $archive = Join-Path ([System.IO.Path]::GetTempPath()) ("visionguard-server-deploy-{0}.tgz" -f ([guid]::NewGuid().ToString('N')))
+    try {
+        Invoke-Native -FilePath 'tar' -Arguments @('-C', (Join-Path $repoRoot 'server'), '-czf', $archive, 'package.json', 'package-lock.json', 'dist')
+
+        $env:VG_DEPLOY_ARCHIVE = $archive
+        $env:VG_SERVER_ENV_PATH = $ServerEnvPath
+        $env:VG_REMOTE_ROOT = $RemoteRoot
+        $env:VG_RELEASE_VERSION = $Version
+
+        $python = @'
+import os
+import shlex
+import sys
+
+try:
+    import paramiko
+except Exception as exc:
+    raise SystemExit("Paramiko is required for server deploy: " + str(exc))
+
+def read_env(path):
+    values = {}
+    with open(path, "r", encoding="utf-8") as handle:
+        for raw in handle:
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+def pick(values, *keys, default=None):
+    for key in keys:
+        value = values.get(key)
+        if value:
+            return value
+    return default
+
+values = read_env(os.environ["VG_SERVER_ENV_PATH"])
+host = pick(values, "VPS_IP", "SSH_HOST", "VPS_HOST")
+user = pick(values, "SSH_USER", "VPS_USER", default="root")
+port = int(pick(values, "SSH_PORT", "VPS_PORT", default="22"))
+password = pick(values, "SSH_PASSWORD", "VPS_PASSWORD")
+key_filename = pick(values, "SSH_KEY", "SSH_KEY_PATH")
+archive = os.environ["VG_DEPLOY_ARCHIVE"]
+remote_root = os.environ["VG_REMOTE_ROOT"].rstrip("/")
+version = os.environ["VG_RELEASE_VERSION"]
+remote_archive = "/tmp/visionguard-server-deploy.tgz"
+remote_stage = "/tmp/visionguard-server-deploy"
+
+if not host:
+    raise SystemExit("VPS host was not found in server.local.env")
+
+q = shlex.quote
+remote_command = f"""
+set -euo pipefail
+rm -rf {q(remote_stage)}
+mkdir -p {q(remote_stage)} {q(remote_root)}
+tar -xzf {q(remote_archive)} -C {q(remote_stage)}
+rm -rf {q(remote_root + "/dist")}
+mv {q(remote_stage + "/dist")} {q(remote_root + "/dist")}
+cp {q(remote_stage + "/package.json")} {q(remote_root + "/package.json")}
+cp {q(remote_stage + "/package-lock.json")} {q(remote_root + "/package-lock.json")}
+cd {q(remote_root)} && npm ci --omit=dev
+systemctl restart visionguard
+sleep 2
+systemctl is-active --quiet visionguard
+remote_version="$(cd {q(remote_root)} && node -p "require('./package.json').version")"
+if [ "$remote_version" != {q(version)} ]; then
+  echo "remote server version mismatch: $remote_version != {version}" >&2
+  exit 1
+fi
+curl -fsS http://127.0.0.1:3000/health
+rm -rf {q(remote_stage)} {q(remote_archive)}
+"""
+
+client = paramiko.SSHClient()
+client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+client.connect(hostname=host, port=port, username=user, password=password or None, key_filename=key_filename or None, timeout=30)
+try:
+    with client.open_sftp() as sftp:
+        sftp.put(archive, remote_archive)
+    stdin, stdout, stderr = client.exec_command(remote_command, timeout=300)
+    status = stdout.channel.recv_exit_status()
+    out = stdout.read().decode("utf-8", "replace")
+    err = stderr.read().decode("utf-8", "replace")
+    if out:
+        print(out, end="")
+    if status != 0:
+        if err:
+            print(err, file=sys.stderr, end="")
+        raise SystemExit(status)
+finally:
+    client.close()
+'@
+
+        $python | python -
+        if ($LASTEXITCODE -ne 0) {
+            throw "Server deploy failed with code $LASTEXITCODE."
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue
+        Remove-Item Env:\VG_DEPLOY_ARCHIVE -ErrorAction SilentlyContinue
+        Remove-Item Env:\VG_SERVER_ENV_PATH -ErrorAction SilentlyContinue
+        Remove-Item Env:\VG_REMOTE_ROOT -ErrorAction SilentlyContinue
+        Remove-Item Env:\VG_RELEASE_VERSION -ErrorAction SilentlyContinue
+    }
+}
+
+function Verify-OnlineServer {
+    $env:VG_BASE_URL = $BaseUrl
+    $python = @'
+import json
+import os
+import urllib.request
+
+base_url = os.environ["VG_BASE_URL"].rstrip("/")
+with urllib.request.urlopen(base_url + "/health", timeout=20) as response:
+    payload = json.loads(response.read().decode("utf-8"))
+if not payload.get("ok"):
+    raise SystemExit("public health check did not return ok: " + repr(payload))
+print("online verified server health")
+'@
+
+    try {
+        $python | python -
+        if ($LASTEXITCODE -ne 0) {
+            throw "Online server verification failed with code $LASTEXITCODE."
+        }
+    }
+    finally {
+        Remove-Item Env:\VG_BASE_URL -ErrorAction SilentlyContinue
     }
 }
 
@@ -500,9 +780,12 @@ for platform in platforms:
     update_url = base_url + "/api/update?" + urllib.parse.urlencode({"platform": platform, "version": "0.0.0"})
     with urllib.request.urlopen(update_url, timeout=20) as response:
         payload = json.loads(response.read().decode("utf-8"))
-    if payload.get("version") != version:
+    payload_version = payload.get("version", payload.get("latestVersion"))
+    payload_url = payload.get("url", payload.get("downloadUrl"))
+    if payload_version != version:
         raise SystemExit(f"{platform} update version mismatch: {payload}")
-    if payload.get("url") != expected["url"] or int(payload.get("size", -1)) != int(expected["size"]):
+    payload_size = payload.get("size", payload.get("fileSize", -1))
+    if payload_url != expected["url"] or int(payload_size) != int(expected["size"]):
         raise SystemExit(f"{platform} update payload mismatch: {payload}")
 
     asset_url = base_url + expected["url"]
@@ -523,6 +806,9 @@ for platform in platforms:
 
     try {
         $python | python -
+        if ($LASTEXITCODE -ne 0) {
+            throw "Online release verification failed with code $LASTEXITCODE."
+        }
     }
     finally {
         Remove-Item Env:\VG_RELEASES_JSON -ErrorAction SilentlyContinue
@@ -554,12 +840,25 @@ if ($Version -notmatch '^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$') {
     throw "Invalid version: $Version"
 }
 
+if ($DeployServer -and $SkipServerDeploy) {
+    throw "Use either -DeployServer or -SkipServerDeploy, not both."
+}
+
 Set-Location $repoRoot
+$serverDeployPlanned = (($UploadVps -and (Test-TargetEnabled @('Server')) -and -not $SkipServerDeploy) -or $DeployServer)
 
 if ($DryRun) {
-    Write-Host "Dry run: publish-release.ps1 would release v$Version target=$Target upload=$UploadVps githubPush=$PushGitHub tag=$CreateTag githubRelease=$CreateGitHubRelease."
+    Write-Host "Dry run: publish-release.ps1 would release v$Version target=$Target upload=$UploadVps deployServer=$serverDeployPlanned githubPush=$PushGitHub tag=$CreateTag githubRelease=$CreateGitHubRelease."
     Write-Host "Server env: $ServerEnvPath"
     Write-Host "Remote root: $RemoteRoot"
+    return
+}
+
+Write-Step "Preflight"
+Invoke-ReleasePreflight -ServerDeployPlanned $serverDeployPlanned
+
+if ($PreflightOnly) {
+    Write-Host "Preflight only complete for v$Version target=$Target upload=$UploadVps deployServer=$serverDeployPlanned."
     return
 }
 
@@ -638,14 +937,19 @@ if ($UploadVps -and $artifacts.Count -gt 0) {
         remote = "$RemoteRoot/data/releases.json"
     }) | Out-Null
     Publish-ToVps -Uploads $uploads.ToArray()
-
-    Write-Step "Verify online release"
-    Verify-OnlineRelease -Platforms $platforms.ToArray()
 }
 
-if ($DeployServer) {
+if ($serverDeployPlanned) {
     Write-Step "Deploy server code"
-    Invoke-Native -FilePath 'bash' -Arguments @((Join-Path $repoRoot 'server\deploy.sh'), '--install')
+    Deploy-ServerCode
+
+    Write-Step "Verify online server"
+    Verify-OnlineServer
+}
+
+if ($UploadVps -and $artifacts.Count -gt 0) {
+    Write-Step "Verify online release"
+    Verify-OnlineRelease -Platforms $platforms.ToArray()
 }
 
 Invoke-GitHubSteps -Artifacts $artifacts.ToArray()
@@ -656,4 +960,7 @@ foreach ($artifact in $artifacts) {
 }
 if ($artifacts.Count -eq 0) {
     Write-Host "No client packages were produced for target $Target."
+}
+if ($serverDeployPlanned) {
+    Write-Host "server deployed to $RemoteRoot version=$Version"
 }

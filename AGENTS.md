@@ -89,7 +89,7 @@ WS 三角色：`windows` / `android` / `android-detector`
 - Windows / Android 检测等设置或服务器页提供**手动"检查更新"按钮**；Android 接收端在警报页连接状态条提供手动检查更新入口
 - Windows 有更新时弹 `OK/Cancel` 对话框；Android Service 自动检查时**仅发通知**不自动下载，Android 接收端手动检查走警报页状态条 + AlertDialog / Toast，提示文案必须包含当前版本号
 - WS 认证版本过低返回 `needs-update` 强制升级
-- 发布：`powershell -ExecutionPolicy Bypass -File .\scripts\publish-release.ps1 -Version <version> -Target All -UploadVps`
+- 发布：`powershell -ExecutionPolicy Bypass -File .\scripts\publish-release.ps1 -Version <version> -Target All -UploadVps`。该入口会先做预检，再同步版本、构建、上传客户端包、部署 Server 代码并做公网验证；只检查环境时加 `-PreflightOnly`，明确只发客户端时才加 `-SkipServerDeploy`。
 
 **版本**：根目录 `VERSION` 为权威来源，`scripts/sync-version.js` 一键同步全端。注意：WPF 端运行时版本取自 `AppConfig.cs` 的 `Version` 常量，而非 `.csproj` 的 MSBuild 属性；`sync-version.js` 须同时更新这两处。
 
@@ -133,7 +133,7 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 ### 发布脚本
 
-`scripts/publish-release.ps1`：同步版本 → 调用 `visionguard-build` → 收集模型到 `server/data/models/` → 处理 Android 签名 → 压缩 zip/apk（排除 Assets 目录）→ 更新 `releases.json` → 可选上传 VPS → 线上验证 `/api/update`、`HEAD 200`、`Range 206`。GitHub 推送、tag 和 GitHub Release 默认不执行，必须显式加开关。
+`scripts/publish-release.ps1`：预检（Server-infra env/Paramiko、WinForms NuGet restore、Android Java/build-tools/签名、远端路径）→ 同步版本 → 调用 `visionguard-build` → 收集模型到 `server/data/models/` → 处理 Android 签名 → 压缩 zip/apk（排除 Assets 目录）→ 更新 `releases.json` → 上传 VPS → 部署 Server 代码（`Target All/Server` + `-UploadVps` 默认执行）→ 线上验证 `/health`、`/api/update`、`HEAD 200`、`Range 206`。GitHub 推送、tag 和 GitHub Release 默认不执行，必须显式加开关。
 
 `scripts/release.js` 仅保留为旧的底层兼容脚本，不作为默认上线入口。
 
@@ -157,7 +157,7 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 ## Server 配置参考
 
-关键 `.env` 字段：`PORT` / `API_KEY`（为空时 Server 拒绝启动）/ `SCREENSHOT_TTL_HOURS=72` / `ALERT_TTL_HOURS=168` / `MAX_UPLOAD_BYTES=2097152` / `ENABLE_HTTP_SCREENSHOT_UPLOAD=true` / `MAX_WS_CONNECTIONS=100`
+关键 `.env` 字段：`BIND_HOST=127.0.0.1` / `PORT` / `API_KEY`（为空时 Server 拒绝启动）/ `SCREENSHOT_TTL_HOURS=72` / `ALERT_TTL_HOURS=168` / `MAX_UPLOAD_BYTES=2097152` / `ENABLE_HTTP_SCREENSHOT_UPLOAD=true` / `MAX_WS_CONNECTIONS=100`
 
 当前新 VPS 公共 DNS、端口、Nginx SNI 路由维护在 `D:\ObjectCode\Server-infra`。`visionguard.xgwnje.cn` 线上路径为公网 `443` -> Nginx stream SNI -> `127.0.0.1:9443` -> VisionGuard Node `127.0.0.1:3000`；不要用旧式独立 `listen 443 ssl` 站点覆盖当前架构。
 
@@ -181,7 +181,7 @@ WS 三角色：`windows` / `android` / `android-detector`
 |-------|------|------|
 | `visionguard-build` | 五端编译（Server/WinForms/WPF/Android-Detector/Android-Receiver） | `/visionguard-build` 或"编译" |
 | `visionguard-e2e` | 端到端 / 设备 / 模拟器 / 运行证据验证（含真机发现、AVD 兜底、logcat/截图采集） | "端到端测试"、"模拟器验证"、"实机验证"、"自动化验证" |
-| `visionguard-release` | 客户端更新发布、VPS release 文件/元数据更新、GitHub Release 可选发布、线上更新接口验证 | "发布新版本"、"上线"、"推送更新" |
+| `visionguard-release` | 客户端更新发布、Server 代码部署、VPS release 文件/元数据更新、GitHub Release 可选发布、线上更新接口验证 | "发布新版本"、"上线"、"推送更新" |
 
 版本同步不再维护独立 skill；以根目录 `VERSION` 为权威，显式授权后运行 `node scripts/sync-version.js <version>`。VPS/域名/SNI 信息以 `D:\ObjectCode\Server-infra` 为准，旧全局 `vps-server-info` 如有冲突不得采用。
 

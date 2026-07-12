@@ -23,6 +23,9 @@ test('release skill replaces the old push-update entry and documents release gat
   assert.match(skill, /^name: visionguard-release/m);
   assert.match(skill, /Use when VisionGuard needs/i);
   assert.match(skill, /scripts[\\/]publish-release\.ps1/);
+  assert.match(skill, /preflight/i);
+  assert.match(skill, /-PreflightOnly/);
+  assert.match(skill, /-SkipServerDeploy/);
   assert.match(skill, /默认不.*GitHub|no GitHub/i);
   assert.match(skill, /D:\\ObjectCode\\Server-infra/);
   assert.match(skill, /\/opt\/visionguard-server/);
@@ -66,19 +69,75 @@ test('publish-release.ps1 keeps GitHub optional and release deployment reproduci
   assert.match(script, /\$PushGitHub/);
   assert.match(script, /\$CreateTag/);
   assert.match(script, /\$CreateGitHubRelease/);
+  assert.match(script, /\$SkipServerDeploy/);
+  assert.match(script, /\$PreflightOnly/);
   assert.match(script, /if\s*\(\$PushGitHub\)/);
   assert.match(script, /if\s*\(\$CreateTag\)/);
   assert.match(script, /if\s*\(\$CreateGitHubRelease\)/);
+  assert.match(script, /Invoke-ReleasePreflight/);
+  assert.match(script, /Preflight only complete/);
+  assert.match(script, /Restore-WinFormsPackages/);
+  assert.match(script, /Test-PythonParamiko/);
+  assert.match(script, /Deploy-ServerCode/);
+  assert.match(script, /Verify-OnlineServer/);
+  assert.match(script, /\$serverDeployPlanned/);
   assert.match(script, /D:\\ObjectCode\\Server-infra\\server\.local\.env/);
   assert.match(script, /\/opt\/visionguard-server/);
   assert.match(script, /app-release-unsigned\.apk/);
   assert.match(script, /apksigner/);
+  assert.match(script, /zipalign/);
+  assert.match(script, /Set-AndroidJavaHome/);
+  assert.match(script, /\$Name\$extension/);
   assert.match(script, /VISIONGUARD_ANDROID_STORE_PASSWORD/);
   assert.match(script, /VISIONGUARD_ANDROID_KEY_PASSWORD/);
   assert.match(script, /\.tmp/);
   assert.match(script, /mv -f/);
+  assert.match(script, /remote mkdir failed/);
+  assert.match(script, /VPS upload verification failed/);
+  assert.match(script, /Server deploy failed/);
+  assert.match(script, /Online release verification failed/);
+  assert.match(script, /latestVersion/);
+  assert.match(script, /downloadUrl/);
+  assert.match(script, /fileSize/);
   assert.match(script, /api\/update/);
   assert.match(script, /Range/);
+  assert.doesNotMatch(script, /server\\deploy\.sh/);
+});
+
+test('Android signing uses one ignored shared identity across build and release automation', () => {
+  const detectorGradle = read('detector/android/app/build.gradle.kts');
+  const receiverGradle = read('receiver/android/app/build.gradle.kts');
+  const publishScript = read('scripts/publish-release.ps1');
+  const initializer = read('scripts/initialize-android-signing.ps1');
+  const gitignore = read('.gitignore');
+
+  assert.match(gitignore, /^\.local\/$/m);
+  for (const gradle of [detectorGradle, receiverGradle]) {
+    assert.match(gradle, /\.local\/visionguard-release\.env/);
+    assert.match(gradle, /VISIONGUARD_ANDROID_STORE_FILE/);
+    assert.match(gradle, /VISIONGUARD_ANDROID_STORE_PASSWORD/);
+    assert.match(gradle, /VISIONGUARD_ANDROID_KEY_PASSWORD/);
+    assert.match(gradle, /releaseStoreFile\?\.isFile == true/);
+    assert.match(gradle, /enableV2Signing = true/);
+    assert.match(gradle, /enableV3Signing = true/);
+    assert.match(gradle, /VISIONGUARD_ALLOW_UNSIGNED_RELEASE/);
+    assert.match(gradle, /Signed Android Release is required/);
+    assert.match(gradle, /releasePackagingRequested && !hasReleaseKeystore/);
+  }
+
+  assert.match(publishScript, /Join-Path \$repoRoot \$storeFile/);
+  assert.match(publishScript, /initialize-android-signing\.ps1/);
+  assert.match(publishScript, /--v3-signing-enabled', 'true'/);
+  assert.ok(
+    publishScript.indexOf(".local\\visionguard-release.env") < publishScript.indexOf("[Environment]::GetEnvironmentVariable($name)"),
+    'environment variables should override ignored local signing files'
+  );
+  assert.match(initializer, /RandomNumberGenerator/);
+  assert.match(initializer, /SetAccessRuleProtection\(\$true, \$false\)/);
+  assert.match(initializer, /-storepass:env/);
+  assert.match(initializer, /-keypass:env/);
+  assert.match(initializer, /visionguard-android-release\.p12/);
+  assert.match(initializer, /-storetype', 'PKCS12'/);
 });
 
 test('server deployment script targets the current dedicated runtime layout', () => {
@@ -89,4 +148,15 @@ test('server deployment script targets the current dedicated runtime layout', ()
   assert.match(script, /\/opt\/visionguard-server/);
   assert.doesNotMatch(script, /\/opt\/visionguard\/VisionGuard_Server/);
   assert.doesNotMatch(script, /VPS_ALIAS="xgwnje"/);
+});
+
+test('build script restores WinForms packages before compiling', () => {
+  const script = read('.agents/skills/visionguard-build/scripts/build-all.ps1');
+
+  assert.match(script, /Restore-WinFormsPackages/);
+  assert.match(script, /RestorePackagesConfig=true/);
+  assert.ok(
+    script.indexOf('Restore-WinFormsPackages -MSBuild $msbuild') < script.indexOf('-Name "WinForms"'),
+    'WinForms NuGet restore should run before the WinForms build step'
+  );
 });
