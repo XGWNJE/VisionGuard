@@ -14,10 +14,14 @@ param(
     [switch]$SkipBuild,
     [switch]$PreflightOnly,
     [switch]$DryRun,
+    [switch]$GitHubOnly,
 
     [string]$ServerEnvPath = 'D:\ObjectCode\Server-infra\server.local.env',
     [string]$RemoteRoot = '/opt/visionguard-server',
-    [string]$BaseUrl = 'https://visionguard.xgwnje.cn'
+    [string]$BaseUrl = 'https://visionguard.xgwnje.cn',
+    [string]$GitHubReleaseNotesPath,
+    [string]$GitHubTagTarget = 'HEAD',
+    [string]$GitHubRepository = 'XGWNJE/VisionGuard'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -51,6 +55,46 @@ function Invoke-Native {
         }
     }
     finally {
+        Pop-Location
+    }
+}
+
+function Invoke-NativeCapture {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments,
+        [string]$WorkingDirectory = $repoRoot
+    )
+
+    Push-Location $WorkingDirectory
+    try {
+        $output = & $FilePath @Arguments 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "$FilePath exited with code $LASTEXITCODE`: $($output -join [Environment]::NewLine)"
+        }
+        return (($output | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine).Trim()
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+function Test-NativeSuccess {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments,
+        [string]$WorkingDirectory = $repoRoot
+    )
+
+    Push-Location $WorkingDirectory
+    $oldErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & $FilePath @Arguments *> $null
+        return $LASTEXITCODE -eq 0
+    }
+    finally {
+        $ErrorActionPreference = $oldErrorActionPreference
         Pop-Location
     }
 }
@@ -500,6 +544,191 @@ function Get-Sha256 {
     return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant()
 }
 
+function Assert-GitHubReleaseNotes {
+    if ([string]::IsNullOrWhiteSpace($GitHubReleaseNotesPath)) {
+        throw "-GitHubReleaseNotesPath is required when creating or updating a GitHub Release."
+    }
+
+    $resolvedPath = Resolve-Path -LiteralPath $GitHubReleaseNotesPath -ErrorAction SilentlyContinue
+    if (-not $resolvedPath) {
+        throw "GitHub release notes file was not found: $GitHubReleaseNotesPath"
+    }
+
+    $content = Get-Content -LiteralPath $resolvedPath.Path -Encoding UTF8 -Raw
+    if ([string]::IsNullOrWhiteSpace($content)) {
+        throw "GitHub release notes file is empty: $($resolvedPath.Path)"
+    }
+    if ($content -notmatch '[\u4e00-\u9fff]') {
+        throw "GitHub release notes must contain Chinese text: $($resolvedPath.Path)"
+    }
+
+    return $resolvedPath.Path
+}
+
+function Assert-GitHubOnlyWorkingTree {
+    $allowedPaths = @(
+        'scripts/publish-release.ps1',
+        'scripts/release-workflow.test.js',
+        'docs/superpowers/specs/2026-07-12-v5-multi-user-p2p-architecture.md'
+    )
+    $status = Invoke-NativeCapture -FilePath 'git' -Arguments @('status', '--porcelain=v1', '--untracked-files=all')
+    $unexpected = New-Object System.Collections.Generic.List[string]
+    foreach ($line in ($status -split "`r?`n")) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+        if ($line -notmatch '^[ MADRCU?!]{1,2}\s+(.+)$') {
+            throw "Unable to parse git status entry in GitHub-only mode: $line"
+        }
+        $path = $Matches[1].Trim('"') -replace '\\', '/'
+        if ($path -match ' -> ') {
+            $path = ($path -split ' -> ')[-1].Trim('"')
+        }
+        if ($allowedPaths -notcontains $path) {
+            $unexpected.Add($path) | Out-Null
+        }
+    }
+
+    if ($unexpected.Count -gt 0) {
+        throw "GitHub-only mode found unexpected working tree changes: $($unexpected -join ', ')"
+    }
+}
+
+function Get-GitHubOnlyArtifacts {
+    if (-not (Test-Path -LiteralPath $releasesJsonPath)) {
+        throw "Release metadata was not found: $releasesJsonPath"
+    }
+
+    $repositoryVersion = (Get-Content -LiteralPath (Join-Path $repoRoot 'VERSION') -Encoding UTF8 -Raw).Trim()
+    if ($repositoryVersion -ne $Version) {
+        throw "Requested version $Version does not match repository VERSION $repositoryVersion."
+    }
+
+    $metadata = Get-Content -LiteralPath $releasesJsonPath -Encoding UTF8 -Raw | ConvertFrom-Json
+    $definitions = @(
+        [pscustomobject]@{ Platform = 'winforms'; Targets = @('Windows', 'WinForms'); FileName = "VisionGuard-v$Version.zip"; Kind = 'zip' },
+        [pscustomobject]@{ Platform = 'wpf'; Targets = @('Windows', 'WPF'); FileName = "VisionGuard-WPF-v$Version.zip"; Kind = 'zip' },
+        [pscustomobject]@{ Platform = 'android-detector'; Targets = @('Android', 'AndroidDetector'); FileName = "VisionGuard-Detector-v$Version.apk"; Kind = 'apk' },
+        [pscustomobject]@{ Platform = 'android-receiver'; Targets = @('Android', 'AndroidReceiver'); FileName = "VisionGuard-Receiver-v$Version.apk"; Kind = 'apk' }
+    )
+
+    $artifacts = New-Object System.Collections.Generic.List[object]
+    foreach ($definition in $definitions) {
+        if (-not (Test-TargetEnabled $definition.Targets)) {
+            continue
+        }
+        if ($metadata.PSObject.Properties.Name -notcontains $definition.Platform) {
+            throw "Release metadata is missing platform $($definition.Platform)."
+        }
+
+        $entry = $metadata.PSObject.Properties[$definition.Platform].Value
+        if ($entry.version -ne $Version) {
+            throw "$($definition.Platform) metadata version mismatch: $($entry.version) != $Version"
+        }
+        $metadataFileName = [System.IO.Path]::GetFileName([string]$entry.url)
+        if ($metadataFileName -ne $definition.FileName) {
+            throw "$($definition.Platform) metadata filename mismatch: $metadataFileName != $($definition.FileName)"
+        }
+
+        $path = Join-Path $releaseDir $definition.FileName
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Existing release asset was not found: $path"
+        }
+        $actualSize = (Get-Item -LiteralPath $path).Length
+        if ([long]$entry.size -ne $actualSize) {
+            throw "$($definition.Platform) asset size mismatch: $actualSize != $($entry.size)"
+        }
+
+        if ($definition.Kind -eq 'zip') {
+            Assert-ZipIsClean -ZipPath $path
+        }
+        else {
+            Verify-AndroidApk -ApkPath $path
+        }
+        $artifacts.Add([pscustomobject]@{
+            Platform = $definition.Platform
+            Path = $path
+            FileName = $definition.FileName
+        }) | Out-Null
+    }
+
+    if ($artifacts.Count -eq 0) {
+        throw "GitHub-only mode requires at least one client release asset; target $Target selected none."
+    }
+    return $artifacts.ToArray()
+}
+
+function Resolve-GitCommit {
+    param([string]$Revision)
+    return Invoke-NativeCapture -FilePath 'git' -Arguments @('rev-parse', "$Revision^{commit}")
+}
+
+function Get-RemoteTagCommit {
+    param([string]$TagName)
+
+    $output = Invoke-NativeCapture -FilePath 'git' -Arguments @(
+        'ls-remote', '--tags', 'origin', "refs/tags/$TagName", "refs/tags/$TagName^{}"
+    )
+    if ([string]::IsNullOrWhiteSpace($output)) {
+        return $null
+    }
+
+    $lines = $output -split "`r?`n"
+    $peeled = $lines | Where-Object { $_ -match '\^\{\}$' } | Select-Object -First 1
+    $selected = if ($peeled) { $peeled } else { $lines | Select-Object -First 1 }
+    return ($selected -split '\s+')[0].Trim()
+}
+
+function Ensure-GitTag {
+    param(
+        [string]$TagName,
+        [string]$TargetCommit
+    )
+
+    $localTagExists = Test-NativeSuccess -FilePath 'git' -Arguments @('show-ref', '--verify', '--quiet', "refs/tags/$TagName")
+    if ($localTagExists) {
+        $localCommit = Resolve-GitCommit -Revision $TagName
+        if ($localCommit -ne $TargetCommit) {
+            throw "Local tag $TagName points to $localCommit, expected $TargetCommit. Refusing to overwrite it."
+        }
+    }
+
+    $remoteCommit = Get-RemoteTagCommit -TagName $TagName
+    if ($remoteCommit -and $remoteCommit -ne $TargetCommit) {
+        throw "Remote tag $TagName points to $remoteCommit, expected $TargetCommit. Refusing to force-push it."
+    }
+
+    if (-not $localTagExists) {
+        Invoke-Native -FilePath 'git' -Arguments @('tag', $TagName, $TargetCommit)
+    }
+    if (-not $remoteCommit) {
+        Invoke-Native -FilePath 'git' -Arguments @('push', 'origin', "refs/tags/$TagName")
+    }
+}
+
+function Invoke-GitHubOnlyPreflight {
+    param([object[]]$Artifacts)
+
+    Assert-GitHubOnlyWorkingTree
+    [void](Assert-GitHubReleaseNotes)
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        throw "GitHub CLI (gh) is required for GitHub-only publishing."
+    }
+    Invoke-Native -FilePath 'gh' -Arguments @('auth', 'status') | Out-Host
+    Invoke-Native -FilePath 'git' -Arguments @('fetch', 'origin', 'main', '--quiet') | Out-Host
+
+    $targetCommit = Resolve-GitCommit -Revision $GitHubTagTarget
+    if (-not (Test-NativeSuccess -FilePath 'git' -Arguments @('merge-base', '--is-ancestor', $targetCommit, 'origin/main'))) {
+        throw "GitHub tag target $targetCommit is not present in origin/main. Push the source commit before publishing."
+    }
+    if ($Artifacts.Count -eq 0) {
+        throw "GitHub-only preflight found no release assets."
+    }
+
+    Write-Host "preflight: GitHub-only prerequisites passed target=$targetCommit assets=$($Artifacts.Count)"
+    return $targetCommit
+}
+
 function Publish-ToVps {
     param([object[]]$Uploads)
 
@@ -819,20 +1048,52 @@ for platform in platforms:
 }
 
 function Invoke-GitHubSteps {
-    param([object[]]$Artifacts)
+    param(
+        [object[]]$Artifacts,
+        [string]$TagTargetCommit = $null
+    )
 
     if ($PushGitHub) {
         Invoke-Native -FilePath 'git' -Arguments @('push')
     }
 
+    $tagName = "v$Version"
     if ($CreateTag) {
-        Invoke-Native -FilePath 'git' -Arguments @('tag', '-f', "v$Version")
-        Invoke-Native -FilePath 'git' -Arguments @('push', 'origin', "v$Version", '--force')
+        if (-not $TagTargetCommit) {
+            $TagTargetCommit = Resolve-GitCommit -Revision $GitHubTagTarget
+        }
+        Ensure-GitTag -TagName $tagName -TargetCommit $TagTargetCommit
     }
 
     if ($CreateGitHubRelease) {
+        $notesPath = Assert-GitHubReleaseNotes
         $assetPaths = $Artifacts | ForEach-Object { $_.Path }
-        Invoke-Native -FilePath 'gh' -Arguments (@('release', 'upload', "v$Version") + $assetPaths + @('--clobber'))
+        $releaseExists = Test-NativeSuccess -FilePath 'gh' -Arguments @('release', 'view', $tagName, '--repo', $GitHubRepository)
+        if (-not $releaseExists) {
+            Invoke-Native -FilePath 'gh' -Arguments @(
+                'release', 'create', $tagName,
+                '--repo', $GitHubRepository,
+                '--title', "VisionGuard v$Version",
+                '--notes-file', $notesPath,
+                '--verify-tag',
+                '--latest'
+            )
+        }
+        else {
+            Invoke-Native -FilePath 'gh' -Arguments @(
+                'release', 'edit', $tagName,
+                '--repo', $GitHubRepository,
+                '--title', "VisionGuard v$Version",
+                '--notes-file', $notesPath,
+                '--draft=false',
+                '--prerelease=false',
+                '--latest'
+            )
+        }
+        Invoke-Native -FilePath 'gh' -Arguments (@(
+            'release', 'upload', $tagName,
+            '--repo', $GitHubRepository
+        ) + $assetPaths + @('--clobber'))
     }
 }
 
@@ -844,8 +1105,47 @@ if ($DeployServer -and $SkipServerDeploy) {
     throw "Use either -DeployServer or -SkipServerDeploy, not both."
 }
 
+if ($CreateGitHubRelease -and [string]::IsNullOrWhiteSpace($GitHubReleaseNotesPath)) {
+    throw "-GitHubReleaseNotesPath is required with -CreateGitHubRelease."
+}
+
+if ($GitHubOnly) {
+    if ($UploadVps -or $PushGitHub -or $DeployServer -or $SkipServerDeploy -or $SkipBuild) {
+        throw "-GitHubOnly cannot be combined with VPS upload, source push, Server deployment, or build-control switches."
+    }
+    if (-not $CreateTag -or -not $CreateGitHubRelease) {
+        throw "-GitHubOnly requires both -CreateTag and -CreateGitHubRelease."
+    }
+}
+
 Set-Location $repoRoot
 $serverDeployPlanned = (($UploadVps -and (Test-TargetEnabled @('Server')) -and -not $SkipServerDeploy) -or $DeployServer)
+
+if ($GitHubOnly) {
+    Write-Step "Validate existing GitHub release assets"
+    $githubArtifacts = @(Get-GitHubOnlyArtifacts)
+
+    Write-Step "GitHub-only preflight"
+    $tagTargetCommit = Invoke-GitHubOnlyPreflight -Artifacts $githubArtifacts
+
+    if ($PreflightOnly) {
+        Write-Host "GitHub-only preflight complete for v$Version target=$Target tagTarget=$tagTargetCommit."
+        return
+    }
+    if ($DryRun) {
+        Write-Host "Dry run: GitHub-only would publish v$Version from existing assets with tag target $tagTargetCommit."
+        return
+    }
+
+    Write-Step "Publish GitHub tag and Release"
+    Invoke-GitHubSteps -Artifacts $githubArtifacts -TagTargetCommit $tagTargetCommit
+
+    Write-Step "Release summary"
+    foreach ($artifact in $githubArtifacts) {
+        Write-Host "$($artifact.Platform) $($artifact.FileName) sha256=$(Get-Sha256 -Path $artifact.Path)"
+    }
+    return
+}
 
 if ($DryRun) {
     Write-Host "Dry run: publish-release.ps1 would release v$Version target=$Target upload=$UploadVps deployServer=$serverDeployPlanned githubPush=$PushGitHub tag=$CreateTag githubRelease=$CreateGitHubRelease."

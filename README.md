@@ -2,7 +2,7 @@
 
 > Windows / Android 本地检测 + Node.js 中继 + Android 接收端告警的 AI 实时监控系统。
 
-[![Version](https://img.shields.io/badge/version-4.4.1-1f6feb)](./VERSION)
+[![Version](https://img.shields.io/badge/version-4.4.2-1f6feb)](./VERSION)
 [![License](https://img.shields.io/badge/license-MIT-0f766e)](./LICENSE)
 [![Docs](https://img.shields.io/badge/docs-verified-f59e0b)](./docs/codex/00-index.md)
 
@@ -26,7 +26,7 @@ VisionGuard 把本地视频/屏幕推理、隐私遮罩、WebSocket 告警中继
 
 | 项 | 当前值 | 来源 |
 |---|---:|---|
-| 当前版本 | `4.4.1` | [`VERSION`](./VERSION) |
+| 当前版本 | `4.4.2` | [`VERSION`](./VERSION) |
 | Server 运行时 | Node.js 20+ | [`server/package.json`](./server/package.json) |
 | 发行包 | 不内置 ONNX 模型 | [`server/data/releases.json`](./server/data/releases.json) |
 | 事实文档 | `docs/codex/` | [`docs/codex/00-index.md`](./docs/codex/00-index.md) |
@@ -126,7 +126,7 @@ icon/                        当前应用图标素材
 
 ## 发行与模型
 
-v4.4.1 发行包不包含 ONNX 模型，首次启动或切换模型时由客户端从 Server 下载并缓存。
+v4.4.2 发行包不包含 ONNX 模型，首次启动或切换模型时由客户端从 Server 下载并缓存。
 
 | 端 | 发行包体积 | 模型缓存 |
 |---|---:|---|

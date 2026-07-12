@@ -116,6 +116,42 @@ test('publish-release.ps1 keeps GitHub optional and release deployment reproduci
   assert.doesNotMatch(script, /server\\deploy\.sh/);
 });
 
+test('GitHub-only release mode reuses validated assets without rebuilding or deploying', () => {
+  const script = read('scripts/publish-release.ps1');
+  const githubOnlyStart = script.indexOf('if ($GitHubOnly) {', script.indexOf('Set-Location $repoRoot'));
+  const syncVersionStart = script.indexOf('Write-Step "Sync version"');
+
+  assert.match(script, /\[switch\]\$GitHubOnly/);
+  assert.match(script, /\[string\]\$GitHubReleaseNotesPath/);
+  assert.match(script, /\[string\]\$GitHubTagTarget = 'HEAD'/);
+  assert.ok(githubOnlyStart >= 0, 'GitHub-only execution branch should exist');
+  assert.ok(githubOnlyStart < syncVersionStart, 'GitHub-only execution must return before version sync and build');
+  assert.match(script, /Get-GitHubOnlyArtifacts/);
+  assert.match(script, /Requested version .* does not match repository VERSION/);
+  assert.match(script, /metadata filename mismatch/);
+  assert.match(script, /asset size mismatch/);
+  assert.match(script, /Assert-ZipIsClean -ZipPath \$path/);
+  assert.match(script, /Verify-AndroidApk -ApkPath \$path/);
+  assert.match(script, /-GitHubOnly cannot be combined with VPS upload, source push, Server deployment, or build-control switches/);
+  assert.match(script, /-GitHubOnly requires both -CreateTag and -CreateGitHubRelease/);
+});
+
+test('GitHub release creation is safe, repeatable, and requires Chinese notes', () => {
+  const script = read('scripts/publish-release.ps1');
+
+  assert.match(script, /GitHub release notes must contain Chinese text/);
+  assert.match(script, /\[\\u4e00-\\u9fff\]/);
+  assert.match(script, /'release', 'view', \$tagName/);
+  assert.match(script, /'release', 'create', \$tagName/);
+  assert.match(script, /'release', 'edit', \$tagName/);
+  assert.match(script, /'release', 'upload', \$tagName/);
+  assert.match(script, /'--clobber'/);
+  assert.match(script, /Local tag .* Refusing to overwrite it/);
+  assert.match(script, /Remote tag .* Refusing to force-push it/);
+  assert.doesNotMatch(script, /'tag', '-f'/);
+  assert.doesNotMatch(script, /'push',[\s\S]{0,120}'--force'/);
+});
+
 test('Android signing uses one ignored shared identity across build and release automation', () => {
   const detectorGradle = read('detector/android/app/build.gradle.kts');
   const receiverGradle = read('receiver/android/app/build.gradle.kts');
