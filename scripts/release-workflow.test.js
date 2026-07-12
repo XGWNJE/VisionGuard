@@ -45,6 +45,18 @@ test('repository entrypoints reference visionguard-release instead of push-updat
   assert.doesNotMatch(combined, /push-update/);
 });
 
+test('release-facing documentation stays aligned with VERSION and the canonical publish script', () => {
+  const version = read('VERSION').trim();
+  const readme = read('README.md');
+  const modelAssets = read('docs/codex/35-model-assets.md');
+
+  assert.ok(readme.includes(`badge/version-${version}-`));
+  assert.ok(readme.includes('| 当前版本 | `' + version + '` |'));
+  assert.ok(readme.includes(`v${version} 发行包`));
+  assert.match(modelAssets, /scripts[\\/]publish-release\.ps1/);
+  assert.doesNotMatch(modelAssets, /scripts[\\/]release\.js/);
+});
+
 test('old Claude workflow entrypoints are not kept as canonical project files', () => {
   assert.ok(
     !fs.existsSync(path.join(root, '.claude/skills/push-update/SKILL.md')),

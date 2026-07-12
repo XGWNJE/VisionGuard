@@ -34,7 +34,7 @@
 ### Server 端点
 
 - 路由：`/models/{filename}.onnx`，express.static，无需鉴权
-- 源文件：`server/data/models/`（由 `scripts/release.js` 步骤 3 从各端 `Assets/` 源目录收集）
+- 源文件：`server/data/models/`（由 `scripts/publish-release.ps1` 从各端模型源目录收集）
 
 ### 客户端本地缓存
 
@@ -81,6 +81,6 @@
 ## 维护规则
 
 - 模型文件不入 git 版本控制（`.gitignore` 排除所有 `Assets/*.onnx` 和 `assets/models/*.onnx`）
-- 模型不随发行包打包（`CopyToOutputDirectory=Never`，release.js zip 排除 `Assets/`）
+- 模型不随发行包打包（`CopyToOutputDirectory=Never`，`scripts/publish-release.ps1` 压缩阶段排除 `Assets/`）
 - 类目中英文映射引用源码静态表，不手动复制文档
 - 导出脚本、模型文件名、输入尺寸只在源码已存在时写入说明
