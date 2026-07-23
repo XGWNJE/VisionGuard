@@ -3,7 +3,7 @@ namespace VisionGuard.Utils
     /// <summary>应用级常量配置。</summary>
     internal static class AppConfig
     {
-        public const string Version = "4.4.2";
+        public const string Version = "4.4.3";
         public const string ServerUrl = "https://visionguard.xgwnje.cn";
         public static readonly string ApiKey = ApiKeyProvider.ResolveFromEnvironment();
 

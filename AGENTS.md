@@ -93,7 +93,9 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 **版本**：根目录 `VERSION` 为权威来源，`scripts/sync-version.js` 一键同步全端。注意：WPF 端运行时版本取自 `AppConfig.cs` 的 `Version` 常量，而非 `.csproj` 的 MSBuild 属性；`sync-version.js` 须同时更新这两处。
 
-**Android 接收端**：MVVM + 前台 Service（`foregroundServiceType="remoteMessaging"`），底部 Tab：警报 / 设备。警报页连接状态条显示服务器连接状态和在线设备数，点击后手动检查版本更新。设备页保留已连接过的设备，本地手动排序优先；离线设备显示离线状态并允许侧滑删除，在线设备不开放删除。
+**Android 接收端**：MVVM + 前台 Service（`foregroundServiceType="remoteMessaging"`），底部 Tab：警报 / 设备。警报页连接状态条显示服务器连接状态和在线设备数，点击后手动检查版本更新。设备页保留已连接过的设备，排序规则：监控中设备置顶 > 在线 > 离线，组内按本地手动排序（持久化的手动顺序不写入分组结果）；拖拽排序仅限同组内（`DeviceRegistryModels.kt` 的 `sortDevicesForDisplay` / `moveDeviceWithinGroup`）；离线设备显示离线状态并允许侧滑删除，在线设备不开放删除。
+
+**视觉/实机验证约定**：用户要求视觉验证或实机验证时，先 `adb devices` 检查是否有已连接且 `device` 状态的实机，有则直接用实机；没有实机再启动 Android Studio 模拟器（优先 `VisionGuard_API36`，其次 `Pixel_3a_XL`）。多台实机时用 `-s <serial>` 指定或向用户确认。
 
 ## 构建与发行
 

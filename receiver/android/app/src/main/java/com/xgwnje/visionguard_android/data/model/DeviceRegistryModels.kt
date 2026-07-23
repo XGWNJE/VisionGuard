@@ -28,7 +28,7 @@ data class DeviceRegistrySyncState(
                 knownDevices = mergedDevices,
                 registryLoaded = true
             ),
-            visibleDevices = mergedDevices,
+            visibleDevices = sortDevicesForDisplay(mergedDevices),
             devicesToPersist = mergedDevices.takeIf {
                 savedDevices.isEmpty() && mergedDevices.isNotEmpty()
             }
@@ -42,7 +42,7 @@ data class DeviceRegistrySyncState(
                 knownDevices = if (registryLoaded) mergedDevices else knownDevices,
                 realtimeDevices = devices
             ),
-            visibleDevices = mergedDevices,
+            visibleDevices = sortDevicesForDisplay(mergedDevices),
             devicesToPersist = mergedDevices.takeIf { registryLoaded }
         )
     }
@@ -53,7 +53,7 @@ data class DeviceRegistrySyncState(
                 knownDevices = devices,
                 registryLoaded = true
             ),
-            visibleDevices = devices,
+            visibleDevices = sortDevicesForDisplay(devices),
             devicesToPersist = devices
         )
 }
@@ -87,6 +87,55 @@ fun moveDeviceInOrder(
     }
     return devices.toMutableList().apply {
         add(toIndex, removeAt(fromIndex))
+    }
+}
+
+/** 显示分组：监控中 > 在线 > 离线。ordinal 即分组优先级。 */
+enum class DeviceDisplayGroup {
+    MONITORING,
+    ONLINE,
+    OFFLINE
+}
+
+fun deviceDisplayGroup(device: DeviceInfo): DeviceDisplayGroup = when {
+    !device.online -> DeviceDisplayGroup.OFFLINE
+    device.isMonitoring -> DeviceDisplayGroup.MONITORING
+    else -> DeviceDisplayGroup.ONLINE
+}
+
+/**
+ * 显示顺序：监控中设备置顶（覆盖手动排序），在线设备在离线设备之前，
+ * 组内保持手动相对顺序（sortedBy 稳定排序）。
+ * 持久化的 knownDevices 始终保持纯手动顺序，不写入分组结果。
+ */
+fun sortDevicesForDisplay(devices: List<DeviceInfo>): List<DeviceInfo> =
+    devices.sortedBy { deviceDisplayGroup(it).ordinal }
+
+/**
+ * 同组内拖拽：将可见列表（已按 sortDevicesForDisplay 排序）的移动映射回手动顺序。
+ * 跨组拖拽直接返回原手动顺序（调用方视为无效移动）。
+ */
+fun moveDeviceWithinGroup(
+    manualOrder: List<DeviceInfo>,
+    visibleOrder: List<DeviceInfo>,
+    fromIndex: Int,
+    toIndex: Int
+): List<DeviceInfo> {
+    if (fromIndex !in visibleOrder.indices || toIndex !in visibleOrder.indices || fromIndex == toIndex) {
+        return manualOrder
+    }
+    val group = deviceDisplayGroup(visibleOrder[fromIndex])
+    if (deviceDisplayGroup(visibleOrder[toIndex]) != group) return manualOrder
+
+    val reorderedVisible = moveDeviceInOrder(visibleOrder, fromIndex, toIndex)
+    val groupDevices = reorderedVisible.filter { deviceDisplayGroup(it) == group }
+    var next = 0
+    return manualOrder.map { device ->
+        if (deviceDisplayGroup(device) == group && next < groupDevices.size) {
+            groupDevices[next++]
+        } else {
+            device
+        }
     }
 }
 

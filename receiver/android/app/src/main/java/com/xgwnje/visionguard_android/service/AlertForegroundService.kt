@@ -26,7 +26,7 @@ import com.xgwnje.visionguard_android.data.model.ScreenshotData
 import com.xgwnje.visionguard_android.data.cache.ScreenshotCache
 import com.xgwnje.visionguard_android.data.model.DeviceConfig
 import com.xgwnje.visionguard_android.data.model.DeviceRegistrySyncState
-import com.xgwnje.visionguard_android.data.model.moveDeviceInOrder
+import com.xgwnje.visionguard_android.data.model.moveDeviceWithinGroup
 import com.xgwnje.visionguard_android.data.model.removeOfflineDeviceById
 import com.xgwnje.visionguard_android.data.model.restoreRemovedDevice as restoreRemovedDeviceInOrder
 import com.xgwnje.visionguard_android.data.remote.WebSocketClient
@@ -325,21 +325,27 @@ class AlertForegroundService : LifecycleService() {
     }
 
     fun moveDevice(fromIndex: Int, toIndex: Int) {
-        val reordered = moveDeviceInOrder(_devices.value, fromIndex, toIndex)
-        if (reordered == _devices.value) return
+        // 拖拽只在同分组（监控中/在线/离线）内生效，移动映射回手动顺序后持久化
+        val reordered = moveDeviceWithinGroup(
+            manualOrder = deviceRegistryState.knownDevices,
+            visibleOrder = _devices.value,
+            fromIndex = fromIndex,
+            toIndex = toIndex
+        )
+        if (reordered == deviceRegistryState.knownDevices) return
         persistDevices(reordered)
     }
 
     fun removeOfflineDevice(deviceId: String): RemovedDevice? {
-        val result = removeOfflineDeviceById(_devices.value, deviceId)
+        val result = removeOfflineDeviceById(deviceRegistryState.knownDevices, deviceId)
         val removed = result.removed ?: return null
         persistDevices(result.devices)
         return removed
     }
 
     fun restoreDevice(removed: RemovedDevice) {
-        val restored = restoreRemovedDeviceInOrder(_devices.value, removed)
-        if (restored == _devices.value) return
+        val restored = restoreRemovedDeviceInOrder(deviceRegistryState.knownDevices, removed)
+        if (restored == deviceRegistryState.knownDevices) return
         persistDevices(restored)
     }
 

@@ -164,6 +164,129 @@ class DeviceRegistryModelsTest {
         assertTrue(merged.single().deviceName.startsWith("Door"))
     }
 
+    @Test
+    fun sortDevicesForDisplayOrdersMonitoringOnlineOfflineAndKeepsManualOrderWithinGroups() {
+        val devices = listOf(
+            device("off1", "Offline 1", online = false),
+            device("on1", "Online 1", online = true),
+            device("mon1", "Monitoring 1", online = true, isMonitoring = true),
+            device("on2", "Online 2", online = true),
+            device("off2", "Offline 2", online = false),
+            device("mon2", "Monitoring 2", online = true, isMonitoring = true)
+        )
+
+        val sorted = sortDevicesForDisplay(devices)
+
+        assertEquals(
+            listOf("mon1", "mon2", "on1", "on2", "off1", "off2"),
+            sorted.map { it.deviceId }
+        )
+    }
+
+    @Test
+    fun registrySyncMovesNewlyOnlineDeviceBeforeOfflineDevicesWithoutTouchingManualOrder() {
+        val loaded = DeviceRegistrySyncState()
+            .onRegistryLoaded(
+                listOf(
+                    device("door", "Door", online = false),
+                    device("yard", "Yard", online = true)
+                )
+            )
+            .state
+
+        // door 上线：显示顺序挪到离线之前，手动顺序保持不变
+        val update = loaded.onRealtimeDevices(
+            listOf(
+                device("door", "Door Live", online = true),
+                device("yard", "Yard Live", online = true)
+            )
+        )
+
+        assertEquals(listOf("door", "yard"), update.visibleDevices.map { it.deviceId })
+        assertEquals(listOf("door", "yard"), update.state.knownDevices.map { it.deviceId })
+
+        // yard 掉线：沉到离线区，手动顺序仍保持
+        val offlineUpdate = update.state.onRealtimeDevices(
+            listOf(device("door", "Door Live", online = true))
+        )
+
+        assertEquals(listOf("door", "yard"), offlineUpdate.visibleDevices.map { it.deviceId })
+        assertEquals(false, offlineUpdate.visibleDevices[1].online)
+        assertEquals(listOf("door", "yard"), offlineUpdate.state.knownDevices.map { it.deviceId })
+    }
+
+    @Test
+    fun registrySyncPinsMonitoringDevicesToTopOnlyInVisibleOrder() {
+        val loaded = DeviceRegistrySyncState()
+            .onRegistryLoaded(
+                listOf(
+                    device("a", "A", online = true),
+                    device("b", "B", online = true)
+                )
+            )
+            .state
+
+        val update = loaded.onRealtimeDevices(
+            listOf(
+                device("a", "A Live", online = true),
+                device("b", "B Live", online = true, isMonitoring = true)
+            )
+        )
+
+        // 监控中的 b 置顶，但手动顺序仍是 a, b（停止监控后 b 回到原位置）
+        assertEquals(listOf("b", "a"), update.visibleDevices.map { it.deviceId })
+        assertEquals(listOf("a", "b"), update.state.knownDevices.map { it.deviceId })
+    }
+
+    @Test
+    fun moveDeviceWithinGroupReordersSameGroupAndPreservesOtherGroupsPositions() {
+        val manual = listOf(
+            device("off1", "Offline 1", online = false),
+            device("on1", "Online 1", online = true),
+            device("on2", "Online 2", online = true),
+            device("off2", "Offline 2", online = false)
+        )
+        val visible = sortDevicesForDisplay(manual)
+        // visible: on1, on2, off1, off2 → 把 on2 拖到 on1 前
+        val moved = moveDeviceWithinGroup(manual, visible, fromIndex = 1, toIndex = 0)
+
+        assertEquals(
+            listOf("off1", "on2", "on1", "off2"),
+            moved.map { it.deviceId }
+        )
+        // 新手动顺序再排序后，on2 在 on1 前
+        assertEquals(
+            listOf("on2", "on1", "off1", "off2"),
+            sortDevicesForDisplay(moved).map { it.deviceId }
+        )
+    }
+
+    @Test
+    fun moveDeviceWithinGroupRejectsCrossGroupMoves() {
+        val manual = listOf(
+            device("on1", "Online 1", online = true),
+            device("off1", "Offline 1", online = false)
+        )
+        val visible = sortDevicesForDisplay(manual)
+
+        assertEquals(manual, moveDeviceWithinGroup(manual, visible, 0, 1))
+        // 监控组与普通在线组也互不跨越
+        val monitoringVisible = sortDevicesForDisplay(
+            listOf(
+                device("mon", "Mon", online = true, isMonitoring = true),
+                device("on", "On", online = true)
+            )
+        )
+        val monitoringManual = listOf(
+            device("mon", "Mon", online = true, isMonitoring = true),
+            device("on", "On", online = true)
+        )
+        assertEquals(
+            monitoringManual,
+            moveDeviceWithinGroup(monitoringManual, monitoringVisible, 0, 1)
+        )
+    }
+
     private fun device(
         id: String,
         name: String,

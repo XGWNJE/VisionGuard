@@ -1,5 +1,5 @@
 // ┌─────────────────────────────────────────────────────────┐
-// │ index.ts  v4.4.2                                         │
+// │ index.ts  v4.4.3                                         │
 // │ 角色：服务器入口 — 组装 HTTP + WebSocket 服务器           │
 // │ 职责：加载配置 → 创建 Express app → 挂载路由 →           │
 // │       创建 HTTP server → 附加 WS server → 启动监听       │
@@ -89,7 +89,7 @@ cleanupScreenshots();
 startCleanupTimer();
 
 server.listen(config.port, config.host, () => {
-  console.log(`[server] VisionGuard Server v4.4.2 已启动`);
+  console.log(`[server] VisionGuard Server v4.4.3 已启动`);
   console.log(`[server] HTTP + WS 监听地址: ${config.host}:${config.port}`);
   console.log(`[server] 截图模式: 内嵌 Base64 自动推送 (无 HTTP 文件存储)`);
   console.log(`[server] 报警记录 TTL: ${config.alertTtlHours} 小时`);
