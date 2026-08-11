@@ -1,14 +1,20 @@
 # VisionGuard
 
-> Windows / Android 本地检测 + Node.js 中继 + Android 接收端告警的 AI 实时监控系统。
+> 面向多场景的边缘智能探测平台：当前由 Windows / Android 视觉探测器、Server 和 Android 接收端组成，长期以开发板边缘探测器、多传感器融合和可靠报警网络为核心。
 
-[![Version](https://img.shields.io/badge/version-4.4.2-1f6feb)](./VERSION)
-[![License](https://img.shields.io/badge/license-MIT-0f766e)](./LICENSE)
+[![Version](https://img.shields.io/badge/version-4.4.3-1f6feb)](./VERSION)
+[![License](https://img.shields.io/badge/license-VGSAL--1.0-7c3aed)](./LICENSE)
 [![Docs](https://img.shields.io/badge/docs-verified-f59e0b)](./docs/codex/00-index.md)
 
-[四端演示](#四端界面演示) | [快速上手](#快速上手) | [系统链路](#系统链路) | [构建与验证](#构建与验证) | [文档入口](#文档入口)
+[四端演示](#四端界面演示) | [快速上手](#快速上手) | [系统链路](#系统链路) | [产品方向](#产品方向) | [构建与验证](#构建与验证) | [文档入口](#文档入口)
 
 VisionGuard 把本地视频/屏幕推理、隐私遮罩、WebSocket 告警中继、截图传输、模型按需下载和客户端更新分发放在同一个工程里。当前权威版本源是根目录 [`VERSION`](./VERSION)，正式服务域名是 `https://visionguard.xgwnje.cn`。
+
+## 产品方向
+
+目前已经实现的纯软件视觉方案定义为免费版：WinForms、WPF 和 Android 检测端统一称为“视觉探测器（Visual Detector）”，配合 Server 与 Receiver 完成纯软件检测和报警。系统一旦接入检测硬件探测器，即进入付费版；硬件探测器包括未来可独立联网的 Linux ARM64 Edge Detector，以及接入毫米波、PIR、门磁、振动或环境传感器的检测单元。允许一定误报，漏报风险是检测效果与故障处置的最高优先级。网络不再规划 P2P；所有公网业务数据统一通过 Server 加密传输，由 Server 负责权威数据、可靠送达、设备在线感知和离线报警。Server Web 控制台拥有整套系统的最高管理能力，负责场地、探测器、传感器、事件、配置、模型、OTA、调试和审计。Win7 只作为 WinForms Visual Detector 的兼容目标，不限制其他组件。
+
+阶段目标、取舍与验收闸门见 [产品路线图](./docs/codex/15-product-roadmap.md)。当前已实现能力仍以源码和 `docs/codex/` 的对应专题为准，路线图不代表已经交付。
 
 ## 四端界面演示
 
@@ -26,7 +32,7 @@ VisionGuard 把本地视频/屏幕推理、隐私遮罩、WebSocket 告警中继
 
 | 项 | 当前值 | 来源 |
 |---|---:|---|
-| 当前版本 | `4.4.2` | [`VERSION`](./VERSION) |
+| 当前版本 | `4.4.3` | [`VERSION`](./VERSION) |
 | Server 运行时 | Node.js 20+ | [`server/package.json`](./server/package.json) |
 | 发行包 | 不内置 ONNX 模型 | [`server/data/releases.json`](./server/data/releases.json) |
 | 事实文档 | `docs/codex/` | [`docs/codex/00-index.md`](./docs/codex/00-index.md) |
@@ -126,7 +132,7 @@ icon/                        当前应用图标素材
 
 ## 发行与模型
 
-v4.4.2 发行包不包含 ONNX 模型，首次启动或切换模型时由客户端从 Server 下载并缓存。
+v4.4.3 发行包不包含 ONNX 模型，首次启动或切换模型时由客户端从 Server 下载并缓存。
 
 | 端 | 发行包体积 | 模型缓存 |
 |---|---:|---|
@@ -143,6 +149,7 @@ v4.4.2 发行包不包含 ONNX 模型，首次启动或切换模型时由客户�
 |---|---|
 | Server 测试 | `cd server && npm test` |
 | Server 编译 | `cd server && npm run build` |
+| 文档一致性审核 | `node scripts/check-docs.js` |
 | 五端编译 | `visionguard-build` skill |
 | 端到端 / 设备 Smoke | `visionguard-e2e` skill |
 | 版本同步 | `node scripts/sync-version.js <version>` |
@@ -155,6 +162,7 @@ v4.4.2 发行包不包含 ONNX 模型，首次启动或切换模型时由客户�
 | 文档 | 内容 |
 |---|---|
 | [docs/codex/10-project-overview.md](./docs/codex/10-project-overview.md) | 项目全局地图、统一概念、跨端约束 |
+| [docs/codex/15-product-roadmap.md](./docs/codex/15-product-roadmap.md) | 商业化定位、边缘探测器方向、网络演进与阶段验收 |
 | [docs/codex/20-server.md](./docs/codex/20-server.md) | Server 职责、接口、环境变量、告警/截图/更新 |
 | [docs/codex/30-windows-detector.md](./docs/codex/30-windows-detector.md) | WinForms / WPF 检测端差异 |
 | [docs/codex/35-model-assets.md](./docs/codex/35-model-assets.md) | ONNX 模型、COCO 类别、目标子集 |
@@ -174,4 +182,6 @@ v4.4.2 发行包不包含 ONNX 模型，首次启动或切换模型时由客户�
 
 ## 许可证
 
-MIT License，见 [LICENSE](./LICENSE)。
+当前主线采用 [VisionGuard Source Available License 1.0](./LICENSE)（`VGSAL-1.0`）。这是源码可见许可证，不是开源许可证：个人和组织可免费内部使用目前已经实现的纯软件视觉方案；接入检测硬件探测器、再分发、对外托管服务或产品集成需要另行取得书面商业授权。
+
+商业授权范围与联系入口见 [COMMERCIAL-LICENSE.md](./COMMERCIAL-LICENSE.md)。提交 `c43c0ff122043d477b442b7507d193b62ea321bb` 及其祖先、`v4.4.3` 及更早发行版本继续适用原 MIT License，详见 [LICENSE-HISTORY.md](./LICENSE-HISTORY.md) 和 [LICENSE-MIT](./LICENSE-MIT)。第三方依赖、模型和素材仍按各自许可证授权。

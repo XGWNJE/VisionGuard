@@ -13,8 +13,8 @@
 
 ## 已验证事实
 
-- 根 `VERSION` 当前为 `4.3.0`
-- Server `package.json` 当前版本为 `4.3.0`
+- 根 `VERSION` 是当前版本的唯一权威来源；`scripts/check-docs.js` 自动核对 README、Server 与各客户端的版本位置
+- Server `package.json`、`package-lock.json` 与 `data/releases.json` 必须和根版本保持一致
 - Server 线上 smoke 已在 `https://visionguard.xgwnje.cn` 通过：`/health`、`/api/update`、`/releases/*`、`/models/*`、`/ws`
 - Android 接收端实机 UI 已显示可连接，后续继续观察真实告警链路
 - 2026-07-08 Android 接收端模拟器 smoke 已验证设备页 UI、手动排序持久化、离线保留、离线侧滑删除、恢复联网并回列表；证据目录为 `artifacts/e2e/20260708-004420-manual-receiver-emulator/`
@@ -34,7 +34,7 @@
 ## 旧说明与源码不一致之处
 
 1. 早期根目录说明如果存在乱码或旧架构表述，不能作为单一事实来源。
-2. 早期说明中如果写成 `4.2.1` 或更早版本，当前根版本源已经是 `4.3.0`。
+2. 早期说明中的手写版本号不能作为当前状态；当前值只读取根 `VERSION`，并由文档审核阻止关键位置漂移。
 3. 早期说明中如果把 Android API key 写成源码常量，当前实现已改为 Gradle 构建注入。
 4. 早期说明中如果把 Android Detector 说成支持 `Preview`，当前源码和实现都指向仅 `ImageAnalysis`。
 5. 早期说明中如果把 Server 截图下载描述成公开访问，当前源码要求 `X-API-Key`。

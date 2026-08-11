@@ -87,6 +87,7 @@ test('publish-release.ps1 keeps GitHub optional and release deployment reproduci
   assert.match(script, /if\s*\(\$CreateTag\)/);
   assert.match(script, /if\s*\(\$CreateGitHubRelease\)/);
   assert.match(script, /Invoke-ReleasePreflight/);
+  assert.match(script, /scripts\\check-docs\.js/);
   assert.match(script, /Preflight only complete/);
   assert.match(script, /Restore-WinFormsPackages/);
   assert.match(script, /Test-PythonParamiko/);

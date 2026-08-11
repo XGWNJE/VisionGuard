@@ -54,6 +54,16 @@
 2. 再改最小文件集
 3. 最后补构建/测试
 
+## 文档自动审核
+
+- 本地入口：`node scripts/check-docs.js`
+- 单元测试：`node --test scripts/check-docs.test.js`
+- GitHub Actions 在每次 Pull Request 和推送到 `main` 时自动运行；正式发布预检也会运行同一审核。
+- 审核范围：canonical 文档导航与本地链接、UTF-8 无 BOM、根 `VERSION` 与各端版本、正式服务域名、产品路线图唯一事实源、纯软件视觉免费/接入硬件探测器付费边界、Web 控制台权限、Server 中心传输、设备离线报警、漏报优先原则和 Win7 兼容边界。
+- 许可证审核还会核对 `VGSAL-1.0`、MIT 历史边界、商业授权入口、README 徽章和外部贡献限制；修改这些文件必须由 owner 明确授权。
+- 新增 `docs/codex/*.md` 时，必须同时登记到 `docs/codex/00-index.md`、根 `README.md` 和 `CODEX.md`；历史方案必须在开头标记失效状态并链接替代文档。
+- 业务决策变化时先修改对应专题文档，再同步摘要和审核断言；不要为了让审核通过而删除事实边界。
+
 ## E2E / Device Smoke
 
 - 端到端、模拟器、实机、logcat、桌面交互验证入口：`.agents/skills/visionguard-e2e/`

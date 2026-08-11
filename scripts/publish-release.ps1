@@ -330,6 +330,9 @@ function Restore-WinFormsPackages {
 function Invoke-ReleasePreflight {
     param([bool]$ServerDeployPlanned)
 
+    Write-Host "preflight: checking documentation contract"
+    Invoke-Native -FilePath 'node' -Arguments @((Join-Path $repoRoot 'scripts\check-docs.js'))
+
     if ($RemoteRoot -match 'VisionGuard_Server|/opt/visionguard($|/)') {
         throw "RemoteRoot points to a legacy VisionGuard path: $RemoteRoot. Use /opt/visionguard-server."
     }

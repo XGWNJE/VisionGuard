@@ -1,0 +1,29 @@
+name: Documentation audit
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  docs-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          package-manager-cache: false
+
+      - name: Audit canonical documentation
+        run: node scripts/check-docs.js
+
+      - name: Test documentation guardrails
+        run: node --test scripts/check-docs.test.js scripts/release-workflow.test.js

@@ -1,21 +1,170 @@
-MIT License
+VisionGuard Source Available License 1.0
+VGSAL-1.0
 
-Copyright (c) 2026 xgwnje
+Copyright (c) 2026 xgwnje. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This license is a source-available license. It is not an open-source license.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. Definitions
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+"Licensor" means the copyright holder identified above.
+
+"Software" means the VisionGuard source code, object code, documentation, and
+other materials distributed with this license, excluding Third-Party
+Components.
+
+"Official Visual Client" means a VisionGuard client designated by the Licensor
+as part of the free pure-software visual edition. At the publication date of
+this license, these are the WinForms, WPF, and Android visual detector clients.
+
+"Pure Software Visual Use" means running an Official Visual Client on a
+general-purpose personal computer, workstation, phone, or tablet to perform
+screen, window, or camera-based visual detection, together with the VisionGuard
+Server and Receiver functions necessary for that software-only alert workflow.
+A built-in camera, a general-purpose USB camera, or screen capture used directly
+by an Official Visual Client does not by itself constitute Hardware Detector
+Use.
+
+"Hardware Detector" means a dedicated physical detector, sensor, embedded
+computer, edge computer, gateway, appliance, or detection unit that connects
+to, is controlled or managed by, or sends observations, status, or events to
+the Software. Examples include an Edge Detector, PIR sensor, millimeter-wave
+sensor, door contact, vibration sensor, environmental sensor, dedicated camera
+appliance, industrial controller, or sensor gateway.
+
+"Hardware Detector Use" means developing, testing, activating, connecting,
+controlling, managing, operating, or providing support for one or more Hardware
+Detectors through the Software. It does not include Pure Software Visual Use.
+
+"Internal Use" means use by you and your personnel solely for your own personal
+or organizational operations. Internal Use does not include making the
+Software or its functionality available to third parties as a product, hosted
+service, managed service, bureau service, or other external service.
+
+"Third-Party Components" means software, models, libraries, assets, or other
+materials identified as being provided by third parties or distributed under a
+separate license.
+
+2. Free Source-Available Grant
+
+Subject to this license, the Licensor grants you a non-exclusive, worldwide,
+royalty-free, non-transferable, and non-sublicensable license to:
+
+a. view and study the source code;
+b. copy, install, and run the Software for Internal Pure Software Visual Use;
+c. modify the Software solely for your Internal Pure Software Visual Use; and
+d. make reasonable backup copies for the permitted use above.
+
+The free grant applies equally to individuals and organizations. Charging for
+the paid edition is based on Hardware Detector Use, not on whether the user is
+an individual or a business.
+
+3. Commercial License Required
+
+You must obtain a separate written commercial license from the Licensor before
+you do any of the following:
+
+a. engage in Hardware Detector Use;
+b. distribute, publish, sublicense, sell, lease, rent, or otherwise provide the
+   Software, modified Software, or derivative works to any third party;
+c. offer the Software or its functionality as a hosted, managed, bureau, cloud,
+   or software-as-a-service offering to any third party;
+d. incorporate the Software into a product or service provided to a third
+   party;
+e. remove, bypass, disable, or circumvent license checks, edition boundaries,
+   hardware activation controls, or technical restrictions; or
+f. use the Software outside the Free Source-Available Grant in Section 2.
+
+A commercial license may grant some or all of these rights under separate
+terms. If a written commercial agreement conflicts with this license, that
+agreement controls only for the scope and parties covered by it.
+
+4. No Redistribution Under the Free Grant
+
+The Free Source-Available Grant does not permit public or private redistribution
+of the Software, modified Software, binaries, installers, derivative works, or
+substantial portions of the Software. Linking to the Licensor's official
+distribution location is permitted.
+
+5. Notices and Ownership
+
+You must preserve all copyright, license, attribution, and proprietary notices
+in every copy you are permitted to make. The Licensor retains all right, title,
+and interest in the Software. No rights are granted except those expressly
+stated in this license.
+
+6. Trademarks
+
+This license does not grant any right to use the names "VisionGuard" or
+"xgwnje", or any related logo, product name, domain name, or mark, except as
+reasonably necessary to make truthful reference to the unmodified Software.
+
+7. Third-Party Components
+
+Third-Party Components remain governed by their respective licenses. This
+license does not expand, replace, or restrict rights granted by those separate
+licenses. You are responsible for complying with all applicable third-party
+terms, including terms for dependencies, machine-learning models, datasets,
+fonts, images, and native libraries.
+
+8. Updates and Support
+
+This license does not require the Licensor to provide support, maintenance,
+updates, hosted services, compatibility, or continued availability. Separate
+terms may apply to official distributions and commercial services.
+
+9. Term and Termination
+
+This license begins when you first exercise any permission granted by it. It
+terminates automatically if you violate its terms. If this is your first
+violation and you cure it within 30 days after receiving written notice from the
+Licensor, your license is reinstated prospectively. Repeated or uncured
+violations require express written reinstatement from the Licensor.
+
+Sections concerning ownership, notices, trademarks, third-party components,
+disclaimers, liability, and historical licenses survive termination.
+
+10. Disclaimer of Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, NON-INFRINGEMENT,
+ACCURACY, RELIABILITY, OR THAT THE SOFTWARE WILL DETECT EVERY EVENT OR DELIVER
+EVERY ALERT. THE SOFTWARE IS NOT CERTIFIED AS A LIFE-SAFETY, FIRE-ALARM,
+EMERGENCY, OR REGULATED SECURITY SYSTEM.
+
+11. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSOR SHALL NOT BE
+LIABLE FOR ANY CLAIM, LOSS, MISSED DETECTION, FALSE ALERT, DATA LOSS, SECURITY
+INCIDENT, SERVICE INTERRUPTION, OR ANY INDIRECT, INCIDENTAL, SPECIAL,
+CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES ARISING FROM OR RELATED TO THE
+SOFTWARE OR THIS LICENSE, WHETHER IN CONTRACT, TORT, STRICT LIABILITY, OR
+OTHERWISE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+12. Severability and No Waiver
+
+If any provision of this license is held unenforceable, it shall be modified to
+the minimum extent necessary to make it enforceable, and the remaining
+provisions remain in effect. A failure to enforce any provision is not a waiver.
+
+13. License Versions
+
+The Licensor may publish future versions of this license or distribute future
+versions of the Software under different terms. The license included with the
+copy of the Software you received continues to govern that copy unless you
+accept different terms.
+
+14. Historical MIT Releases
+
+This license does not revoke or modify permissions already granted for
+historical revisions that were published under the MIT License. See
+LICENSE-HISTORY.md and LICENSE-MIT for the exact transition boundary and the
+preserved MIT text.
+
+15. Commercial Authorization
+
+For Hardware Detector Use, redistribution, hosted services, integration, or
+other commercial rights, contact the repository owner through the official
+VisionGuard or XGWNJE channels and obtain a separate written agreement before
+using those rights.

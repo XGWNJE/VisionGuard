@@ -163,6 +163,8 @@ WS 三角色：`windows` / `android` / `android-detector`
 12. **从根源修复**：构建输出不干净时，改 csproj/gradle 配置，不要在 release.js 中事后删除
 13. **模型状态 UI**：统一在设置页的模型选择处显示下载状态 + 下载按钮，不要单独建模型管理页面
 14. **编译后必查**：改动后编译通过不算完，必须用 `Get-ChildItem` 检查输出目录是否有多余文件
+15. **许可证边界**：当前主线使用 `VGSAL-1.0` 源码可见与商业双授权；纯软件视觉方案允许免费内部使用，接入硬件探测器、再分发和对外托管需要商业授权。`c43c0ff122043d477b442b7507d193b62ea321bb` 及其祖先继续适用 MIT。许可证、商业授权边界和贡献者协议只能由 owner 明确授权修改。
+16. **外部贡献受控**：正式 CLA 建立前不接受外部实现性 Pull Request；Issue 和建议可以接收，但不得导入权属不明的代码、模型、数据或素材。
 
 ## Server 配置参考
 
@@ -194,9 +196,12 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 版本同步不再维护独立 skill；以根目录 `VERSION` 为权威，显式授权后运行 `node scripts/sync-version.js <version>`。VPS/域名/SNI 信息以 `D:\ObjectCode\Server-infra` 为准，旧全局 `vps-server-info` 如有冲突不得采用。
 
+文档一致性审核入口为 `node scripts/check-docs.js`。修改权威版本、正式域名、文档导航、产品分层、Web 控制台权限、Server 中心传输、离线报警、漏报优先原则或 Win7 边界后必须运行；新增 `docs/codex/*.md` 时同步登记 `docs/codex/00-index.md`、根 `README.md` 和 `CODEX.md`。
+
 项目级 skill 位于 `.agents/skills/`。旧 `.claude/`、`CLAUDE.md`、`.Codex/agents/` 入口不再维护，不要恢复为事实来源。
 
 ## 详细文档
 
 - 当前解释性文档入口：[docs/codex/00-index.md](docs/codex/00-index.md)
+- 商业化定位与产品路线图：[docs/codex/15-product-roadmap.md](docs/codex/15-product-roadmap.md)
 - Windows 检测端专题：[docs/codex/30-windows-detector.md](docs/codex/30-windows-detector.md)
