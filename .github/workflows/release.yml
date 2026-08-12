@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version without v prefix
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate version and download published assets
+        env:
+          VERSION: ${{ inputs.version }}
+          BASE_URL: https://visionguard.xgwnje.cn
+        run: |
+          set -euo pipefail
+          test "$(tr -d '\r\n' < VERSION)" = "$VERSION"
+          mkdir release-assets
+          for platform in winforms wpf android-detector android-receiver; do
+            metadata="$(curl --fail --silent --show-error "$BASE_URL/api/update?platform=$platform&version=0.0.0")"
+            actual_version="$(jq -r '.version' <<<"$metadata")"
+            test "$actual_version" = "$VERSION"
+            relative_url="$(jq -r '.url' <<<"$metadata")"
+            expected_size="$(jq -r '.size' <<<"$metadata")"
+            filename="$(basename "$relative_url")"
+            curl --fail --location --silent --show-error "$BASE_URL$relative_url" --output "release-assets/$filename"
+            test "$(stat -c%s "release-assets/$filename")" = "$expected_size"
+            sha256sum "release-assets/$filename" | tee -a release-assets/SHA256SUMS.txt
+          done
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          gh release create "v$VERSION" release-assets/* \
+            --target "${{ github.sha }}" \
+            --title "VisionGuard v$VERSION" \
+            --notes-file "docs/releases/v$VERSION.md"
