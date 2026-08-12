@@ -47,7 +47,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
         run: |
-          gh release create "v$VERSION" release-assets/* \
-            --target "${{ github.sha }}" \
-            --title "VisionGuard v$VERSION" \
-            --notes-file "docs/releases/v$VERSION.md"
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release edit "v$VERSION" \
+              --title "VisionGuard v$VERSION" \
+              --notes-file "docs/releases/v$VERSION.md"
+            gh release upload "v$VERSION" release-assets/* --clobber
+          else
+            gh release create "v$VERSION" release-assets/* \
+              --target "${{ github.sha }}" \
+              --title "VisionGuard v$VERSION" \
+              --notes-file "docs/releases/v$VERSION.md"
+          fi
