@@ -31,11 +31,12 @@ jobs:
           mkdir release-assets
           for platform in winforms wpf android-detector android-receiver; do
             metadata="$(curl --fail --silent --show-error "$BASE_URL/api/update?platform=$platform&version=0.0.0")"
-            actual_version="$(jq -r '.version' <<<"$metadata")"
+            actual_version="$(jq -r '.latestVersion' <<<"$metadata")"
             test "$actual_version" = "$VERSION"
-            relative_url="$(jq -r '.url' <<<"$metadata")"
+            relative_url="$(jq -r '.downloadUrl' <<<"$metadata")"
             expected_size="$(jq -r '.size' <<<"$metadata")"
             filename="$(basename "$relative_url")"
+            echo "$platform version=$actual_version file=$filename size=$expected_size"
             curl --fail --location --silent --show-error "$BASE_URL$relative_url" --output "release-assets/$filename"
             test "$(stat -c%s "release-assets/$filename")" = "$expected_size"
             sha256sum "release-assets/$filename" | tee -a release-assets/SHA256SUMS.txt
