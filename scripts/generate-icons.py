@@ -22,7 +22,14 @@ BACKGROUND_COLORS = {
 
 def master(role):
     with Image.open(SOURCE) as source:
-        return source.convert("RGBA").crop(BOXES[role])
+        tile = source.convert("RGBA").crop(BOXES[role])
+    # Remove the concept-board presentation outline/glow while preserving the
+    # confirmed bitmap artwork. The review images use this exact crop.
+    width, height = tile.size
+    trim = round(min(width, height) * 0.065)
+    return tile.crop((trim, trim, width - trim, height - trim)).resize(
+        (width, height), Image.Resampling.LANCZOS
+    )
 
 
 def resize(image, size):
@@ -33,12 +40,11 @@ def shape_mask(size, kind="rounded"):
     scale = 4
     mask = Image.new("L", (size * scale, size * scale), 0)
     draw = ImageDraw.Draw(mask)
-    inset = 3 * scale
-    box = (inset, inset, size * scale - inset - 1, size * scale - inset - 1)
+    box = (0, 0, size * scale - 1, size * scale - 1)
     if kind == "circle":
         draw.ellipse(box, fill=255)
     else:
-        draw.rounded_rectangle(box, radius=round(size * 0.22 * scale), fill=255)
+        draw.rounded_rectangle(box, radius=round(size * 0.175 * scale), fill=255)
     return mask.resize((size, size), Image.Resampling.LANCZOS)
 
 
