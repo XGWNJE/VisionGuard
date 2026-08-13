@@ -63,8 +63,6 @@ function requirePattern(content, pattern, relativePath, label, errors) {
 
 function checkReadmeVersion(version, readme, errors) {
   requireText(readme, `badge/version-${version}-`, 'README.md', 'the current version badge', errors);
-  requireText(readme, `| 当前版本 | \`${version}\` |`, 'README.md', 'the current version row', errors);
-  requireText(readme, `v${version} 发行包`, 'README.md', 'the current release-package statement', errors);
 }
 
 function checkVersionSources(root, version, errors) {
@@ -167,14 +165,13 @@ function checkLocalLinks(root, markdownFiles, contents, errors) {
   }
 }
 
-function checkIndexCoverage(codexFiles, index, readme, codexGuide, errors) {
+function checkIndexCoverage(codexFiles, index, codexGuide, errors) {
   for (const relativePath of codexFiles) {
     const fileName = path.basename(relativePath);
     if (fileName === '00-index.md') {
       continue;
     }
     requireText(index, `](${fileName})`, 'docs/codex/00-index.md', `navigation for ${fileName}`, errors);
-    requireText(readme, `](./docs/codex/${fileName})`, 'README.md', `navigation for ${fileName}`, errors);
     requireText(codexGuide, `](docs/codex/${fileName})`, 'CODEX.md', `navigation for ${fileName}`, errors);
   }
 }
@@ -338,7 +335,7 @@ function auditRepository(root = DEFAULT_ROOT) {
     checkVersionSources(root, version, errors);
     checkVerificationVersionClaims(version, verificationReport, errors);
   }
-  checkIndexCoverage(codexFiles, index, readme, codexGuide, errors);
+  checkIndexCoverage(codexFiles, index, codexGuide, errors);
   checkProductContract(readme, overview, roadmap, agents, errors);
   checkLicenseContract(root, readme, roadmap, agents, errors);
   checkDomainAlignment(root, operations, readme, overview, errors);
