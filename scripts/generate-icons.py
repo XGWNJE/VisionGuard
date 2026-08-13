@@ -1,6 +1,5 @@
 from pathlib import Path
-from collections import deque
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -15,8 +14,8 @@ BOXES = {
 }
 
 BACKGROUND_COLORS = {
-    "android_detector": "#F7F7F5",
-    "android_receiver": "#D9272E",
+    "android_detector": "#F8F7F6",
+    "android_receiver": "#D91C1F",
 }
 
 
@@ -54,56 +53,26 @@ def platform_tile(role, size, kind="rounded"):
     return image
 
 
-def foreground(role, size, monochrome=False):
-    source = resize(master(role), size).convert("RGBA")
-    pixels = source.load()
-    alpha = Image.new("L", source.size, 0)
-    out = alpha.load()
-    for y in range(size):
-        for x in range(size):
-            r, g, b, _ = pixels[x, y]
-            red = r > 170 and r > g * 1.55 and r > b * 1.35
-            dark = max(r, g, b) < 105
-            light = min(r, g, b) > 242 and max(r, g, b) - min(r, g, b) < 16
-            if role == "android_detector":
-                keep = red or dark
-            elif role == "android_receiver":
-                keep = dark or light
-            else:
-                keep = red or dark or light
-            out[x, y] = 255 if keep else 0
-    visited = set()
-    keep_components = []
-    for y in range(size):
-        for x in range(size):
-            if out[x, y] == 0 or (x, y) in visited:
-                continue
-            queue = deque([(x, y)])
-            visited.add((x, y))
-            component = []
-            touches_edge = False
-            while queue:
-                px, py = queue.popleft()
-                component.append((px, py))
-                touches_edge |= px == 0 or py == 0 or px == size - 1 or py == size - 1
-                for nx, ny in ((px - 1, py), (px + 1, py), (px, py - 1), (px, py + 1)):
-                    if 0 <= nx < size and 0 <= ny < size and out[nx, ny] and (nx, ny) not in visited:
-                        visited.add((nx, ny))
-                        queue.append((nx, ny))
-            if not touches_edge and len(component) >= size * size * 0.004:
-                keep_components.append(component)
-    alpha = Image.new("L", source.size, 0)
-    out = alpha.load()
-    for component in keep_components:
-        for x, y in component:
-            out[x, y] = 255
-    alpha = alpha.filter(ImageFilter.GaussianBlur(max(0.35, size / 900)))
-    if monochrome:
-        result = Image.new("RGBA", source.size, (255, 255, 255, 0))
-    else:
-        result = source
-    result.putalpha(alpha)
+def android_foreground(role, size, artwork_scale=0.72):
+    """Place the complete approved bitmap in the adaptive-icon safe area.
+
+    The V is intentionally not extracted. Its original background remains part
+    of the artwork and blends into the matching adaptive background layer.
+    """
+    artwork_size = round(size * artwork_scale)
+    artwork = resize(master(role), artwork_size)
+    artwork.putalpha(shape_mask(artwork_size))
+    result = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    offset = (size - artwork_size) // 2
+    result.alpha_composite(artwork, (offset, offset))
     return result
+
+
+def android_launcher(role, size, kind="rounded"):
+    image = Image.new("RGBA", (size, size), BACKGROUND_COLORS[role])
+    image.alpha_composite(android_foreground(role, size))
+    image.putalpha(shape_mask(size, kind))
+    return image
 
 
 def save_webp(image, path):
@@ -116,15 +85,14 @@ def save_android(role, base):
     for density, legacy_size in DENSITIES.items():
         directory = base / f"mipmap-{density}"
         directory.mkdir(parents=True, exist_ok=True)
-        save_webp(platform_tile(role, legacy_size), directory / "ic_launcher.webp")
-        save_webp(platform_tile(role, legacy_size, "circle"), directory / "ic_launcher_round.webp")
+        save_webp(android_launcher(role, legacy_size), directory / "ic_launcher.webp")
+        save_webp(android_launcher(role, legacy_size, "circle"), directory / "ic_launcher_round.webp")
         adaptive_size = round(108 * legacy_size / 48)
-        save_webp(foreground(role, adaptive_size), directory / "ic_launcher_foreground.webp")
-        save_webp(foreground(role, adaptive_size, monochrome=True), directory / "ic_launcher_monochrome.webp")
+        save_webp(android_foreground(role, adaptive_size), directory / "ic_launcher_foreground.webp")
         Image.new("RGB", (adaptive_size, adaptive_size), BACKGROUND_COLORS[role]).save(
             directory / "ic_launcher_background.webp", "WEBP", lossless=True
         )
-    platform_tile(role, 512).save(base.parent / "ic_launcher-playstore.png", "PNG", optimize=True)
+    android_launcher(role, 512).save(base.parent / "ic_launcher-playstore.png", "PNG", optimize=True)
 
 
 def main():
