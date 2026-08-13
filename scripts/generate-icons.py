@@ -18,6 +18,13 @@ BACKGROUND_COLORS = {
     "android_receiver": "#D91C1F",
 }
 
+# Per-role optical centering measured from the visible V bounds in each
+# approved bitmap. Values are fractions of the scaled complete artwork.
+ANDROID_ARTWORK_OFFSETS = {
+    "android_detector": (0.0207, -0.0133),
+    "android_receiver": (-0.0166, -0.0010),
+}
+
 
 def master(role):
     with Image.open(SOURCE) as source:
@@ -63,8 +70,13 @@ def android_foreground(role, size, artwork_scale=0.72):
     artwork = resize(master(role), artwork_size)
     artwork.putalpha(shape_mask(artwork_size))
     result = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    offset = (size - artwork_size) // 2
-    result.alpha_composite(artwork, (offset, offset))
+    base_offset = (size - artwork_size) // 2
+    offset_x, offset_y = ANDROID_ARTWORK_OFFSETS[role]
+    position = (
+        base_offset + round(artwork_size * offset_x),
+        base_offset + round(artwork_size * offset_y),
+    )
+    result.alpha_composite(artwork, position)
     return result
 
 
