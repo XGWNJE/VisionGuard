@@ -22,23 +22,22 @@ test('README version drift is rejected', () => {
   const errors = [];
   checkReadmeVersion(
     '4.4.3',
-    '[![Version](badge/version-4.4.2-blue)]\n| 当前版本 | `4.4.2` |\nv4.4.2 发行包',
+    '[![Version](badge/version-4.4.2-blue)]',
     errors
   );
-  assert.equal(errors.length, 3);
+  assert.equal(errors.length, 1);
   assert.ok(errors.every((message) => message.includes('README.md')));
 });
 
-test('new canonical document must be registered in every entrypoint', () => {
+test('new canonical document must be registered in canonical documentation entrypoints', () => {
   const errors = [];
   checkIndexCoverage(
     ['docs/codex/00-index.md', 'docs/codex/15-product-roadmap.md'],
     '# Index',
-    '# README',
     '# CODEX',
     errors
   );
-  assert.equal(errors.length, 3);
+  assert.equal(errors.length, 2);
   assert.ok(errors.every((message) => message.includes('15-product-roadmap.md')));
 });
 

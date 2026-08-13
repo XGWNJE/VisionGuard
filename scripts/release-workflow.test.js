@@ -35,12 +35,11 @@ test('release skill replaces the old push-update entry and documents release gat
   assert.match(skill, /Range.*206/);
 });
 
-test('repository entrypoints reference visionguard-release instead of push-update', () => {
+test('agent entrypoint references visionguard-release instead of push-update', () => {
   const readme = read('README.md');
   const agents = read('AGENTS.md');
   const combined = `${readme}\n${agents}`;
 
-  assert.match(readme, /visionguard-release/);
   assert.match(agents, /visionguard-release/);
   assert.doesNotMatch(combined, /push-update/);
 });
@@ -51,8 +50,6 @@ test('release-facing documentation stays aligned with VERSION and the canonical 
   const modelAssets = read('docs/codex/35-model-assets.md');
 
   assert.ok(readme.includes(`badge/version-${version}-`));
-  assert.ok(readme.includes('| 当前版本 | `' + version + '` |'));
-  assert.ok(readme.includes(`v${version} 发行包`));
   assert.match(modelAssets, /scripts[\\/]publish-release\.ps1/);
   assert.doesNotMatch(modelAssets, /scripts[\\/]release\.js/);
 });
