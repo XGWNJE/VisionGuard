@@ -56,10 +56,10 @@
     <Content Include="Assets\yolo26s_640.onnx" />
     <Content Include="Assets\yolo26m_320.onnx" />
     <Content Include="Assets\yolo26m_640.onnx" />
-    <Content Include="Assets\**\*.png" Exclude="Assets\screenshot.png">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>Assets\%(RecursiveDir)%(Filename)%(Extension)</Link>
-    </Content>
+    <!-- 导航图标嵌入程序集，发行包排除 Assets 目录后仍可通过 pack URI 加载。 -->
+    <Resource Include="Assets\capture.png" />
+    <Resource Include="Assets\settings.png" />
+    <Resource Include="Assets\server.png" />
     <Content Include="favico3n.ico" />
     <Content Include="favicon.ico" />
     <Content Include="VisionGuard.ico" />
