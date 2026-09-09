@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("All", "Server", "Windows", "WinForms", "WPF", "Android", "AndroidDetector", "AndroidReceiver")]
+    [ValidateSet("All", "Server", "Windows", "WinForms", "WPF", "WindowsResident", "Android", "AndroidDetector", "AndroidReceiver")]
     [string]$Target = "All"
 )
 
@@ -45,6 +45,9 @@ function Invoke-Step {
         & $Script
         if ($LASTEXITCODE -ne $null -and $LASTEXITCODE -ne 0) {
             throw "Command exited with code $LASTEXITCODE"
+        }
+        if ($Artifact -and -not (Test-Path -LiteralPath (Join-Path $repoRoot $Artifact))) {
+            throw "Expected artifact was not created: $Artifact"
         }
         Add-Result -Name $Name -Status "PASS" -Command $CommandText -Artifact $Artifact -Note $Note
     }
@@ -133,6 +136,14 @@ try {
             -CommandText "dotnet build detector\windows-wpf\VisionGuard.sln -c Release" `
             -Artifact "detector/windows-wpf/bin/x64/VisionGuard.exe" `
             -Script { dotnet build "detector\windows-wpf\VisionGuard.sln" -c Release }
+    }
+
+    if (Should-Run @("Windows", "WindowsResident", "WinForms", "WPF")) {
+        Invoke-Step `
+            -Name "Windows Resident" `
+            -CommandText "dotnet build detector\windows-resident\VisionGuard.Resident.csproj -c Release" `
+            -Artifact "detector/windows-resident/bin/Release/net9.0-windows/VisionGuard.Resident.exe" `
+            -Script { dotnet build "detector\windows-resident\VisionGuard.Resident.csproj" -c Release }
     }
 
     if (Should-Run @("Android", "AndroidDetector")) {

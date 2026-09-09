@@ -21,18 +21,18 @@ test('release skill replaces the old push-update entry and documents release gat
 
   const skill = read('.agents/skills/visionguard-release/SKILL.md');
   assert.match(skill, /^name: visionguard-release/m);
-  assert.match(skill, /Use when VisionGuard needs/i);
+  assert.match(skill, /^description: .*Publish.*VisionGuard/m);
   assert.match(skill, /scripts[\\/]publish-release\.ps1/);
   assert.match(skill, /preflight/i);
   assert.match(skill, /-PreflightOnly/);
   assert.match(skill, /-SkipServerDeploy/);
-  assert.match(skill, /默认不.*GitHub|no GitHub/i);
+  assert.match(skill, /GitHub publication is disabled by default|默认不.*GitHub/i);
   assert.match(skill, /D:\\ObjectCode\\Server-infra/);
   assert.match(skill, /\/opt\/visionguard-server/);
   assert.match(skill, /app-release-unsigned\.apk/);
   assert.match(skill, /apksigner verify/);
   assert.match(skill, /HEAD 200/);
-  assert.match(skill, /Range.*206/);
+  assert.match(skill, /(?:Range|byte-range).*206/i);
 });
 
 test('agent entrypoint references visionguard-release instead of push-update', () => {

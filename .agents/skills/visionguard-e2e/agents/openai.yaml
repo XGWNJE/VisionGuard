@@ -1,3 +1,6 @@
-display_name: VisionGuard E2E
-short_description: Device and runtime smoke checks
-default_prompt: Run VisionGuard E2E verification with the appropriate mode and report evidence.
+interface:
+  display_name: "VisionGuard E2E"
+  short_description: "Run current device and runtime verification."
+  default_prompt: "Use $visionguard-e2e to choose the narrowest current runtime test and report evidence."
+policy:
+  allow_implicit_invocation: true

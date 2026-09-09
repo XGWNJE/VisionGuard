@@ -40,6 +40,13 @@ detector/windows-wpf/**/obj/
 detector/windows-wpf/test-*/
 detector/windows-wpf/Assets/*.onnx
 
+detector/windows-resident/bin/
+detector/windows-resident/obj/
+detector/windows-wpf-smoke/bin/
+detector/windows-wpf-smoke/obj/
+tests/**/bin/
+tests/**/obj/
+
 # ===== Android 检测端 =====
 detector/android/*.iml
 detector/android/.gradle/

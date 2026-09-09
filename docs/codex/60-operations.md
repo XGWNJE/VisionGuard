@@ -68,8 +68,14 @@
 
 - 端到端、模拟器、实机、logcat、桌面交互验证入口：`.agents/skills/visionguard-e2e/`
 - 快速环境发现：`powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode Discover`
+- Android 检测端运行烟测：`powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode AndroidDetectorSmoke -Device Auto`
+- Android 接收端运行烟测：`powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode AndroidReceiverSmoke -Device Auto`
+- WPF 三路人员图片检测：`powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode WpfPersonDetection`
 - Android 自动化默认顺序：已授权真机 > `VisionGuard_API36` > `Pixel_3a_XL` > 仅构建/Server smoke
 - 证据目录：`artifacts/e2e/<timestamp>/`
+- Android 运行烟测默认使用 Debug 构建；只有发行验证才使用 `-BuildType Release` 并执行签名检查。
+- `ServerBuild`（旧名 `ServerSmoke`）只验证 Server 编译和产物，不得描述为 HTTP/WS 端到端验证。
+- 脚本启动的模拟器必须可见，并在本次运行结束后关闭；真机不修改唤醒、锁屏等系统设置。
 - 未明确要求时，不打正式 VPS，不改版本号，不发布，不部署
 
 ## 易错点
@@ -77,7 +83,6 @@
 - `server/` 和 Android 端协议耦合很强
 - 遮罩修改会同时影响识别和截图
 - Android 前台服务类型不能混用
-- `README.md` 可能存在编码问题，不应作为单一真相
 - 项目内旧解释文档已迁移后删除，后续不要恢复双份维护
 - 根域存在旧客户端兼容入口，不代表根域仍是 VisionGuard 正式服务地址
 - 发行包冗余文件必须从 .csproj/gradle 根源解决，不要在 release.js 中事后删除

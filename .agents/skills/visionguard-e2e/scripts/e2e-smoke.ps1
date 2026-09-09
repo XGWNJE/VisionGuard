@@ -1,301 +1,334 @@
 param(
-    [ValidateSet("Discover", "ServerSmoke", "AndroidReceiverSmoke")]
-    [string]$Mode = "Discover",
+    [ValidateSet('Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WpfPersonDetection')]
+    [string]$Mode = 'Discover',
 
-    [ValidateSet("Auto", "Physical", "Emulator", "None")]
-    [string]$Device = "Auto",
+    [ValidateSet('Auto', 'Physical', 'Emulator', 'None')]
+    [string]$Device = 'Auto',
 
-    [string]$DeviceSerial = "",
-    [string]$Avd = "VisionGuard_API36",
+    [ValidateSet('Debug', 'Release')]
+    [string]$BuildType = 'Debug',
+
+    [string]$DeviceSerial = '',
+    [string]$Avd = 'VisionGuard_API36',
     [switch]$ClearAppData,
     [switch]$NoLaunchEmulator,
     [int]$BootTimeoutSeconds = 180
 )
 
-$ErrorActionPreference = "Stop"
-
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..\..")).Path
-$timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$ErrorActionPreference = 'Stop'
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $artifactRoot = Join-Path $repoRoot "artifacts\e2e\$timestamp"
 New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
 
 $summary = [ordered]@{
     mode = $Mode
-    startedAt = (Get-Date).ToString("o")
+    buildType = $BuildType
+    startedAt = (Get-Date).ToString('o')
     artifactRoot = $artifactRoot
     selectedDevice = $null
     selectedAvd = $null
+    launchedEmulator = $false
     results = @()
-    skips = @()
 }
+$launchedEmulatorSerial = ''
+$launchedEmulatorProcess = $null
+$exitCode = 0
 
 function Add-Result {
-    param([string]$Name, [string]$Status, [string]$Note = "", [string]$Evidence = "")
-    $script:summary.results += [ordered]@{
-        name = $Name
-        status = $Status
-        note = $Note
-        evidence = $Evidence
-    }
+    param([string]$Name, [string]$Status, [string]$Note = '', [string]$Evidence = '')
+    $script:summary.results += [ordered]@{ name = $Name; status = $Status; note = $Note; evidence = $Evidence }
     Write-Host "[$Status] $Name $Note"
 }
 
-function Add-Skip {
-    param([string]$Name, [string]$Reason)
-    $script:summary.skips += [ordered]@{ name = $Name; reason = $Reason }
-    Add-Result -Name $Name -Status "SKIP" -Note $Reason
+function Save-Summary {
+    $summary.finishedAt = (Get-Date).ToString('o')
+    $summary | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $artifactRoot 'summary.json')
 }
 
-function Save-Summary {
-    $summary.finishedAt = (Get-Date).ToString("o")
-    $summary | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $artifactRoot "summary.json")
+function Invoke-NativeLogged {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments,
+        [string]$WorkingDirectory,
+        [string]$LogPath
+    )
+    $previousPreference = $ErrorActionPreference
+    Push-Location $WorkingDirectory
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = & $FilePath @Arguments 2>&1
+        $nativeExitCode = $LASTEXITCODE
+        $output | ForEach-Object { $_.ToString() } | Set-Content -Encoding UTF8 $LogPath
+        if ($nativeExitCode -ne 0) {
+            throw "$FilePath exited with code $nativeExitCode."
+        }
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+        Pop-Location
+    }
 }
 
 function Get-AndroidSdk {
-    $candidates = @(@(
-        $env:ANDROID_HOME,
-        $env:ANDROID_SDK_ROOT,
-        (Join-Path $env:LOCALAPPDATA "Android\Sdk")
-    ) | Where-Object { $_ -and (Test-Path $_) })
-    if (-not $candidates -or $candidates.Count -eq 0) {
-        throw "Android SDK not found. Expected under %LOCALAPPDATA%\Android\Sdk or ANDROID_HOME."
+    $candidates = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT, (Join-Path $env:LOCALAPPDATA 'Android\Sdk')) |
+        Where-Object { $_ -and (Test-Path -LiteralPath $_) } |
+        Select-Object -Unique
+    if ($candidates.Count -eq 0) {
+        throw 'Android SDK not found through ANDROID_HOME, ANDROID_SDK_ROOT, or %LOCALAPPDATA%\Android\Sdk.'
     }
     return $candidates[0]
 }
 
-function Get-ToolPaths {
+function Get-AndroidTools {
     $sdk = Get-AndroidSdk
-    $adb = Join-Path $sdk "platform-tools\adb.exe"
-    $emulator = Join-Path $sdk "emulator\emulator.exe"
-    $javaHomeCandidates = @(@(
-        $env:JAVA_HOME,
-        "C:\Android\Android Studio\jbr",
-        "C:\Program Files\Android\Android Studio\jbr"
-    ) | Where-Object { $_ -and (Test-Path (Join-Path $_ "bin\java.exe")) })
+    $adb = Join-Path $sdk 'platform-tools\adb.exe'
+    $emulator = Join-Path $sdk 'emulator\emulator.exe'
+    if (-not (Test-Path -LiteralPath $adb)) { throw "adb not found: $adb" }
+    if (-not (Test-Path -LiteralPath $emulator)) { throw "emulator not found: $emulator" }
 
-    [pscustomobject]@{
+    $javaCandidates = @($env:JAVA_HOME, 'C:\Android\Android Studio\jbr', 'C:\Program Files\Android\Android Studio\jbr') |
+        Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ 'bin\java.exe')) } |
+        Select-Object -Unique
+
+    return [pscustomobject]@{
         AndroidSdk = $sdk
         Adb = $adb
         Emulator = $emulator
-        JavaHome = if ($javaHomeCandidates.Count -gt 0) { $javaHomeCandidates[0] } else { "" }
-    }
-}
-
-function Invoke-Capture {
-    param([string]$Name, [scriptblock]$Script)
-    $out = Join-Path $artifactRoot $Name
-    try {
-        & $Script *> $out
-        Add-Result -Name $Name -Status "PASS" -Evidence $out
-    }
-    catch {
-        Add-Result -Name $Name -Status "FAIL" -Note $_.Exception.Message -Evidence $out
+        JavaHome = if ($javaCandidates.Count -gt 0) { $javaCandidates[0] } else { '' }
     }
 }
 
 function Get-AdbDevices {
     param([string]$Adb)
     $raw = & $Adb devices -l
-    $raw | Set-Content -Encoding UTF8 (Join-Path $artifactRoot "adb-devices.txt")
+    $raw | Set-Content -Encoding UTF8 (Join-Path $artifactRoot 'adb-devices.txt')
     $devices = @()
     foreach ($line in $raw) {
-        if ($line -match "^(\S+)\s+(\S+)(.*)$" -and $line -notmatch "^List") {
+        if ($line -match '^(\S+)\s+(\S+)(.*)$' -and $line -notmatch '^List') {
             $devices += [pscustomobject]@{
                 Serial = $Matches[1]
                 State = $Matches[2]
                 Detail = $Matches[3].Trim()
-                IsEmulator = $Matches[1] -like "emulator-*"
+                IsEmulator = $Matches[1] -like 'emulator-*'
             }
         }
     }
     return $devices
 }
 
-function Wait-ForBoot {
-    param([string]$Adb, [string]$Serial, [int]$TimeoutSeconds)
+function Wait-ForEmulator {
+    param([string]$Adb, [int]$TimeoutSeconds)
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
-        try {
-            $booted = & $Adb -s $Serial shell getprop sys.boot_completed 2>$null
-            if (($booted -join "").Trim() -eq "1") { return $true }
+        $emulator = @(Get-AdbDevices -Adb $Adb | Where-Object { $_.State -eq 'device' -and $_.IsEmulator }) | Select-Object -First 1
+        if ($emulator) {
+            $booted = & $Adb -s $emulator.Serial shell getprop sys.boot_completed 2>$null
+            if (($booted -join '').Trim() -eq '1') { return $emulator }
         }
-        catch { }
         Start-Sleep -Seconds 3
     }
-    return $false
+    throw "Emulator did not finish booting within $TimeoutSeconds seconds."
 }
 
-function Select-Device {
-    param([string]$Adb, [string]$Emulator)
+function Select-AndroidDevice {
+    param([pscustomobject]$Tools)
+    $devices = @(Get-AdbDevices -Adb $Tools.Adb)
 
-    $devices = Get-AdbDevices -Adb $Adb
     if ($DeviceSerial) {
-        $match = $devices | Where-Object { $_.Serial -eq $DeviceSerial } | Select-Object -First 1
-        if (-not $match) { throw "Requested device serial not found: $DeviceSerial" }
-        if ($match.State -ne "device") { throw "Requested device is not ready: $DeviceSerial state=$($match.State)" }
-        return $match
+        $selected = $devices | Where-Object { $_.Serial -eq $DeviceSerial } | Select-Object -First 1
+        if (-not $selected) { throw "Requested device not found: $DeviceSerial" }
+        if ($selected.State -ne 'device') { throw "Requested device is not ready: $DeviceSerial state=$($selected.State)" }
+        return $selected
     }
 
-    $physical = @($devices | Where-Object { $_.State -eq "device" -and -not $_.IsEmulator })
-    $unauthorized = @($devices | Where-Object { $_.State -eq "unauthorized" })
-    $offline = @($devices | Where-Object { $_.State -eq "offline" })
-
-    if ($unauthorized.Count -gt 0) {
-        Add-Skip -Name "Android physical device" -Reason "Device unauthorized; approve USB debugging on the phone."
+    $physical = @($devices | Where-Object { $_.State -eq 'device' -and -not $_.IsEmulator })
+    $unavailablePhysical = @($devices | Where-Object { -not $_.IsEmulator -and $_.State -ne 'device' })
+    foreach ($item in $unavailablePhysical) {
+        Add-Result -Name 'Physical device unavailable' -Status 'SKIP' -Note "$($item.Serial) state=$($item.State)"
     }
-    if ($offline.Count -gt 0) {
-        & $Adb reconnect | Out-File -Encoding UTF8 (Join-Path $artifactRoot "adb-reconnect.txt")
-        $devices = Get-AdbDevices -Adb $Adb
-        $physical = @($devices | Where-Object { $_.State -eq "device" -and -not $_.IsEmulator })
-    }
-
-    if ($Device -in @("Auto", "Physical")) {
+    if ($Device -in @('Auto', 'Physical')) {
         if ($physical.Count -eq 1) { return $physical[0] }
-        if ($physical.Count -gt 1) {
-            throw "Multiple physical Android devices found. Re-run with -DeviceSerial."
-        }
-        if ($Device -eq "Physical") {
-            throw "No ready physical Android device found."
-        }
+        if ($physical.Count -gt 1) { throw 'Multiple physical devices found; use -DeviceSerial.' }
+        if ($Device -eq 'Physical') { throw 'No ready physical device found.' }
     }
+    if ($Device -eq 'None') { return $null }
 
-    if ($Device -eq "None") { return $null }
+    $readyEmulator = @($devices | Where-Object { $_.State -eq 'device' -and $_.IsEmulator }) | Select-Object -First 1
+    if ($readyEmulator) { return $readyEmulator }
+    if ($NoLaunchEmulator) { return $null }
 
-    $emulatorReady = @($devices | Where-Object { $_.State -eq "device" -and $_.IsEmulator }) | Select-Object -First 1
-    if ($emulatorReady) { return $emulatorReady }
+    $avds = @(& $Tools.Emulator -list-avds)
+    $avds | Set-Content -Encoding UTF8 (Join-Path $artifactRoot 'emulator-avds.txt')
+    $selectedAvd = if ($avds -contains $Avd) { $Avd } elseif ($avds -contains 'VisionGuard_API36') { 'VisionGuard_API36' } elseif ($avds -contains 'Pixel_3a_XL') { 'Pixel_3a_XL' } else { '' }
+    if (-not $selectedAvd) { throw 'No configured VisionGuard emulator is available.' }
 
-    if ($NoLaunchEmulator) {
-        Add-Skip -Name "Android emulator" -Reason "No emulator online and -NoLaunchEmulator was set."
-        return $null
-    }
-
-    $avds = & $Emulator -list-avds
-    $avds | Set-Content -Encoding UTF8 (Join-Path $artifactRoot "avds.txt")
-    $selectedAvd = if ($avds -contains $Avd) { $Avd } elseif ($avds -contains "VisionGuard_API36") { "VisionGuard_API36" } elseif ($avds -contains "Pixel_3a_XL") { "Pixel_3a_XL" } else { "" }
-    if (-not $selectedAvd) {
-        Add-Skip -Name "Android emulator" -Reason "No known VisionGuard AVD available."
-        return $null
-    }
-
-    $script:summary.selectedAvd = $selectedAvd
-    $args = @("-avd", $selectedAvd, "-no-snapshot-save")
-    Start-Process -FilePath $Emulator -ArgumentList $args -WindowStyle Hidden | Out-Null
-    Add-Result -Name "Launch emulator" -Status "PASS" -Note $selectedAvd
-    & $Adb wait-for-device
-    Start-Sleep -Seconds 3
-    $devices = Get-AdbDevices -Adb $Adb
-    $emu = @($devices | Where-Object { $_.State -eq "device" -and $_.IsEmulator }) | Select-Object -First 1
-    if (-not $emu) { throw "Emulator launched but no adb device appeared." }
-    if (-not (Wait-ForBoot -Adb $Adb -Serial $emu.Serial -TimeoutSeconds $BootTimeoutSeconds)) {
-        throw "Emulator did not finish booting within $BootTimeoutSeconds seconds."
-    }
-    return $emu
-}
-
-function Set-JavaForGradle {
-    param([string]$JavaHome)
-    if (-not $JavaHome) { throw "Java home not found for Gradle." }
-    $env:JAVA_HOME = $JavaHome
-    $env:Path = "$env:JAVA_HOME\bin;$env:Path"
+    $summary.selectedAvd = $selectedAvd
+    $summary.launchedEmulator = $true
+    $script:launchedEmulatorProcess = Start-Process -FilePath $Tools.Emulator -ArgumentList @('-avd', $selectedAvd, '-no-snapshot-save') -WindowStyle Normal -PassThru
+    Add-Result -Name 'Launch emulator' -Status 'PASS' -Note $selectedAvd
+    $selected = Wait-ForEmulator -Adb $Tools.Adb -TimeoutSeconds $BootTimeoutSeconds
+    $script:launchedEmulatorSerial = $selected.Serial
+    return $selected
 }
 
 function Run-Discover {
-    $tools = Get-ToolPaths
-    $adb = $tools.Adb
-    $emulator = $tools.Emulator
-    $tools | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $artifactRoot "tools.json")
-    Add-Result -Name "Tool discovery" -Status "PASS" -Evidence (Join-Path $artifactRoot "tools.json")
-
-    Invoke-Capture -Name "adb-version.txt" -Script { & $adb version }
-    Invoke-Capture -Name "adb-devices.txt" -Script { & $adb devices -l }
-    Invoke-Capture -Name "emulator-version.txt" -Script { & $emulator -version }
-    Invoke-Capture -Name "emulator-avds.txt" -Script { & $emulator -list-avds }
-    Invoke-Capture -Name "wsl-status.txt" -Script { wsl.exe -l -v; wsl.exe --status }
-    Invoke-Capture -Name "vswhere.json" -Script {
-        $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-        if (Test-Path $vswhere) { & $vswhere -products * -format json } else { "vswhere not found" }
+    $inventory = [ordered]@{
+        dotnet = (& dotnet --version 2>$null)
+        node = (& node --version 2>$null)
+        npm = (& npm --version 2>$null)
+        git = (& git --version 2>$null)
+        android = $null
+        adbDevices = @()
     }
+    try {
+        $tools = Get-AndroidTools
+        $inventory.android = $tools
+        $inventory.adbDevices = @(Get-AdbDevices -Adb $tools.Adb)
+        $inventory.avds = @(& $tools.Emulator -list-avds)
+    }
+    catch {
+        $inventory.androidError = $_.Exception.Message
+    }
+    $path = Join-Path $artifactRoot 'inventory.json'
+    $inventory | ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 $path
+    Add-Result -Name 'Environment discovery' -Status 'PASS' -Evidence $path
 }
 
-function Run-ServerSmoke {
-    Push-Location $repoRoot
-    try {
-        npm --prefix server run build *> (Join-Path $artifactRoot "server-build.txt")
-        if ($LASTEXITCODE -ne 0) { throw "Server build failed." }
-        Add-Result -Name "Server build" -Status "PASS" -Evidence (Join-Path $artifactRoot "server-build.txt")
-        $artifact = Join-Path $repoRoot "server\dist\index.js"
-        if (Test-Path $artifact) {
-            Add-Result -Name "Server artifact" -Status "PASS" -Evidence $artifact
-        } else {
-            throw "Missing server/dist/index.js"
-        }
-    }
-    finally {
-        Pop-Location
-    }
+function Run-ServerBuild {
+    $log = Join-Path $artifactRoot 'server-build.txt'
+    Invoke-NativeLogged -FilePath 'npm' -Arguments @('--prefix', 'server', 'run', 'build') -WorkingDirectory $repoRoot -LogPath $log
+    $artifact = Join-Path $repoRoot 'server\dist\index.js'
+    if (-not (Test-Path -LiteralPath $artifact)) { throw "Server artifact missing: $artifact" }
+    Add-Result -Name 'Server build smoke' -Status 'PASS' -Evidence $log
 }
 
-function Run-AndroidReceiverSmoke {
-    $tools = Get-ToolPaths
-    Set-JavaForGradle -JavaHome $tools.JavaHome
-    $apk = Join-Path $repoRoot "receiver\android\app\build\outputs\apk\release\app-release.apk"
+function Set-GradleJava {
+    param([string]$JavaHome)
+    if (-not $JavaHome) { throw 'Android Studio JBR/JAVA_HOME was not found.' }
+    $env:JAVA_HOME = $JavaHome
+    $env:Path = "$JavaHome\bin;$env:Path"
+}
 
-    Push-Location (Join-Path $repoRoot "receiver\android")
-    try {
-        .\gradlew.bat assembleRelease *> (Join-Path $artifactRoot "receiver-build.txt")
-        if ($LASTEXITCODE -ne 0) { throw "Android receiver build failed." }
-        Add-Result -Name "Android receiver build" -Status "PASS" -Evidence (Join-Path $artifactRoot "receiver-build.txt")
-    }
-    finally {
-        Pop-Location
-    }
+function Run-AndroidAppSmoke {
+    param(
+        [string]$Name,
+        [string]$ProjectDirectory,
+        [string]$PackageName
+    )
+    $tools = Get-AndroidTools
+    Set-GradleJava -JavaHome $tools.JavaHome
+    $task = if ($BuildType -eq 'Release') { 'assembleRelease' } else { 'assembleDebug' }
+    $apkName = if ($BuildType -eq 'Release') { 'app-release.apk' } else { 'app-debug.apk' }
+    $apk = Join-Path $repoRoot "$ProjectDirectory\app\build\outputs\apk\$($BuildType.ToLowerInvariant())\$apkName"
+    $buildLog = Join-Path $artifactRoot "$Name-build.txt"
 
-    if (-not (Test-Path $apk)) { throw "Receiver APK missing: $apk" }
+    $projectRoot = Join-Path $repoRoot $ProjectDirectory
+    Invoke-NativeLogged -FilePath (Join-Path $projectRoot 'gradlew.bat') -Arguments @($task) -WorkingDirectory $projectRoot -LogPath $buildLog
+    if (-not (Test-Path -LiteralPath $apk)) { throw "APK missing: $apk" }
+    Add-Result -Name "$Name $BuildType build" -Status 'PASS' -Evidence $buildLog
 
-    $selected = Select-Device -Adb $tools.Adb -Emulator $tools.Emulator
+    $selected = Select-AndroidDevice -Tools $tools
     if (-not $selected) {
-        Add-Skip -Name "Android receiver runtime" -Reason "No usable Android device or emulator."
+        Add-Result -Name "$Name runtime" -Status 'SKIP' -Note 'No usable device or emulator.'
         return
     }
     $summary.selectedDevice = $selected.Serial
 
-    & $tools.Adb -s $selected.Serial install -r $apk *> (Join-Path $artifactRoot "adb-install.txt")
-    if ($LASTEXITCODE -ne 0) { throw "adb install failed." }
-    Add-Result -Name "Install receiver APK" -Status "PASS" -Evidence (Join-Path $artifactRoot "adb-install.txt")
+    $installLog = Join-Path $artifactRoot "$Name-install.txt"
+    & $tools.Adb -s $selected.Serial install -r $apk *> $installLog
+    if ($LASTEXITCODE -ne 0) { throw "$Name adb install failed." }
+    Add-Result -Name "$Name install" -Status 'PASS' -Evidence $installLog
 
     if ($ClearAppData) {
-        & $tools.Adb -s $selected.Serial shell pm clear com.xgwnje.visionguard_android *> (Join-Path $artifactRoot "pm-clear.txt")
-        Add-Result -Name "Clear app data" -Status "PASS" -Evidence (Join-Path $artifactRoot "pm-clear.txt")
+        & $tools.Adb -s $selected.Serial shell pm clear $PackageName *> (Join-Path $artifactRoot "$Name-clear.txt")
+        if ($LASTEXITCODE -ne 0) { throw "$Name app-data clear failed." }
+        Add-Result -Name "$Name clear data" -Status 'PASS'
     }
 
     & $tools.Adb -s $selected.Serial logcat -c | Out-Null
-    & $tools.Adb -s $selected.Serial shell monkey -p com.xgwnje.visionguard_android -c android.intent.category.LAUNCHER 1 *> (Join-Path $artifactRoot "app-start.txt")
+    & $tools.Adb -s $selected.Serial shell monkey -p $PackageName -c android.intent.category.LAUNCHER 1 *> (Join-Path $artifactRoot "$Name-launch.txt")
+    if ($LASTEXITCODE -ne 0) { throw "$Name launch failed." }
     Start-Sleep -Seconds 8
-    & $tools.Adb -s $selected.Serial logcat -d -v time *> (Join-Path $artifactRoot "logcat.txt")
-    & $tools.Adb -s $selected.Serial shell dumpsys activity activities *> (Join-Path $artifactRoot "dumpsys-activity.txt")
-    & $tools.Adb -s $selected.Serial shell uiautomator dump /sdcard/vg-window.xml *> (Join-Path $artifactRoot "uiautomator-dump.txt")
-    & $tools.Adb -s $selected.Serial pull /sdcard/vg-window.xml (Join-Path $artifactRoot "window.xml") *> (Join-Path $artifactRoot "uiautomator-pull.txt")
-    & $tools.Adb -s $selected.Serial exec-out screencap -p > (Join-Path $artifactRoot "screen.png")
 
-    $logcat = Get-Content (Join-Path $artifactRoot "logcat.txt") -Raw
-    if ($logcat -match "FATAL EXCEPTION|AndroidRuntime") {
-        Add-Result -Name "Runtime crash scan" -Status "FAIL" -Note "AndroidRuntime crash found." -Evidence (Join-Path $artifactRoot "logcat.txt")
-    } else {
-        Add-Result -Name "Runtime crash scan" -Status "PASS" -Evidence (Join-Path $artifactRoot "logcat.txt")
+    $logcatPath = Join-Path $artifactRoot "$Name-logcat.txt"
+    $activityPath = Join-Path $artifactRoot "$Name-activity.txt"
+    & $tools.Adb -s $selected.Serial logcat -d -v time *> $logcatPath
+    & $tools.Adb -s $selected.Serial shell dumpsys activity activities *> $activityPath
+    $processId = (& $tools.Adb -s $selected.Serial shell pidof $PackageName 2>$null) -join ''
+    $activity = Get-Content -LiteralPath $activityPath -Raw
+    if (-not $processId.Trim() -or $activity -notmatch [regex]::Escape($PackageName)) {
+        throw "$Name did not remain running or appear in activity state."
     }
-    Add-Result -Name "Runtime evidence capture" -Status "PASS" -Evidence $artifactRoot
+
+    $remoteXml = '/sdcard/vg-window.xml'
+    $remoteScreen = '/sdcard/vg-screen.png'
+    & $tools.Adb -s $selected.Serial shell uiautomator dump $remoteXml *> (Join-Path $artifactRoot "$Name-uiautomator.txt")
+    if ($LASTEXITCODE -eq 0) {
+        & $tools.Adb -s $selected.Serial pull $remoteXml (Join-Path $artifactRoot "$Name-window.xml") *> $null
+    }
+    & $tools.Adb -s $selected.Serial shell screencap -p $remoteScreen *> $null
+    if ($LASTEXITCODE -eq 0) {
+        & $tools.Adb -s $selected.Serial pull $remoteScreen (Join-Path $artifactRoot "$Name-screen.png") *> $null
+    }
+
+    $logcat = Get-Content -LiteralPath $logcatPath -Raw
+    if ($logcat -match 'FATAL EXCEPTION|Process: .*visionguard') {
+        throw "$Name crash marker found in logcat."
+    }
+    Add-Result -Name "$Name runtime" -Status 'PASS' -Evidence $artifactRoot
+}
+
+function Run-WpfPersonDetection {
+    $script = Join-Path $repoRoot 'scripts\test-wpf-person-detection.ps1'
+    $report = Join-Path $artifactRoot 'wpf-person-detection.json'
+    $log = Join-Path $artifactRoot 'wpf-person-detection.txt'
+    if (-not (Test-Path -LiteralPath $script)) { throw "WPF person test script missing: $script" }
+    Invoke-NativeLogged -FilePath 'powershell' -Arguments @('-ExecutionPolicy', 'Bypass', '-File', $script, '-PrepareFixtures', '-ReportPath', $report) -WorkingDirectory $repoRoot -LogPath $log
+    Add-Result -Name 'WPF three-source person detection' -Status 'PASS' -Evidence $report
 }
 
 try {
-    Run-Discover
-    if ($Mode -eq "ServerSmoke") {
-        Run-ServerSmoke
-    } elseif ($Mode -eq "AndroidReceiverSmoke") {
-        Run-AndroidReceiverSmoke
+    switch ($Mode) {
+        'Discover' { Run-Discover }
+        'ServerBuild' { Run-ServerBuild }
+        'ServerSmoke' {
+            Add-Result -Name 'ServerSmoke compatibility alias' -Status 'PASS' -Note 'Running compile/artifact smoke only.'
+            Run-ServerBuild
+        }
+        'AndroidDetectorSmoke' { Run-AndroidAppSmoke -Name 'android-detector' -ProjectDirectory 'detector\android' -PackageName 'com.xgwnje.visionguard' }
+        'AndroidReceiverSmoke' { Run-AndroidAppSmoke -Name 'android-receiver' -ProjectDirectory 'receiver\android' -PackageName 'com.xgwnje.visionguard_android' }
+        'WpfPersonDetection' { Run-WpfPersonDetection }
     }
 }
+catch {
+    $exitCode = 1
+    Add-Result -Name 'Run' -Status 'FAIL' -Note $_.Exception.Message
+}
 finally {
+    if ($launchedEmulatorSerial) {
+        try {
+            $tools = Get-AndroidTools
+            & $tools.Adb -s $launchedEmulatorSerial emu kill *> (Join-Path $artifactRoot 'emulator-stop.txt')
+            Add-Result -Name 'Stop launched emulator' -Status 'PASS' -Note $launchedEmulatorSerial
+        }
+        catch {
+            Add-Result -Name 'Stop launched emulator' -Status 'FAIL' -Note $_.Exception.Message
+            $exitCode = 1
+        }
+    }
+    elseif ($launchedEmulatorProcess -and -not $launchedEmulatorProcess.HasExited) {
+        try {
+            Stop-Process -Id $launchedEmulatorProcess.Id
+            Add-Result -Name 'Stop launched emulator process' -Status 'PASS' -Note "pid=$($launchedEmulatorProcess.Id)"
+        }
+        catch {
+            Add-Result -Name 'Stop launched emulator process' -Status 'FAIL' -Note $_.Exception.Message
+            $exitCode = 1
+        }
+    }
     Save-Summary
-    Write-Host ""
     Write-Host "Artifacts: $artifactRoot"
 }
+
+exit $exitCode

@@ -26,6 +26,7 @@ Windows / Android Visual Detector
 |---|---|---|
 | Windows WinForms 探测器 | .NET Framework 4.7.2 | [`detector/windows-winforms/`](./detector/windows-winforms/) |
 | Windows WPF 探测器 | .NET 9 / WPF | [`detector/windows-wpf/`](./detector/windows-wpf/) |
+| Windows 驻留远控 | .NET 9 | [`detector/windows-resident/`](./detector/windows-resident/) |
 | Android 探测器 | Kotlin / CameraX / ONNX Runtime | [`detector/android/`](./detector/android/) |
 | Server | Node.js / TypeScript / Express / WebSocket | [`server/`](./server/) |
 | Android 接收端 | Kotlin / Jetpack Compose / OkHttp | [`receiver/android/`](./receiver/android/) |
@@ -44,6 +45,14 @@ npm run build
 ```
 
 Server 需要通过本地 `.env` 或部署环境提供 `API_KEY`，不要提交真实密钥。各客户端的构建、配置和验证方式见[运维文档](./docs/codex/60-operations.md)。
+
+WPF 三路人员检测 smoke：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\test-wpf-person-detection.ps1 -PrepareFixtures
+```
+
+该工具使用三张含人的图片，并要求每路实际产生 `person` 检测；仅有帧处理或 FPS 不会通过。详细说明见 [`detector/windows-wpf-smoke/README.md`](./detector/windows-wpf-smoke/README.md)。
 
 ## 产品与文档
 

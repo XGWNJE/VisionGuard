@@ -1,95 +1,37 @@
 ---
 name: visionguard-e2e
-description: Use when VisionGuard needs E2E tests, emulator or real-device validation, automated verification, Android runtime checks, server smoke tests, logcat evidence, WSL-backed server checks, or a build-vs-device verification decision.
+description: Run VisionGuard runtime, device, emulator, server smoke, or WPF multi-source person-detection verification and capture evidence.
 ---
 
 # VisionGuard E2E
 
-Use this skill for verification beyond normal compilation. Keep `visionguard-build` for pure builds; use this skill when runtime evidence, devices, emulators, logs, UI interaction, or server smoke checks matter.
+Use this skill when runtime behavior or device evidence matters. Use `visionguard-build` for compile-only requests.
 
-## Core Rule
-
-Use the cheapest reliable evidence first:
-
-1. **Data first**: build output, HTTP/WS probes, files, logs, `adb`, `dumpsys`, `uiautomator`, screenshots.
-2. **Device automation second**: Android real device if connected, otherwise emulator.
-3. **Desktop control when useful**: visual UI, emulator window state, system permission dialogs, notification shade, Android Studio AVD Manager, WinForms/WPF windows, or cases where command output cannot prove behavior.
-4. **Report skipped checks** with the reason and what the user can do manually.
-
-Do not touch production VPS or public `visionguard.xgwnje.cn` unless the user explicitly asks. Prefer local or test server configuration for E2E.
-
-## Preferred Script
-
-From repo root:
+## Maintained modes
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode Discover
-```
-
-Common modes:
-
-```powershell
-# Environment/device inventory only, no app install, no emulator launch.
+# Live tool/device inventory; no app installation or emulator launch.
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode Discover
 
-# Server build plus local environment probe. Does not deploy.
-powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode ServerSmoke
+# Server compile/artifact smoke. This is not a running HTTP/WS E2E test.
+powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode ServerBuild
 
-# Install/start Android receiver and capture logcat/screenshot evidence.
+# Install, launch, and capture evidence from an Android app. Debug is the default runtime build.
+powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode AndroidDetectorSmoke -Device Auto
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode AndroidReceiverSmoke -Device Auto
+
+# Three ImageFile sources must each produce at least one person detection.
+powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode WpfPersonDetection
 ```
 
-Artifacts are written under `artifacts/e2e/<timestamp>/`.
+`ServerSmoke` remains only as a compatibility alias for `ServerBuild`; do not describe it as an HTTP/WS runtime test.
 
-## Device Policy
+## Evidence and boundaries
 
-Default `-Device Auto` order:
-
-1. Connected Android physical device in `device` state.
-2. `VisionGuard_API36` emulator.
-3. `Pixel_3a_XL` emulator.
-4. Build/server-only fallback.
-
-If multiple physical devices are connected, use `-DeviceSerial <serial>` or report that selection is ambiguous. If a device is `unauthorized`, tell the user to approve USB debugging on the device. If a device is `offline`, try one reconnect before skipping it.
-
-iOS is not part of current VisionGuard runtime. Discover iOS tooling/devices only when the user mentions iOS; otherwise do not include it in the E2E path.
-
-## Verification Tiers
-
-- **Build**: run `visionguard-build` or target-specific build commands.
-- **ServerSmoke**: compile server; optionally probe local HTTP/WS endpoints when a local test server is configured.
-- **AndroidSmoke**: install APK, start app, collect `logcat`, `dumpsys activity`, optional `uiautomator dump`, optional screenshot.
-- **Feature E2E**: use a local/test server plus deterministic test data. For alert/screenshot flows, simulate detector messages, verify server persistence, then verify receiver UI/behavior.
-
-Do not claim full E2E unless the test actually exercises all participating components.
-
-## Required User/Project Preparation
-
-These are intentionally not guessed:
-
-- A debug/test configuration that points Android apps at a local or test Server URL and test API key.
-- Stable test fixtures for alert metadata and a small screenshot image.
-- Optional instrumentation tests under `androidTest` for UI assertions. The repo already has Compose test dependencies, but no tests are currently present.
-- Optional real Android/iOS devices connected and authorized when the user wants physical-device validation.
-
-If these are missing, run lower-tier checks and report what could not be proven.
-
-## Desktop Control Guidance
-
-Use Codex desktop control only when it materially improves evidence:
-
-- Android permission dialogs, notification shade, visual image rendering, emulator black screen/stuck boot, Android Studio AVD Manager issues.
-- WinForms/WPF visible windows, tray behavior, modal update prompts.
-- Visual layout checks where logs and UIAutomator XML are insufficient.
-
-When using desktop control, capture or describe the visual evidence. Prefer `adb screencap` or Browser screenshots when they can prove the same point more repeatably.
-
-## Reporting
-
-Include:
-
-- Mode, commands run, selected device/AVD, and artifact directory.
-- Pass/fail/skip per tier.
-- Evidence files created.
-- Explicit note if no version bump, release, deploy, or production traffic was performed.
-- Manual steps left for the user, especially physical-device authorization or visual checks that were skipped for ROI.
+- Prefer authorized physical Android devices, then `VisionGuard_API36`, then `Pixel_3a_XL`. Specify `-DeviceSerial` when multiple physical devices are connected.
+- Emulator runs must keep the window visible and close an emulator started by the script when the run ends.
+- Android smoke proves installation, launch, foreground activity/process state, and absence of an observed crash during the capture window. It does not prove the detector→Server→receiver alert chain.
+- WPF person-image smoke proves the ImageFile inference path and multi-source isolation. It does not prove real window capture.
+- Full feature E2E requires deterministic test data plus every participating component; report missing links as skipped.
+- Do not use the production VPS or public service unless the user explicitly requests it. Do not change versions or publish from this skill.
+- Evidence is written under `artifacts/e2e/`. Report the selected device, build type, pass/fail/skip results, evidence paths, and any remaining manual visual checks.

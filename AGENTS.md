@@ -14,6 +14,7 @@
 ```
 detector/windows-winforms/   C# / .NET Framework 4.7.2 / WinForms   主力线 (Win7+)
 detector/windows-wpf/        C# / .NET 9 / WPF / MVVM               视觉升级线 (Win10+)
+detector/windows-resident/   C# / .NET 9 / 当前用户后台进程          Windows 应用生命周期远控
 detector/android/            Kotlin / CameraX / ONNX Runtime Mobile  安卓检测端
 server/                      Node.js 20+ / TypeScript / Express / ws  中继服务器
 receiver/android/            Kotlin / Jetpack Compose / OkHttp       安卓接收端
@@ -37,6 +38,8 @@ receiver/android/            Kotlin / Jetpack Compose / OkHttp       安卓接�
 | 版本源 | `AssemblyInfo.cs` + `ServerPushService.cs` | `AppConfig.cs`（`const string Version`） + `.csproj`（文件属性） |
 | 输出路径 | `bin\Release\`（AnyCPU 与 x64 统一） | `bin\x64\` |
 | 原生 DLL | ONNX Runtime 随 NuGet 输出到根目录 | ONNX Runtime 通过 csproj Target 提取到根目录（删除 runtimes/ 嵌套） |
+
+**Windows 驻留远控**：`detector/windows-resident/` 使用独立 `windows-resident` WS 身份，与检测端按同一 `deviceId` 聚合；仅接受 `open/close-wpf/winforms` 固定命令。主程序通过当前用户会话事件完成启动握手和正常退出请求，远程打开不自动启动监控。登录启动仅由驻留程序的 `--enable-startup <config>` / `--disable-startup` 显式切换。
 
 **Win7 TLS 兼容**（WinForms 端）：
 
@@ -104,6 +107,8 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 **视觉/实机验证约定**：用户要求视觉验证或实机验证时，先 `adb devices` 检查是否有已连接且 `device` 状态的实机，有则直接用实机；没有实机再启动 Android Studio 模拟器（优先 `VisionGuard_API36`，其次 `Pixel_3a_XL`）。多台实机时用 `-s <serial>` 指定或向用户确认。
 
+**WPF 人员检测图片验证**：三路图片 smoke 使用 `powershell -ExecutionPolicy Bypass -File .\scripts\test-wpf-person-detection.ps1 -PrepareFixtures`；输入目录必须恰好包含三张图片，且每路报告至少一帧 `person` 命中。旧的界面截图只能作为负样本或性能输入，不能作为人员检测正样本。
+
 ## 构建与发行
 
 ### 构建输出路径（必须统一）
@@ -113,6 +118,7 @@ WS 三角色：`windows` / `android` / `android-detector`
 | WinForms | Debug\|AnyCPU / Debug\|x64 | `bin\Debug\` | ✓ |
 | WinForms | Release\|AnyCPU / Release\|x64 | `bin\Release\` | ✓ |
 | WPF | Debug / Release | `bin\x64\` | ✓（`OutputPath` 无条件属性） |
+| Windows 驻留 | Release | `bin\Release\net9.0-windows\` | ✓ |
 | Server | - | `dist/` | N/A |
 | Android | Debug / Release | Gradle 标准路径 | N/A |
 
@@ -128,6 +134,7 @@ WS 三角色：`windows` / `android` / `android-detector`
 - `Assets/*.onnx` — 模型文件，按需下载
 - WPF `runtimes/` 下的非 `win-x64` 目录 — 用 csproj Target 从根源删除，剩余 `win-x64/native/` 内容移到根目录后删掉 `runtimes/`
 - `Assets/*.png` 如无代码引用则设 `CopyToOutputDirectory=Never`
+- Windows 发行 ZIP 必须包含 `VisionGuard.Resident.exe/.dll/.deps.json/.runtimeconfig.json`，驻留项目 Release 配置不得输出 PDB
 
 **原则**：从 **.csproj 根源**控制输出内容，不在 `release.js` 中事后删除。每次改动后必须编译验证并用 `Get-ChildItem` 检查输出目录。
 
@@ -190,8 +197,8 @@ WS 三角色：`windows` / `android` / `android-detector`
 
 | Skill | 用途 | 触发 |
 |-------|------|------|
-| `visionguard-build` | 五端编译（Server/WinForms/WPF/Android-Detector/Android-Receiver） | `/visionguard-build` 或"编译" |
-| `visionguard-e2e` | 端到端 / 设备 / 模拟器 / 运行证据验证（含真机发现、AVD 兜底、logcat/截图采集） | "端到端测试"、"模拟器验证"、"实机验证"、"自动化验证" |
+| `visionguard-build` | 六端编译（Server/WinForms/WPF/Windows-Resident/Android-Detector/Android-Receiver） | `/visionguard-build` 或"编译" |
+| `visionguard-e2e` | 运行时 / 真机 / 模拟器验证，以及 WPF 三路人员图片检测；区分构建烟测与完整 E2E | "端到端测试"、"模拟器验证"、"实机验证"、"自动化验证" |
 | `visionguard-release` | 客户端更新发布、Server 代码部署、VPS release 文件/元数据更新、GitHub Release 可选发布、线上更新接口验证 | "发布新版本"、"上线"、"推送更新" |
 
 版本同步不再维护独立 skill；以根目录 `VERSION` 为权威，显式授权后运行 `node scripts/sync-version.js <version>`。VPS/域名/SNI 信息以 `D:\ObjectCode\Server-infra` 为准，旧全局 `vps-server-info` 如有冲突不得采用。
