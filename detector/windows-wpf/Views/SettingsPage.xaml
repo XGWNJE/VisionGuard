@@ -58,6 +58,18 @@
                 </StackPanel>
             </Border>
 
+            <!-- 推理后端 -->
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="推理后端" Style="{StaticResource BodyText}" Margin="0,0,0,8"/>
+                    <ComboBox Style="{StaticResource DarkComboBox}" SelectedIndex="{Binding SelectedBackendIndex}">
+                        <ComboBoxItem>DirectML（NVIDIA / AMD / Intel GPU，失败时明确回退 CPU）</ComboBoxItem>
+                        <ComboBoxItem>CPU（兼容与问题诊断）</ComboBoxItem>
+                    </ComboBox>
+                    <TextBlock Text="实际生效后端会显示在主窗口状态栏。" Style="{StaticResource CaptionText}" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Border>
+
             <!-- 监控目标 -->
             <Border Style="{StaticResource CardBorder}">
                 <StackPanel>

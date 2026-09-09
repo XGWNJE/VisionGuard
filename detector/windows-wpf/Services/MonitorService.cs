@@ -10,6 +10,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Threading;
 using VisionGuard.Capture;
 using VisionGuard.Inference;
@@ -37,6 +38,8 @@ namespace VisionGuard.Services
 
         public bool IsStarted => _timer != null;
         public bool IsPaused => Interlocked.CompareExchange(ref _isPaused, 0, 0) == 1;
+        public string ActiveBackend => _engine?.ActiveBackend.ToString() ?? "Unavailable";
+        public string BackendFallbackReason => _engine?.BackendFallbackReason ?? string.Empty;
 
         /// <summary>选区/窗口是否已设定（用于心跳同步给 Android 显示准备状态）</summary>
         public bool IsReady
@@ -46,6 +49,8 @@ namespace VisionGuard.Services
                 if (_config == null) return false;
                 if (_config.CaptureMode == CaptureMode.WindowHandle)
                     return _config.TargetWindowHandle != IntPtr.Zero;
+                if (_config.CaptureMode == CaptureMode.ImageFile)
+                    return File.Exists(_config.ImageFilePath);
                 return _config.CaptureRegion.Width >= 32 && _config.CaptureRegion.Height >= 32;
             }
         }
@@ -58,13 +63,13 @@ namespace VisionGuard.Services
         /// <summary>
         /// 启动监控。modelPath = yolo26n.onnx 或 yolo26s.onnx 完整路径。
         /// </summary>
-        public void Start(string modelPath, MonitorConfig config)
+        public void Start(string modelPath, MonitorConfig config, InferenceBackend preferredBackend = InferenceBackend.DirectML)
         {
             if (_disposed) throw new ObjectDisposedException(nameof(MonitorService));
             if (_timer != null) return;
 
             _config  = config;
-            _engine  = new OnnxInferenceEngine(modelPath, intraOpNumThreads: 2);
+            _engine  = new OnnxInferenceEngine(modelPath, intraOpNumThreads: 2, preferredBackend: preferredBackend);
 
             int intervalMs = 1000 / Math.Max(1, config.TargetFps);
             _timer = new Timer(OnTick, null, 0, intervalMs);
@@ -126,10 +131,19 @@ namespace VisionGuard.Services
 
             try
             {
+                var totalSw = Stopwatch.StartNew();
                 var sw = Stopwatch.StartNew();
 
                 // 1. 截图（根据捕获模式选择方式）
-                if (cfg.CaptureMode == Models.CaptureMode.WindowHandle
+                if (cfg.CaptureMode == Models.CaptureMode.ImageFile)
+                {
+                    if (string.IsNullOrWhiteSpace(cfg.ImageFilePath) || !File.Exists(cfg.ImageFilePath))
+                        throw new FileNotFoundException("测试图片不存在。", cfg.ImageFilePath);
+                    // Image.FromFile 会一直占用文件；先复制到内存，保证测试素材可被替换或清理。
+                    using var loaded = Image.FromFile(cfg.ImageFilePath);
+                    frame = new Bitmap(loaded);
+                }
+                else if (cfg.CaptureMode == Models.CaptureMode.WindowHandle
                     && cfg.TargetWindowHandle != IntPtr.Zero)
                 {
                     frame = WindowCapturer.CaptureWindow(cfg.TargetWindowHandle, cfg.WindowSubRegion);
@@ -178,7 +192,7 @@ namespace VisionGuard.Services
 
                 // 6. 通知 UI
                 FrameProcessed?.Invoke(this, new FrameResultEventArgs(
-                    detections, (Bitmap)frame.Clone(), inferMs));
+                    detections, (Bitmap)frame.Clone(), inferMs, totalSw.ElapsedMilliseconds));
             }
             catch (ObjectDisposedException)
             {
@@ -212,14 +226,16 @@ namespace VisionGuard.Services
         public List<Detection> Detections  { get; }
         public Bitmap          Frame       { get; }   // 调用方负责 Dispose
         public long            InferenceMs { get; }
+        public long            ProcessingMs { get; }
         public Exception       Error       { get; }
         public bool            HasError    => Error != null;
 
-        public FrameResultEventArgs(List<Detection> dets, Bitmap frame, long inferMs)
+        public FrameResultEventArgs(List<Detection> dets, Bitmap frame, long inferMs, long processingMs = 0)
         {
             Detections  = dets;
             Frame       = frame;
             InferenceMs = inferMs;
+            ProcessingMs = processingMs;
         }
 
         public FrameResultEventArgs(Exception error)

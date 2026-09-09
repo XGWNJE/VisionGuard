@@ -84,6 +84,7 @@ namespace VisionGuard.ViewModels
 
         // 子 ViewModel（共享服务）
         public MonitorViewModel MonitorVm { get; }
+        public MultiSourceViewModel MultiSourceVm { get; }
         public SettingsViewModel SettingsVm { get; }
         public ServerViewModel ServerVm { get; }
 
@@ -115,6 +116,7 @@ namespace VisionGuard.ViewModels
             // 子 ViewModel（注入共享服务 + MainViewModel 自身用于预览回调）
             SettingsVm = new SettingsViewModel();
             MonitorVm = new MonitorViewModel(alertService, _serverPushService, SettingsVm, this);
+            MultiSourceVm = new MultiSourceViewModel(_serverPushService, this);
             ServerVm = new ServerViewModel(_serverPushService);
 
             // ── 远控命令路由 ──────────────────────────────────────────
@@ -122,16 +124,22 @@ namespace VisionGuard.ViewModels
             {
                 System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
                 {
-                    switch (cmd)
+                    if (!string.IsNullOrWhiteSpace(cmd.TargetSourceId))
+                    {
+                        MultiSourceVm.HandleCommand(cmd.TargetSourceId, cmd.Command, cmd.RequestId);
+                        RefreshHeartbeat(_serverPushService);
+                        return;
+                    }
+                    switch (cmd.Command)
                     {
                         case "pause":
-                            MonitorVm.StopMonitor(remote: true);
+                            MonitorVm.StopMonitor(remote: true, requestId: cmd.RequestId);
                             break;
                         case "resume":
-                            MonitorVm.StartMonitor(remote: true);
+                            MonitorVm.StartMonitor(remote: true, requestId: cmd.RequestId);
                             break;
                         case "stop-alarm":
-                            _serverPushService.SendCommandAck(cmd, false, "当前无报警");
+                            _serverPushService.SendCommandAck(cmd.Command, false, "当前无报警", cmd.RequestId);
                             break;
                     }
                     RefreshHeartbeat(_serverPushService);
@@ -142,7 +150,10 @@ namespace VisionGuard.ViewModels
             {
                 System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
                 {
-                    MonitorVm.ApplyRemoteConfig(kv.Key, kv.Value);
+                    if (!string.IsNullOrWhiteSpace(kv.TargetSourceId))
+                        MultiSourceVm.HandleConfig(kv.TargetSourceId, kv.Key, kv.Value, kv.RequestId);
+                    else
+                        MonitorVm.ApplyRemoteConfig(kv.Key, kv.Value, kv.RequestId);
                     RefreshHeartbeat(_serverPushService);
                 });
             };
@@ -162,6 +173,7 @@ namespace VisionGuard.ViewModels
                 saveTimer.Stop();
                 SettingsVm.Save();
                 MonitorVm.Save();
+                MultiSourceVm.Save();
                 ServerVm.Save();
             };
 
@@ -173,6 +185,7 @@ namespace VisionGuard.ViewModels
 
             SettingsVm.PropertyChanged += (s, e) => QueueSave();
             MonitorVm.PropertyChanged += (s, e) => QueueSave();
+            foreach (var source in MultiSourceVm.Sources) source.PropertyChanged += (s, e) => QueueSave();
             ServerVm.PropertyChanged += (s, e) => QueueSave();
 
             // 初始配置服务器连接
@@ -234,6 +247,7 @@ namespace VisionGuard.ViewModels
             // 强制保存一次当前设置
             SettingsVm.Save();
             MonitorVm.Save();
+            MultiSourceVm.Save();
             ServerVm.Save();
 
             // 停止监控（会释放 ONNX 引擎）
@@ -242,6 +256,7 @@ namespace VisionGuard.ViewModels
 
             // 释放监控服务
             MonitorVm.Dispose();
+            MultiSourceVm.Dispose();
             // 释放 WebSocket 连接与事件循环线程
             _serverPushService.Dispose();
         }
@@ -250,16 +265,43 @@ namespace VisionGuard.ViewModels
         private void RefreshHeartbeat(ServerPushService sps)
         {
             var targets = SettingsVm.GetWatchedClasses();
+            var sourceStatuses = MultiSourceVm.Statuses;
+            object[] heartbeatSources = sourceStatuses.Any(x => x.IsReady)
+                ? sourceStatuses.Where(x => x.IsReady).Select(x =>
+                {
+                    var slot = MultiSourceVm.Sources.First(s => s.SourceId == x.SourceId);
+                    return (object)new Dictionary<string, object>
+                    {
+                        ["sourceId"] = x.SourceId, ["sourceName"] = x.SourceName,
+                        ["isMonitoring"] = x.IsMonitoring, ["isReady"] = x.IsReady,
+                        ["modelKey"] = x.ModelKey, ["actualFps"] = x.ActualFps,
+                        ["error"] = x.Error, ["cooldown"] = slot.Cooldown,
+                        ["confidence"] = slot.ThresholdPercent / 100d, ["targets"] = slot.Targets,
+                        ["targetSamplingRate"] = System.Math.Clamp(slot.TargetFps, 1, 5),
+                    };
+                }).ToArray()
+                : new object[]
+                {
+                    new Dictionary<string, object>
+                    {
+                        ["sourceId"] = "default",
+                        ["sourceName"] = MonitorVm.TargetWindow?.Title ?? "默认来源",
+                        ["isMonitoring"] = MonitorVm.IsMonitoring,
+                        ["isReady"] = MonitorVm.HasCaptureTarget,
+                        ["modelKey"] = SettingsVm.SelectedModelName,
+                    }
+                };
             sps.UpdateHeartbeatParams(
-                isMonitoring: MonitorVm.IsMonitoring,
-                isReady: MonitorVm.HasCaptureTarget, // 选区已设定即就绪，与 WinForms 对齐
+                isMonitoring: MonitorVm.IsMonitoring || sourceStatuses.Any(x => x.IsMonitoring),
+                isReady: MonitorVm.HasCaptureTarget || sourceStatuses.Any(x => x.IsReady),
                 cooldown: SettingsVm.Cooldown,
                 confidence: SettingsVm.Threshold / 100f,
                 targets: string.Join(",", targets),
                 targetSamplingRate: SettingsVm.SamplingRate,
                 modelKey: SettingsVm.SelectedModelName,
                 modelOptions: Utils.ModelManager.ModelKeys,
-                canSwitchModelWhileMonitoring: false);
+                canSwitchModelWhileMonitoring: false,
+                sources: heartbeatSources);
             sps.SendHeartbeatNow();
         }
     }

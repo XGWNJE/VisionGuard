@@ -7,8 +7,20 @@ namespace VisionGuard
 {
     public partial class App : Application
     {
+        private Utils.SingleInstanceGuard? _singleInstanceGuard;
+        private Services.ResidentBridge? _residentBridge;
+
         protected override void OnStartup(StartupEventArgs e)
         {
+            _singleInstanceGuard = new Utils.SingleInstanceGuard("Wpf");
+            if (!_singleInstanceGuard.IsPrimaryInstance)
+            {
+                _singleInstanceGuard.Dispose();
+                _singleInstanceGuard = null;
+                Shutdown();
+                return;
+            }
+
             EnsureWpfFontEnvironment();
 
             // 高 DPI 感知（PerMonitorV2）
@@ -32,6 +44,16 @@ namespace VisionGuard
             });
 
             base.OnStartup(e);
+            _residentBridge = new Services.ResidentBridge("Wpf", () => Dispatcher.BeginInvoke(new Action(Shutdown)));
+        }
+
+        protected override void OnExit(ExitEventArgs e)
+        {
+            _residentBridge?.Dispose();
+            _residentBridge = null;
+            _singleInstanceGuard?.Dispose();
+            _singleInstanceGuard = null;
+            base.OnExit(e);
         }
 
         private static void EnsureWpfFontEnvironment()

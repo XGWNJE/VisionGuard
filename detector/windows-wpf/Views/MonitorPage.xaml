@@ -43,6 +43,36 @@
                     Command="{Binding StartCommand}"/>
             <Button Content="■ 停止监控" Style="{StaticResource DarkButton}" Height="40"
                     Command="{Binding StopCommand}"/>
+
+            <TextBlock Text="三图片来源（测试模式）" Style="{StaticResource TitleText}" Margin="0,20,0,12"/>
+            <ItemsControl ItemsSource="{Binding DataContext.MultiSourceVm.Sources, RelativeSource={RelativeSource AncestorType=Window}}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Style="{StaticResource CardBorder}" Margin="0,0,0,10">
+                            <StackPanel>
+                                <TextBox Text="{Binding SourceName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
+                                <TextBlock Text="{Binding ImageFileName}" Style="{StaticResource CaptionText}" Margin="0,0,0,6"/>
+                                <Button Content="选择测试图片…" Style="{StaticResource DarkButton}" Command="{Binding PickImageCommand}" Margin="0,0,0,8"/>
+                                <Button Content="{Binding MaskInfo, StringFormat=编辑遮罩…（{0}）}" Style="{StaticResource DarkButton}" Command="{Binding EditMasksCommand}" Margin="0,0,0,8"/>
+                                <ComboBox ItemsSource="{Binding ModelOptions}" SelectedItem="{Binding ModelKey}" Margin="0,0,0,8"/>
+                                <TextBox Text="{Binding Targets, UpdateSourceTrigger=PropertyChanged}" ToolTip="检测类别，逗号分隔" Margin="0,0,0,8"/>
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                                    <StackPanel><TextBlock Text="阈值 %" Style="{StaticResource CaptionText}"/><TextBox Text="{Binding ThresholdPercent}"/></StackPanel>
+                                    <StackPanel Grid.Column="1" Margin="6,0"><TextBlock Text="FPS" Style="{StaticResource CaptionText}"/><TextBox Text="{Binding TargetFps}"/></StackPanel>
+                                    <StackPanel Grid.Column="2"><TextBlock Text="冷却秒" Style="{StaticResource CaptionText}"/><TextBox Text="{Binding Cooldown}"/></StackPanel>
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition Width="2*"/></Grid.ColumnDefinitions>
+                                    <Button Content="▶ 启动" Style="{StaticResource PrimaryButton}" Command="{Binding StartCommand}" Margin="0,0,6,0"/>
+                                    <Button Grid.Column="1" Content="■ 停止" Style="{StaticResource DarkButton}" Command="{Binding StopCommand}" Margin="0,0,6,0"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding StatusText}" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

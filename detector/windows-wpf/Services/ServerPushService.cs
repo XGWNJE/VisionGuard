@@ -30,10 +30,10 @@ namespace VisionGuard.Services
         public event EventHandler<string> ConnectionStateChanged;
 
         /// <summary>"pause" / "resume" / "stop-alarm"</summary>
-        public event EventHandler<string> CommandReceived;
+        public event EventHandler<RemoteCommandEventArgs> CommandReceived;
 
         /// <summary>set-config 命令：key=配置项名, value=新值</summary>
-        public event EventHandler<KeyValuePair<string, string>> SetConfigReceived;
+        public event EventHandler<RemoteSetConfigEventArgs> SetConfigReceived;
 
         // ── 常量 ─────────────────────────────────────────────────────
         private const int HEARTBEAT_INTERVAL_MS = 3_000;
@@ -69,6 +69,7 @@ namespace VisionGuard.Services
         private string _hbModelKey = "";
         private string[] _hbModelOptions = Array.Empty<string>();
         private bool _hbCanSwitchModelWhileMonitoring;
+        private object[] _hbSources = Array.Empty<object>();
 
         private bool _disposed;
 
@@ -159,7 +160,8 @@ namespace VisionGuard.Services
         public void UpdateHeartbeatParams(bool isMonitoring, bool isReady,
             int cooldown, float confidence, string targets,
             int targetSamplingRate = 3, string modelKey = "",
-            string[]? modelOptions = null, bool canSwitchModelWhileMonitoring = false)
+            string[]? modelOptions = null, bool canSwitchModelWhileMonitoring = false,
+            object[]? sources = null)
         {
             lock (_hbParamsLock)
             {
@@ -172,6 +174,7 @@ namespace VisionGuard.Services
                 _hbModelKey = modelKey ?? "";
                 _hbModelOptions = modelOptions == null ? Array.Empty<string>() : (string[])modelOptions.Clone();
                 _hbCanSwitchModelWhileMonitoring = canSwitchModelWhileMonitoring;
+                _hbSources = sources == null ? Array.Empty<object>() : (object[])sources.Clone();
             }
         }
 
@@ -188,6 +191,8 @@ namespace VisionGuard.Services
                     ["alertId"] = alert.AlertId,
                     ["deviceId"] = _deviceId,
                     ["deviceName"] = _deviceName,
+                    ["sourceId"] = alert.SourceId,
+                    ["sourceName"] = alert.SourceName,
                     ["timestamp"] = alert.Timestamp.ToString("o"),
                     ["detections"] = BuildDetectionsPayload(alert.Detections),
                     ["timings"] = alert.Timings,
@@ -233,15 +238,18 @@ namespace VisionGuard.Services
             }
         }
 
-        public void SendCommandAck(string command, bool success, string reason = "")
+        public void SendCommandAck(string command, bool success, string reason = "", string requestId = "", string targetSourceId = "")
         {
-            _session?.SendJson(new Dictionary<string, object>
+            var message = new Dictionary<string, object>
             {
                 ["type"] = "command-ack",
                 ["command"] = command,
                 ["success"] = success,
                 ["reason"] = reason ?? "",
-            });
+            };
+            if (!string.IsNullOrWhiteSpace(requestId)) message["requestId"] = requestId;
+            if (!string.IsNullOrWhiteSpace(targetSourceId)) message["targetSourceId"] = targetSourceId;
+            _session?.SendJson(message);
         }
 
         public void SendHeartbeatNow()
@@ -256,6 +264,7 @@ namespace VisionGuard.Services
             string modelKey;
             string[] modelOptions;
             bool canSwitchModelWhileMonitoring;
+            object[] sources;
             lock (_hbParamsLock)
             {
                 isMonitoring = _hbIsMonitoring;
@@ -267,6 +276,7 @@ namespace VisionGuard.Services
                 modelKey = _hbModelKey;
                 modelOptions = (string[])_hbModelOptions.Clone();
                 canSwitchModelWhileMonitoring = _hbCanSwitchModelWhileMonitoring;
+                sources = (object[])_hbSources.Clone();
             }
             s.SendJson(new Dictionary<string, object>
             {
@@ -282,6 +292,9 @@ namespace VisionGuard.Services
                 ["modelKey"] = modelKey,
                 ["modelOptions"] = modelOptions,
                 ["canSwitchModelWhileMonitoring"] = canSwitchModelWhileMonitoring,
+                ["capabilities"] = new[] { "monitor-control", "config-control", "request-correlation", "screenshot-on-demand", "directml", "source-control" },
+                ["components"] = new Dictionary<string, object> { ["detectorApp"] = "running" },
+                ["sources"] = sources,
             });
         }
 
@@ -735,6 +748,8 @@ namespace VisionGuard.Services
                         ["modelKey"] = modelKey,
                         ["modelOptions"] = modelOptions,
                         ["canSwitchModelWhileMonitoring"] = canSwitchModelWhileMonitoring,
+                        ["capabilities"] = new[] { "monitor-control", "config-control", "request-correlation", "screenshot-on-demand", "directml", "source-control" },
+                        ["components"] = new Dictionary<string, object> { ["detectorApp"] = "running" },
                     });
                     // 注意：发送心跳后绝不更新 _lastMessageAtTicks
                 }
@@ -764,16 +779,20 @@ namespace VisionGuard.Services
                         case "command":
                         {
                             string cmd = SimpleJson.GetString(d, "command");
+                            string requestId = SimpleJson.GetString(d, "requestId", "");
+                            string targetSourceId = SimpleJson.GetString(d, "targetSourceId", "");
                             if (!string.IsNullOrEmpty(cmd))
-                                try { _parent.CommandReceived?.Invoke(_parent, cmd); } catch { }
+                                try { _parent.CommandReceived?.Invoke(_parent, new RemoteCommandEventArgs(cmd, requestId, targetSourceId)); } catch { }
                             break;
                         }
                         case "set-config":
                         {
                             string key = SimpleJson.GetString(d, "key");
                             string val = SimpleJson.GetString(d, "value");
+                            string requestId = SimpleJson.GetString(d, "requestId", "");
+                            string targetSourceId = SimpleJson.GetString(d, "targetSourceId", "");
                             if (!string.IsNullOrEmpty(key))
-                                try { _parent.SetConfigReceived?.Invoke(_parent, new KeyValuePair<string, string>(key, val)); } catch { }
+                                try { _parent.SetConfigReceived?.Invoke(_parent, new RemoteSetConfigEventArgs(key, val, requestId, targetSourceId)); } catch { }
                             break;
                         }
                         case "request-screenshot":

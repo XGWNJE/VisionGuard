@@ -40,6 +40,17 @@ namespace VisionGuard.ViewModels
 
         public string ModelStatusText => Utils.ModelManager.IsDownloaded(SelectedModelName) ? "✓ 已下载" : "○ 未下载（点击下方按钮下载）";
 
+        private int _selectedBackendIndex;
+        public int SelectedBackendIndex
+        {
+            get => _selectedBackendIndex;
+            set => SetProperty(ref _selectedBackendIndex, value);
+        }
+
+        public Inference.InferenceBackend PreferredBackend => SelectedBackendIndex == 1
+            ? Inference.InferenceBackend.Cpu
+            : Inference.InferenceBackend.DirectML;
+
         public RelayCommand DownloadModelCommand { get; }
 
         private string _modelDownloadProgress = "";
@@ -149,6 +160,7 @@ namespace VisionGuard.ViewModels
             SamplingRate     = SettingsStore.GetInt("TargetFps", 3);
             Cooldown         = SettingsStore.GetInt("AlertCooldownSeconds", 5);
             SelectedModelIndex = SettingsStore.GetInt("SelectedModelIndex", 0);
+            SelectedBackendIndex = SettingsStore.GetInt("SelectedBackendIndex", 0) == 1 ? 1 : 0;
 
             var watched = SettingsStore.GetStringList("WatchedClasses");
             WatchPerson     = watched.Contains("person");
@@ -169,6 +181,7 @@ namespace VisionGuard.ViewModels
             SettingsStore.Set("TargetFps", SamplingRate);
             SettingsStore.Set("AlertCooldownSeconds", Cooldown);
             SettingsStore.Set("SelectedModelIndex", SelectedModelIndex);
+            SettingsStore.Set("SelectedBackendIndex", SelectedBackendIndex);
 
             var watched = GetWatchedClasses();
             SettingsStore.Set("WatchedClasses", string.Join(",", watched));

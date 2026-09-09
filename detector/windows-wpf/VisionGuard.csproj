@@ -32,21 +32,21 @@
     <!-- 删除整个 runtimes 目录 -->
     <Exec Command="powershell -Command &quot;Remove-Item '$(OutputPath)runtimes' -Recurse -Force -ErrorAction SilentlyContinue&quot;" ContinueOnError="true" />
     <!-- 删除非 win-x64 的残留（兜底） -->
-    <Exec Command="powershell -Command &quot;Get-ChildItem '$(OutputPath)runtimes' -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'win-x64' } | Remove-Item -Recurse -Force&quot;" ContinueOnError="true" />
+    <Exec Command="powershell -Command &quot;if (Test-Path '$(OutputPath)runtimes') { Get-ChildItem '$(OutputPath)runtimes' -Directory | Where-Object { $_.Name -ne 'win-x64' } | Remove-Item -Recurse -Force }&quot;" ContinueOnError="true" />
     <!-- 删除 .lib 导入库 -->
     <Exec Command="powershell -Command &quot;Get-ChildItem '$(OutputPath)' -Recurse -Filter '*.lib' -ErrorAction SilentlyContinue | Remove-Item -Force&quot;" ContinueOnError="true" />
     <!-- 删除 .pdb 调试符号 -->
     <Exec Command="powershell -Command &quot;Get-ChildItem '$(OutputPath)' -Recurse -Filter '*.pdb' -ErrorAction SilentlyContinue | Remove-Item -Force&quot;" ContinueOnError="true" />
     <!-- 删除 .NET 9 无用的 binding redirects config -->
     <Exec Command="powershell -Command &quot;Get-ChildItem '$(OutputPath)' -Filter '*.dll.config' -ErrorAction SilentlyContinue | Remove-Item -Force&quot;" ContinueOnError="true" />
+    <!-- DirectML NuGet 同时携带调试层，Release 运行不需要。 -->
+    <Delete Files="$(OutputPath)DirectML.Debug.dll" Condition="'$(Configuration)' == 'Release' And Exists('$(OutputPath)DirectML.Debug.dll')" />
     <Message Importance="high" Text="✓ 已清理冗余输出文件" />
   </Target>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.19.0" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.19.0" />
     <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="1.19.0" />
-
   </ItemGroup>
 
   <ItemGroup>
@@ -68,6 +68,9 @@
 
   <ItemGroup>
     <Compile Include="..\windows-shared\Utils\ApiKeyProvider.cs" Link="Utils\ApiKeyProvider.cs" />
+    <Compile Include="..\windows-shared\Utils\SingleInstanceGuard.cs" Link="Utils\SingleInstanceGuard.cs" />
+    <Compile Include="..\windows-shared\Services\RemoteControlEventArgs.cs" Link="Services\RemoteControlEventArgs.cs" />
+    <Compile Include="..\windows-shared\Services\ResidentBridge.cs" Link="Services\ResidentBridge.cs" />
     <Compile Update="Properties\Resources.Designer.cs">
       <DesignTime>True</DesignTime>
       <AutoGen>True</AutoGen>

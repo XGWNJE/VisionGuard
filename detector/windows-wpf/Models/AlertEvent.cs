@@ -13,15 +13,19 @@ namespace VisionGuard.Models
     public class AlertEvent : EventArgs
     {
         public string AlertId { get; }
+        public string SourceId { get; }
+        public string SourceName { get; }
         public DateTime Timestamp { get; }
         public IReadOnlyList<Detection> Detections { get; }
         public Bitmap Snapshot { get; }
         public Dictionary<string, long> Timings { get; }
 
         public AlertEvent(string alertId, IReadOnlyList<Detection> detections, Bitmap snapshot,
-                          Dictionary<string, long> timings)
+                          Dictionary<string, long> timings, string sourceId = "default", string sourceName = "默认来源")
         {
             AlertId    = alertId;
+            SourceId   = string.IsNullOrWhiteSpace(sourceId) ? "default" : sourceId;
+            SourceName = string.IsNullOrWhiteSpace(sourceName) ? "默认来源" : sourceName;
             Timestamp  = NtpSync.UtcNow;
             Detections = detections;
             Snapshot   = snapshot;

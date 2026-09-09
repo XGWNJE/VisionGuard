@@ -58,7 +58,7 @@ namespace VisionGuard.ViewModels
                     // 同步主窗口状态栏与预览
                     if (_mainVm != null)
                     {
-                        _mainVm.StatusText = value ? "● 监控中" : "○ 已停止";
+                        _mainVm.StatusText = value ? $"● 监控中 · {_monitorService.ActiveBackend}" : "○ 已停止";
                         if (!value) _mainVm.ClearPreview();
                     }
                 }
@@ -137,14 +137,14 @@ namespace VisionGuard.ViewModels
             {
                 using (e.Frame)
                 {
-                    var bitmapSource = ConvertToBitmapSource(e.Frame);
+                    var bitmapSource = ConvertBitmapToSource(e.Frame);
                     _mainVm.UpdatePreview(bitmapSource, e.Detections);
                     _mainVm.InferMsText = $"推理 {e.InferenceMs} ms";
                 }
             });
         }
 
-        internal async void StartMonitor(bool remote = false)
+        internal async void StartMonitor(bool remote = false, string requestId = "")
         {
             var config = BuildConfig();
 
@@ -156,7 +156,7 @@ namespace VisionGuard.ViewModels
                     string msg = "请先选择捕获区域（最小 32×32）。";
                     if (remote)
                     {
-                        _serverPushService.SendCommandAck("resume", false, msg);
+                        _serverPushService.SendCommandAck("resume", false, msg, requestId);
                         return;
                     }
                     MessageBox.Show(msg, "VisionGuard", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -170,7 +170,7 @@ namespace VisionGuard.ViewModels
                     string msg = "请先点击「选择窗口…」选择目标窗口。";
                     if (remote)
                     {
-                        _serverPushService.SendCommandAck("resume", false, msg);
+                        _serverPushService.SendCommandAck("resume", false, msg, requestId);
                         return;
                     }
                     MessageBox.Show(msg, "VisionGuard", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -184,7 +184,7 @@ namespace VisionGuard.ViewModels
             {
                 if (remote)
                 {
-                    _serverPushService.SendCommandAck("start", false, "模型未下载：" + _settingsVm.SelectedModelName);
+                    _serverPushService.SendCommandAck("resume", false, "模型未下载：" + _settingsVm.SelectedModelName, requestId);
                     return;
                 }
 
@@ -212,30 +212,34 @@ namespace VisionGuard.ViewModels
 
             try
             {
-                _monitorService.Start(modelPath, config);
+                _monitorService.Start(modelPath, config, _settingsVm.PreferredBackend);
                 IsMonitoring = true;
+                if (_monitorService.ActiveBackend == "Cpu" && !string.IsNullOrWhiteSpace(_monitorService.BackendFallbackReason))
+                {
+                    ModelDownloadStatus = "DirectML 不可用，当前使用 CPU：" + _monitorService.BackendFallbackReason;
+                }
             }
             catch (Exception ex)
             {
                 string fullMsg = BuildExceptionMessage(ex);
                 if (remote)
-                    _serverPushService.SendCommandAck("resume", false, "启动异常：" + ex.Message);
+                    _serverPushService.SendCommandAck("resume", false, "启动异常：" + ex.Message, requestId);
                 else
                     MessageBox.Show(fullMsg, "启动失败", MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
 
             if (remote)
-                _serverPushService.SendCommandAck("resume", true);
+                _serverPushService.SendCommandAck("resume", true, requestId: requestId);
         }
 
-        internal void StopMonitor(bool remote = false)
+        internal void StopMonitor(bool remote = false, string requestId = "")
         {
             _monitorService.Stop();
             IsMonitoring = false;
 
             if (remote)
-                _serverPushService.SendCommandAck("pause", true);
+                _serverPushService.SendCommandAck("pause", true, requestId: requestId);
         }
 
         /// <summary>远控暂停：保留 Timer，跳过帧处理。</summary>
@@ -251,7 +255,7 @@ namespace VisionGuard.ViewModels
         }
 
         /// <summary>远控参数调整（cooldown / confidence / targets / targetSamplingRate / modelKey）。</summary>
-        public void ApplyRemoteConfig(string key, string value)
+        public void ApplyRemoteConfig(string key, string value, string requestId = "")
         {
             switch (key)
             {
@@ -261,10 +265,10 @@ namespace VisionGuard.ViewModels
                         _settingsVm.Cooldown = cd;
                         if (_monitorService.IsStarted)
                             _monitorService.UpdateConfig(BuildConfig());
-                        _serverPushService.SendCommandAck("set-config:cooldown", true);
+                        _serverPushService.SendCommandAck("set-config:cooldown", true, requestId: requestId);
                     }
                     else
-                        _serverPushService.SendCommandAck("set-config:cooldown", false, "值无效（1–300）");
+                        _serverPushService.SendCommandAck("set-config:cooldown", false, "值无效（1–300）", requestId);
                     break;
 
                 case "confidence":
@@ -276,10 +280,10 @@ namespace VisionGuard.ViewModels
                         _settingsVm.Threshold = (int)(conf * 100);
                         if (_monitorService.IsStarted)
                             _monitorService.UpdateConfig(BuildConfig());
-                        _serverPushService.SendCommandAck("set-config:confidence", true);
+                        _serverPushService.SendCommandAck("set-config:confidence", true, requestId: requestId);
                     }
                     else
-                        _serverPushService.SendCommandAck("set-config:confidence", false, "值无效（0.1–0.95）");
+                        _serverPushService.SendCommandAck("set-config:confidence", false, "值无效（0.1–0.95）", requestId);
                     break;
 
                 case "targets":
@@ -287,7 +291,7 @@ namespace VisionGuard.ViewModels
                     _settingsVm.SetWatchedClasses(value);
                     if (_monitorService.IsStarted)
                         _monitorService.UpdateConfig(BuildConfig());
-                    _serverPushService.SendCommandAck("set-config:targets", true);
+                    _serverPushService.SendCommandAck("set-config:targets", true, requestId: requestId);
                     break;
 
                 case "targetSamplingRate":
@@ -297,31 +301,31 @@ namespace VisionGuard.ViewModels
                         if (_monitorService.IsStarted)
                             _monitorService.UpdateConfig(BuildConfig());
                         _settingsVm.Save();
-                        _serverPushService.SendCommandAck("set-config:targetSamplingRate", true);
+                        _serverPushService.SendCommandAck("set-config:targetSamplingRate", true, requestId: requestId);
                     }
                     else
-                        _serverPushService.SendCommandAck("set-config:targetSamplingRate", false, "值无效（1–5）");
+                        _serverPushService.SendCommandAck("set-config:targetSamplingRate", false, "值无效（1–5）", requestId);
                     break;
 
                 case "modelKey":
                     if (_monitorService.IsStarted)
                     {
-                        _serverPushService.SendCommandAck("set-config:modelKey", false, "请先停止监控再切换模型");
+                        _serverPushService.SendCommandAck("set-config:modelKey", false, "请先停止监控再切换模型", requestId);
                         break;
                     }
                     int modelIndex = Array.IndexOf(Utils.ModelManager.ModelKeys, value);
                     if (modelIndex < 0)
                     {
-                        _serverPushService.SendCommandAck("set-config:modelKey", false, "模型不支持");
+                        _serverPushService.SendCommandAck("set-config:modelKey", false, "模型不支持", requestId);
                         break;
                     }
                     _settingsVm.SelectedModelIndex = modelIndex;
                     _settingsVm.Save();
-                    _serverPushService.SendCommandAck("set-config:modelKey", true);
+                    _serverPushService.SendCommandAck("set-config:modelKey", true, requestId: requestId);
                     break;
 
                 default:
-                    _serverPushService.SendCommandAck($"set-config:{key}", false, $"未知配置项：{key}");
+                    _serverPushService.SendCommandAck($"set-config:{key}", false, $"未知配置项：{key}", requestId);
                     break;
             }
         }
@@ -391,13 +395,13 @@ namespace VisionGuard.ViewModels
                 {
                     // 窗口子区域模式：抓取整个窗口作为背景
                     using var bmp = WindowCapturer.CaptureWindow(TargetWindow!.Handle, Rectangle.Empty);
-                    bg = ConvertToBitmapSource(bmp);
+                    bg = ConvertBitmapToSource(bmp);
                 }
                 else
                 {
                     // 全屏区域模式：抓取主屏幕作为背景（用于显示）
                     using var bmp = ScreenCapturer.CapturePrimaryScreen();
-                    bg = ConvertToBitmapSource(bmp);
+                    bg = ConvertBitmapToSource(bmp);
                 }
             }
             catch { /* 即使抓图失败也允许选区 */ }
@@ -438,7 +442,7 @@ namespace VisionGuard.ViewModels
             {
                 using var bmp = GrabFrame();
                 if (bmp != null)
-                    bg = ConvertToBitmapSource(bmp);
+                    bg = ConvertBitmapToSource(bmp);
             }
             catch (Exception ex)
             {
@@ -642,7 +646,7 @@ namespace VisionGuard.ViewModels
             return SimpleJson.ToJson(dtos);
         }
 
-        private static BitmapSource ConvertToBitmapSource(System.Drawing.Bitmap bmp)
+        internal static BitmapSource ConvertBitmapToSource(System.Drawing.Bitmap bmp)
         {
             // 使用 WPF 原生 API 从 HBITMAP 创建 BitmapSource，避免手动处理像素格式/stride
             var hBitmap = bmp.GetHbitmap();

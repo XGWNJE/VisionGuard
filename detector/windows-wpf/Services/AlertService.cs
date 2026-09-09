@@ -23,6 +23,14 @@ namespace VisionGuard.Services
     /// </summary>
     public class AlertService : IDisposable
     {
+        private readonly string _sourceId;
+        private readonly string _sourceName;
+
+        public AlertService(string sourceId = "default", string sourceName = "默认来源")
+        {
+            _sourceId = string.IsNullOrWhiteSpace(sourceId) ? "default" : sourceId;
+            _sourceName = string.IsNullOrWhiteSpace(sourceName) ? "默认来源" : sourceName;
+        }
         // ── 对外事件 ─────────────────────────────────────────────────
         public event EventHandler<AlertEvent> AlertTriggered;
 
@@ -92,7 +100,7 @@ namespace VisionGuard.Services
             };
 
             // 触发事件（传递本帧所有检测结果）
-            AlertTriggered?.Invoke(this, new AlertEvent(alertId, detections.AsReadOnly(), snapshot, finalTimings));
+            AlertTriggered?.Invoke(this, new AlertEvent(alertId, detections.AsReadOnly(), snapshot, finalTimings, _sourceId, _sourceName));
         }
 
         /// <summary>当前是否处于报警状态（始终 false，保留接口兼容）</summary>
