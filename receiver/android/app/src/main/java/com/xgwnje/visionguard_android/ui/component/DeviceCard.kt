@@ -84,14 +84,15 @@ import kotlin.math.roundToInt
 fun DeviceCard(
     device: DeviceInfo,
     initialConfig: DeviceConfig?,
-    onCommand: (String) -> Unit,
-    onSetConfig: (key: String, value: String) -> Unit,
+    onCommand: (String, String?) -> Unit,
+    onSetConfig: (key: String, value: String, sourceId: String?) -> Unit,
     modifier: Modifier = Modifier,
     dragHandleModifier: Modifier = Modifier
 ) {
     val model = remember(device) { buildDeviceCardUiModel(device) }
     val chrome = remember { buildDeviceCardChrome() }
     var showConfigEditor by remember { mutableStateOf(false) }
+    var configSourceId by remember { mutableStateOf<String?>(null) }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -110,17 +111,34 @@ fun DeviceCard(
             DeviceCardActions(
                 model = model,
                 chrome = chrome,
-                onCommand = onCommand,
-                onConfigClick = { showConfigEditor = true }
+                onCommand = { command -> onCommand(command, null) },
+                onConfigClick = { configSourceId = null; showConfigEditor = true }
             )
+            if (device.sources.isNotEmpty()) {
+                SourceControlList(
+                    device = device,
+                    onCommand = onCommand,
+                    onConfig = { sourceId -> configSourceId = sourceId; showConfigEditor = true }
+                )
+            }
         }
     }
 
     if (showConfigEditor) {
+        val source = device.sources.firstOrNull { it.sourceId == configSourceId }
+        val deviceConfig = initialConfig ?: DeviceConfig()
         DeviceConfigBottomSheet(
             device = device,
-            initialConfig = initialConfig ?: DeviceConfig(),
-            onSetConfig = onSetConfig,
+            initialConfig = source?.let {
+                DeviceConfig(
+                    it.cooldown ?: deviceConfig.cooldown,
+                    it.confidence ?: deviceConfig.confidence,
+                    it.targets ?: deviceConfig.targets,
+                    it.targetSamplingRate ?: deviceConfig.targetSamplingRate,
+                    it.modelKey.ifBlank { deviceConfig.modelKey }
+                )
+            } ?: deviceConfig,
+            onSetConfig = { key, value -> onSetConfig(key, value, configSourceId) },
             onDismiss = { showConfigEditor = false }
         )
     }
@@ -283,15 +301,16 @@ private fun DeviceCardActions(
     onCommand: (String) -> Unit,
     onConfigClick: () -> Unit
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(
                 horizontal = chrome.actionAreaHorizontalPaddingDp.dp,
                 vertical = chrome.actionAreaVerticalPaddingDp.dp
             ),
-        horizontalArrangement = Arrangement.spacedBy(chrome.columnGapDp.dp)
+        verticalArrangement = Arrangement.spacedBy(chrome.columnGapDp.dp)
     ) {
+      Row(horizontalArrangement = Arrangement.spacedBy(chrome.columnGapDp.dp)) {
         DeviceActionButton(
             label = model.controlActionLabel,
             icon = if (model.controlCommand == "pause") Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -314,6 +333,83 @@ private fun DeviceCardActions(
             onClick = onConfigClick,
             modifier = Modifier.weight(1f)
         )
+      }
+      if (model.wpfLifecycleCommand != null || model.winFormsLifecycleCommand != null) {
+        Row(horizontalArrangement = Arrangement.spacedBy(chrome.columnGapDp.dp)) {
+          model.wpfLifecycleCommand?.let { command ->
+            DeviceActionButton(
+              label = if (command.startsWith("open")) "打开 WPF" else "关闭 WPF",
+              icon = if (command.startsWith("open")) Icons.Default.PlayArrow else Icons.Default.Pause,
+              enabled = model.lifecycleControlsEnabled, emphasized = command.startsWith("open"), danger = false,
+              heightDp = chrome.actionButtonHeightDp, contentHorizontalPaddingDp = 8,
+              onClick = { onCommand(command) }, modifier = Modifier.weight(1f)
+            )
+          }
+          model.winFormsLifecycleCommand?.let { command ->
+            DeviceActionButton(
+              label = if (command.startsWith("open")) "打开 WinForms" else "关闭 WinForms",
+              icon = if (command.startsWith("open")) Icons.Default.PlayArrow else Icons.Default.Pause,
+              enabled = model.lifecycleControlsEnabled, emphasized = command.startsWith("open"), danger = false,
+              heightDp = chrome.actionButtonHeightDp, contentHorizontalPaddingDp = 8,
+              onClick = { onCommand(command) }, modifier = Modifier.weight(1f)
+            )
+          }
+        }
+      }
+    }
+}
+
+@Composable
+private fun SourceControlList(
+    device: DeviceInfo,
+    onCommand: (String, String?) -> Unit,
+    onConfig: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        device.sources.forEach { source ->
+            Surface(
+                shape = RoundedCornerShape(18.dp), color = ReceiverSurfaceMuted,
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.7f))
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(source.sourceName, style = MaterialTheme.typography.titleSmall, color = ReceiverPrimary, fontWeight = FontWeight.Bold)
+                        val status = when {
+                            source.error?.isNotBlank() == true -> source.error
+                            source.isMonitoring -> "监控中 · ${source.actualFps?.let { "%.1f FPS".format(it) } ?: "频率计算中"}"
+                            !source.isReady -> "未绑定"
+                            else -> "已停止 · ${source.modelKey.ifBlank { "未选模型" }}"
+                        }
+                        Text(status, style = MaterialTheme.typography.bodySmall, color = ReceiverMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    DeviceActionButton(
+                        label = if (source.isMonitoring) "停止" else "启动",
+                        icon = if (source.isMonitoring) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        enabled = device.online && "source-control" in device.capabilities && source.isReady && source.error.isNullOrBlank(),
+                        emphasized = !source.isMonitoring, danger = source.isMonitoring,
+                        heightDp = 42, contentHorizontalPaddingDp = 10,
+                        onClick = { onCommand(if (source.isMonitoring) "pause" else "resume", source.sourceId) },
+                        modifier = Modifier.width(92.dp)
+                    )
+                    DeviceActionButton(
+                        label = "参数",
+                        icon = Icons.Default.Tune,
+                        enabled = device.online && "source-control" in device.capabilities && source.isReady,
+                        emphasized = false, danger = false,
+                        heightDp = 42, contentHorizontalPaddingDp = 8,
+                        onClick = { onConfig(source.sourceId) },
+                        modifier = Modifier.width(82.dp)
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -974,7 +1070,9 @@ private fun cooldownLabel(seconds: Int): String =
 private fun statusForeground(tone: DeviceStatusTone): Color =
     when (tone) {
         DeviceStatusTone.OFFLINE -> ReceiverMuted
+        DeviceStatusTone.RESIDENT_ONLY -> ReceiverAmber
         DeviceStatusTone.MONITORING -> ReceiverPrimary
+        DeviceStatusTone.PARTIAL_MONITORING -> ReceiverAmber
         DeviceStatusTone.NOT_READY -> ReceiverAmber
         DeviceStatusTone.READY -> ReceiverPrimary
     }
@@ -982,7 +1080,9 @@ private fun statusForeground(tone: DeviceStatusTone): Color =
 private fun statusContainer(tone: DeviceStatusTone): Color =
     when (tone) {
         DeviceStatusTone.OFFLINE -> ReceiverSurface.copy(alpha = 0.74f)
+        DeviceStatusTone.RESIDENT_ONLY -> ReceiverAmber.copy(alpha = 0.14f)
         DeviceStatusTone.MONITORING -> ReceiverPrimarySoft.copy(alpha = 0.78f)
+        DeviceStatusTone.PARTIAL_MONITORING -> ReceiverAmber.copy(alpha = 0.14f)
         DeviceStatusTone.NOT_READY -> ReceiverAmber.copy(alpha = 0.14f)
         DeviceStatusTone.READY -> ReceiverPrimarySoft.copy(alpha = 0.78f)
     }

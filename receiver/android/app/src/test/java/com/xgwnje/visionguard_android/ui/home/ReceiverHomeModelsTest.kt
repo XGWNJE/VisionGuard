@@ -8,6 +8,7 @@ import com.xgwnje.visionguard_android.data.model.DeviceInfo
 import com.google.gson.Gson
 import java.time.ZonedDateTime
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReceiverHomeModelsTest {
@@ -161,6 +162,25 @@ class ReceiverHomeModelsTest {
     }
 
     @Test
+    fun residentCapabilityBuildsIndependentWpfAndWinFormsLifecycleActions() {
+        val device = DeviceInfo(
+            deviceId = "win", deviceName = "Windows", online = true,
+            isMonitoring = false, isReady = false, lastSeen = "",
+            capabilities = listOf("app-lifecycle-control"),
+            components = mapOf("resident" to "running", "wpfApp" to "running", "winFormsApp" to "stopped")
+        )
+
+        val model = buildDeviceCardUiModel(device)
+
+        assertEquals("close-wpf", model.wpfLifecycleCommand)
+        assertEquals("open-winforms", model.winFormsLifecycleCommand)
+        assertEquals("resume", model.controlCommand)
+        assertEquals(false, model.controlsEnabled)
+        assertEquals(true, model.lifecycleControlsEnabled)
+        assertEquals("驻留在线 · 程序关闭", model.statusLabel)
+    }
+
+    @Test
     fun deviceConfigEditorDisablesApplyWhenNothingChanged() {
         val device = DeviceInfo(
             deviceId = "d1",
@@ -228,6 +248,35 @@ class ReceiverHomeModelsTest {
         assertEquals(listOf("new-local", "old-history"), merged.map { it.alertId })
         assertEquals(true, merged.first().hasScreenshot)
         assertEquals("/screenshots/new-local.jpg", merged.first().screenshotUrl)
+    }
+
+    @Test
+    fun alertRetentionKeepsLowFrequencySourcesWhenOneSourceIsNoisy() {
+        val noisy = (1L..20L).map { n ->
+            AlertMessage(alertId = "noisy-$n", deviceId = "pc", sourceId = "front", createdAt = 1000L + n)
+        }
+        val quiet = AlertMessage(alertId = "quiet", deviceId = "pc", sourceId = "back", createdAt = 1L)
+        val retained = mergeSortAlerts(emptyList(), noisy + quiet, limit = 10)
+        assertEquals(10, retained.size)
+        assertTrue(retained.any { it.alertId == "quiet" })
+        assertEquals("noisy-20", retained.first().alertId)
+    }
+
+    @Test
+    fun multiSourceDeviceUsesPartialAggregateAndDisablesLegacyWholeDeviceControl() {
+        val device = DeviceInfo(
+            deviceId = "pc", deviceName = "PC", clientType = "windows", online = true,
+            isMonitoring = true, isReady = true, lastSeen = "刚刚",
+            capabilities = listOf("source-control"),
+            sources = listOf(
+                com.xgwnje.visionguard_android.data.model.SourceInfo("one", "一", true, true),
+                com.xgwnje.visionguard_android.data.model.SourceInfo("two", "二", false, true)
+            )
+        )
+        val model = buildDeviceCardUiModel(device)
+        assertEquals(DeviceStatusTone.PARTIAL_MONITORING, model.statusTone)
+        assertEquals("部分运行 1/2", model.statusLabel)
+        assertEquals(false, model.controlsEnabled)
     }
 
     @Test

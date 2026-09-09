@@ -34,6 +34,8 @@ import com.xgwnje.visionguard_android.data.remote.WsState
 import com.xgwnje.visionguard_android.data.repository.DeviceRegistryRepository
 import com.xgwnje.visionguard_android.data.repository.SettingsRepository
 import com.xgwnje.visionguard_android.ui.home.mergeSortAlerts
+import com.xgwnje.visionguard_android.ui.home.sourcePreferenceKey
+import com.xgwnje.visionguard_android.ui.home.shouldNotifyForAlert
 import com.xgwnje.visionguard_android.util.NotificationHelper
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +68,8 @@ class AlertForegroundService : LifecycleService() {
 
     private val _alerts = MutableStateFlow<List<AlertMessage>>(emptyList())
     val alerts: StateFlow<List<AlertMessage>> = _alerts
+    private val _mutedAlertSources = MutableStateFlow<Set<String>>(emptySet())
+    val mutedAlertSources: StateFlow<Set<String>> = _mutedAlertSources
 
     private val _devices = MutableStateFlow<List<DeviceInfo>>(emptyList())
     val devices: StateFlow<List<DeviceInfo>> = _devices
@@ -100,6 +104,10 @@ class AlertForegroundService : LifecycleService() {
     fun requestScreenshot(alertId: String, deviceId: String): Boolean =
         wsClient.requestScreenshot(alertId, deviceId)
 
+    fun setAlertSourceMuted(key: String, muted: Boolean) {
+        lifecycleScope.launch { settingsRepo.setAlertSourceMuted(key, muted) }
+    }
+
     /** 将当前报警列表持久化到 DataStore（上限 50 条，避免过大） */
     private fun persistAlerts() {
         lifecycleScope.launch {
@@ -130,6 +138,9 @@ class AlertForegroundService : LifecycleService() {
                 _alerts.value = mergeSortAlerts(emptyList(), saved)
                 Log.i(TAG, "报警历史已恢复: ${saved.size} 条")
             }
+        }
+        lifecycleScope.launch {
+            settingsRepo.mutedAlertSourcesFlow.collect { _mutedAlertSources.value = it }
         }
 
         lifecycleScope.launch {
@@ -216,12 +227,20 @@ class AlertForegroundService : LifecycleService() {
         lifecycleScope.launch {
             wsClient.onScreenshotData.collect { data ->
                 try {
+                    val linkedAlert = _alerts.value.firstOrNull { it.alertId == data.alertId }
+                    if (linkedAlert == null ||
+                        (data.deviceId.isNotEmpty() && linkedAlert.deviceId != data.deviceId) ||
+                        (data.sourceId.isNotEmpty() && linkedAlert.sourceId.isNotEmpty() && linkedAlert.sourceId != data.sourceId)
+                    ) {
+                        Log.w(TAG, "拒绝无法关联的截图: alertId=${data.alertId} deviceId=${data.deviceId} sourceId=${data.sourceId}")
+                        return@collect
+                    }
                     val bytes = Base64.decode(data.imageBase64, Base64.DEFAULT)
                     screenshotCache.save(data.alertId, bytes)
                     _onScreenshotData.emit(data)  // 触发 UI 即时刷新
 
                     val notifId = alertNotifIdMap[data.alertId] ?: return@collect
-                    val alert = _alerts.value.firstOrNull { it.alertId == data.alertId } ?: return@collect
+                    val alert = linkedAlert
                     val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@collect
                     val notif = NotificationHelper.buildAlertNotification(
                         this@AlertForegroundService, alert, notifId, bitmap, silentUpdate = true
@@ -293,12 +312,12 @@ class AlertForegroundService : LifecycleService() {
 
     // ── 公开 API ──────────────────────────────────────────────
 
-    fun sendCommand(targetDeviceId: String, command: String) {
-        wsClient.sendCommand(targetDeviceId, command)
+    fun sendCommand(targetDeviceId: String, command: String, targetSourceId: String? = null) {
+        wsClient.sendCommand(targetDeviceId, command, targetSourceId)
     }
 
-    fun sendSetConfig(targetDeviceId: String, key: String, value: String) {
-        wsClient.sendSetConfig(targetDeviceId, key, value)
+    fun sendSetConfig(targetDeviceId: String, key: String, value: String, targetSourceId: String? = null) {
+        wsClient.sendSetConfig(targetDeviceId, key, value, targetSourceId)
         // 同步更新本地参数缓存
         val current = deviceConfigs.getOrPut(targetDeviceId) { DeviceConfig() }
         deviceConfigs[targetDeviceId] = when (key) {
@@ -462,8 +481,8 @@ class AlertForegroundService : LifecycleService() {
     // ── 通知发送 ──────────────────────────────────────────────
 
     private fun sendAlertNotification(alert: AlertMessage) {
-        if (alert.alertId.isEmpty() || alert.deviceId.isEmpty()) {
-            Log.w(TAG, "报警消息缺少 alertId 或 deviceId，跳过通知")
+        if (!shouldNotifyForAlert(alert, _mutedAlertSources.value)) {
+            Log.i(TAG, "报警无效或来源已静音，保留有效记录但跳过通知: ${alert.sourcePreferenceKey()}")
             return
         }
         val notifId = notifIdCounter.incrementAndGet()

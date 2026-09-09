@@ -155,11 +155,11 @@ fun DeviceListScreen(
                             DeviceCard(
                                 device = device,
                                 initialConfig = buildDeviceConfigFromDevice(device),
-                                onCommand = { command ->
-                                    deviceVm.sendCommand(device.deviceId, command)
+                                onCommand = { command, sourceId ->
+                                    deviceVm.sendCommand(device.deviceId, command, sourceId)
                                 },
-                                onSetConfig = { key, value ->
-                                    deviceVm.sendSetConfig(device.deviceId, key, value)
+                                onSetConfig = { key, value, sourceId ->
+                                    deviceVm.sendSetConfig(device.deviceId, key, value, sourceId)
                                 },
                                 dragHandleModifier = Modifier.longPressDraggableHandle(
                                     onDragStarted = {

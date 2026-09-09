@@ -20,12 +20,12 @@ class DeviceViewModel(private val service: AlertForegroundService) : ViewModel()
 
     val commandAck: SharedFlow<Pair<String, Boolean>> = service.commandAck
 
-    fun sendCommand(targetDeviceId: String, command: String) {
-        service.sendCommand(targetDeviceId, command)
+    fun sendCommand(targetDeviceId: String, command: String, targetSourceId: String? = null) {
+        service.sendCommand(targetDeviceId, command, targetSourceId)
     }
 
-    fun sendSetConfig(targetDeviceId: String, key: String, value: String) {
-        service.sendSetConfig(targetDeviceId, key, value)
+    fun sendSetConfig(targetDeviceId: String, key: String, value: String, targetSourceId: String? = null) {
+        service.sendSetConfig(targetDeviceId, key, value, targetSourceId)
     }
 
     fun moveDevice(fromIndex: Int, toIndex: Int) {

@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.StateFlow
 class AlertViewModel(private val service: AlertForegroundService) : ViewModel() {
 
     val alerts: StateFlow<List<AlertMessage>> = service.alerts
+    val mutedAlertSources: StateFlow<Set<String>> = service.mutedAlertSources
+
+    fun setSourceMuted(key: String, muted: Boolean) = service.setAlertSourceMuted(key, muted)
 
     fun clearAlerts() = service.clearAlerts()
 

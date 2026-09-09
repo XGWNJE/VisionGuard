@@ -25,7 +25,25 @@ data class DeviceInfo(
     val canSwitchModelWhileMonitoring: Boolean = false,
     val hasPendingConfigChanges: Boolean = false,
     /** 客户端类型："windows" / "android-detector"，供 UI 差异化展示使用 */
-    val clientType: String = "windows"
+    val clientType: String = "windows",
+    val capabilities: List<String> = emptyList(),
+    val components: Map<String, String> = emptyMap(),
+    val sources: List<SourceInfo> = emptyList()
+)
+
+@Immutable
+data class SourceInfo(
+    val sourceId: String,
+    val sourceName: String,
+    val isMonitoring: Boolean,
+    val isReady: Boolean,
+    val modelKey: String = "",
+    val actualFps: Double? = null,
+    val error: String? = null,
+    val cooldown: Int? = null,
+    val confidence: Double? = null,
+    val targets: String? = null,
+    val targetSamplingRate: Int? = null
 )
 
 /** 记录每台设备最后下发的参数配置（Android 端本地缓存） */

@@ -75,9 +75,12 @@ data class DeviceCardUiModel(
     val controlActionLabel: String,
     val controlCommand: String,
     val controlsEnabled: Boolean,
+    val lifecycleControlsEnabled: Boolean = false,
     val firstRowLayout: DeviceCardFirstRowLayout,
     val illustration: DeviceCardIllustration,
-    val typeLabel: String
+    val typeLabel: String,
+    val wpfLifecycleCommand: String? = null,
+    val winFormsLifecycleCommand: String? = null
 )
 
 data class DeviceCardChrome(
@@ -134,7 +137,9 @@ enum class ScreenshotState {
 
 enum class DeviceStatusTone {
     OFFLINE,
+    RESIDENT_ONLY,
     MONITORING,
+    PARTIAL_MONITORING,
     NOT_READY,
     READY
 }
@@ -193,15 +198,23 @@ fun buildAlertDetailChrome(): AlertDetailChrome =
     )
 
 fun buildDeviceCardUiModel(device: DeviceInfo): DeviceCardUiModel {
+    val controllableSources = device.sources.filter { it.isReady }
+    val runningSources = controllableSources.count { it.isMonitoring }
+    val hasSourceControls = "source-control" in device.capabilities && device.sources.isNotEmpty()
     val statusTone = when {
         !device.online -> DeviceStatusTone.OFFLINE
+        device.components["resident"] == "running" && device.components["detectorApp"] != "running" -> DeviceStatusTone.RESIDENT_ONLY
+        controllableSources.isNotEmpty() && runningSources == controllableSources.size -> DeviceStatusTone.MONITORING
+        runningSources > 0 -> DeviceStatusTone.PARTIAL_MONITORING
         device.isMonitoring -> DeviceStatusTone.MONITORING
         !device.isReady -> DeviceStatusTone.NOT_READY
         else -> DeviceStatusTone.READY
     }
     val statusLabel = when (statusTone) {
         DeviceStatusTone.OFFLINE -> "离线"
-        DeviceStatusTone.MONITORING -> "监控中"
+        DeviceStatusTone.RESIDENT_ONLY -> "驻留在线 · 程序关闭"
+        DeviceStatusTone.MONITORING -> if (controllableSources.isNotEmpty()) "全部运行" else "监控中"
+        DeviceStatusTone.PARTIAL_MONITORING -> "部分运行 $runningSources/${controllableSources.size}"
         DeviceStatusTone.NOT_READY -> "选区未设定"
         DeviceStatusTone.READY -> "已就绪"
     }
@@ -212,11 +225,21 @@ fun buildDeviceCardUiModel(device: DeviceInfo): DeviceCardUiModel {
         statusTone = statusTone,
         controlActionLabel = if (device.isMonitoring) "停止监控" else "开始监控",
         controlCommand = if (device.isMonitoring) "pause" else "resume",
-        controlsEnabled = device.online,
+        controlsEnabled = !hasSourceControls && device.online && (
+            device.components["detectorApp"] == "running" || "app-lifecycle-control" !in device.capabilities
+        ),
+        lifecycleControlsEnabled = device.online && device.components["resident"] == "running",
         firstRowLayout = DeviceCardFirstRowLayout.BALANCED_TWO_COLUMN,
         illustration = deviceCardIllustrationOf(device.clientType),
-        typeLabel = deviceTypeLabelOf(device.clientType)
+        typeLabel = deviceTypeLabelOf(device.clientType),
+        wpfLifecycleCommand = lifecycleCommand(device, "wpfApp", "wpf"),
+        winFormsLifecycleCommand = lifecycleCommand(device, "winFormsApp", "winforms")
     )
+}
+
+private fun lifecycleCommand(device: DeviceInfo, component: String, suffix: String): String? {
+    if ("app-lifecycle-control" !in device.capabilities) return null
+    return if (device.components[component] == "running") "close-$suffix" else "open-$suffix"
 }
 
 fun buildDeviceCardChrome(): DeviceCardChrome =
@@ -274,7 +297,7 @@ fun buildDeviceConfigEditorUiModel(
         applyMode = DeviceConfigApplyMode.BATCH,
         hasChanges = hasChanges,
         applyEnabled = hasChanges && device.online,
-        applyActionLabel = "保存更改",
+        applyActionLabel = "应用更改",
         cancelActionLabel = "取消"
     )
 }
@@ -345,13 +368,37 @@ fun mergeSortAlerts(
         }
         mergedById[key] = mergedById[key]?.let { mergeAlertMetadata(it, alert) } ?: alert
     }
-    return mergedById.values
+    val sorted = mergedById.values
         .sortedWith(
             compareByDescending<AlertMessage> { alertSortMillis(it) }
                 .thenByDescending { it.receivedAt ?: 0L }
                 .thenByDescending { it.alertId }
         )
-        .take(limit)
+    if (sorted.size <= limit) return sorted
+
+    // 每个来源保留少量最新记录，再用全局最新记录填满剩余容量，避免高频来源挤光其他来源。
+    val sourceCount = sorted.map { alertSourceKey(it.deviceId, it.sourceId) }.distinct().size
+    val reservePerSource = minOf(5, maxOf(1, limit / maxOf(1, sourceCount)))
+    val reserved = sorted.groupBy { alertSourceKey(it.deviceId, it.sourceId) }
+        .values.flatMap { it.take(reservePerSource) }
+        .map { it.alertId.ifBlank { "${it.deviceId}:${it.timestamp}:${it.receivedAt ?: 0L}" } }
+        .toHashSet()
+    val selected = sorted.filter {
+        it.alertId.ifBlank { "${it.deviceId}:${it.timestamp}:${it.receivedAt ?: 0L}" } in reserved
+    }.toMutableList()
+    if (selected.size < limit) {
+        val selectedKeys = reserved.toMutableSet()
+        for (alert in sorted) {
+            val key = alert.alertId.ifBlank { "${alert.deviceId}:${alert.timestamp}:${alert.receivedAt ?: 0L}" }
+            if (selectedKeys.add(key)) selected += alert
+            if (selected.size == limit) break
+        }
+    }
+    return selected.sortedWith(
+        compareByDescending<AlertMessage> { alertSortMillis(it) }
+            .thenByDescending { it.receivedAt ?: 0L }
+            .thenByDescending { it.alertId }
+    )
 }
 
 private fun mergeAlertMetadata(first: AlertMessage, second: AlertMessage): AlertMessage {

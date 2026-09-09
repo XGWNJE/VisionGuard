@@ -34,14 +34,18 @@ data class WsAuthResult(
 /** Android → 服务器：发送控制命令（pause / resume / stop-alarm） */
 data class WsCommandMessage(
     val type: String = "command",
+    val requestId: String,
     val targetDeviceId: String,
+    val targetSourceId: String? = null,
     val command: String             // "pause" | "resume" | "stop-alarm"
 )
 
 /** Android → 服务器：下发参数调整（set-config） */
 data class WsSetConfigMessage(
     val type: String = "set-config",
+    val requestId: String,
     val targetDeviceId: String,
+    val targetSourceId: String? = null,
     val key: String,    // "cooldown" | "confidence" | "targets" | "targetSamplingRate" | "modelKey"
     val value: String   // 字符串形式的值
 )
@@ -49,7 +53,10 @@ data class WsSetConfigMessage(
 /** 服务器 → Android：命令回执 */
 data class WsCommandAck(
     val type: String = "command-ack",
+    val requestId: String = "",
+    val phase: String = "completed",
     val targetDeviceId: String = "",
+    val targetSourceId: String? = null,
     val command: String = "",
     val success: Boolean = false,
     val reason: String = ""
@@ -73,6 +80,8 @@ data class WsScreenshotDataPush(
     val type: String = "screenshot-data",
     val alertId: String = "",
     val deviceId: String = "",
+    val sourceId: String = "",
+    val sourceName: String = "",
     val imageBase64: String = "",
     val width: Int = 0,
     val height: Int = 0

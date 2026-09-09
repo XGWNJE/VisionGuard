@@ -33,6 +33,7 @@ class SettingsRepository(private val context: Context) {
         val CONFIDENCE  = floatPreferencesKey("confidence") // 0.0-1.0，默认 0.45
         val TARGETS     = stringPreferencesKey("targets")  // 逗号分隔的 COCO 类名
         val ALERTS_HISTORY = stringPreferencesKey("alerts_history") // Gson JSON，最多 50 条
+        val MUTED_ALERT_SOURCES = stringPreferencesKey("muted_alert_sources")
     }
 
     companion object {
@@ -107,4 +108,22 @@ class SettingsRepository(private val context: Context) {
             emptyList()
         }
     }
+
+    val mutedAlertSourcesFlow: Flow<Set<String>> = context.dataStore.data.map { prefs ->
+        parseStringSet(prefs[Keys.MUTED_ALERT_SOURCES])
+    }
+
+    suspend fun setAlertSourceMuted(key: String, muted: Boolean) {
+        require(key.isNotBlank()) { "source key must not be blank" }
+        context.dataStore.edit { prefs ->
+            val current = parseStringSet(prefs[Keys.MUTED_ALERT_SOURCES]).toMutableSet()
+            if (muted) current.add(key) else current.remove(key)
+            prefs[Keys.MUTED_ALERT_SOURCES] = Gson().toJson(current)
+        }
+    }
+
+    private fun parseStringSet(json: String?): Set<String> = try {
+        val type = object : TypeToken<Set<String>>() {}.type
+        Gson().fromJson<Set<String>>(json ?: "[]", type) ?: emptySet()
+    } catch (_: Exception) { emptySet() }
 }

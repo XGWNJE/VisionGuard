@@ -23,6 +23,12 @@ data class AlertMessage(
     val alertId: String = "",        // Gson 解析缺失字段时防 NPE
     val deviceId: String = "",
     val deviceName: String = "",
+    /**
+     * V1 来源身份；旧检测端不发送时保持空值，由接收端按默认单来源处理。
+     * sourceId 是稳定身份，sourceName 仅是事件发生时的名称快照。
+     */
+    val sourceId: String = "",
+    val sourceName: String = "",
     val timestamp: String = "",      // ISO 8601
     val detections: List<Detection> = emptyList(),
     val createdAt: Long? = null,      // 服务器接收时间戳，排序权威字段
@@ -43,5 +49,8 @@ data class ScreenshotData(
     val alertId: String,
     val imageBase64: String,
     val width: Int,
-    val height: Int
+    val height: Int,
+    val deviceId: String = "",
+    val sourceId: String = "",
+    val sourceName: String = ""
 )

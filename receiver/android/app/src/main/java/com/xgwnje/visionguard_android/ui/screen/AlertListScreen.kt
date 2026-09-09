@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -30,10 +31,12 @@ import androidx.compose.material.icons.filled.CheckCircleOutline
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -60,6 +63,8 @@ import com.xgwnje.visionguard_android.service.AlertForegroundService
 import com.xgwnje.visionguard_android.ui.component.AlertCard
 import com.xgwnje.visionguard_android.ui.component.ConnectionBanner
 import com.xgwnje.visionguard_android.ui.home.buildAlertListChrome
+import com.xgwnje.visionguard_android.ui.home.buildAlertSourceOptions
+import com.xgwnje.visionguard_android.ui.home.filterAlertsBySource
 import com.xgwnje.visionguard_android.ui.home.buildNoUpdateDialogModel
 import com.xgwnje.visionguard_android.ui.home.buildUpdateDialogModel
 import com.xgwnje.visionguard_android.ui.home.buildUpdateFailedDialogModel
@@ -90,9 +95,14 @@ fun AlertListScreen(
     val scope = rememberCoroutineScope()
     val alertVm: AlertViewModel = viewModel(factory = AlertViewModel.Factory(service))
     val alerts by alertVm.alerts.collectAsState()
+    val mutedSources by alertVm.mutedAlertSources.collectAsState()
     val devices by service.devices.collectAsState()
     val wsState by service.connectionState.collectAsState()
-    val validAlerts = remember(alerts) { alerts.filter { it.alertId.isNotEmpty() } }
+    var selectedSourceKey by remember { mutableStateOf<String?>(null) }
+    val sourceOptions = remember(alerts) { buildAlertSourceOptions(alerts) }
+    val validAlerts = remember(alerts, selectedSourceKey) {
+        filterAlertsBySource(alerts.filter { it.alertId.isNotEmpty() }, selectedSourceKey)
+    }
     val onlineDeviceCount = remember(devices) { devices.count { it.online } }
     var pendingUpdateDialog by remember { mutableStateOf<PendingUpdateDialog?>(null) }
     var isCheckingUpdate by remember { mutableStateOf(false) }
@@ -111,6 +121,40 @@ fun AlertListScreen(
             ),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            if (sourceOptions.isNotEmpty()) {
+                item {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(bottom = 12.dp)
+                    ) {
+                        item {
+                            FilterChip(
+                                selected = selectedSourceKey == null,
+                                onClick = { selectedSourceKey = null },
+                                label = { Text("全部来源") }
+                            )
+                        }
+                        items(sourceOptions, key = { it.key }) { source ->
+                            val muted = source.key in mutedSources
+                            FilterChip(
+                                selected = selectedSourceKey == source.key,
+                                onClick = { selectedSourceKey = source.key },
+                                label = { Text(source.label) },
+                                trailingIcon = {
+                                    Icon(
+                                        imageVector = if (muted) Icons.Default.NotificationsOff else Icons.Default.Notifications,
+                                        contentDescription = if (muted) "取消静音" else "静音此来源",
+                                        modifier = Modifier.size(18.dp).clickable {
+                                            alertVm.setSourceMuted(source.key, !muted)
+                                        }
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
+            }
             if (validAlerts.isEmpty()) {
                 item {
                     EmptyAlertState()

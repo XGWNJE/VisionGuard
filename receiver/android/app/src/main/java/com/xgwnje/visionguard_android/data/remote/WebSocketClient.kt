@@ -153,13 +153,13 @@ class WebSocketClient {
         events.trySend(Event.NetworkLost)
     }
 
-    fun sendCommand(targetDeviceId: String, command: String) {
-        val msg = WsCommandMessage(targetDeviceId = targetDeviceId, command = command)
+    fun sendCommand(targetDeviceId: String, command: String, targetSourceId: String? = null) {
+        val msg = WsCommandMessage(requestId = java.util.UUID.randomUUID().toString(), targetDeviceId = targetDeviceId, targetSourceId = targetSourceId, command = command)
         session?.ws?.send(gson.toJson(msg))
     }
 
-    fun sendSetConfig(targetDeviceId: String, key: String, value: String) {
-        val msg = WsSetConfigMessage(targetDeviceId = targetDeviceId, key = key, value = value)
+    fun sendSetConfig(targetDeviceId: String, key: String, value: String, targetSourceId: String? = null) {
+        val msg = WsSetConfigMessage(requestId = java.util.UUID.randomUUID().toString(), targetDeviceId = targetDeviceId, targetSourceId = targetSourceId, key = key, value = value)
         session?.ws?.send(gson.toJson(msg))
     }
 
@@ -518,8 +518,9 @@ class WebSocketClient {
                     val cmd = obj.get("command")?.asString ?: ""
                     val success = obj.get("success")?.asBoolean ?: false
                     val reason = obj.get("reason")?.asString ?: ""
-                    // 过滤服务端"已转发"的临时 ack，只显示检测端实际执行结果
-                    if (reason != "relayed" && reason != "已转发") {
+                    val phase = obj.get("phase")?.asString ?: "completed"
+                    // 兼容旧 Server 文案，同时以结构化阶段过滤转发确认。
+                    if (phase != "forwarded" && reason != "relayed" && reason != "已转发") {
                         val display = if (!success && reason.isNotEmpty()) "$cmd（$reason）" else cmd
                         scope.launch { _onCommandAck.emit(Pair(display, success)) }
                     }
@@ -529,7 +530,10 @@ class WebSocketClient {
                     val push = gson.fromJson(text, com.xgwnje.visionguard_android.data.model.WsScreenshotDataPush::class.java)
                     if (push.alertId.isNotEmpty() && push.imageBase64.isNotEmpty()) {
                         scope.launch { _onScreenshotData.emit(
-                            ScreenshotData(push.alertId, push.imageBase64, push.width, push.height)
+                            ScreenshotData(
+                                push.alertId, push.imageBase64, push.width, push.height,
+                                push.deviceId, push.sourceId, push.sourceName
+                            )
                         ) }
                     }
                 }
