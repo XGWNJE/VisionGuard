@@ -48,6 +48,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.xgwnje.visionguard.data.model.DeploymentOrientation
 import com.xgwnje.visionguard.data.model.MonitorConfig
+import com.xgwnje.visionguard.inference.AndroidInferenceBackendPolicy
+import com.xgwnje.visionguard.inference.InferenceBackend
 import com.xgwnje.visionguard.data.remote.WsState
 import com.xgwnje.visionguard.data.repository.SettingsRepository
 import com.xgwnje.visionguard.inference.SocWhitelist
@@ -249,11 +251,13 @@ private fun MainScreen(
 
     val modelStatusText = remember(draftConfig.modelName, draftConfig.inputSize, context.filesDir) {
         val modelFile = context.filesDir.resolve("models/${draftConfig.modelName}_${draftConfig.inputSize}.onnx")
-        if (modelFile.exists() && modelFile.length() > 0) {
+        val fileStatus = if (modelFile.exists() && modelFile.length() > 0) {
             "模型文件：已下载"
         } else {
             "模型文件：未下载（启动监控时自动下载）"
         }
+        val backend = AndroidInferenceBackendPolicy.resolve(InferenceBackend.QNN)
+        "$fileStatus\n推理后端：${backend.displayText}"
     }
 
     fun startMonitoring() {

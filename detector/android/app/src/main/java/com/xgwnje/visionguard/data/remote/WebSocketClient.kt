@@ -224,8 +224,9 @@ class WebSocketClient {
     // ── detector 端新增 API ──────────────────────────────────
 
     /** 发送命令回执 */
-    fun sendCommandAck(command: String, success: Boolean, reason: String = ""): Boolean {
+    fun sendCommandAck(command: String, success: Boolean, reason: String = "", requestId: String = ""): Boolean {
         val msg = WsCommandAck(
+            requestId = requestId,
             targetDeviceId = deviceId,
             command = command,
             success = success,

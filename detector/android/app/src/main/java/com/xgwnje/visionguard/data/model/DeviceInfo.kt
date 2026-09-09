@@ -20,7 +20,9 @@ data class DeviceInfo(
     val confidence: Double = 0.45,
     val targets: String = "",
     /** 客户端类型："android-detector"，供 UI 差异化展示使用 */
-    val clientType: String = "android-detector"
+    val clientType: String = "android-detector",
+    val capabilities: List<String> = emptyList(),
+    val components: Map<String, String> = emptyMap()
 )
 
 /** 记录每台设备最后下发的参数配置（Android 端本地缓存） */

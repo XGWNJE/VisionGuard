@@ -644,7 +644,7 @@ class DetectorForegroundService : LifecycleService() {
             "pause" -> {
                 // 与本地停止监控对齐：解绑 CameraX、停止 MonitorService
                 stopMonitoring()
-                serverPushService.sendCommandAck("pause", true, "监控已停止")
+                serverPushService.sendCommandAck("pause", true, "监控已停止", command.requestId)
                 // 立即推送心跳，让接收端快速同步状态
                 serverPushService.wsClient.sendHeartbeatNow()
             }
@@ -655,13 +655,13 @@ class DetectorForegroundService : LifecycleService() {
                         startMonitoring(readStoredMonitorConfig())
                     }
                 }
-                serverPushService.sendCommandAck("resume", true, "监控已启动")
+                serverPushService.sendCommandAck("resume", true, "监控已启动", command.requestId)
                 // 立即推送心跳，让接收端快速同步状态
                 serverPushService.wsClient.sendHeartbeatNow()
             }
             else -> {
                 Log.w(TAG, "未知命令: ${command.command}")
-                serverPushService.sendCommandAck(command.command, false, "未知命令")
+                serverPushService.sendCommandAck(command.command, false, "未知命令", command.requestId)
             }
         }
     }
@@ -674,7 +674,7 @@ class DetectorForegroundService : LifecycleService() {
                     "cooldown" -> {
                         val raw = configMsg.value.toIntOrNull()
                         if (raw == null) {
-                            serverPushService.sendCommandAck("set-config:cooldown", false, "值无效（1-300）")
+                            serverPushService.sendCommandAck("set-config:cooldown", false, "值无效（1-300）", configMsg.requestId)
                             return@launch
                         }
                         val value = raw.coerceIn(1, 300)
@@ -687,7 +687,7 @@ class DetectorForegroundService : LifecycleService() {
                     "confidence" -> {
                         val raw = configMsg.value.toFloatOrNull()
                         if (raw == null) {
-                            serverPushService.sendCommandAck("set-config:confidence", false, "值无效（0.1-0.95）")
+                            serverPushService.sendCommandAck("set-config:confidence", false, "值无效（0.1-0.95）", configMsg.requestId)
                             return@launch
                         }
                         val value = raw.coerceIn(0.1f, 0.95f)
@@ -704,7 +704,7 @@ class DetectorForegroundService : LifecycleService() {
                     "targetSamplingRate" -> {
                         val raw = configMsg.value.toIntOrNull()
                         if (raw == null || raw !in 1..5) {
-                            serverPushService.sendCommandAck("set-config:targetSamplingRate", false, "值无效（1-5）")
+                            serverPushService.sendCommandAck("set-config:targetSamplingRate", false, "值无效（1-5）", configMsg.requestId)
                             return@launch
                         }
                         settingsRepo.setTargetSamplingRate(raw)
@@ -713,7 +713,7 @@ class DetectorForegroundService : LifecycleService() {
                     "modelKey" -> {
                         val parsed = parseModelKey(configMsg.value)
                         if (parsed == null) {
-                            serverPushService.sendCommandAck("set-config:modelKey", false, "模型不支持")
+                            serverPushService.sendCommandAck("set-config:modelKey", false, "模型不支持", configMsg.requestId)
                             return@launch
                         }
                         settingsRepo.setSelectedModel(parsed.modelName)
@@ -722,7 +722,7 @@ class DetectorForegroundService : LifecycleService() {
                     }
                     else -> {
                         Log.w(TAG, "未知配置项: ${configMsg.key}")
-                        serverPushService.sendCommandAck("set-config:${configMsg.key}", false, "未知配置项")
+                        serverPushService.sendCommandAck("set-config:${configMsg.key}", false, "未知配置项", configMsg.requestId)
                         false
                     }
                 }
@@ -736,7 +736,8 @@ class DetectorForegroundService : LifecycleService() {
                     serverPushService.sendCommandAck(
                         "set-config:${configMsg.key}",
                         true,
-                        remoteConfigAckText(isMonitoring = true)
+                        remoteConfigAckText(isMonitoring = true),
+                        configMsg.requestId
                     )
                 } else {
                     currentConfig = draftConfig
@@ -747,12 +748,13 @@ class DetectorForegroundService : LifecycleService() {
                     serverPushService.sendCommandAck(
                         "set-config:${configMsg.key}",
                         true,
-                        remoteConfigAckText(isMonitoring = false)
+                        remoteConfigAckText(isMonitoring = false),
+                        configMsg.requestId
                     )
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "处理远程配置变更失败", e)
-                serverPushService.sendCommandAck("set-config:${configMsg.key}", false, e.message ?: "处理失败")
+                serverPushService.sendCommandAck("set-config:${configMsg.key}", false, e.message ?: "处理失败", configMsg.requestId)
             }
         }
     }

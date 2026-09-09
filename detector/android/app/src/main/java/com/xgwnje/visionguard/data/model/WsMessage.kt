@@ -34,13 +34,16 @@ data class WsAuthResult(
 /** Android-receiver → 服务器：发送控制命令（pause / resume / stop-alarm） */
 data class WsCommandMessage(
     val type: String = "command",
+    val requestId: String = "",
     val targetDeviceId: String = "",
+    val targetSourceId: String? = null,
     val command: String             // "pause" | "resume" | "stop-alarm"
 )
 
 /** Android-receiver → 服务器：下发参数调整（set-config） */
 data class WsSetConfigMessage(
     val type: String = "set-config",
+    val requestId: String = "",
     val targetDeviceId: String = "",
     val key: String = "",    // "cooldown" | "confidence" | "targets"
     val value: String = ""   // 字符串形式的值
@@ -49,7 +52,10 @@ data class WsSetConfigMessage(
 /** 服务器 → Android-detector：命令回执 */
 data class WsCommandAck(
     val type: String = "command-ack",
+    val requestId: String = "",
+    val phase: String = "completed",
     val targetDeviceId: String = "",
+    val targetSourceId: String? = null,
     val command: String = "",
     val success: Boolean = false,
     val reason: String = ""
@@ -79,7 +85,11 @@ data class WsHeartbeatMessage(
     val modelKey: String = "",
     val modelOptions: List<String> = emptyList(),
     val canSwitchModelWhileMonitoring: Boolean = true,
-    val hasPendingConfigChanges: Boolean = false
+    val hasPendingConfigChanges: Boolean = false,
+    val capabilities: List<String> = listOf(
+        "monitor-control", "config-control", "request-correlation", "screenshot-on-demand"
+    ),
+    val components: Map<String, String> = mapOf("detectorApp" to "running")
 )
 
 /** Android-detector / Windows → 服务器：轻量报警通知（无截图数据） */

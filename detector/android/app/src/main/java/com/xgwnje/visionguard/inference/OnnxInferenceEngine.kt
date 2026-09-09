@@ -30,6 +30,8 @@ class OnnxInferenceEngine(private val context: Context) {
     private var inputName: String? = null
     private var outputName: String? = null
     private var currentModelPath: String? = null
+    var backendStatus: InferenceBackendStatus = AndroidInferenceBackendPolicy.resolve(InferenceBackend.QNN)
+        private set
 
     /** 检查是否已加载模型 */
     val isLoaded: Boolean
@@ -70,7 +72,7 @@ class OnnxInferenceEngine(private val context: Context) {
 
             env = OrtEnvironment.getEnvironment()
             val options = OrtSession.SessionOptions().apply {
-                // XNNPACK 已关闭 — 纯 CPU 执行对照测试
+                // 官方 Maven Mobile 包未包含 QNN EP；策略层会显式报告 CPU 回退，禁止伪报加速。
                 setIntraOpNumThreads(2)
                 setInterOpNumThreads(1)
                 setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
@@ -86,15 +88,7 @@ class OnnxInferenceEngine(private val context: Context) {
             currentModelPath = modelFile.absolutePath
 
             Log.i(TAG, "Model loaded: $modelFileName (inputSize=$inputSize, inputName=$inputName, outputName=$outputName)")
-            // 检查 Execution Provider 信息
-            try {
-                val epInfo = newSession?.let { s ->
-                    "providers=${s.javaClass.name}"
-                } ?: "null session"
-                Log.i(TAG, "Execution Provider info: $epInfo")
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to get EP info", e)
-            }
+            Log.i(TAG, "Inference backend: requested=${backendStatus.requested} active=${backendStatus.active} fallback=${backendStatus.fallbackReason}")
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load model: $modelFileName", e)
