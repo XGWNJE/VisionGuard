@@ -67,6 +67,12 @@ export function validateAlertMeta(input: unknown): ValidationResult<AlertMeta> {
   if (typeof meta.deviceName !== 'string' || meta.deviceName.length === 0 || meta.deviceName.length > 64) {
     return { ok: false, error: 'invalid deviceName' };
   }
+  if (meta.sourceId !== undefined && (typeof meta.sourceId !== 'string' || meta.sourceId.length === 0 || meta.sourceId.length > 128)) {
+    return { ok: false, error: 'invalid sourceId' };
+  }
+  if (meta.sourceName !== undefined && (typeof meta.sourceName !== 'string' || meta.sourceName.length === 0 || meta.sourceName.length > 64)) {
+    return { ok: false, error: 'invalid sourceName' };
+  }
   if (typeof meta.timestamp !== 'string' || meta.timestamp.length === 0 || meta.timestamp.length > 64) {
     return { ok: false, error: 'invalid timestamp' };
   }
@@ -82,6 +88,8 @@ export function validateAlertMeta(input: unknown): ValidationResult<AlertMeta> {
     value: {
       deviceId: meta.deviceId,
       deviceName: meta.deviceName,
+      ...(meta.sourceId ? { sourceId: meta.sourceId } : {}),
+      ...(meta.sourceName ? { sourceName: meta.sourceName } : {}),
       timestamp: meta.timestamp,
       detections: meta.detections,
     },

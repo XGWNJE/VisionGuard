@@ -98,13 +98,22 @@ export function markAlertScreenshot(alertId: string, screenshotPath: string): bo
   return false;
 }
 
+export function getAlertById(alertId: string): AlertRecord | undefined {
+  for (const list of store.values()) {
+    const record = list.find(r => r.alertId === alertId);
+    if (record) return record;
+  }
+  return undefined;
+}
+
 /**
  * 查询某设备的报警记录（可选时间过滤）
  * @param deviceId 设备 ID（为空则返回所有设备）
  * @param since 只返回 createdAt >= since 的记录
+ * @param sourceId 只返回指定来源的记录
  * @param limit 最多返回条数
  */
-export function getAlerts(deviceId?: string, since?: number, limit = 50): AlertRecord[] {
+export function getAlerts(deviceId?: string, since?: number, limit = 50, sourceId?: string): AlertRecord[] {
   const now = Date.now();
   const deadline = now - alertTtlMs;
 
@@ -125,6 +134,10 @@ export function getAlerts(deviceId?: string, since?: number, limit = 50): AlertR
   // since 过滤
   if (since !== undefined) {
     all = all.filter(r => r.createdAt >= since);
+  }
+
+  if (sourceId) {
+    all = all.filter(r => r.sourceId === sourceId);
   }
 
   return all.slice(0, limit);

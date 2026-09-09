@@ -34,3 +34,18 @@ test('validateAlertMeta rejects malformed alert payloads', () => {
   assert.equal(validateAlertMeta({ deviceId: 'dev', deviceName: 'name', timestamp: 'now', detections: [{ label: 'person', confidence: 1.4, bbox: { x: 0, y: 0, w: 1, h: 1 } }] }).ok, false);
   assert.equal(validateAlertMeta({ deviceId: 'dev', deviceName: 'name', timestamp: 'now', detections: [{ label: 'person', confidence: 0.9, bbox: { x: 0, y: 0, w: 1, h: 1 } }] }).ok, true);
 });
+
+test('validateAlertMeta preserves optional source identity and remains legacy-compatible', () => {
+  const detection = { label: 'person', confidence: 0.9, bbox: { x: 0, y: 0, w: 1, h: 1 } };
+  const current = validateAlertMeta({
+    deviceId: 'dev', deviceName: 'name', sourceId: 'window-1', sourceName: 'Front Door',
+    timestamp: 'now', detections: [detection],
+  });
+  assert.equal(current.ok, true);
+  assert.equal(current.value?.sourceId, 'window-1');
+  assert.equal(current.value?.sourceName, 'Front Door');
+
+  const legacy = validateAlertMeta({ deviceId: 'dev', deviceName: 'name', timestamp: 'now', detections: [detection] });
+  assert.equal(legacy.ok, true);
+  assert.equal(legacy.value?.sourceId, undefined);
+});

@@ -11,25 +11,64 @@ import fs from 'fs';
 import path from 'path';
 import { config } from '../config';
 import { validateApiKey } from '../middleware/auth';
-import { addAlert, markAlertScreenshot } from '../services/AlertStore';
+import { addAlert, getAlertById, markAlertScreenshot } from '../services/AlertStore';
 import { isValidSetConfigKey, validateSetConfigValue } from '../services/ControlProtocol';
 import { getSafeScreenshotPath, isSafeAlertId, validateAlertMeta, validateImageMagic } from '../utils/security';
 import type {
   WsAuthMessage, WsHeartbeat, WsHeartbeatAndroid, WsCommand, WsSetConfig,
   DetectorClient, ReceiverClient, WsAlertPush, WsScreenshotDataPush,
   DeviceStatus, WsCommandRelay, WsSetConfigRelay, WsCommandAck,
-  WsDisconnectReason, WsSessionInfo,
+  WsDisconnectReason, WsSessionInfo, WsResidentHeartbeat, ResidentClient,
+  AlertRecord, SourceStatus,
 } from '../models/types';
 
 // ── 三角色独立 Map (v4.0.0) ─────────────────────────────────
 const detectorWindowsClients = new Map<string, DetectorClient>();
 const detectorAndroidClients = new Map<string, DetectorClient>();
 const receiverClients = new Map<string, ReceiverClient>();
+const residentWindowsClients = new Map<string, ResidentClient>();
 const pendingDetectorRemoval = new Map<string, NodeJS.Timeout>();
 const DETECTOR_RECONNECT_GRACE_MS = 10_000;
+const COMMAND_TIMEOUT_MS = 15_000;
+const COMPLETED_REQUEST_TTL_MS = 60_000;
+
+interface PendingControlRequest {
+  senderWs: WebSocket;
+  targetDeviceId: string;
+  command: string;
+  targetSourceId?: string;
+  timer: NodeJS.Timeout;
+}
+
+const pendingControlRequests = new Map<string, PendingControlRequest>();
+const completedControlRequests = new Map<string, number>();
+
+function rememberCompletedRequest(requestId: string): void {
+  const now = Date.now();
+  completedControlRequests.set(requestId, now + COMPLETED_REQUEST_TTL_MS);
+  for (const [id, expiresAt] of completedControlRequests) {
+    if (expiresAt <= now) completedControlRequests.delete(id);
+  }
+}
+
+export function associateScreenshotPayload(
+  payload: WsScreenshotDataPush,
+  authenticatedDeviceId: string,
+  alertRecord: AlertRecord | undefined,
+): WsScreenshotDataPush | null {
+  if (!alertRecord || alertRecord.deviceId !== authenticatedDeviceId || alertRecord.alertId !== payload.alertId) {
+    return null;
+  }
+  return {
+    ...payload,
+    deviceId: authenticatedDeviceId,
+    sourceId: alertRecord.sourceId,
+    sourceName: alertRecord.sourceName,
+  };
+}
 
 export function getConnectionCount(): number {
-  return detectorWindowsClients.size + detectorAndroidClients.size + receiverClients.size;
+  return detectorWindowsClients.size + detectorAndroidClients.size + residentWindowsClients.size + receiverClients.size;
 }
 
 function detectorRemovalKey(clientType: string, deviceId: string): string {
@@ -59,6 +98,7 @@ function scheduleDetectorRemoval(
     _heartbeatCounter.delete(deviceId);
     scheduleBroadcast();
   }, DETECTOR_RECONNECT_GRACE_MS);
+  timer.unref();
   pendingDetectorRemoval.set(detectorRemovalKey(clientType, deviceId), timer);
 }
 
@@ -68,6 +108,9 @@ const MAX_DEVICE_ID_LENGTH = 128;
 const MAX_DEVICE_NAME_LENGTH = 64;
 const MAX_TARGETS_LENGTH = 500;
 const MAX_MODEL_OPTIONS = 16;
+const MAX_CAPABILITIES = 32;
+const MAX_COMPONENTS = 8;
+const MAX_SOURCES = 3;
 
 function validateDetection(d: any): boolean {
   if (!d || typeof d !== 'object') return false;
@@ -124,6 +167,85 @@ function sanitizeModelOptions(v: any): string[] | undefined {
   return Array.from(new Set(options)).slice(0, MAX_MODEL_OPTIONS);
 }
 
+function sanitizeCapabilities(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return Array.from(new Set(value
+    .filter((item): item is string => typeof item === 'string' && /^[a-z0-9-]{1,48}$/.test(item))))
+    .slice(0, MAX_CAPABILITIES);
+}
+
+function sanitizeComponents(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const result: Record<string, string> = {};
+  for (const [key, state] of Object.entries(value).slice(0, MAX_COMPONENTS)) {
+    if (/^[a-z][A-Za-z0-9]{0,31}$/.test(key) && typeof state === 'string' && /^(running|stopped|starting|error|unavailable)$/.test(state)) {
+      result[key] = state;
+    }
+  }
+  return result;
+}
+
+function sanitizeSources(value: unknown): SourceStatus[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const ids = new Set<string>();
+  const sources: SourceStatus[] = [];
+  for (const item of value.slice(0, MAX_SOURCES)) {
+    if (!item || typeof item !== 'object') continue;
+    const sourceId = typeof item.sourceId === 'string' ? item.sourceId.trim() : '';
+    const sourceName = typeof item.sourceName === 'string' ? item.sourceName.trim() : '';
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(sourceId) || !sourceName || sourceName.length > 64 || ids.has(sourceId)) continue;
+    ids.add(sourceId);
+    const actualFps = typeof item.actualFps === 'number' && isFinite(item.actualFps)
+      ? Math.max(0, Math.min(240, item.actualFps)) : undefined;
+    const error = typeof item.error === 'string' && item.error.trim()
+      ? item.error.trim().slice(0, 256) : undefined;
+    const cooldown = typeof item.cooldown === 'number' && Number.isInteger(item.cooldown)
+      ? Math.max(1, Math.min(300, item.cooldown)) : undefined;
+    const confidence = typeof item.confidence === 'number' && isFinite(item.confidence)
+      ? Math.max(0.1, Math.min(0.95, item.confidence)) : undefined;
+    const targets = typeof item.targets === 'string'
+      ? item.targets.trim().slice(0, 256) : undefined;
+    const targetSamplingRate = typeof item.targetSamplingRate === 'number' && Number.isInteger(item.targetSamplingRate)
+      ? Math.max(1, Math.min(5, item.targetSamplingRate)) : undefined;
+    sources.push({
+      sourceId, sourceName, isMonitoring: !!item.isMonitoring, isReady: !!item.isReady,
+      modelKey: sanitizeModelKey(item.modelKey) ?? '', actualFps, error,
+      cooldown, confidence, targets, targetSamplingRate,
+    });
+  }
+  return sources;
+}
+
+function isValidRequestId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{8,128}$/.test(value);
+}
+
+function registerPendingControlRequest(
+  requestId: string,
+  senderWs: WebSocket,
+  targetDeviceId: string,
+  command: string,
+  targetSourceId?: string,
+): boolean {
+  const completedUntil = completedControlRequests.get(requestId);
+  if (completedUntil !== undefined && completedUntil <= Date.now()) completedControlRequests.delete(requestId);
+  if (pendingControlRequests.has(requestId) || completedControlRequests.has(requestId)) return false;
+  const timer = setTimeout(() => {
+    const pending = pendingControlRequests.get(requestId);
+    if (!pending) return;
+    pendingControlRequests.delete(requestId);
+    rememberCompletedRequest(requestId);
+    sendJson(pending.senderWs, {
+      type: 'command-ack', requestId, phase: 'completed',
+      targetDeviceId: pending.targetDeviceId, targetSourceId: pending.targetSourceId, command: pending.command,
+      success: false, reason: '执行超时',
+    }, 'command-timeout->sender');
+  }, COMMAND_TIMEOUT_MS);
+  timer.unref();
+  pendingControlRequests.set(requestId, { senderWs, targetDeviceId, command, targetSourceId, timer });
+  return true;
+}
+
 function createDetectorClient(
   ws: WebSocket,
   msg: WsAuthMessage,
@@ -145,6 +267,9 @@ function createDetectorClient(
     modelOptions: [],
     canSwitchModelWhileMonitoring: clientType === 'android-detector',
     hasPendingConfigChanges: false,
+    capabilities: [],
+    components: { detectorApp: 'running' },
+    sources: [],
   };
 }
 
@@ -172,36 +297,39 @@ function scheduleBroadcast(): void {
     _broadcastTimer = null;
     broadcastDeviceList();
   }, 50);
+  _broadcastTimer.unref();
 }
 
 // ── 截图推送队列 (协议分离: 截图独立异步,按接收端串行 500ms stagger) ──
 const screenshotQueues = new Map<string, Array<{ alertId: string; payload: WsScreenshotDataPush }>>();
 const screenshotProcessing = new Map<string, boolean>();
 
-function backupScreenshot(payload: WsScreenshotDataPush): void {
+function backupScreenshot(payload: WsScreenshotDataPush): boolean {
   try {
     const imageBase64 = payload.imageBase64.includes(',')
       ? payload.imageBase64.substring(payload.imageBase64.indexOf(',') + 1)
       : payload.imageBase64;
     const bytes = Buffer.from(imageBase64, 'base64');
-    if (bytes.length === 0) return;
+    if (bytes.length === 0) return false;
     const contentType = validateImageMagic(bytes);
     if (!contentType) {
       console.warn(`[ws] screenshot backup rejected: alertId=${payload.alertId} reason=invalid-image`);
-      return;
+      return false;
     }
 
     fs.mkdirSync(config.screenshotDir, { recursive: true });
     const target = getSafeScreenshotPath(config.screenshotDir, payload.alertId, contentType);
     if (!target) {
       console.warn(`[ws] screenshot backup rejected: alertId=${payload.alertId} reason=invalid-alert-id`);
-      return;
+      return false;
     }
     fs.writeFileSync(target.filePath, bytes);
     const linked = markAlertScreenshot(payload.alertId, target.filePath);
     console.log(`[ws][${new Date().toISOString()}] screenshot backed up: alertId=${payload.alertId} bytes=${bytes.length} linked=${linked}`);
+    return linked;
   } catch (err: any) {
     console.warn(`[ws] screenshot backup failed: alertId=${payload.alertId} ${err.message}`);
+    return false;
   }
 }
 
@@ -226,7 +354,8 @@ function processScreenshotQueue(receiverId: string): void {
     try { client.ws.send(JSON.stringify(item.payload)); } catch { /* ignore */ }
   }
   // 500ms 后推送下一条
-  setTimeout(() => processScreenshotQueue(receiverId), 500);
+  const timer = setTimeout(() => processScreenshotQueue(receiverId), 500);
+  timer.unref();
 }
 
 // ── Close Code 翻译 ─────────────────────────────────────────
@@ -265,7 +394,7 @@ function findDetector(deviceId: string): DetectorClient | undefined {
 
 export function handleConnection(ws: WebSocket): void {
   let authenticated = false;
-  let role: 'windows' | 'android' | 'android-detector' | null = null;
+  let role: 'windows' | 'android' | 'android-detector' | 'windows-resident' | null = null;
   let deviceId: string | null = null;
   const ts = new Date().toISOString();
   const remoteIp = (ws as any).socket?.remoteAddress ?? 'unknown';
@@ -306,6 +435,9 @@ export function handleConnection(ws: WebSocket): void {
       case 'heartbeat-android':
         if (role === 'android') handleHeartbeatReceiver({ ...(msg as WsHeartbeatAndroid), deviceId: authenticatedDeviceId });
         break;
+      case 'resident-heartbeat':
+        if (role === 'windows-resident') handleResidentHeartbeat(authenticatedDeviceId, msg as WsResidentHeartbeat);
+        break;
       case 'alert':
         if (role === 'windows' || role === 'android-detector') {
           const alert = msg as WsAlertPush;
@@ -314,6 +446,8 @@ export function handleConnection(ws: WebSocket): void {
           const metaResult = validateAlertMeta({
             deviceId: authenticatedDeviceId,
             deviceName: client?.deviceName || alert.deviceName || authenticatedDeviceId,
+            sourceId: alert.sourceId,
+            sourceName: alert.sourceName,
             timestamp: alert.timestamp,
             detections: alert.detections,
           });
@@ -328,6 +462,8 @@ export function handleConnection(ws: WebSocket): void {
             alertId: alert.alertId,
             deviceId: alert.deviceId,
             deviceName: alert.deviceName,
+            sourceId: alert.sourceId,
+            sourceName: alert.sourceName,
             timestamp: alert.timestamp,
             detections: alert.detections,
             createdAt,
@@ -339,9 +475,13 @@ export function handleConnection(ws: WebSocket): void {
         if (role === 'windows' || role === 'android-detector') {
           const payload = msg as WsScreenshotDataPush;
           if (!isSafeAlertId(payload.alertId) || !payload.imageBase64) break;
-          payload.deviceId = authenticatedDeviceId;
-          backupScreenshot(payload);
-          broadcastScreenshotData(payload);
+          const associatedPayload = associateScreenshotPayload(payload, authenticatedDeviceId, getAlertById(payload.alertId));
+          if (!associatedPayload) {
+            console.warn(`[ws] screenshot rejected: alertId=${payload.alertId} reason=alert-device-mismatch-or-missing`);
+            break;
+          }
+          if (!backupScreenshot(associatedPayload)) break;
+          broadcastScreenshotData(associatedPayload);
         }
         break;
       case 'command':
@@ -354,7 +494,7 @@ export function handleConnection(ws: WebSocket): void {
         if (role === 'android') handleRequestScreenshot(ws, msg);
         break;
       case 'command-ack':
-        if (role === 'windows' || role === 'android-detector') handleCommandAck(msg as WsCommandAck, deviceId!);
+        if (role === 'windows' || role === 'android-detector' || role === 'windows-resident') handleCommandAck(msg as WsCommandAck, deviceId!);
         break;
       case 'disconnect-reason':
         handleDisconnectReason(msg as WsDisconnectReason, role, deviceId);
@@ -400,6 +540,13 @@ export function handleConnection(ws: WebSocket): void {
         } else {
           console.log(`[ws][${ts2}] 接收端 旧连接关闭: ${deviceId} code=${code}(${codeName})`);
         }
+      } else if (role === 'windows-resident') {
+        const existing = residentWindowsClients.get(deviceId);
+        if (existing?.ws === ws) {
+          residentWindowsClients.delete(deviceId);
+          scheduleBroadcast();
+          console.log(`[ws][${ts2}] Windows驻留 断开: ${deviceId}`);
+        }
       }
     } else {
       console.log(`[ws][${ts2}] 未认证连接关闭 code=${code}(${codeName})`);
@@ -438,7 +585,7 @@ function handleAuth(
   ws: WebSocket,
   msg: WsAuthMessage,
   authTimer: NodeJS.Timeout,
-  onSuccess: (role: 'windows' | 'android' | 'android-detector', deviceId: string) => void,
+  onSuccess: (role: 'windows' | 'android' | 'android-detector' | 'windows-resident', deviceId: string) => void,
 ): void {
   clearTimeout(authTimer);
   const ts = new Date().toISOString();
@@ -517,6 +664,18 @@ function handleAuth(
     }
 
     console.log(`[ws][${ts}] 接收端 上线: ${msg.deviceId}`);
+  } else if (msg.role === 'windows-resident') {
+    const existing = residentWindowsClients.get(msg.deviceId);
+    if (existing) {
+      residentWindowsClients.delete(msg.deviceId);
+      sendJson(existing.ws, { type: 'kicked', reason: 'duplicate connection' });
+      existing.ws.terminate();
+    }
+    residentWindowsClients.set(msg.deviceId, {
+      ws, deviceId: msg.deviceId, deviceName: msg.deviceName || msg.deviceId,
+      lastSeen: new Date(), components: { resident: 'running', wpfApp: 'stopped', winFormsApp: 'stopped' },
+    });
+    console.log(`[ws][${ts}] Windows驻留 上线: ${msg.deviceName} (${msg.deviceId})`);
   } else {
     console.log(`[ws][${ts}] 认证失败: 无效 role=${msg.role}`);
     sendJson(ws, { type: 'auth-result', success: false, reason: 'invalid role' });
@@ -528,9 +687,20 @@ function handleAuth(
   sendJson(ws, { type: 'auth-result', success: true });
   onSuccess(msg.role, msg.deviceId);
   sendJson(ws, { type: 'device-list', devices: buildDeviceList() });
-  if (msg.role === 'windows' || msg.role === 'android-detector') {
+  if (msg.role === 'windows' || msg.role === 'android-detector' || msg.role === 'windows-resident') {
     scheduleBroadcast();
   }
+}
+
+function handleResidentHeartbeat(deviceId: string, msg: WsResidentHeartbeat): void {
+  const client = residentWindowsClients.get(deviceId);
+  if (!client) return;
+  const components = sanitizeComponents(msg.components) ?? client.components;
+  const changed = JSON.stringify(components) !== JSON.stringify(client.components);
+  client.components = components;
+  client.lastSeen = new Date();
+  sendJson(client.ws, { type: 'heartbeat-ack', deviceId, serverTime: client.lastSeen.toISOString() });
+  if (changed) scheduleBroadcast();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -558,6 +728,9 @@ function handleHeartbeat(msg: WsHeartbeat): void {
     JSON.stringify(client.modelOptions) !== JSON.stringify(msg.modelOptions ?? client.modelOptions) ||
     client.canSwitchModelWhileMonitoring !== (msg.canSwitchModelWhileMonitoring ?? client.canSwitchModelWhileMonitoring) ||
     client.hasPendingConfigChanges !== (msg.hasPendingConfigChanges ?? client.hasPendingConfigChanges) ||
+    JSON.stringify(client.capabilities) !== JSON.stringify(msg.capabilities ?? client.capabilities) ||
+    JSON.stringify(client.components) !== JSON.stringify(msg.components ?? client.components) ||
+    JSON.stringify(client.sources) !== JSON.stringify(msg.sources ?? client.sources) ||
     nameChanged;
 
   client.isMonitoring = msg.isMonitoring;
@@ -570,6 +743,9 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   if (msg.modelOptions !== undefined) client.modelOptions = sanitizeModelOptions(msg.modelOptions) ?? client.modelOptions;
   if (msg.canSwitchModelWhileMonitoring !== undefined) client.canSwitchModelWhileMonitoring = !!msg.canSwitchModelWhileMonitoring;
   if (msg.hasPendingConfigChanges !== undefined) client.hasPendingConfigChanges = !!msg.hasPendingConfigChanges;
+  if (msg.capabilities !== undefined) client.capabilities = sanitizeCapabilities(msg.capabilities) ?? client.capabilities;
+  if (msg.components !== undefined) client.components = sanitizeComponents(msg.components) ?? client.components;
+  if (msg.sources !== undefined) client.sources = sanitizeSources(msg.sources) ?? client.sources;
   if (nameChanged) {
     client.deviceName = msg.deviceName!;
     console.log(`[ws][${new Date().toISOString()}] 设备名称更新: ${client.deviceName} (${msg.deviceId})`);
@@ -639,28 +815,59 @@ function handleSessionInfo(msg: WsSessionInfo): void {
 // ════════════════════════════════════════════════════════════
 
 function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
-  const target = findDetector(msg.targetDeviceId);
+  const residentCommand = /^(open|close)-(wpf|winforms)$/.test(msg.command);
+  const target = residentCommand ? residentWindowsClients.get(msg.targetDeviceId) : findDetector(msg.targetDeviceId);
 
   const ack: WsCommandAck = {
     type: 'command-ack', targetDeviceId: msg.targetDeviceId,
-    command: msg.command, success: false, reason: '',
+    targetSourceId: msg.targetSourceId, requestId: msg.requestId, command: msg.command, success: false, reason: '',
   };
 
+  if (msg.requestId !== undefined && !isValidRequestId(msg.requestId)) {
+    ack.phase = 'completed';
+    ack.reason = '无效的 requestId';
+    sendJson(senderWs, ack, 'command-ack->sender');
+    return;
+  }
+
   if (!target || target.ws.readyState !== WebSocket.OPEN) {
-    ack.reason = '设备离线';
+    ack.reason = residentCommand ? '驻留组件离线' : '设备离线';
     sendJson(senderWs, ack, 'command-ack->sender');
     console.warn(`[ws][${new Date().toISOString()}] 命令路由失败: target=${msg.targetDeviceId} command=${msg.command} reason=设备离线`);
     return;
   }
 
-  const relay: WsCommandRelay = { type: 'command', command: msg.command, targetDeviceId: msg.targetDeviceId };
+  if (msg.targetSourceId !== undefined && !/^[A-Za-z0-9_-]{1,64}$/.test(msg.targetSourceId)) {
+    ack.phase = 'completed'; ack.reason = '无效的 targetSourceId';
+    sendJson(senderWs, ack, 'command-ack->sender'); return;
+  }
+  if (msg.targetSourceId && (residentCommand || !(target as DetectorClient).capabilities.includes('source-control'))) {
+    ack.phase = 'completed'; ack.reason = '目标不支持逐来源控制';
+    sendJson(senderWs, ack, 'command-ack->sender'); return;
+  }
+  if (msg.requestId && !registerPendingControlRequest(msg.requestId, senderWs, msg.targetDeviceId, msg.command, msg.targetSourceId)) {
+    ack.phase = 'completed';
+    ack.reason = 'requestId 重复';
+    sendJson(senderWs, ack, 'command-ack->sender');
+    return;
+  }
+
+  const relay: WsCommandRelay = { type: 'command', requestId: msg.requestId, command: msg.command, targetDeviceId: msg.targetDeviceId, targetSourceId: msg.targetSourceId };
   sendJson(target.ws, relay, `command->${msg.targetDeviceId}`);
   ack.success = true;
+  ack.phase = 'forwarded';
   ack.reason = '已转发';
   sendJson(senderWs, ack, 'command-ack->sender');
 }
 
 function handleSetConfig(senderWs: WebSocket, msg: WsSetConfig): void {
+  if (msg.requestId !== undefined && !isValidRequestId(msg.requestId)) {
+    sendJson(senderWs, {
+      type: 'command-ack', requestId: msg.requestId, phase: 'completed', targetDeviceId: msg.targetDeviceId,
+      command: `set-config:${msg.key}`, success: false, reason: '无效的 requestId',
+    }, 'set-config-ack->sender');
+    return;
+  }
   if (!isValidSetConfigKey(msg.key)) {
     sendJson(senderWs, {
       type: 'command-ack', targetDeviceId: msg.targetDeviceId,
@@ -684,9 +891,24 @@ function handleSetConfig(senderWs: WebSocket, msg: WsSetConfig): void {
   }
 
   const sanitizedValue = validation.value;
-  const relay: WsSetConfigRelay = { type: 'set-config', key: msg.key, value: sanitizedValue, targetDeviceId: msg.targetDeviceId };
+  const command = `set-config:${msg.key}`;
+  if (msg.targetSourceId !== undefined && !/^[A-Za-z0-9_-]{1,64}$/.test(msg.targetSourceId)) {
+    sendJson(senderWs, { type: 'command-ack', requestId: msg.requestId, phase: 'completed', targetDeviceId: msg.targetDeviceId,
+      targetSourceId: msg.targetSourceId, command: `set-config:${msg.key}`, success: false, reason: '无效的 targetSourceId' }, 'set-config-ack->sender');
+    return;
+  }
+  if (msg.targetSourceId && !target.capabilities.includes('source-control')) {
+    sendJson(senderWs, { type: 'command-ack', requestId: msg.requestId, phase: 'completed', targetDeviceId: msg.targetDeviceId,
+      targetSourceId: msg.targetSourceId, command: `set-config:${msg.key}`, success: false, reason: '目标不支持逐来源控制' }, 'set-config-ack->sender');
+    return;
+  }
+  if (msg.requestId && !registerPendingControlRequest(msg.requestId, senderWs, msg.targetDeviceId, command, msg.targetSourceId)) {
+    sendJson(senderWs, { type: 'command-ack', requestId: msg.requestId, phase: 'completed', targetDeviceId: msg.targetDeviceId, command, success: false, reason: 'requestId 重复' }, 'set-config-ack->sender');
+    return;
+  }
+  const relay: WsSetConfigRelay = { type: 'set-config', requestId: msg.requestId, key: msg.key, value: sanitizedValue, targetDeviceId: msg.targetDeviceId, targetSourceId: msg.targetSourceId };
   sendJson(target.ws, relay, `set-config->${msg.targetDeviceId}`);
-  sendJson(senderWs, { type: 'command-ack', targetDeviceId: msg.targetDeviceId, command: `set-config:${msg.key}`, success: true, reason: '已转发' }, 'set-config-ack->sender');
+  sendJson(senderWs, { type: 'command-ack', requestId: msg.requestId, phase: 'forwarded', targetDeviceId: msg.targetDeviceId, targetSourceId: msg.targetSourceId, command, success: true, reason: '已转发' }, 'set-config-ack->sender');
 }
 
 function handleRequestScreenshot(senderWs: WebSocket, msg: any): void {
@@ -724,6 +946,31 @@ function handleRequestScreenshot(senderWs: WebSocket, msg: any): void {
 
 function handleCommandAck(ack: WsCommandAck, detectorDeviceId: string): void {
   const enriched = { ...ack, targetDeviceId: detectorDeviceId };
+  if (ack.requestId) {
+    const pending = pendingControlRequests.get(ack.requestId);
+    if (!pending || pending.targetDeviceId !== detectorDeviceId || pending.command !== ack.command || pending.targetSourceId !== ack.targetSourceId) {
+      console.warn(`[ws][${new Date().toISOString()}] 忽略无法关联的命令回执: requestId=${ack.requestId} target=${detectorDeviceId} command=${ack.command}`);
+      return;
+    }
+    clearTimeout(pending.timer);
+    pendingControlRequests.delete(ack.requestId);
+    rememberCompletedRequest(ack.requestId);
+    sendJson(pending.senderWs, { ...enriched, phase: 'completed' }, `command-ack:${ack.command}->requester`);
+    return;
+  }
+
+  // 旧 Windows 客户端不会回显 requestId。仅当目标和命令恰好匹配一个
+  // 待处理请求时安全关联；有歧义时维持旧广播行为并让新请求按超时收敛。
+  const legacyMatches = Array.from(pendingControlRequests.entries())
+    .filter(([, pending]) => pending.targetDeviceId === detectorDeviceId && pending.command === ack.command);
+  if (legacyMatches.length === 1) {
+    const [requestId, pending] = legacyMatches[0];
+    clearTimeout(pending.timer);
+    pendingControlRequests.delete(requestId);
+    rememberCompletedRequest(requestId);
+    sendJson(pending.senderWs, { ...enriched, requestId, phase: 'completed' }, `legacy-command-ack:${ack.command}->requester`);
+    return;
+  }
   broadcastToReceivers(enriched, `command-ack:${ack.command}`);
 }
 
@@ -767,8 +1014,26 @@ function buildDeviceList(): DeviceStatus[] {
         canSwitchModelWhileMonitoring: c.canSwitchModelWhileMonitoring,
         hasPendingConfigChanges: c.hasPendingConfigChanges,
         clientType: c.clientType,
+        capabilities: residentWindowsClients.has(c.deviceId)
+          ? Array.from(new Set([...c.capabilities, 'app-lifecycle-control'])) : c.capabilities,
+        components: residentWindowsClients.has(c.deviceId)
+          ? { ...residentWindowsClients.get(c.deviceId)!.components, ...c.components, resident: 'running' } : c.components,
+        sources: c.sources,
       });
     }
+  }
+  for (const r of residentWindowsClients.values()) {
+    if (devices.some(d => d.deviceId === r.deviceId)) continue;
+    devices.push({
+      deviceId: r.deviceId, deviceName: r.deviceName,
+      online: (now - r.lastSeen.getTime()) < config.deviceOfflineMs,
+      isMonitoring: false, isReady: false, lastSeen: r.lastSeen.toISOString(),
+      cooldown: 5, confidence: 0.45, targets: '', targetSamplingRate: 3,
+      modelKey: '', modelOptions: [], canSwitchModelWhileMonitoring: false,
+      hasPendingConfigChanges: false, clientType: 'windows',
+      capabilities: ['app-lifecycle-control'], components: { ...r.components, resident: 'running' },
+      sources: [],
+    });
   }
   return devices;
 }
@@ -800,7 +1065,7 @@ function broadcastToReceivers(msg: object, context?: string): { success: number;
 // 定时维护：每 30s
 // ════════════════════════════════════════════════════════════
 
-setInterval(() => {
+const maintenanceTimer = setInterval(() => {
   const now = Date.now();
   const ts = new Date().toISOString();
   const detectorDeadline = now - config.deviceOfflineMs;
@@ -839,3 +1104,4 @@ setInterval(() => {
     console.log(`[ws][${ts}] 设备清理后推送 → 接收端:${receiverClients.size} / Windows:${detectorWindowsClients.size} / Android检测端:${detectorAndroidClients.size}`);
   }
 }, 30_000);
+maintenanceTimer.unref();

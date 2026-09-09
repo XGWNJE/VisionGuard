@@ -11,6 +11,9 @@
 export interface AlertMeta {
   deviceId: string;
   deviceName: string;
+  /** Stable source identity and event-time display-name snapshot (V1). */
+  sourceId?: string;
+  sourceName?: string;
   timestamp: string;          // ISO 8601
   detections: Detection[];
 }
@@ -26,6 +29,8 @@ export interface AlertRecord {
   alertId: string;
   deviceId: string;
   deviceName: string;
+  sourceId?: string;
+  sourceName?: string;
   timestamp: string;
   detections: Detection[];
   screenshotPath?: string;
@@ -38,7 +43,7 @@ export interface AlertRecord {
 export interface WsAuthMessage {
   type: 'auth';
   apiKey: string;
-  role: 'windows' | 'android' | 'android-detector';
+  role: 'windows' | 'android' | 'android-detector' | 'windows-resident';
   deviceId: string;
   deviceName: string;
   version?: string;
@@ -59,6 +64,9 @@ export interface WsHeartbeat {
   modelOptions?: string[];
   canSwitchModelWhileMonitoring?: boolean;
   hasPendingConfigChanges?: boolean;
+  capabilities?: string[];
+  components?: Record<string, string>;
+  sources?: SourceStatus[];
 }
 
 /** 接收端 → 服务器：心跳 (每 20 秒) */
@@ -67,12 +75,33 @@ export interface WsHeartbeatAndroid {
   deviceId: string;
 }
 
+export interface WsResidentHeartbeat {
+  type: 'resident-heartbeat';
+  components?: Record<string, string>;
+}
+
+export interface SourceStatus {
+  sourceId: string;
+  sourceName: string;
+  isMonitoring: boolean;
+  isReady: boolean;
+  modelKey: string;
+  actualFps?: number;
+  error?: string;
+  cooldown?: number;
+  confidence?: number;
+  targets?: string;
+  targetSamplingRate?: number;
+}
+
 /** 服务器 → 接收端：报警推送 (v4.0.0+: 元数据 only, 截图走独立 screenshot-data 消息) */
 export interface WsAlertPush {
   type: 'alert';
   alertId: string;
   deviceId: string;
   deviceName: string;
+  sourceId?: string;
+  sourceName?: string;
   timestamp: string;
   detections: Detection[];
   createdAt?: number;
@@ -94,6 +123,8 @@ export interface WsScreenshotDataPush {
   type: 'screenshot-data';
   alertId: string;
   deviceId: string;
+  sourceId?: string;
+  sourceName?: string;
   imageBase64: string;
   width?: number;
   height?: number;
@@ -115,19 +146,26 @@ export interface DeviceStatus {
   canSwitchModelWhileMonitoring: boolean;
   hasPendingConfigChanges: boolean;
   clientType: string;
+  capabilities: string[];
+  components: Record<string, string>;
+  sources: SourceStatus[];
 }
 
 /** 接收端 → 服务器：反向控制命令 */
 export interface WsCommand {
   type: 'command';
+  requestId?: string;
   targetDeviceId: string;
-  command: 'pause' | 'resume' | 'stop-alarm';
+  targetSourceId?: string;
+  command: 'pause' | 'resume' | 'stop-alarm' | 'open-wpf' | 'open-winforms' | 'close-wpf' | 'close-winforms';
 }
 
 /** 接收端 → 服务器：参数调整 */
 export interface WsSetConfig {
   type: 'set-config';
+  requestId?: string;
   targetDeviceId: string;
+  targetSourceId?: string;
   key: string;
   value: string;
 }
@@ -135,16 +173,20 @@ export interface WsSetConfig {
 /** 服务器 → 检测端：转发命令 */
 export interface WsCommandRelay {
   type: 'command';
-  command: 'pause' | 'resume' | 'stop-alarm';
+  requestId?: string;
+  command: 'pause' | 'resume' | 'stop-alarm' | 'open-wpf' | 'open-winforms' | 'close-wpf' | 'close-winforms';
   targetDeviceId: string;
+  targetSourceId?: string;
 }
 
 /** 服务器 → 检测端：转发参数调整 */
 export interface WsSetConfigRelay {
   type: 'set-config';
+  requestId?: string;
   key: string;
   value: string;
   targetDeviceId: string;
+  targetSourceId?: string;
 }
 
 /** 客户端 → 服务器：主动断开原因 */
@@ -166,7 +208,10 @@ export interface WsSessionInfo {
 /** 服务器 → 接收端：命令确认 */
 export interface WsCommandAck {
   type: 'command-ack';
+  requestId?: string;
+  phase?: 'forwarded' | 'completed';
   targetDeviceId: string;
+  targetSourceId?: string;
   command: string;
   success: boolean;
   reason: string;
@@ -192,10 +237,21 @@ export interface DetectorClient {
   modelOptions: string[];
   canSwitchModelWhileMonitoring: boolean;
   hasPendingConfigChanges: boolean;
+  capabilities: string[];
+  components: Record<string, string>;
+  sources: SourceStatus[];
 }
 
 export interface ReceiverClient {
   ws: WebSocket;
   deviceId: string;
   lastSeen: Date;
+}
+
+export interface ResidentClient {
+  ws: WebSocket;
+  deviceId: string;
+  deviceName: string;
+  lastSeen: Date;
+  components: Record<string, string>;
 }
