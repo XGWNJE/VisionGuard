@@ -91,6 +91,9 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\windows-shared\Services\ResidentBridge.cs">
+      <Link>Services\ResidentBridge.cs</Link>
+    </Compile>
     <Reference Include="Microsoft.ML.OnnxRuntime, Version=1.0.0.0, Culture=neutral, PublicKeyToken=f27f157f0a5b7bb6, processorArchitecture=MSIL">
       <HintPath>packages\Microsoft.ML.OnnxRuntime.1.1.0\lib\netstandard1.1\Microsoft.ML.OnnxRuntime.dll</HintPath>
     </Reference>
@@ -308,6 +311,12 @@
     <Compile Include="Utils\SnapshotRenderer.cs" />
     <Compile Include="..\windows-shared\Utils\ApiKeyProvider.cs">
       <Link>Utils\ApiKeyProvider.cs</Link>
+    </Compile>
+    <Compile Include="..\windows-shared\Utils\SingleInstanceGuard.cs">
+      <Link>Utils\SingleInstanceGuard.cs</Link>
+    </Compile>
+    <Compile Include="..\windows-shared\Services\RemoteControlEventArgs.cs">
+      <Link>Services\RemoteControlEventArgs.cs</Link>
     </Compile>
     <EmbeddedResource Include="Properties\Resources.resx">
       <SubType>Designer</SubType>

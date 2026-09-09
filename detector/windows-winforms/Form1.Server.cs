@@ -250,18 +250,18 @@ namespace VisionGuard
             {
                 BeginInvoke(new Action(() =>
                 {
-                    switch (cmd)
+                    switch (cmd.Command)
                     {
                         case "pause":
-                            StopMonitor(remote: true);
+                            StopMonitor(remote: true, requestId: cmd.RequestId);
                             break;
 
                         case "resume":
-                            StartMonitor(remote: true);
+                            StartMonitor(remote: true, requestId: cmd.RequestId);
                             break;
 
                         case "stop-alarm":
-                            _serverPushService.SendCommandAck(cmd, false, "检测端无本地报警功能");
+                            _serverPushService.SendCommandAck(cmd.Command, false, "检测端无本地报警功能", cmd.RequestId);
                             break;
                     }
                     UpdateServerHeartbeatParams();
@@ -273,7 +273,7 @@ namespace VisionGuard
             {
                 BeginInvoke(new Action(() =>
                 {
-                    ApplyRemoteConfig(kv.Key, kv.Value);
+                    ApplyRemoteConfig(kv.Key, kv.Value, kv.RequestId);
                     UpdateServerHeartbeatParams();
                     _serverPushService.SendHeartbeatNow();
                 }));
@@ -299,7 +299,7 @@ namespace VisionGuard
         /// 应用 Android 端下发的参数调整命令（set-config）。
         /// 支持的 key：cooldown / confidence / targets / targetSamplingRate / modelKey
         /// </summary>
-        private void ApplyRemoteConfig(string key, string value)
+        private void ApplyRemoteConfig(string key, string value, string requestId = "")
         {
             switch (key)
             {
@@ -312,13 +312,13 @@ namespace VisionGuard
                         // 如果正在监控，实时更新 MonitorService 的配置
                         if (_monitorService.IsStarted)
                             _monitorService.UpdateConfig(BuildConfig());
-                        _serverPushService.SendCommandAck("set-config:cooldown", true);
+                        _serverPushService.SendCommandAck("set-config:cooldown", true, requestId: requestId);
                         _log.Info($"[Server] 远程调整冷却时间 → {cd}s");
                         SaveSettings();
                     }
                     else
                     {
-                        _serverPushService.SendCommandAck("set-config:cooldown", false, "值无效（1-300）");
+                        _serverPushService.SendCommandAck("set-config:cooldown", false, "值无效（1-300）", requestId);
                     }
                     break;
 
@@ -333,13 +333,13 @@ namespace VisionGuard
                                               Math.Min(_trkThreshold.Maximum, pct));
                         if (_monitorService.IsStarted)
                             _monitorService.UpdateConfig(BuildConfig());
-                        _serverPushService.SendCommandAck("set-config:confidence", true);
+                        _serverPushService.SendCommandAck("set-config:confidence", true, requestId: requestId);
                         _log.Info($"[Server] 远程调整置信度 → {pct}%");
                         SaveSettings();
                     }
                     else
                     {
-                        _serverPushService.SendCommandAck("set-config:confidence", false, "值无效（0.1-0.95）");
+                        _serverPushService.SendCommandAck("set-config:confidence", false, "值无效（0.1-0.95）", requestId);
                     }
                     break;
 
@@ -358,7 +358,7 @@ namespace VisionGuard
                         _targetListBox.SetItemChecked(i, classes.Contains(_targetClassKeys[i]));
                     if (_monitorService.IsStarted)
                         _monitorService.UpdateConfig(BuildConfig());
-                    _serverPushService.SendCommandAck("set-config:targets", true);
+                    _serverPushService.SendCommandAck("set-config:targets", true, requestId: requestId);
                     _log.Info($"[Server] 远程调整监控目标 → {(classes.Count == 0 ? "全部" : string.Join(",", classes))}");
                     SaveSettings();
                     break;
@@ -371,37 +371,37 @@ namespace VisionGuard
                         _lblSamplingRate.Text = $"{_sliderSamplingRate.Value} 次/秒";
                         if (_monitorService.IsStarted)
                             _monitorService.UpdateConfig(BuildConfig());
-                        _serverPushService.SendCommandAck("set-config:targetSamplingRate", true);
+                        _serverPushService.SendCommandAck("set-config:targetSamplingRate", true, requestId: requestId);
                         _log.Info($"[Server] 远程调整采样率 → {rate} 次/秒");
                         SaveSettings();
                     }
                     else
                     {
-                        _serverPushService.SendCommandAck("set-config:targetSamplingRate", false, "值无效（1-5）");
+                        _serverPushService.SendCommandAck("set-config:targetSamplingRate", false, "值无效（1-5）", requestId);
                     }
                     break;
 
                 case "modelKey":
                     if (_monitorService.IsStarted)
                     {
-                        _serverPushService.SendCommandAck("set-config:modelKey", false, "请先停止监控再切换模型");
+                        _serverPushService.SendCommandAck("set-config:modelKey", false, "请先停止监控再切换模型", requestId);
                         break;
                     }
                     int modelIndex = Array.IndexOf(Utils.ModelManager.ModelKeys, value);
                     if (modelIndex < 0)
                     {
-                        _serverPushService.SendCommandAck("set-config:modelKey", false, "模型不支持");
+                        _serverPushService.SendCommandAck("set-config:modelKey", false, "模型不支持", requestId);
                         break;
                     }
                     _selectedModel = value;
                     _cmbModel.SelectedIndex = modelIndex;
-                    _serverPushService.SendCommandAck("set-config:modelKey", true);
+                    _serverPushService.SendCommandAck("set-config:modelKey", true, requestId: requestId);
                     _log.Info($"[Server] 远程切换模型 → {value}");
                     SaveSettings();
                     break;
 
                 default:
-                    _serverPushService.SendCommandAck($"set-config:{key}", false, $"未知配置项：{key}");
+                    _serverPushService.SendCommandAck($"set-config:{key}", false, $"未知配置项：{key}", requestId);
                     break;
             }
         }

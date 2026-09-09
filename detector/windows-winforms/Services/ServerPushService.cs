@@ -32,10 +32,10 @@ namespace VisionGuard.Services
         public event EventHandler<string> ConnectionStateChanged;
 
         /// <summary>"pause" / "resume" / "stop-alarm"</summary>
-        public event EventHandler<string> CommandReceived;
+        public event EventHandler<RemoteCommandEventArgs> CommandReceived;
 
         /// <summary>set-config 命令：key=配置项名, value=新值</summary>
-        public event EventHandler<KeyValuePair<string, string>> SetConfigReceived;
+        public event EventHandler<RemoteSetConfigEventArgs> SetConfigReceived;
 
         // ── 常量 ─────────────────────────────────────────────────────
         private const int HEARTBEAT_INTERVAL_MS = 3_000;
@@ -265,15 +265,17 @@ namespace VisionGuard.Services
             }
         }
 
-        public void SendCommandAck(string command, bool success, string reason = "")
+        public void SendCommandAck(string command, bool success, string reason = "", string requestId = "")
         {
-            _session?.SendJson(new Dictionary<string, object>
+            var message = new Dictionary<string, object>
             {
                 ["type"] = "command-ack",
                 ["command"] = command,
                 ["success"] = success,
                 ["reason"] = reason ?? "",
-            });
+            };
+            if (!string.IsNullOrWhiteSpace(requestId)) message["requestId"] = requestId;
+            _session?.SendJson(message);
         }
 
         public void SendHeartbeatNow()
@@ -314,6 +316,8 @@ namespace VisionGuard.Services
                 ["modelKey"] = modelKey,
                 ["modelOptions"] = modelOptions,
                 ["canSwitchModelWhileMonitoring"] = canSwitchModelWhileMonitoring,
+                ["capabilities"] = new[] { "monitor-control", "config-control", "request-correlation", "screenshot-on-demand" },
+                ["components"] = new Dictionary<string, object> { ["detectorApp"] = "running" },
             });
         }
 
@@ -723,6 +727,8 @@ namespace VisionGuard.Services
                         ["modelKey"] = modelKey,
                         ["modelOptions"] = modelOptions,
                         ["canSwitchModelWhileMonitoring"] = canSwitchModelWhileMonitoring,
+                        ["capabilities"] = new[] { "monitor-control", "config-control", "request-correlation", "screenshot-on-demand" },
+                        ["components"] = new Dictionary<string, object> { ["detectorApp"] = "running" },
                     });
                     // 注意：发送心跳后绝不更新 _lastMessageAtTicks
                 }
@@ -752,16 +758,18 @@ namespace VisionGuard.Services
                         case "command":
                         {
                             string cmd = SimpleJson.GetString(d, "command");
+                            string requestId = SimpleJson.GetString(d, "requestId", "");
                             if (!string.IsNullOrEmpty(cmd))
-                                try { _parent.CommandReceived?.Invoke(_parent, cmd); } catch { }
+                                try { _parent.CommandReceived?.Invoke(_parent, new RemoteCommandEventArgs(cmd, requestId)); } catch { }
                             break;
                         }
                         case "set-config":
                         {
                             string key = SimpleJson.GetString(d, "key");
                             string val = SimpleJson.GetString(d, "value");
+                            string requestId = SimpleJson.GetString(d, "requestId", "");
                             if (!string.IsNullOrEmpty(key))
-                                try { _parent.SetConfigReceived?.Invoke(_parent, new KeyValuePair<string, string>(key, val)); } catch { }
+                                try { _parent.SetConfigReceived?.Invoke(_parent, new RemoteSetConfigEventArgs(key, val, requestId)); } catch { }
                             break;
                         }
                         case "request-screenshot":

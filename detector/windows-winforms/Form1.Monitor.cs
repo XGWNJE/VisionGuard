@@ -172,11 +172,11 @@ namespace VisionGuard
         /// <summary>
         /// 启动监控推理。remote=true 时失败通过 command-ack 返回，不弹 MessageBox。
         /// </summary>
-        private async void StartMonitor(bool remote)
+        private async void StartMonitor(bool remote, string requestId = "")
         {
             if (_monitorService.IsStarted)
             {
-                if (remote) _serverPushService.SendCommandAck("resume", false, "监控已在运行");
+                if (remote) _serverPushService.SendCommandAck("resume", false, "监控已在运行", requestId);
                 return;
             }
 
@@ -219,7 +219,7 @@ namespace VisionGuard
                 {
                     if (remote)
                     {
-                        _serverPushService.SendCommandAck("resume", false, "未选择捕获区域，请先在捕获页框选区域");
+                        _serverPushService.SendCommandAck("resume", false, "未选择捕获区域，请先在捕获页框选区域", requestId);
                         _log.Warn("[Server] 收到 resume，但捕获区域未设置。");
                     }
                     else
@@ -236,7 +236,7 @@ namespace VisionGuard
                 {
                     if (remote)
                     {
-                        _serverPushService.SendCommandAck("resume", false, "目标窗口句柄无效，请重新选择");
+                        _serverPushService.SendCommandAck("resume", false, "目标窗口句柄无效，请重新选择", requestId);
                         _log.Warn("[Server] 收到 resume，但目标窗口句柄无效。");
                     }
                     else
@@ -258,7 +258,7 @@ namespace VisionGuard
                 _log.Info($"监控已启动 | {src} | {cfg.TargetFps} FPS | 阈值 {cfg.ConfidenceThreshold:P0}");
                 if (remote)
                 {
-                    _serverPushService.SendCommandAck("resume", true);
+                    _serverPushService.SendCommandAck("resume", true, requestId: requestId);
                     _log.Info("[Server] 收到 resume，监控推理已启动。");
                 }
 
@@ -273,7 +273,7 @@ namespace VisionGuard
                 string fullMsg = BuildExceptionMessage(ex);
                 _log.Error("启动失败：" + fullMsg);
                 if (remote)
-                    _serverPushService.SendCommandAck("resume", false, "启动异常：" + ex.Message);
+                    _serverPushService.SendCommandAck("resume", false, "启动异常：" + ex.Message, requestId);
                 else
                     MessageBox.Show(fullMsg, "启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
@@ -286,11 +286,11 @@ namespace VisionGuard
         /// <summary>
         /// 停止监控推理。remote=true 时通过 command-ack 返回结果。
         /// </summary>
-        private void StopMonitor(bool remote)
+        private void StopMonitor(bool remote, string requestId = "")
         {
             if (!_monitorService.IsStarted)
             {
-                if (remote) _serverPushService.SendCommandAck("pause", false, "监控未运行");
+                if (remote) _serverPushService.SendCommandAck("pause", false, "监控未运行", requestId);
                 return;
             }
 
@@ -301,7 +301,7 @@ namespace VisionGuard
             _serverPushService.SendHeartbeatNow();
             UpdateControlState(started: false);
             _log.Info(remote ? "[Server] 收到 pause，监控推理已停止。" : "监控已停止。");
-            if (remote) _serverPushService.SendCommandAck("pause", true);
+            if (remote) _serverPushService.SendCommandAck("pause", true, requestId: requestId);
         }
 
         // ════════════════════════════════════════════════════════════

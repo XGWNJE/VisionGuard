@@ -21,6 +21,10 @@ namespace VisionGuard
         [STAThread]
         static void Main()
         {
+            using (var singleInstanceGuard = new Utils.SingleInstanceGuard("WinForms"))
+            {
+                if (!singleInstanceGuard.IsPrimaryInstance) return;
+
             AppContext.SetSwitch("Switch.System.Net.DontEnableSystemDefaultTlsVersions", true);
             ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
 
@@ -29,7 +33,15 @@ namespace VisionGuard
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new Form1());
+            using (var residentBridge = new Services.ResidentBridge("WinForms", () =>
+            {
+                if (Application.OpenForms.Count > 0)
+                    Application.OpenForms[0].BeginInvoke(new Action(Application.Exit));
+            }))
+            {
+                Application.Run(new Form1());
+            }
+            }
         }
     }
 }
