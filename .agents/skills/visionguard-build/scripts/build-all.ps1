@@ -58,34 +58,37 @@ function Invoke-Step {
 }
 
 function Get-MSBuildPath {
-    $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-    if (Test-Path $vswhere) {
-        $path = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
+    $vswhereCommand = Get-Command vswhere.exe -ErrorAction SilentlyContinue
+    if (-not $vswhereCommand -and ${env:ProgramFiles(x86)}) {
+        $candidate = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+        if (Test-Path -LiteralPath $candidate) {
+            $vswhereCommand = Get-Item -LiteralPath $candidate
+        }
+    }
+    if ($vswhereCommand) {
+        $vswherePath = if ($vswhereCommand.PSObject.Properties.Name -contains 'Source') { $vswhereCommand.Source } else { $vswhereCommand.FullName }
+        $path = & $vswherePath -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
         if ($path -and (Test-Path $path)) {
             return $path
         }
     }
 
-    $fallbacks = @(
-        "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe",
-        "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe"
-    )
-    foreach ($candidate in $fallbacks) {
-        if (Test-Path $candidate) {
-            return $candidate
-        }
+    $msbuildCommand = Get-Command msbuild.exe -ErrorAction SilentlyContinue
+    if ($msbuildCommand) {
+        return $msbuildCommand.Source
     }
 
     throw "MSBuild.exe not found. Install Visual Studio Build Tools or Visual Studio with MSBuild."
 }
 
 function Set-CommandJavaHome {
-    $candidates = @(@(
-        $env:JAVA_HOME,
-        "C:\Android\Android Studio\jbr",
-        "C:\Program Files\Android\Android Studio\jbr",
-        "C:\Program Files\Android\Android Studio\jre"
-    ) | Where-Object { $_ -and (Test-Path (Join-Path $_ "bin\java.exe")) })
+    $candidates = @($env:JAVA_HOME)
+    $javaCommand = Get-Command java.exe -ErrorAction SilentlyContinue
+    if ($javaCommand) {
+        $javaBin = Split-Path -Parent $javaCommand.Source
+        $candidates += Split-Path -Parent $javaBin
+    }
+    $candidates = @($candidates | Where-Object { $_ -and (Test-Path (Join-Path $_ "bin\java.exe")) } | Select-Object -Unique)
 
     if (-not $candidates -or $candidates.Count -eq 0) {
         throw "JAVA_HOME is not set and no Android Studio JBR was found."

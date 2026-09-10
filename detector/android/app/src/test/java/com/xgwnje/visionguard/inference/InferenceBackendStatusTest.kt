@@ -12,6 +12,25 @@ class InferenceBackendStatusTest {
         assertTrue(status.fallbackReason.contains("QNN"))
     }
 
+    @Test fun nnapiRequestUsesNnapiWhenRuntimeIsAvailable() {
+        val status = AndroidInferenceBackendPolicy.resolve(
+            InferenceBackend.NNAPI,
+            nnapiAvailable = true
+        )
+        assertEquals(InferenceBackend.NNAPI, status.requested)
+        assertEquals(InferenceBackend.NNAPI, status.active)
+        assertEquals("", status.fallbackReason)
+    }
+
+    @Test fun nnapiRequestFallsBackOnOldAndroid() {
+        val status = AndroidInferenceBackendPolicy.resolve(
+            InferenceBackend.NNAPI,
+            nnapiAvailable = false
+        )
+        assertEquals(InferenceBackend.CPU, status.active)
+        assertTrue(status.fallbackReason.contains("API 29"))
+    }
+
     @Test fun cpuRequestHasNoFallbackReason() {
         val status = AndroidInferenceBackendPolicy.resolve(InferenceBackend.CPU)
         assertEquals(InferenceBackend.CPU, status.active)

@@ -50,12 +50,24 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="Assets\yolo26n_320.onnx" />
-    <Content Include="Assets\yolo26n_640.onnx" />
-    <Content Include="Assets\yolo26s_320.onnx" />
-    <Content Include="Assets\yolo26s_640.onnx" />
-    <Content Include="Assets\yolo26m_320.onnx" />
-    <Content Include="Assets\yolo26m_640.onnx" />
+    <Content Include="Assets\yolo26n_320.onnx">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\yolo26n_640.onnx">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\yolo26s_320.onnx">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\yolo26s_640.onnx">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\yolo26m_320.onnx">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\yolo26m_640.onnx">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Content>
     <!-- 导航图标嵌入程序集，发行包排除 Assets 目录后仍可通过 pack URI 加载。 -->
     <Resource Include="Assets\capture.png" />
     <Resource Include="Assets\settings.png" />

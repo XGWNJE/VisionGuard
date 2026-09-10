@@ -27,8 +27,9 @@ test('release skill replaces the old push-update entry and documents release gat
   assert.match(skill, /-PreflightOnly/);
   assert.match(skill, /-SkipServerDeploy/);
   assert.match(skill, /GitHub publication is disabled by default|默认不.*GitHub/i);
-  assert.match(skill, /D:\\ObjectCode\\Server-infra/);
-  assert.match(skill, /\/opt\/visionguard-server/);
+  assert.match(skill, /Server-infra/);
+  assert.match(skill, /server\.local\.env/);
+  assert.doesNotMatch(skill, /[A-Za-z]:\\|\/opt\//);
   assert.match(skill, /app-release-unsigned\.apk/);
   assert.match(skill, /apksigner verify/);
   assert.match(skill, /HEAD 200/);
@@ -67,6 +68,14 @@ test('old Claude workflow entrypoints are not kept as canonical project files', 
     !fs.existsSync(path.join(root, 'scripts/hooks/check-claude-md.ps1')),
     'old CLAUDE.md sync hook should not be tracked'
   );
+  for (const relativePath of [
+    'scripts/release.js',
+    'scripts/release-helpers.js',
+    'scripts/release-helpers.test.js',
+    'scripts/bump-version.sh'
+  ]) {
+    assert.ok(!fs.existsSync(path.join(root, relativePath)), `${relativePath} should not be tracked`);
+  }
 });
 
 test('publish-release.ps1 keeps GitHub optional and release deployment reproducible', () => {
@@ -97,6 +106,8 @@ test('publish-release.ps1 keeps GitHub optional and release deployment reproduci
   assert.match(script, /apksigner/);
   assert.match(script, /zipalign/);
   assert.match(script, /Set-AndroidJavaHome/);
+  assert.match(script, /prepare-android-nnapi-model\.py/);
+  assert.match(script, /rewrites its Split form|Normalize its Split form|YOLO26 models for Android NNAPI/i);
   assert.match(script, /\$Name\$extension/);
   assert.match(script, /VISIONGUARD_ANDROID_STORE_PASSWORD/);
   assert.match(script, /VISIONGUARD_ANDROID_KEY_PASSWORD/);

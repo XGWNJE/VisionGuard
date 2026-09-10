@@ -29,6 +29,13 @@
 - `yolo26s_320.onnx`
 - `yolo26s_640.onnx`
 
+### Android NNAPI 兼容处理
+
+- YOLO26 原始导出模型中的 `Split` 节点在小米 15 的 NNAPI 路径上可能能完成能力分区，却在 session 创建时失败；发布准备阶段使用 `scripts/prepare-android-nnapi-model.py` 将带常量切分输入的 `Split` 改写为等价 `Slice` 节点。
+- 改写保留原有逻辑模型名和下载路由，Server 最终仍提供上述文件名；WPF/CPU、WPF/DirectML 和 Android/NNAPI 均使用同一份归一化后的 YOLO26 文件。
+- 脚本要求 Python 与 `onnx`、`numpy` 包；正式发布脚本在复制 YOLO26 模型后自动执行，准备失败时中止发布，不静默提供未验证的原始模型。
+- 该处理不是量化，不改变模型输入/输出契约；发布前仍须以目标模型的 ONNX 校验和对应端推理烟测确认语义。
+
 ## 模型按需下载
 
 ### Server 端点
@@ -46,7 +53,7 @@
 
 ### 首次安装 / 旧版升级
 
-启动时自动将旧路径（exe 同目录 `Assets\`）的模型迁移到 `%APPDATA%` 缓存目录，避免重复下载。
+启动时自动将旧路径（exe 同目录 `Assets\`）的模型迁移到 `%APPDATA%` 缓存目录，避免重复下载；这只是升级兼容路径，不是新的模型分发入口。
 
 ### 下载行为
 
@@ -80,7 +87,8 @@
 
 ## 维护规则
 
-- 模型文件不入 git 版本控制（`.gitignore` 排除所有 `Assets/*.onnx` 和 `assets/models/*.onnx`）
-- 模型不随发行包打包（`CopyToOutputDirectory=Never`，`scripts/publish-release.ps1` 压缩阶段排除 `Assets/`）
+- 模型文件不入 git 版本控制（`.gitignore` 排除 Windows `Assets/*.onnx`；Android 当前没有模型 assets 目录）。
+- Windows 项目文件显式将模型 `CopyToOutputDirectory=Never`；正式压缩阶段仍排除 `Assets/`，形成双重边界。
+- Android 检测端不把模型放进 APK 的 assets；当前没有模型文件，首次启动下载到 `filesDir/models/`。
 - 类目中英文映射引用源码静态表，不手动复制文档
 - 导出脚本、模型文件名、输入尺寸只在源码已存在时写入说明

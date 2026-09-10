@@ -338,14 +338,22 @@
     <None Include="App.config" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="Assets\yolov5nu_320.onnx" />
-    <Content Include="Assets\yolov5nu_640.onnx" />
-    <Content Include="Assets\yolov5su_320.onnx" />
-    <Content Include="Assets\yolov5su_640.onnx" />
-    <Content Include="Assets\yolov5mu_320.onnx" />
-    <Content Include="Assets\yolov5mu_640.onnx" />
-
-    <Content Include="Assets\ASSETS_README.md">
+    <Content Include="Assets\yolov5nu_320.onnx">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\yolov5nu_640.onnx">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\yolov5su_320.onnx">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\yolov5su_640.onnx">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\yolov5mu_320.onnx">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\yolov5mu_640.onnx">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </Content>
     <Content Include="Assets\**\*.png" Exclude="Assets\screenshot.png">

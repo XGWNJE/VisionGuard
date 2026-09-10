@@ -1,59 +1,43 @@
 # Verification Report
 
-本报告基于当前仓库源码逐项核对，用来替代“默认相信现存说明文档”的做法。
+本文是 VisionGuard 的验证证据台账，不是产品路线图，也不把源码存在、编译成功、帧循环、FPS、界面启动或截图展示写成完整功能通过。每条结论都注明验证范围；详细命令由[运维文档](60-operations.md)和两个保留 Skill 维护。
 
-## 已核对范围
+## 判定词
 
-- 根目录：`AGENTS.md`、`CODEX.md`、`README.md`
-- Server：入口、配置、WS 连接管理、告警、截图、更新路由
-- Windows：WinForms / WPF 关键项目文件、配置、迁移说明
-- Android Detector：包常量、设置仓库、前台服务、消息模型
-- Android Receiver：包常量、设置仓库、前台服务、消息模型
-- 资源说明：两个 `ASSETS_README.md`、两份 `COCO_CLASSES.md`
+- **已自动验证**：有可复现命令和机器可读结果，断言覆盖了所写语义。
+- **主体实现**：源码已具备功能，但验证范围不足以宣布完整交付。
+- **待人工目检**：需要 owner 检查真实 UI、窗口采集或发行包表现。
+- **待真机**：需要授权的真实 Android 设备或目标硬件。
+- **未实现/未来规划**：当前源码没有该能力，不能用局部 smoke 代替。
 
-## 已验证事实
+## 当前仓库证据
 
-- 根 `VERSION` 是当前版本的唯一权威来源；`scripts/check-docs.js` 自动核对 README、Server 与各客户端的版本位置
-- Server `package.json`、`package-lock.json` 与 `data/releases.json` 必须和根版本保持一致
-- Server 线上 smoke 已在 `https://visionguard.xgwnje.cn` 通过：`/health`、`/api/update`、`/releases/*`、`/models/*`、`/ws`
-- Android 接收端实机 UI 已显示可连接，后续继续观察真实告警链路
-- 2026-07-08 Android 接收端模拟器 smoke 已验证设备页 UI、手动排序持久化、离线保留、离线侧滑删除、恢复联网并回列表；证据目录为 `artifacts/e2e/20260708-004420-manual-receiver-emulator/`
-- Server 认证失败后会关闭连接，WS 认证超时为 5000ms
-- `server/src/routes/update.ts` 当前按平台读取 `data/releases.json`
-- `server/src/routes/screenshot.ts` 当前要求 `X-API-Key`
-- `server/src/routes/alerts.ts` 当前只返回脱敏后的告警摘要
-- Android Detector 当前包名为 `com.xgwnje.visionguard`
-- Android Receiver 当前包名为 `com.xgwnje.visionguard_android`
-- Windows 两端当前通过共享 `ApiKeyProvider` 解析 API key：环境变量优先，未配置时保留发行兼容兜底
-- Android 两端 API key 当前由 Gradle 注入 `BuildConfig.API_KEY`，本地可通过 `VISIONGUARD_API_KEY` 提供
-- Android Detector 当前前台服务类型为 `camera`
-- Android Receiver 当前前台服务类型为 `remoteMessaging`
-- Android Detector 当前使用 DataStore 持久化设置
-- Android Receiver 当前使用 DataStore 持久化设置
+| 范围 | 状态 | 本次证据能证明什么 | 证据 |
+|---|---|---|---|
+| 文档与治理审核 | 已自动验证（本次运行） | Markdown 链接/锚点、编码、版本、组件、入口、Skill 和产品边界符合契约 | `node scripts/check-docs.js`；本文件所在提交后的命令输出 |
+| Server 单测与协议测试 | 已自动验证 | Server 配置、告警/截图安全、控制请求关联和 WS 协议测试通过 | `npm --prefix server test`；`server/dist/index.js` |
+| ServerBuild | 已自动验证 | TypeScript 编译成功且 `server/dist/index.js` 存在；不是 HTTP/WS 运行 E2E | `artifacts/e2e/20260910-063530/summary.json`、`server-build.txt` |
+| WPF 三路人员图片推理 | 已自动验证 | 三张含人图片每路至少一帧 `person`，并通过停止隔离、配置隔离、DirectML 失败回退和 CPU 多路拒绝 | `artifacts/e2e/20260910-063535/summary.json`、`artifacts/e2e/20260910-063535/wpf-person-detection.json` |
+| WPF DirectML/CPU 负样本对照 | 已自动验证（有限范围） | 当前界面截图样本在两后端均无有效检测；不证明人员召回或代表性精度 | `artifacts/v3/wpf-directml-cpu-parity.json` |
+| Windows 驻留程序 | 主体实现 | 本机进程级互斥、握手和正常关闭有测试入口；Win7 SP1 x64 兼容、登录重启、崩溃恢复和完整远控 WSS 链路未形成当前证据 | `tests/SingleInstance.Probe/`；路线状态见[产品路线图](15-product-roadmap.md) |
+| Android 检测端/接收端启动 | 已自动验证（小米 15） | 指定 `7d3584e1` 设备上的 Debug 构建、安装、清数据、运行时权限、Activity、前台服务和观测窗口无崩溃；不证明完整告警链 | `artifacts/e2e/20260910-105355/summary.json` |
+| Android NNAPI 实际推理 | 已自动验证（局部） | 归一化 `yolo26n_320` 在小米 15 上完成 CameraX → 预处理 → 真实推理，profile 记录 `NnapiExecutionProvider`；`CPU_DISABLED` 下仍有 45 个 CPU 事件，未证明全图下沉、GPU/NPU 具体单元、长期稳定性或精度 | `artifacts/e2e/20260910-111229/android-nnapi-evidence-summary.json`、`artifacts/v4/wpf-person-slicefix.json` |
+| 当前 Android 环境发现 | 已自动验证 | 指定小米 15 `7d3584e1` 为可用 ADB `device`，SoC 为 `SM8750`，Android API 36；本轮命令均显式绑定该序列号 | `artifacts/e2e/20260910-102912/inventory.json` |
 
-## 旧说明与源码不一致之处
+## 当前实现与未来能力边界
 
-1. 早期根目录说明如果存在乱码或旧架构表述，不能作为单一事实来源。
-2. 早期说明中的手写版本号不能作为当前状态；当前值只读取根 `VERSION`，并由文档审核阻止关键位置漂移。
-3. 早期说明中如果把 Android API key 写成源码常量，当前实现已改为 Gradle 构建注入。
-4. 早期说明中如果把 Android Detector 说成支持 `Preview`，当前源码和实现都指向仅 `ImageAnalysis`。
-5. 早期说明中如果把 Server 截图下载描述成公开访问，当前源码要求 `X-API-Key`。
+- 当前 Server 维护 WS 认证、心跳、告警广播、截图/更新路由和连接在线状态；`online=false` 不等于 `DeviceOfflineAlert` 已生成或送达。
+- `DeviceOfflineAlert`、权威多租户事件存储、可靠 outbox/逐接收端 ACK、独立 Web Management Console、Linux Edge Detector、多传感器融合和 Qualcomm QNN/NCNN 加速仍属于路线图范围；Android NNAPI 已有小米 15 的局部实际 provider 证据，但尚未完成 V4 闭环验收。
+- WPF ImageFile smoke 不证明真实窗口采集；界面截图只能作为负样本或性能输入，不能作为人员检测正样本。
+- Android 启动 smoke 不证明摄像头推理、模型下载、Server 连接或接收端展示的完整链路。
+- Release 构建不等于正式发行包已通过；正式发行还需要签名、ZIP 清洁度、元数据、上传/部署和公网验证。
 
-## 迁移结论
+## 待人工、真机或生产验证
 
-- 根目录旧解释文档应由 `docs/codex/` 取代
-- WPF 迁移说明中的结构性信息已适合并入 Windows 专题文档
-- 资产说明和 COCO 类目说明存在跨目录重复，适合收敛成单一模型资源文档
+1. Windows 真实窗口采集、三路 UI 外观、窗口重定位和故障矩阵：待 owner 目检/桌面验证。
+2. Android 检测端与接收端的真机 UI、归一化模型正式下载、摄像头长时运行、网络切换和温升/资源表现：仍待真机验收。
+3. 检测端 → Server → Android 接收端的真实报警、截图归属、重复/重试、离线恢复和 ACK：完整 E2E 尚未执行。
+4. Win7 SP1 x64 下 Windows 驻留程序与 WinForms 的安装、TLS/WSS、进程握手、网络/休眠恢复和退出清理：待目标环境；驻留 Win7 兼容是路线图硬门槛，当前未实现。
+5. 生产 VPS、正式发行 ZIP/APK、发布回滚和公网更新接口：本次治理未执行。
 
-## 需要谨慎表述的内容
-
-- 具体心跳间隔字段在不同层可能以“业务心跳”或“幽灵阈值”出现，写说明时应引用源码常量，不要口头简化。
-- 自动更新的触发路径和强制升级逻辑要按 `server/src/routes/update.ts` 与各端 `AutoUpdater` 实现描述，不要泛化成“统一更新”。
-- Windows WinForms 与 WPF 的模型格式不同，不能合并写成“Windows 端统一模型”。
-
-## 建议后续动作
-
-如果要继续提升可信度，下一步应做两件事：
-
-1. 为 `docs/codex/` 增加按模块的“证据链接”索引，把关键结论绑定到具体源码文件。
-2. 把 Android 签名模板和发布前密钥轮换步骤整理成独立操作文档。
+历史验证记录必须保留原始证据路径，并在重新运行后更新状态；不要仅因日期较新就把历史局部证据升级为完整验收。

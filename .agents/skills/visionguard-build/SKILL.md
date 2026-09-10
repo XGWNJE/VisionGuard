@@ -10,7 +10,7 @@ Compile the requested targets through the maintained project script and verify t
 ## Boundaries
 
 - Do not modify `VERSION`.
-- Do not run `scripts/sync-version.js`, `scripts/release.js`, `scripts/publish-release.ps1`, or `scripts/bump-version.sh`.
+- Do not run version synchronization or the publish pipeline from this build-only workflow.
 - Do not package, upload, deploy, commit, or push unless the user explicitly asks.
 - Release builds are required for client verification. Do not substitute Debug builds.
 - Android Release builds are signed by default from the shared `.local/visionguard-release.env`; missing signing material must fail closed. Use `-PVISIONGUARD_ALLOW_UNSIGNED_RELEASE=true` only for an explicitly compile-only unsigned validation, never for a distributable package.
@@ -32,6 +32,8 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scri
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scripts\build-all.ps1 -Target Windows
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scripts\build-all.ps1 -Target WindowsResident
 ```
+
+The script currently accepts `All`, `Server`, `Windows`, `WinForms`, `WPF`, `WindowsResident`, `Android`, `AndroidDetector`, and `AndroidReceiver`.
 
 ## Expected Artifacts
 

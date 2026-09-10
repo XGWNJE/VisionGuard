@@ -1,14 +1,17 @@
 package com.xgwnje.visionguard.inference
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import ai.onnxruntime.*
+import ai.onnxruntime.providers.NNAPIFlags
 import com.xgwnje.visionguard.util.InferenceDiagnostics
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.FloatBuffer
+import java.util.EnumSet
 import java.util.concurrent.TimeUnit
 
 /**
@@ -23,6 +26,10 @@ class OnnxInferenceEngine(private val context: Context) {
         private const val TAG = "VG_Inference"
         private const val ASSETS_MODEL_DIR = "models"
         private const val LOCAL_MODEL_DIR = "models"
+        private const val PROFILE_SAMPLE_RUNS = 3
+        private const val BACKEND_EVIDENCE_FILE = "inference-backend-evidence.json"
+        private const val NNAPI_PROVIDER = "NnapiExecutionProvider"
+        private val PROVIDER_PATTERN = Regex("\\\"provider\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
     }
 
     private var env: OrtEnvironment? = null
@@ -30,7 +37,13 @@ class OnnxInferenceEngine(private val context: Context) {
     private var inputName: String? = null
     private var outputName: String? = null
     private var currentModelPath: String? = null
-    var backendStatus: InferenceBackendStatus = AndroidInferenceBackendPolicy.resolve(InferenceBackend.QNN)
+    private var profilingEnabled = false
+    private var profileSampleCount = 0
+    private var profileCompleted = false
+    var backendStatus: InferenceBackendStatus = AndroidInferenceBackendPolicy.resolve(
+        InferenceBackend.NNAPI,
+        nnapiAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+    )
         private set
 
     /** 检查是否已加载模型 */
@@ -46,6 +59,7 @@ class OnnxInferenceEngine(private val context: Context) {
      */
     fun loadModel(modelFileName: String, inputSize: Int): Boolean {
         close()
+        clearBackendEvidence()
 
         return try {
             val localDir = File(context.filesDir, LOCAL_MODEL_DIR)
@@ -71,24 +85,29 @@ class OnnxInferenceEngine(private val context: Context) {
             }
 
             env = OrtEnvironment.getEnvironment()
-            val options = OrtSession.SessionOptions().apply {
-                // 官方 Maven Mobile 包未包含 QNN EP；策略层会显式报告 CPU 回退，禁止伪报加速。
-                setIntraOpNumThreads(2)
-                setInterOpNumThreads(1)
-                setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            val requestedStatus = AndroidInferenceBackendPolicy.resolve(
+                InferenceBackend.NNAPI,
+                nnapiAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+            )
+            val (newSession, resolvedStatus) = createSession(modelFile.absolutePath, requestedStatus)
+            session = newSession
+            backendStatus = resolvedStatus
+            if (resolvedStatus.active == InferenceBackend.CPU) {
+                writeBackendEvidence("", emptyMap(), nnapiUsed = false)
             }
 
-            val newSession = env?.createSession(modelFile.absolutePath, options)
-            session = newSession
-
             // 动态获取输入/输出节点名（兼容不同导出方式）
-            inputName = newSession?.inputNames?.firstOrNull()
-            outputName = newSession?.outputNames?.firstOrNull()
+            inputName = newSession.inputNames.firstOrNull()
+            outputName = newSession.outputNames.firstOrNull()
 
             currentModelPath = modelFile.absolutePath
 
             Log.i(TAG, "Model loaded: $modelFileName (inputSize=$inputSize, inputName=$inputName, outputName=$outputName)")
-            Log.i(TAG, "Inference backend: requested=${backendStatus.requested} active=${backendStatus.active} fallback=${backendStatus.fallbackReason}")
+            Log.i(
+                TAG,
+                "Inference backend: requested=${backendStatus.requested} active=${backendStatus.active} " +
+                    "provider=${backendStatus.actualProvider ?: "pending"} fallback=${backendStatus.fallbackReason}"
+            )
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load model: $modelFileName", e)
@@ -152,6 +171,7 @@ class OnnxInferenceEngine(private val context: Context) {
 
             tensor.close()
             results.close()
+            recordProfileSample()
             outputArray
         } catch (e: Exception) {
             Log.e(TAG, "Inference failed", e)
@@ -161,6 +181,7 @@ class OnnxInferenceEngine(private val context: Context) {
 
     /** 关闭会话并释放资源 */
     fun close() {
+        finishProfiling()
         try {
             session?.close()
         } catch (e: Exception) {
@@ -178,6 +199,151 @@ class OnnxInferenceEngine(private val context: Context) {
         env = null
         currentModelPath = null
     }
+
+    private fun createSession(
+        modelPath: String,
+        requestedStatus: InferenceBackendStatus
+    ): Pair<OrtSession, InferenceBackendStatus> {
+        if (requestedStatus.active != InferenceBackend.NNAPI) {
+            profilingEnabled = false
+            return createSessionWithOptions(modelPath, InferenceBackend.CPU) to requestedStatus
+        }
+
+        return try {
+            val profilePrefix = File(
+                context.filesDir,
+                "inference-profile-${System.currentTimeMillis()}"
+            ).absolutePath
+            profilingEnabled = true
+            profileSampleCount = 0
+            profileCompleted = false
+            createSessionWithOptions(modelPath, InferenceBackend.NNAPI, profilePrefix) to requestedStatus
+        } catch (e: Exception) {
+            profilingEnabled = false
+            Log.e(TAG, "NNAPI session creation failed; falling back to CPU", e)
+            val fallback = requestedStatus.copy(
+                active = InferenceBackend.CPU,
+                fallbackReason = "NNAPI 初始化失败，已回退 CPU"
+            )
+            createSessionWithOptions(modelPath, InferenceBackend.CPU) to fallback
+        }
+    }
+
+    private fun createSessionWithOptions(
+        modelPath: String,
+        backend: InferenceBackend,
+        profilePrefix: String? = null
+    ): OrtSession {
+        val currentEnv = env ?: error("ONNX Runtime environment is not initialized")
+        return OrtSession.SessionOptions().use { options ->
+            options.setIntraOpNumThreads(2)
+            options.setInterOpNumThreads(1)
+            options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            when (backend) {
+                InferenceBackend.CPU -> Unit
+                InferenceBackend.NNAPI -> {
+                    // 防止 NNAPI 静默使用 reference CPU；不支持的节点仍由 ORT CPU EP 承接。
+                    options.addNnapi(EnumSet.of(NNAPIFlags.CPU_DISABLED, NNAPIFlags.USE_NCHW))
+                    if (profilePrefix != null) {
+                        options.enableProfiling(profilePrefix)
+                    }
+                }
+                InferenceBackend.QNN -> error("QNN is not compiled into this Android runtime")
+            }
+            currentEnv.createSession(modelPath, options)
+        }
+    }
+
+    private fun recordProfileSample() {
+        if (!profilingEnabled || profileCompleted) return
+        profileSampleCount++
+        if (profileSampleCount < PROFILE_SAMPLE_RUNS) return
+        finishProfiling()
+    }
+
+    private fun finishProfiling() {
+        if (!profilingEnabled || profileCompleted) return
+        val currentSession = session ?: return
+        try {
+            val profilePath = currentSession.endProfiling()
+            profileCompleted = true
+            profilingEnabled = false
+            val profileFile = File(profilePath)
+            if (!profileFile.isFile) {
+                Log.w(TAG, "NNAPI profiling completed but file is missing: $profilePath")
+                return
+            }
+
+            val profileText = profileFile.readText()
+            val providers = PROVIDER_PATTERN.findAll(profileText)
+                .map { it.groupValues[1] }
+                .toList()
+            val providerCounts = providers.groupingBy { it }.eachCount()
+            val nnapiUsed = providers.any { it == NNAPI_PROVIDER }
+            val updatedStatus = if (nnapiUsed) {
+                backendStatus.copy(
+                    actualProvider = NNAPI_PROVIDER,
+                    profilePath = profilePath
+                )
+            } else {
+                backendStatus.copy(
+                    active = InferenceBackend.CPU,
+                    actualProvider = providers.firstOrNull(),
+                    profilePath = profilePath,
+                    fallbackReason = "模型未产生 NNAPI 分区，CPU 执行"
+                )
+            }
+            backendStatus = updatedStatus
+            writeBackendEvidence(profilePath, providerCounts, nnapiUsed)
+            Log.i(
+                TAG,
+                "Inference backend evidence: requested=${updatedStatus.requested} " +
+                    "active=${updatedStatus.active} provider=${updatedStatus.actualProvider ?: "none"} " +
+                    "hardwareConfirmed=${updatedStatus.hardwareExecutionConfirmed} profile=$profilePath"
+            )
+        } catch (e: Exception) {
+            profileCompleted = true
+            profilingEnabled = false
+            Log.w(TAG, "Failed to finalize NNAPI profiling", e)
+        }
+    }
+
+    private fun writeBackendEvidence(
+        profilePath: String,
+        providerCounts: Map<String, Int>,
+        nnapiUsed: Boolean
+    ) {
+        try {
+            val countsJson = providerCounts.entries.joinToString(",") { (provider, count) ->
+                "\"${escapeJson(provider)}\":$count"
+            }
+            val evidence = """
+                {
+                  "requestedBackend":"${backendStatus.requested}",
+                  "activeBackend":"${backendStatus.active}",
+                  "actualProvider":${backendStatus.actualProvider?.let { "\"${escapeJson(it)}\"" } ?: "null"},
+                  "nnapiCpuDisabled":true,
+                  "hardwareExecutionConfirmed":$nnapiUsed,
+                  "profilePath":"${escapeJson(profilePath)}",
+                  "providerCounts":{$countsJson}
+                }
+            """.trimIndent()
+            File(context.filesDir, BACKEND_EVIDENCE_FILE).writeText(evidence)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to persist backend evidence", e)
+        }
+    }
+
+    private fun clearBackendEvidence() {
+        try {
+            File(context.filesDir, BACKEND_EVIDENCE_FILE).delete()
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to clear stale backend evidence", e)
+        }
+    }
+
+    private fun escapeJson(value: String): String =
+        value.replace("\\", "\\\\").replace("\"", "\\\"")
 
     private val downloadHttp = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)

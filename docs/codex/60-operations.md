@@ -1,93 +1,77 @@
 # Operations
 
-这个文件只记录对协作有用、且已经从仓库确认过的操作约束。
+本文只维护可执行入口、授权边界和验证分类。模块事实见对应专题，验证结果见[验证报告](90-verification-report.md)，不在此复制完整报告。
 
-## 构建入口
+## 构建
 
-- Server：`cd server && npm ci && npm run build`
-- WinForms：打开 `detector/windows-winforms/VisionGuard.slnx`
-- WPF：打开 `detector/windows-wpf/VisionGuard.sln`
-- Android Detector：使用 `detector/android/`
-- Android Receiver：使用 `receiver/android/`
+六个组件的统一 Release 构建入口：
 
-## 发布边界
+```powershell
+powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scripts\build-all.ps1 -Target All
+```
 
-- 未经明确要求，不改 `VERSION`
-- 未经明确要求，不运行 `scripts/sync-version.js`
-- 未经明确要求，不运行 `scripts/release.js`
-- 未经明确要求，不运行 `scripts/bump-version.sh`
-- 正式上线入口：`powershell -ExecutionPolicy Bypass -File .\scripts\publish-release.ps1 -Version <version> -Target All -UploadVps`
-- 只检查发布环境：在正式上线命令后追加 `-PreflightOnly`，确认通过后再去掉该开关执行上线。
-- 发布脚本必须先预检再同步版本：Server-infra env/Paramiko、WinForms `packages.config` restore、Android Java/build-tools/签名、远端路径都要在长构建前失败。
-- `Target All` 或 `Target Server` 搭配 `-UploadVps` 时会部署 Server 代码到 `/opt/visionguard-server`；明确只发客户端时才加 `-SkipServerDeploy`。
-- 上线验证顺序是上传 release 文件、部署 Server、再查公网 `/health`、`/api/update`、`HEAD 200` 和 `Range 206`，避免验证命中旧 Server。
+可用目标为 `Server`、`WinForms`、`WPF`、`WindowsResident`、`AndroidDetector`、`AndroidReceiver`，也可使用组合目标 `Windows`、`Android`。脚本只编译并检查产物，不打包、不上传、不部署、不改版本。
 
-## 本地敏感配置
+Windows 驻留程序的生命周期命令以源码为准：`open-wpf`、`open-winforms`、`close-wpf`、`close-winforms`。
 
-- Server 真实密钥放 `server/.env` 或部署环境变量，不提交。
-- Windows 两端优先从环境变量 `VISIONGUARD_API_KEY` 读取 API key，发行包保留兼容兜底，避免未配置环境变量的旧安装断联。
-- Android 两端从 Gradle 注入 `BuildConfig.API_KEY`；本地可在各自 `local.properties` 写 `VISIONGUARD_API_KEY=...`，也可用 Gradle property 或环境变量。
-- Android 两端共用仓库根目录 `.local/visionguard-android-release.p12` 与 `.local/visionguard-release.env`；PKCS12 使用 4096 位 RSA 发布密钥，`.local/` 整目录被 Git 忽略，密码不得写入跟踪文件或命令行。
-- 首次初始化签名：`powershell -ExecutionPolicy Bypass -File .\scripts\initialize-android-signing.ps1`。只有明确接受旧安装无法覆盖升级时才使用 `-Rotate` 轮换签名；脚本会在 `.local/` 中保留旧材料备份。
-- Android Gradle Release 与 `publish-release.ps1` 都读取同一份共享签名配置；环境变量仍可作为自动化环境的高优先级覆盖。签名预检可用 `publish-release.ps1 -Version <当前版本> -Target Android -PreflightOnly`，不会同步版本或发布。
-- 常规 `assembleRelease`、`build`、`visionguard-build -Target Android` 默认强制签名；签名材料缺失时在打包前失败，不允许静默产出 unsigned 包。
+构建结果必须按组件分别报告，并在完成后检查：
 
-## 服务域名边界
+- Server：`server/dist/index.js`
+- Windows WinForms 检测端：`detector/windows-winforms/bin/Release/VisionGuard.exe`
+- Windows WPF 检测端：`detector/windows-wpf/bin/x64/VisionGuard.exe`
+- Windows 驻留程序：`detector/windows-resident/bin/Release/net9.0-windows/VisionGuard.Resident.exe`
+- Android 检测端：`detector/android/app/build/outputs/apk/release/app-release.apk`
+- Android 接收端：`receiver/android/app/build/outputs/apk/release/app-release.apk`
 
-- VisionGuard 正式域名：`https://visionguard.xgwnje.cn`
-- 个人主页根域：`https://xgwnje.cn`
-- 不要把新客户端配置回根域或泛用 `api.xgwnje.cn`
-- 当前 VPS 由 `D:\ObjectCode\Server-infra` 维护公共 DNS、端口和 Nginx SNI 结构。
-- 当前线上路径为公网 `443` -> Nginx stream SNI -> `127.0.0.1:9443` -> `127.0.0.1:3000`。
-- 不要直接运行旧 `server/deploy.sh --nginx` 覆盖当前 VPS 的 SNI/9443 架构。
+Windows 发行输出不得包含 `.pdb`、`.lib`、`.dll.config`、`.onnx`、`Assets/` 或 `alerts/`；模型按需下载，不随发行包分发。详细模型与项目文件边界见[模型资源](35-model-assets.md)。
 
-## 线上状态
+## 运行与设备验证
 
-- 2026-06-29 已切换 `visionguard.xgwnje.cn` 到新 VPS `212.135.41.88` 的 VisionGuard Node 服务。
-- 公网 `/health`、更新接口、发行包下载、模型下载和 `/ws` 已通过 smoke 验证。
-- Android 接收端实机 UI 已显示可连接，后续继续观察真实告警链路。
-- 当前结论是连接和分发链路可用，不等同于完整端到端报警验证。
+运行验证入口：
 
-## 建议验证顺序
+```powershell
+powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode Discover
+powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode ServerBuild
+powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode WpfPersonDetection
+```
 
-1. 先确认影响范围
-2. 再改最小文件集
-3. 最后补构建/测试
+Android 运行 smoke 使用 `-Mode AndroidDetectorSmoke` 或 `-Mode AndroidReceiverSmoke`；默认使用 Debug 构建，只有发行验证才使用 `-BuildType Release`。设备选择顺序是已连接且状态为 `device` 的真机，再是可用模拟器；多台真机必须用 `-DeviceSerial` 指定。
 
-## 文档自动审核
+结果分类不能合并：
 
-- 本地入口：`node scripts/check-docs.js`
-- 单元测试：`node --test scripts/check-docs.test.js`
-- GitHub Actions 在每次 Pull Request 和推送到 `main` 时自动运行；正式发布预检也会运行同一审核。
-- 审核范围：canonical 文档导航与本地链接、UTF-8 无 BOM、根 `VERSION` 与各端版本、正式服务域名、产品路线图唯一事实源、纯软件视觉免费/接入硬件探测器付费边界、Web 控制台权限、Server 中心传输、设备离线报警、漏报优先原则和 Win7 兼容边界。
-- 许可证审核还会核对 `VGSAL-1.0`、MIT 历史边界、商业授权入口、README 徽章和外部贡献限制；修改这些文件必须由 owner 明确授权。
-- 新增 `docs/codex/*.md` 时，必须同时登记到 `docs/codex/00-index.md`、根 `README.md` 和 `CODEX.md`；历史方案必须在开头标记失效状态并链接替代文档。
-- 业务决策变化时先修改对应专题文档，再同步摘要和审核断言；不要为了让审核通过而删除事实边界。
+- `ServerBuild` 只验证 TypeScript 编译和 `server/dist/index.js` 产物；历史兼容别名 `ServerSmoke` 也只做同一件事，不是 HTTP/WS 运行测试。
+- Android 启动 smoke 只验证安装、启动、前台服务/进程状态和观测窗口内无崩溃，不验证检测端→Server→接收端报警链。
+- `WpfPersonDetection` 使用三张含人的图片，要求每路至少一帧 `person`，证明 ImageFile 推理与来源隔离；不证明真实窗口采集或 UI 目检。
+- 真实窗口采集、真机 UI、完整报警链、持续运行和故障恢复分别记录为人工/真机/完整 E2E 结果。
+- Windows 驻留程序的 Win7 SP1 x64 兼容不是当前构建 smoke 结论，必须在目标环境单独验收；本轮仅登记路线与验收门槛，不执行代码实现。
 
-## E2E / Device Smoke
+证据写入 `artifacts/e2e/<timestamp>/`。不要为了本地验证清除应用数据，除非任务明确要求；脚本启动的模拟器必须在结束时关闭。未明确要求时不操作生产服务。
 
-- 端到端、模拟器、实机、logcat、桌面交互验证入口：`.agents/skills/visionguard-e2e/`
-- 快速环境发现：`powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode Discover`
-- Android 检测端运行烟测：`powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode AndroidDetectorSmoke -Device Auto`
-- Android 接收端运行烟测：`powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode AndroidReceiverSmoke -Device Auto`
-- WPF 三路人员图片检测：`powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode WpfPersonDetection`
-- Android 自动化默认顺序：已授权真机 > `VisionGuard_API36` > `Pixel_3a_XL` > 仅构建/Server smoke
-- 证据目录：`artifacts/e2e/<timestamp>/`
-- Android 运行烟测默认使用 Debug 构建；只有发行验证才使用 `-BuildType Release` 并执行签名检查。
-- `ServerBuild`（旧名 `ServerSmoke`）只验证 Server 编译和产物，不得描述为 HTTP/WS 端到端验证。
-- 脚本启动的模拟器必须可见，并在本次运行结束后关闭；真机不修改唤醒、锁屏等系统设置。
-- 未明确要求时，不打正式 VPS，不改版本号，不发布，不部署
+## 发布授权
 
-## 易错点
+正式发布唯一入口：
 
-- `server/` 和 Android 端协议耦合很强
-- 遮罩修改会同时影响识别和截图
-- Android 前台服务类型不能混用
-- 项目内旧解释文档已迁移后删除，后续不要恢复双份维护
-- 根域存在旧客户端兼容入口，不代表根域仍是 VisionGuard 正式服务地址
-- 发行包冗余文件必须从 .csproj/gradle 根源解决，不要在 release.js 中事后删除
-- 修改构建配置或删除文件前，先 `grep` 确认无代码引用
-- 编译通过后必须 `Get-ChildItem` 检查输出目录，确保无多余文件
-- 模型文件不打包进发行包，发布时由 `scripts/publish-release.ps1` 收集到 `server/data/models/`
-- Android Release 验证必须用 `assembleRelease`（不是 Debug）；仅在明确进行编译证据验证时可加 `-PVISIONGUARD_ALLOW_UNSIGNED_RELEASE=true` 生成 unsigned APK，该产物禁止发布或交付
-- 不要把 `server/deploy.sh` 的本机 `/mnt/d/...` 输出误认为服务部署在 WSL；真正的线上运行目录必须通过 VPS 上的 `systemctl is-active visionguard`、`/opt/visionguard-server/package.json` 和公网 `/health` 验证。
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\publish-release.ps1 -Version <version> -Target All -UploadVps
+```
+
+该命令会同步版本、构建、准备签名包、更新 release 元数据、按目标上传并可部署 Server；每一步都需要明确发布授权。仅检查前置条件时使用 `-PreflightOnly`，明确只发客户端时使用 `-SkipServerDeploy`。GitHub push、tag 和 Release 仍需显式开关。
+
+发布前必须确认 Android 签名材料、Windows ZIP 清洁度、元数据大小和目标范围；发布后才可执行公网 `/health`、`/api/update`、`HEAD 200` 和 byte-range `206` 验证。发布脚本是唯一的正式打包/部署实现，不恢复已删除的旧发布入口。
+
+## 配置与服务边界
+
+- Server 真实密钥使用 `server/.env` 或部署环境变量，不能提交。
+- Windows 两端优先读取 `VISIONGUARD_API_KEY`；Android 两端由 Gradle 注入 `BuildConfig.API_KEY`。
+- VisionGuard 正式域名：`https://visionguard.xgwnje.cn`；根域 `https://xgwnje.cn` 不是新客户端服务地址。
+- 当前 VPS/DNS/SNI 事实由 `Server-infra` 项目维护；不要运行旧式 `server/deploy.sh --nginx` 覆盖现有 SNI 架构。
+- `VERSION` 只由 owner 明确授权的版本流程修改；普通构建、测试、修复和文档治理不得改动它。
+
+## 文档审核
+
+```powershell
+node scripts/check-docs.js
+node --test scripts/check-docs.test.js scripts/release-workflow.test.js
+```
+
+审核会检查 Markdown 链接和锚点、UTF-8 无 BOM、版本来源、六个组件入口、四个 WS 角色、模型打包边界、Skill 与脚本契约、路线图产品边界和旧入口不存在。新增或删除文档/Skill/入口后必须先更新对应唯一来源，再运行审核。

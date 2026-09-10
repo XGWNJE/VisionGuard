@@ -14,7 +14,7 @@ const PLATFORM_MAP: Record<string, string> = {
 };
 
 /**
- * GET /api/update?platform=winforms&version=4.0.0
+ * GET /api/update?platform=winforms&version=<current-version>
  * 查询指定平台的最新版本信息
  */
 router.get('/api/update', (req, res) => {

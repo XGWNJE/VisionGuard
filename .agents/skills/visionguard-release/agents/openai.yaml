@@ -1,0 +1,6 @@
+interface:
+  display_name: "VisionGuard Release"
+  short_description: "Run explicitly authorized VisionGuard release workflows."
+  default_prompt: "Use $visionguard-release only after explicit authorization to publish or deploy a VisionGuard version."
+policy:
+  allow_implicit_invocation: false

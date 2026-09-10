@@ -1,106 +1,82 @@
 # Project Overview
 
-VisionGuard 当前是由视觉探测器、Server 和接收端组成的 AI 实时监控系统；长期定位是可部署、可扩展、可运营的边缘智能探测平台。
+本文维护 VisionGuard 的当前项目地图、组件命名和实现边界。产品方向、阶段顺序和验收闸门只在[产品路线图](15-product-roadmap.md)维护；逐项验证证据只在[验证报告](90-verification-report.md)维护。
 
 ## 产品定位
 
-VisionGuard 的核心价值不是绑定某个视觉模型，而是完成一条可验证的闭环：
+VisionGuard 当前是由视觉检测端、Server、Android 接收端和 Windows 驻留程序组成的 AI 实时监控系统；长期定位是可部署、可扩展、可运营的边缘智能探测平台。
+
+产品闭环为：
 
 `现场感知 -> 本地判断 -> 证据生成 -> 可靠送达 -> 用户处置 -> 设备运维`
 
-长期产品由三部分组成：
+长期产品方向包括 Detector Platform、Reliable Event Network 和 Device & Fleet Cloud。视觉检测是当前首要能力，但不是未来产品定义的全部。
 
-1. **Detector Platform**：统一接入视觉、毫米波、PIR、门磁、振动和环境传感器，在边缘完成推理、融合与事件生成。
-2. **Reliable Event Network**：所有公网业务数据统一通过 Server，并使用 HTTPS/WSS `443` 加密传输；Server 负责可靠投递、权威事件入库、设备在线感知和离线兜底，不再规划 P2P、ICE、STUN 或 TURN。
-3. **Device & Fleet Cloud**：Server 与 Web 控制台是完整交付物和系统权威控制面，管理账号、租户、场地、探测器、传感器、事件、配置、模型、OTA、调试、审计与运行状态。
+产品对象统一定义如下：
 
-视觉检测仍是首要能力和重要证据来源，但不再等同于产品本身。新增检测能力应接入统一观察值、融合规则和报警事件模型，而不是为每种传感器复制一套 Server 和接收端协议。
+- **Detector**：能够产生标准 Observation / AlertEvent 的探测器总称。
+- **Visual Detector**：现有 Windows WinForms、Windows WPF 和 Android 检测端。
+- **Edge Detector**：未来 Linux ARM64 开发板探测器，可接入视觉和非视觉传感器。
+- **Receiver**：接收、展示和处置报警的终端。
+- **Web Management Console**：未来的系统管理控制面；当前仓库还没有独立 Web 控制台实现。
 
-产品对象统一定义为：
+商业分层、硬件探测器方向和长期网络约束由[产品路线图](15-product-roadmap.md)维护。当前已实现的纯软件视觉方案为免费版；接入检测硬件探测器后进入付费版。当前主线使用 `VGSAL-1.0`；历史 MIT 边界由根目录 `LICENSE-HISTORY.md` 维护。
 
-- **Detector**：所有能够产生标准 Observation / AlertEvent 的探测器总称；
-- **Visual Detector**：现有 WinForms、WPF 和 Android 检测端，均是正式视觉探测器，不是临时客户端；
-- **Edge Detector**：未来 Linux ARM64 开发板探测器，可同时接入视觉和非视觉传感器，并可启用 Gateway 能力；
-- **Receiver**：接收、解密、展示和处置报警的终端；
-- **Web Management Console**：管理场地、探测器、传感器、配置、模型、OTA 和审计的 Server Web 控制台。
+## 当前实际组件与验证状态
 
-商业分层只按“是否接入检测硬件探测器”判断：目前已实现的纯软件视觉方案是免费版；系统一旦注册并启用 Edge Detector 或其他检测硬件探测器，即进入付费版。免费与付费共用同一套协议、Server、Receiver 和 Web 控制台底座，不把高级纯软件视觉功能单独定义成第三个产品层。
+仓库当前维护六个实际组件。状态词的含义是：`主体实现` 表示源码和局部功能存在；`自动验证` 只表示对应证据通过；`待人工/真机` 不表示失败，也不表示已交付。
 
-当前主线采用 `VGSAL-1.0` 源码可见与商业双授权模式，不再是开源 MIT 主线。纯软件视觉方案允许免费内部使用；硬件探测器接入、再分发和对外托管需要书面商业授权。历史 MIT 边界和第三方许可证责任由根目录 `LICENSE-HISTORY.md` 维护。
+| 规范名称 | 路径 | 当前状态 | 自动验证边界 |
+|---|---|---|---|
+| Windows WinForms 检测端（WinForms Visual Detector） | `detector/windows-winforms/` | 主体实现；Win7 兼容线 | Release 编译可单独验证；完整告警链和 Win7 真实环境待补 |
+| Windows WPF 检测端（WPF Visual Detector） | `detector/windows-wpf/` | 主体实现；三图片来源能力已接入 | 三路含人图片推理自动验证；真实窗口采集和 UI 视觉待人工目检 |
+| Windows 驻留程序（Windows Resident） | `detector/windows-resident/` | 主体原型；独立 WS 身份和进程握手已接入；当前仅支持现代 Windows，Win7 兼容尚未实现 | 单实例/进程级握手可测；Win7 SP1 x64、重启、崩溃、完整远控链路待补 |
+| Android 检测端（Android Visual Detector） | `detector/android/` | 主体实现；真实加速尚未实现 | 单测、构建和历史启动证据可分别报告；QNN/NCNN 与完整报警链待补 |
+| Android 接收端（Android Receiver） | `receiver/android/` | 主体实现；设备/来源 UI 已接入 | JVM 单测、构建和历史启动证据可分别报告；完整报警链待补 |
+| Server | `server/` | 当前 4.x 中继实现 | TypeScript 构建、单测和协议测试可自动验证；生产状态需独立核验 |
 
-商业化路线、阶段顺序和验收闸门由 [15-product-roadmap.md](15-product-roadmap.md) 维护。
+### 当前链路
 
-## 架构
+```text
+Windows / Android Visual Detector ──报警、状态──▶ VisionGuard Server ──报警、控制──▶ Android Receiver
+Windows Resident ───────────────生命周期状态、控制──────────────▶ VisionGuard Server
+```
 
-- 检测端：Windows WinForms、Windows WPF、Android Detector
-- 中继端：`server/`
-- 接收端：`receiver/android/`
-
-当前 4.x 的主数据链路是 Server WebSocket 中继；账号租户、Server 权威事件存储、Server 生成设备离线报警、Linux 开发板探测单元和多传感器融合均属于未来规划，不能写成已实现能力。
-
-## 长期端角色
-
-| 角色 | 定位 | 兼容边界 |
-|---|---|---|
-| WinForms Visual Detector | Windows 主力兼容视觉探测器 | 保持 .NET Framework 4.7.2 与 Win7 SP1 x64；新网络能力通过窄 C ABI 原生模块隔离 |
-| WPF Visual Detector | 现代 Windows 视觉探测器 | 面向 Win10+，可使用较新运行时，但必须遵守统一探测器与事件协议 |
-| Android Visual Detector | 移动视觉探测器 | 继续承担 CameraX 场景，也作为移动探测器参与统一设备体系 |
-| Edge Detector | 未来核心开发板探测器 | Linux ARM64 开发板或工业 SOM；负责多传感器采集、融合、推理、本地队列与设备运维 |
-| Android Receiver | 首要报警接收与处置端 | 通过前台连接与系统推送协同，不能把永久在线连接当作唯一唤醒机制 |
-| VisionGuard Cloud | 控制面、权威数据面与可靠兜底 | 账号租户、设备目录、信令、中继、事件与证据存储、模型与更新分发 |
-| Web Management Console | 系统最高权限管理中控 | 运行于 Server Web 端；管理整套系统、探测器、传感器和数据，不承担现场实时检测 |
-
-## 仓库定位
-
-- `AGENTS.md` 是顶层约束，不属于待清理的旧说明
-- `docs/codex/` 是当前唯一维护的解释性文档集合
-- `.agents/skills/` 是当前项目级 Agent 技能入口
-- 历史 `CLAUDE.md`、`.claude/`、`.Codex/agents/`、模块内旧说明文档已迁移后清理，不再作为事实来源
+Server 当前实现连接认证、心跳、告警广播、截图/更新路由和设备在线状态；它尚未生成路线图定义的 `DeviceOfflineAlert`，也没有权威多租户事件库或独立 Web 管理控制台。上述能力属于未来路线，不能把连接列表中的离线状态写成离线报警已交付。
 
 ## 目录职责
 
 | 目录 | 职责 |
 |---|---|
-| `detector/windows-winforms/` | WinForms 主力检测端，面向 Win7+ |
-| `detector/windows-wpf/` | WPF 桌面视觉升级线，面向 Win10+ |
-| `detector/android/` | Android CameraX 检测端 |
-| `receiver/android/` | Android Compose 接收端 |
+| `detector/windows-winforms/` | Windows WinForms 检测端 |
+| `detector/windows-wpf/` | Windows WPF 检测端 |
+| `detector/windows-resident/` | Windows 驻留程序 |
+| `detector/windows-shared/` | Windows 两种检测端与驻留程序共用的进程/身份代码 |
+| `detector/android/` | Android 检测端 |
+| `receiver/android/` | Android 接收端 |
 | `server/` | HTTP / WebSocket 中继服务 |
-| `scripts/` | 版本、构建、发行、发布和模型导出脚本 |
-| `tests/` | 跨模块约束测试 |
-| `.agents/skills/` | 当前项目级 Agent 技能 |
-| `docs/codex/` | 已验真的项目事实文档 |
-| `docs/design/` | 当前设计规范入口，不保存历史探索素材 |
+| `scripts/` | 版本、构建、验证、发行和模型导出脚本 |
+| `tests/` | 跨模块约束和 WPF 推理辅助测试 |
+| `.agents/skills/` | 三个需要脚本化或授权边界的项目级 Skill |
+| `docs/codex/` | 项目事实、操作和验证文档 |
+| `docs/design/` | 当前设计规范入口 |
 | `icon/` | 当前应用图标素材 |
 
-`artifacts/`、`models/`、`server/data/releases/`、`server/data/models/`、各端 `bin/`、`obj/`、`build/`、`.gradle/`、`.vs/`、`node_modules/` 是本地生成或缓存目录，不作为源码结构维护。
+`artifacts/`、`server/data/releases/`、`server/data/models/`、各端 `bin/`、`obj/`、`build/`、`.gradle/` 和 `node_modules/` 是本地生成或缓存目录，不是源码结构。
 
-## 核心链路
+## 统一概念与不变边界
 
-`Capture -> MaskApply -> Preprocess -> ONNX Inference -> Parse -> AlertDecision -> Push`
+- 推理链：`Capture -> MaskApply -> Preprocess -> ONNX Inference -> Parse -> AlertDecision -> Push`。
+- 遮罩使用相对坐标 `[0,1]`，推理前涂黑，同时影响识别结果和报警截图。
+- Server WS 角色当前为 `windows`、`android`、`android-detector` 和 `windows-resident`；其中 `windows` 代表两个 Windows 检测端，`android` 代表 Android 接收端。
+- 正式服务域名为 `https://visionguard.xgwnje.cn`；根域 `https://xgwnje.cn` 不是新客户端的 VisionGuard 服务地址。
+- `VERSION` 是唯一权威版本源，构建、修复和提交不得自动 bump。
+- `server/` 与 Android 端协议强耦合；协议变化必须联动源码、测试和专题文档。
+- 当前心跳实现为检测端 3 秒、接收端 30 秒、Server 幽灵阈值 45 秒；这只代表在线状态判定，不代表离线报警已经实现。
+- 当前 Win7 兼容实现只属于 Windows WinForms 检测端；Windows 驻留程序当前尚未兼容 Win7，但路线图已将 Win7 SP1 x64 兼容列为后续交付硬门槛；WPF、Android、Server 和未来硬件不承担 Win7 兼容义务。
+- 所有公网业务数据统一通过 Server 中继；路线图不再规划 P2P、ICE、STUN 或 TURN。
+- 允许可管理的误报，漏报风险是检测效果与故障处置的最高优先级。
 
-## 统一概念
+## 文档可信度
 
-- 遮罩使用相对坐标 `[0,1]`
-- 遮罩在推理前涂黑，同时影响识别结果与告警截图
-- WS 角色固定为 `windows`、`android`、`android-detector`
-- VisionGuard 正式服务域名固定为 `https://visionguard.xgwnje.cn`
-- 根域 `https://xgwnje.cn` 属于个人主页，不再作为新客户端的 VisionGuard 服务地址
-
-## 不变边界
-
-- `VERSION` 是权威版本源，不能自动 bump
-- `server/` 和 Android 端是强耦合，协议变更必须联动核对
-- 心跳策略按当前实现固定：检测端 3s、接收端 30s、幽灵阈值 45s
-- 客户端 `SERVER_URL`、自动更新地址和 Nginx 部署目标必须保持同一项目子域名
-- Win7 只作为 WinForms Visual Detector 的兼容边界；WPF、Android、Linux Edge Detector、Server 和 Web 控制台均不承担 Win7 兼容义务
-- 报警协议必须与具体传输解耦；WSS、HTTPS 补发和 Receiver 系统推送共享事件 ID、ACK、重试和幂等语义，所有公网业务数据统一通过 Server 并进入权威数据存储
-- 允许一定误报，漏报风险是检测效果与故障处置的最高优先级；设备、传感器、推理或网络故障不能静默形成探测盲区
-- Server 根据心跳状态生成设备离线报警和恢复事件；Server 自身故障由独立外部监控通道发现
-- 新传感器先输出统一观察值，再由融合层产生报警；不得让传感器适配器直接耦合 Server 或接收端 UI
-
-## 文档可信度规则
-
-- 先信源码，再信 `docs/codex/`
-- 不信历史说明里的分支名、时间戳、手工维护版本号
-- 涉及模型、资源、类目映射时，以项目文件和源码内静态表为准
+先信源码、构建产物和测试结果，再信当前 `docs/codex/`。不把历史方案、手工版本号、截图或帧循环当成功能验收证据。模型、资源和类目映射以对应项目文件和源码静态表为准。

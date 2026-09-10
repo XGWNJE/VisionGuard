@@ -15,6 +15,7 @@ import com.xgwnje.visionguard.data.model.AlertEvent
 import com.xgwnje.visionguard.data.model.Detection
 import com.xgwnje.visionguard.data.model.MonitorConfig
 import com.xgwnje.visionguard.inference.ImagePreprocessor
+import com.xgwnje.visionguard.inference.InferenceBackendStatus
 import com.xgwnje.visionguard.inference.OnnxInferenceEngine
 import com.xgwnje.visionguard.inference.YoloOutputParser
 import com.xgwnje.visionguard.util.InferenceDiagnostics
@@ -35,7 +36,8 @@ class MonitorService(
     preprocessor: ImagePreprocessor,
     parser: YoloOutputParser,
     private val alertService: AlertService,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val onInferenceBackendStatusChanged: (InferenceBackendStatus) -> Unit = {}
 ) {
 
     /** 热替换预处理组件（分辨率切换时） */
@@ -246,6 +248,7 @@ class MonitorService(
             val t3 = System.currentTimeMillis()
             val shape = longArrayOf(1, 3, config.inputSize.toLong(), config.inputSize.toLong())
             val output = inferenceEngine.run(inputData, shape)
+            onInferenceBackendStatusChanged(inferenceEngine.backendStatus)
             val tInference = System.currentTimeMillis() - t3
             Log.i(TAG, "[FRAME-$frameCounter] 推理完成: output size=${output.size}, 耗时=${tInference}ms")
             InferenceDiagnostics.diagnoseOnnxOutput(output, config.inputSize, "output")

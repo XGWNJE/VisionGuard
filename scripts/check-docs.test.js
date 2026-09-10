@@ -6,6 +6,7 @@ const test = require('node:test');
 const {
   auditRepository,
   checkIndexCoverage,
+  checkEvidencePaths,
   checkLicenseTexts,
   checkProductContract,
   checkReadmeVersion,
@@ -39,6 +40,15 @@ test('new canonical document must be registered in canonical documentation entry
   );
   assert.equal(errors.length, 2);
   assert.ok(errors.every((message) => message.includes('15-product-roadmap.md')));
+});
+
+test('stale artifact paths in current evidence documents are rejected', () => {
+  const errors = [];
+  checkEvidencePaths(root, [
+    ['docs/codex/90-verification-report.md', '`artifacts/e2e/does-not-exist/summary.json`']
+  ], errors);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /missing artifact/);
 });
 
 test('stale current-version claims in verification reports are rejected', () => {

@@ -12,6 +12,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Binder
+import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
@@ -32,6 +33,9 @@ import com.xgwnje.visionguard.data.model.WsSetConfigMessage
 import com.xgwnje.visionguard.data.remote.WsState
 import com.xgwnje.visionguard.data.repository.SettingsRepository
 import com.xgwnje.visionguard.inference.ImagePreprocessor
+import com.xgwnje.visionguard.inference.AndroidInferenceBackendPolicy
+import com.xgwnje.visionguard.inference.InferenceBackend
+import com.xgwnje.visionguard.inference.InferenceBackendStatus
 import com.xgwnje.visionguard.inference.OnnxInferenceEngine
 import com.xgwnje.visionguard.inference.SocWhitelist
 import com.xgwnje.visionguard.inference.YoloOutputParser
@@ -73,6 +77,14 @@ class DetectorForegroundService : LifecycleService() {
 
     private val _isReady = MutableStateFlow(false)
     val isReady: StateFlow<Boolean> = _isReady.asStateFlow()
+
+    private val _inferenceBackendStatus = MutableStateFlow(
+        AndroidInferenceBackendPolicy.resolve(
+            InferenceBackend.NNAPI,
+            nnapiAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+        )
+    )
+    val inferenceBackendStatus: StateFlow<InferenceBackendStatus> = _inferenceBackendStatus.asStateFlow()
 
     /** 最近推送报警的时间戳（受冷却期控制，仅实际推送时更新） */
     private val _lastAlertPushTime = MutableStateFlow<String?>(null)
@@ -485,7 +497,11 @@ class DetectorForegroundService : LifecycleService() {
             preprocessor = preprocessor,
             parser = parser,
             alertService = alertService,
-            scope = serviceScope
+            scope = serviceScope,
+            onInferenceBackendStatusChanged = { status ->
+                _inferenceBackendStatus.value = status
+                updateWsHeartbeatStatus()
+            }
         )
 
         // 订阅最新识别帧 → 持续更新 UI（不受冷却期影响）
@@ -517,6 +533,7 @@ class DetectorForegroundService : LifecycleService() {
             val modelFileName = "${modelName}_${inputSize}.onnx"
             val success = inferenceEngine.loadModel(modelFileName, inputSize)
             _isReady.value = success
+            _inferenceBackendStatus.value = inferenceEngine.backendStatus
             updateWsHeartbeatStatus()
             serverPushService.wsClient.sendHeartbeatNow()
             success

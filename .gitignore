@@ -62,7 +62,6 @@ detector/android/key/
 detector/android/keystore.properties
 detector/android/app/*.jks
 detector/android/.key/det
-detector/android/app/src/main/assets/models/*.onnx
 
 # ===== Android 接收端 =====
 receiver/android/*.iml

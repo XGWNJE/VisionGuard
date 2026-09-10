@@ -70,26 +70,37 @@ function Invoke-NativeLogged {
     }
 }
 
-function Get-AndroidSdk {
-    $candidates = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT, (Join-Path $env:LOCALAPPDATA 'Android\Sdk')) |
-        Where-Object { $_ -and (Test-Path -LiteralPath $_) } |
-        Select-Object -Unique
-    if ($candidates.Count -eq 0) {
-        throw 'Android SDK not found through ANDROID_HOME, ANDROID_SDK_ROOT, or %LOCALAPPDATA%\Android\Sdk.'
+function Get-AndroidSdkCandidates {
+    $candidates = @($env:ANDROID_HOME, $env:ANDROID_SDK_ROOT)
+    if ($env:LOCALAPPDATA) {
+        $candidates += Join-Path $env:LOCALAPPDATA 'Android\Sdk'
     }
-    return $candidates[0]
+    return @($candidates | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -Unique)
+}
+
+function Get-AndroidSdk {
+    foreach ($candidate in Get-AndroidSdkCandidates) {
+        $adb = Join-Path $candidate 'platform-tools\adb.exe'
+        $emulator = Join-Path $candidate 'emulator\emulator.exe'
+        if ((Test-Path -LiteralPath $adb) -and (Test-Path -LiteralPath $emulator)) {
+            return $candidate
+        }
+    }
+    throw 'Android SDK with both adb and emulator was not found through ANDROID_HOME, ANDROID_SDK_ROOT, or the standard local SDK location.'
 }
 
 function Get-AndroidTools {
     $sdk = Get-AndroidSdk
     $adb = Join-Path $sdk 'platform-tools\adb.exe'
     $emulator = Join-Path $sdk 'emulator\emulator.exe'
-    if (-not (Test-Path -LiteralPath $adb)) { throw "adb not found: $adb" }
-    if (-not (Test-Path -LiteralPath $emulator)) { throw "emulator not found: $emulator" }
 
-    $javaCandidates = @($env:JAVA_HOME, 'C:\Android\Android Studio\jbr', 'C:\Program Files\Android\Android Studio\jbr') |
-        Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ 'bin\java.exe')) } |
-        Select-Object -Unique
+    $javaCandidates = @($env:JAVA_HOME)
+    $javaCommand = Get-Command java.exe -ErrorAction SilentlyContinue
+    if ($javaCommand) {
+        $javaBin = Split-Path -Parent $javaCommand.Source
+        $javaCandidates += Split-Path -Parent $javaBin
+    }
+    $javaCandidates = @($javaCandidates | Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ 'bin\java.exe')) } | Select-Object -Unique)
 
     return [pscustomobject]@{
         AndroidSdk = $sdk
@@ -244,10 +255,33 @@ function Run-AndroidAppSmoke {
         & $tools.Adb -s $selected.Serial shell pm clear $PackageName *> (Join-Path $artifactRoot "$Name-clear.txt")
         if ($LASTEXITCODE -ne 0) { throw "$Name app-data clear failed." }
         Add-Result -Name "$Name clear data" -Status 'PASS'
+        Start-Sleep -Seconds 1
     }
 
+    $permissionLog = Join-Path $artifactRoot "$Name-permissions.txt"
+    $permissionResults = @()
+    foreach ($permission in @('android.permission.CAMERA', 'android.permission.POST_NOTIFICATIONS')) {
+        & $tools.Adb -s $selected.Serial shell pm grant $PackageName $permission *> $permissionLog
+        $grantExitCode = $LASTEXITCODE
+        $packageDump = (& $tools.Adb -s $selected.Serial shell dumpsys package $PackageName 2>$null) -join "`n"
+        $checkExitCode = $LASTEXITCODE
+        $permissionState = if ($packageDump -match ([regex]::Escape($permission) + ': granted=true')) {
+            'granted'
+        } else {
+            'not-granted'
+        }
+        $permissionResults += "$permission grantExit=$grantExitCode checkExit=$checkExitCode state=$permissionState"
+        if ($grantExitCode -ne 0 -or $permissionState -notmatch 'granted') {
+            throw "$Name runtime permission was not granted: $permission state=$permissionState"
+        }
+    }
+    $permissionResults | Set-Content -Encoding UTF8 $permissionLog
+    Add-Result -Name "$Name runtime permissions" -Status 'PASS' -Evidence $permissionLog
+    & $tools.Adb -s $selected.Serial shell am force-stop com.android.permissioncontroller *> $null
+    & $tools.Adb -s $selected.Serial shell am force-stop $PackageName *> $null
+
     & $tools.Adb -s $selected.Serial logcat -c | Out-Null
-    & $tools.Adb -s $selected.Serial shell monkey -p $PackageName -c android.intent.category.LAUNCHER 1 *> (Join-Path $artifactRoot "$Name-launch.txt")
+    & $tools.Adb -s $selected.Serial shell am start -W -n "$PackageName/.MainActivity" *> (Join-Path $artifactRoot "$Name-launch.txt")
     if ($LASTEXITCODE -ne 0) { throw "$Name launch failed." }
     Start-Sleep -Seconds 8
 
@@ -263,13 +297,25 @@ function Run-AndroidAppSmoke {
 
     $remoteXml = '/sdcard/vg-window.xml'
     $remoteScreen = '/sdcard/vg-screen.png'
-    & $tools.Adb -s $selected.Serial shell uiautomator dump $remoteXml *> (Join-Path $artifactRoot "$Name-uiautomator.txt")
+    Invoke-NativeLogged -FilePath $tools.Adb `
+        -Arguments @('-s', $selected.Serial, 'shell', 'uiautomator', 'dump', $remoteXml) `
+        -WorkingDirectory $repoRoot `
+        -LogPath (Join-Path $artifactRoot "$Name-uiautomator.txt")
     if ($LASTEXITCODE -eq 0) {
-        & $tools.Adb -s $selected.Serial pull $remoteXml (Join-Path $artifactRoot "$Name-window.xml") *> $null
+        Invoke-NativeLogged -FilePath $tools.Adb `
+            -Arguments @('-s', $selected.Serial, 'pull', $remoteXml, (Join-Path $artifactRoot "$Name-window.xml")) `
+            -WorkingDirectory $repoRoot `
+            -LogPath (Join-Path $artifactRoot "$Name-window-pull.txt")
     }
-    & $tools.Adb -s $selected.Serial shell screencap -p $remoteScreen *> $null
+    Invoke-NativeLogged -FilePath $tools.Adb `
+        -Arguments @('-s', $selected.Serial, 'shell', 'screencap', '-p', $remoteScreen) `
+        -WorkingDirectory $repoRoot `
+        -LogPath (Join-Path $artifactRoot "$Name-screencap.txt")
     if ($LASTEXITCODE -eq 0) {
-        & $tools.Adb -s $selected.Serial pull $remoteScreen (Join-Path $artifactRoot "$Name-screen.png") *> $null
+        Invoke-NativeLogged -FilePath $tools.Adb `
+            -Arguments @('-s', $selected.Serial, 'pull', $remoteScreen, (Join-Path $artifactRoot "$Name-screen.png")) `
+            -WorkingDirectory $repoRoot `
+            -LogPath (Join-Path $artifactRoot "$Name-screen-pull.txt")
     }
 
     $logcat = Get-Content -LiteralPath $logcatPath -Raw

@@ -32,6 +32,7 @@ $releaseDir = Join-Path $repoRoot 'server\data\releases'
 $modelsDir = Join-Path $repoRoot 'server\data\models'
 $releasesJsonPath = Join-Path $repoRoot 'server\data\releases.json'
 $buildScript = Join-Path $repoRoot '.agents\skills\visionguard-build\scripts\build-all.ps1'
+$androidNnapiModelScript = Join-Path $repoRoot 'scripts\prepare-android-nnapi-model.py'
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 function Write-Step {
@@ -509,8 +510,7 @@ function Copy-Models {
     New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
     $modelSources = @(
         (Join-Path $repoRoot 'detector\windows-winforms\Assets'),
-        (Join-Path $repoRoot 'detector\windows-wpf\Assets'),
-        (Join-Path $repoRoot 'detector\android\app\src\main\assets\models')
+        (Join-Path $repoRoot 'detector\windows-wpf\Assets')
     )
 
     foreach ($source in $modelSources) {
@@ -520,7 +520,24 @@ function Copy-Models {
 
         Get-ChildItem -LiteralPath $source -Filter '*.onnx' -File |
             ForEach-Object {
-                Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $modelsDir $_.Name) -Force
+                $destination = Join-Path $modelsDir $_.Name
+                Copy-Item -LiteralPath $_.FullName -Destination $destination -Force
+
+                # The shared YOLO26 filename is consumed by WPF and Android.
+                # Normalize its Split form at release preparation time so the
+                # Android NNAPI path receives a model that can be partitioned
+                # without changing the logical model key or download route.
+                if ($_.Name -match '^yolo26.*\.onnx$') {
+                    $python = Get-Command python -ErrorAction SilentlyContinue
+                    if (-not $python) {
+                        throw "Python is required to prepare YOLO26 models for Android NNAPI: $androidNnapiModelScript"
+                    }
+                    Invoke-Native -FilePath $python.Source -Arguments @(
+                        $androidNnapiModelScript,
+                        '--input', $_.FullName,
+                        '--output', $destination
+                    )
+                }
             }
     }
 }

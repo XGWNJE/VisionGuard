@@ -1,5 +1,5 @@
 // ┌─────────────────────────────────────────────────────────┐
-// │ ConnectionManager.ts  v4.0.0                             │
+// │ ConnectionManager.ts  current                          │
 // │ 角色：WebSocket 连接管理 (按 role 独立 Map 跟踪)          │
 // │ 职责：认证、心跳、设备列表广播、报警广播(含截图推送)      │
 // │ 对外 API：handleConnection(), broadcastAlert(),           │
@@ -22,7 +22,7 @@ import type {
   AlertRecord, SourceStatus,
 } from '../models/types';
 
-// ── 三角色独立 Map (v4.0.0) ─────────────────────────────────
+// ── 四角色独立 Map ─────────────────────────────────────────
 const detectorWindowsClients = new Map<string, DetectorClient>();
 const detectorAndroidClients = new Map<string, DetectorClient>();
 const receiverClients = new Map<string, ReceiverClient>();
