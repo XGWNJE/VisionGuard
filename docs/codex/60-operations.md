@@ -41,7 +41,7 @@ Android 运行 smoke 使用 `-Mode AndroidDetectorSmoke` 或 `-Mode AndroidRecei
 
 - `ServerBuild` 只验证 TypeScript 编译和 `server/dist/index.js` 产物；历史兼容别名 `ServerSmoke` 也只做同一件事，不是 HTTP/WS 运行测试。
 - Android 启动 smoke 只验证安装、启动、前台服务/进程状态和观测窗口内无崩溃，不验证检测端→Server→接收端报警链。
-- `WpfPersonDetection` 使用三张含人的图片，要求每路至少一帧 `person`，证明 ImageFile 推理与来源隔离；不证明真实窗口采集或 UI 目检。
+- `WpfPersonDetection` 打开四个独立可见浏览器窗口，经 `WindowHandle` 捕获，要求每路至少一帧 `person` 且实际达到 2.5 FPS，并验证来源隔离和后端边界；不证明动态视频、报警链或 UI 目检。
 - 真实窗口采集、真机 UI、完整报警链、持续运行和故障恢复分别记录为人工/真机/完整 E2E 结果。
 - Windows 驻留程序的 Win7 SP1 x64 兼容不是当前构建 smoke 结论，必须在目标环境单独验收；本轮仅登记路线与验收门槛，不执行代码实现。
 
@@ -63,6 +63,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish-release.ps1 -Version 
 
 - Server 真实密钥使用 `server/.env` 或部署环境变量，不能提交。
 - Windows 两端优先读取 `VISIONGUARD_API_KEY`；Android 两端由 Gradle 注入 `BuildConfig.API_KEY`。
+- 本地私密配置集中保存在被 Git 忽略的 `.local/`；其中 `visionguard-release.env` 保存 API Key 与 Android 签名参数，`visionguard-android-release.p12` 保存签名证书。Android 两端优先读取各自 `local.properties`，缺失时回退到这份集中配置。迁移工作区时必须额外复制 `.local/`、两个 Android `local.properties` 和 `server/.env`；仅执行 `git clone` 无法恢复这些文件。
 - VisionGuard 正式域名：`https://visionguard.xgwnje.cn`；根域 `https://xgwnje.cn` 不是新客户端服务地址。
 - 当前 VPS/DNS/SNI 事实由 `Server-infra` 项目维护；不要运行旧式 `server/deploy.sh --nginx` 覆盖现有 SNI 架构。
 - `VERSION` 只由 owner 明确授权的版本流程修改；普通构建、测试、修复和文档治理不得改动它。

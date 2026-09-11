@@ -13,8 +13,7 @@ namespace VisionGuard.Models
     public enum CaptureMode
     {
         ScreenRegion,   // 原有 BitBlt 屏幕区域捕获
-        WindowHandle,   // PrintWindow 窗口句柄捕获
-        ImageFile       // 测试/验收：从固定图片重复读取，复用完整推理与报警链
+        WindowHandle    // PrintWindow 窗口句柄捕获
     }
 
     public class MonitorConfig
@@ -46,9 +45,6 @@ namespace VisionGuard.Models
         /// </summary>
         [System.Xml.Serialization.XmlIgnore]
         public IntPtr TargetWindowHandle { get; set; } = IntPtr.Zero;
-
-        /// <summary>ImageFile 模式的图片绝对路径。</summary>
-        public string ImageFilePath { get; set; } = string.Empty;
 
         /// <summary>
         /// 遮罩区域列表（相对于捕获后的 Bitmap，X/Y/Width/Height ∈ [0,1]）。

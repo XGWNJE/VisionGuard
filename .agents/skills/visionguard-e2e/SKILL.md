@@ -20,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\script
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode AndroidDetectorSmoke -Device Auto
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode AndroidReceiverSmoke -Device Auto
 
-# Three ImageFile sources must each produce at least one person detection.
+# Four independent visible browser windows must each produce at least one person detection.
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode WpfPersonDetection
 ```
 
@@ -31,7 +31,7 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\script
 - Prefer authorized physical Android devices, then `VisionGuard_API36`, then `Pixel_3a_XL`. Specify `-DeviceSerial` when multiple physical devices are connected.
 - Emulator runs must keep the window visible and close an emulator started by the script when the run ends.
 - Android smoke proves installation, launch, foreground activity/process state, and absence of an observed crash during the capture window. It does not prove the detector→Server→receiver alert chain.
-- WPF person-image smoke proves the ImageFile inference path and multi-source isolation. It does not prove real window capture.
+- WPF person-window smoke proves four independent `WindowHandle` captures, person inference, per-source FPS and runtime isolation. It does not prove dynamic-video behavior, alert delivery, long-running stability, or UI appearance.
 - Full feature E2E requires deterministic test data plus every participating component; report missing links as skipped.
 - Do not use the production VPS or public service unless the user explicitly requests it. Do not change versions or publish from this skill.
 - Evidence is written under `artifacts/e2e/`. Report the selected device, build type, pass/fail/skip results, evidence paths, and any remaining manual visual checks.

@@ -10,7 +10,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
-using System.IO;
 using System.Threading;
 using VisionGuard.Capture;
 using VisionGuard.Inference;
@@ -48,10 +47,9 @@ namespace VisionGuard.Services
             {
                 if (_config == null) return false;
                 if (_config.CaptureMode == CaptureMode.WindowHandle)
-                    return _config.TargetWindowHandle != IntPtr.Zero;
-                if (_config.CaptureMode == CaptureMode.ImageFile)
-                    return File.Exists(_config.ImageFilePath);
-                return _config.CaptureRegion.Width >= 32 && _config.CaptureRegion.Height >= 32;
+                    return _config.TargetWindowHandle != IntPtr.Zero
+                        && (_config.WindowSubRegion == Rectangle.Empty || CaptureSizeConstraints.IsValid(_config.WindowSubRegion));
+                return CaptureSizeConstraints.IsValid(_config.CaptureRegion);
             }
         }
 
@@ -67,6 +65,13 @@ namespace VisionGuard.Services
         {
             if (_disposed) throw new ObjectDisposedException(nameof(MonitorService));
             if (_timer != null) return;
+
+            if (config.CaptureMode == CaptureMode.ScreenRegion && !CaptureSizeConstraints.IsValid(config.CaptureRegion))
+                throw new InvalidOperationException("屏幕选区宽度和高度必须都大于 100 像素。");
+            if (config.CaptureMode == CaptureMode.WindowHandle
+                && (config.TargetWindowHandle == IntPtr.Zero
+                    || (config.WindowSubRegion != Rectangle.Empty && !CaptureSizeConstraints.IsValid(config.WindowSubRegion))))
+                throw new InvalidOperationException("目标窗口或窗口选区无效，宽度和高度必须都大于 100 像素。");
 
             _config  = config;
             _engine  = new OnnxInferenceEngine(modelPath, intraOpNumThreads: 2, preferredBackend: preferredBackend);
@@ -135,15 +140,7 @@ namespace VisionGuard.Services
                 var sw = Stopwatch.StartNew();
 
                 // 1. 截图（根据捕获模式选择方式）
-                if (cfg.CaptureMode == Models.CaptureMode.ImageFile)
-                {
-                    if (string.IsNullOrWhiteSpace(cfg.ImageFilePath) || !File.Exists(cfg.ImageFilePath))
-                        throw new FileNotFoundException("测试图片不存在。", cfg.ImageFilePath);
-                    // Image.FromFile 会一直占用文件；先复制到内存，保证测试素材可被替换或清理。
-                    using var loaded = Image.FromFile(cfg.ImageFilePath);
-                    frame = new Bitmap(loaded);
-                }
-                else if (cfg.CaptureMode == Models.CaptureMode.WindowHandle
+                if (cfg.CaptureMode == Models.CaptureMode.WindowHandle
                     && cfg.TargetWindowHandle != IntPtr.Zero)
                 {
                     frame = WindowCapturer.CaptureWindow(cfg.TargetWindowHandle, cfg.WindowSubRegion);

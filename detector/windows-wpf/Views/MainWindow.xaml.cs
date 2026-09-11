@@ -81,22 +81,5 @@ namespace VisionGuard.Views
             System.Windows.Application.Current.Shutdown();
         }
 
-        private void BtnMonitor_Click(object sender, RoutedEventArgs e)
-        {
-            if (DataContext is ViewModels.MainViewModel vm)
-                vm.CurrentPage = ViewModels.PageType.Monitor;
-        }
-
-        private void BtnSettings_Click(object sender, RoutedEventArgs e)
-        {
-            if (DataContext is ViewModels.MainViewModel vm)
-                vm.CurrentPage = ViewModels.PageType.Settings;
-        }
-
-        private void BtnServer_Click(object sender, RoutedEventArgs e)
-        {
-            if (DataContext is ViewModels.MainViewModel vm)
-                vm.CurrentPage = ViewModels.PageType.Server;
-        }
     }
 }

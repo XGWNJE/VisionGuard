@@ -1,78 +1,119 @@
 <UserControl x:Class="VisionGuard.Views.MonitorPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             Background="{StaticResource BackgroundDark}">
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="16">
-            <TextBlock Text="捕获区域" Style="{StaticResource TitleText}" Margin="0,0,0,12"/>
+             Background="Transparent">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="4,8,8,8" DataContext="{Binding SelectedSource}">
+            <!-- 当前上下文：名称原位编辑，失焦或回车自动保存 -->
+            <Grid Margin="0,0,0,18" MinHeight="40">
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock x:Name="SourceNameText"
+                           Text="{Binding SourceName}"
+                           Style="{StaticResource TitleText}"
+                           FontSize="17"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           Cursor="IBeam"
+                           ToolTip="点击修改信号名称"
+                           MouseLeftButtonDown="SourceNameText_OnMouseLeftButtonDown"/>
+                <TextBox x:Name="SourceNameEditor"
+                         Text="{Binding SourceName, UpdateSourceTrigger=PropertyChanged}"
+                         Style="{StaticResource DarkTextBox}"
+                         Visibility="Collapsed"
+                         VerticalAlignment="Center"
+                         LostKeyboardFocus="SourceNameEditor_OnLostKeyboardFocus"
+                         KeyDown="SourceNameEditor_OnKeyDown"/>
+                <Border Grid.Column="1" Style="{StaticResource StatusPill}" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding StatusText}" Style="{StaticResource CaptionText}"/>
+                </Border>
+            </Grid>
 
-            <Border Style="{StaticResource CardBorder}">
-                <StackPanel>
-                    <Grid Margin="0,0,0,12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="{Binding RegionInfo}" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
-                        <Button Grid.Column="1" Content="✕" Style="{StaticResource DarkButton}" Width="28" Height="28" Padding="0"
-                                Command="{Binding ResetWindowCommand}"
-                                Visibility="{Binding CanResetWindow, Converter={StaticResource BoolToVis}}"
-                                ToolTip="清除窗口选择，回到全屏"
-                                ToolTipService.ShowOnDisabled="True"/>
-                    </Grid>
+            <!-- 1. 选择采集目标 -->
+            <StackPanel Margin="0,0,0,16">
+                <Grid Margin="0,0,0,7">
+                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock Text="采集目标" Style="{StaticResource SectionLabel}" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1" Content="清除" Style="{StaticResource GhostButton}" Command="{Binding ClearTargetCommand}"
+                            MinWidth="52" MinHeight="28" Height="28" Padding="9,2" ToolTip="清除当前采集目标"/>
+                </Grid>
+                <TextBlock Text="{Binding TargetInfo}" Style="{StaticResource BodyText}" TextTrimming="CharacterEllipsis" ToolTip="{Binding TargetInfo}" Margin="0,0,0,7"/>
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                    <Button Content="应用窗口" Style="{StaticResource PrimaryButton}" Command="{Binding PickWindowCommand}" Margin="0,0,4,0" ToolTip="选择一个应用窗口作为采集目标"/>
+                    <Button Grid.Column="1" Content="窗口 / 屏幕选区" Style="{StaticResource DarkButton}" Command="{Binding SelectRegionCommand}" Margin="4,0,0,0" ToolTip="已选择窗口时截取窗口内部区域，否则选择屏幕区域"/>
+                </Grid>
+            </StackPanel>
 
-                    <Button Content="选择窗口…" Style="{StaticResource DarkButton}" Margin="0,0,0,8"
-                            Command="{Binding PickWindowCommand}"/>
-                    <Button Content="拖拽选区…" Style="{StaticResource DarkButton}" Margin="0,0,0,8"
-                            Command="{Binding SelectRegionCommand}"/>
-                    <Button Content="遮罩区域…" Style="{StaticResource DarkButton}" Margin="0,0,0,8"
-                            Command="{Binding EditMasksCommand}"
-                            ToolTipService.ShowOnDisabled="True">
-                        <Button.ToolTip>
-                            <ToolTip Content="在当前捕获画面上绘制遮罩区域（未选区时默认抓取主屏幕作为背景）"/>
-                        </Button.ToolTip>
-                    </Button>
-
-                    <TextBlock Text="{Binding MaskInfo}" Style="{StaticResource CaptionText}" Margin="0,8,0,0"/>
-                </StackPanel>
-            </Border>
-
-            <TextBlock Text="监控控制" Style="{StaticResource TitleText}" Margin="0,16,0,12"/>
-
-            <Button Content="▶ 开始监控" Style="{StaticResource PrimaryButton}" Height="40" Margin="0,0,0,8"
-                    Command="{Binding StartCommand}"/>
-            <Button Content="■ 停止监控" Style="{StaticResource DarkButton}" Height="40"
-                    Command="{Binding StopCommand}"/>
-
-            <TextBlock Text="三图片来源（测试模式）" Style="{StaticResource TitleText}" Margin="0,20,0,12"/>
-            <ItemsControl ItemsSource="{Binding DataContext.MultiSourceVm.Sources, RelativeSource={RelativeSource AncestorType=Window}}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Style="{StaticResource CardBorder}" Margin="0,0,0,10">
-                            <StackPanel>
-                                <TextBox Text="{Binding SourceName, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,8"/>
-                                <TextBlock Text="{Binding ImageFileName}" Style="{StaticResource CaptionText}" Margin="0,0,0,6"/>
-                                <Button Content="选择测试图片…" Style="{StaticResource DarkButton}" Command="{Binding PickImageCommand}" Margin="0,0,0,8"/>
-                                <Button Content="{Binding MaskInfo, StringFormat=编辑遮罩…（{0}）}" Style="{StaticResource DarkButton}" Command="{Binding EditMasksCommand}" Margin="0,0,0,8"/>
-                                <ComboBox ItemsSource="{Binding ModelOptions}" SelectedItem="{Binding ModelKey}" Margin="0,0,0,8"/>
-                                <TextBox Text="{Binding Targets, UpdateSourceTrigger=PropertyChanged}" ToolTip="检测类别，逗号分隔" Margin="0,0,0,8"/>
-                                <Grid Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                                    <StackPanel><TextBlock Text="阈值 %" Style="{StaticResource CaptionText}"/><TextBox Text="{Binding ThresholdPercent}"/></StackPanel>
-                                    <StackPanel Grid.Column="1" Margin="6,0"><TextBlock Text="FPS" Style="{StaticResource CaptionText}"/><TextBox Text="{Binding TargetFps}"/></StackPanel>
-                                    <StackPanel Grid.Column="2"><TextBlock Text="冷却秒" Style="{StaticResource CaptionText}"/><TextBox Text="{Binding Cooldown}"/></StackPanel>
-                                </Grid>
-                                <Grid>
-                                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition Width="2*"/></Grid.ColumnDefinitions>
-                                    <Button Content="▶ 启动" Style="{StaticResource PrimaryButton}" Command="{Binding StartCommand}" Margin="0,0,6,0"/>
-                                    <Button Grid.Column="1" Content="■ 停止" Style="{StaticResource DarkButton}" Command="{Binding StopCommand}" Margin="0,0,6,0"/>
-                                    <TextBlock Grid.Column="2" Text="{Binding StatusText}" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
-                                </Grid>
-                            </StackPanel>
+            <!-- 2. 确定模型和检测对象 -->
+            <StackPanel Margin="0,0,0,16">
+                <TextBlock Text="识别设置" Style="{StaticResource SectionLabel}" Margin="0,0,0,7"/>
+                <TextBlock Text="模型" Style="{StaticResource CaptionText}"/>
+                <ComboBox ItemsSource="{Binding ModelOptions}" SelectedItem="{Binding ModelKey}" Style="{StaticResource DarkComboBox}" IsEnabled="{Binding CanEdit}" Height="40" Margin="0,4,0,10"/>
+                <TextBlock Text="检测类别" Style="{StaticResource CaptionText}"/>
+                <Grid Margin="0,4,0,0">
+                    <ToggleButton x:Name="TargetMenuButton" Height="40" IsEnabled="{Binding CanEdit}"
+                                  AutomationProperties.Name="检测类别多选菜单"
+                                  IsChecked="{Binding IsOpen, ElementName=TargetMenuPopup, Mode=TwoWay}">
+                        <ToggleButton.Template>
+                            <ControlTemplate TargetType="ToggleButton">
+                                <Border x:Name="Shell" Background="{StaticResource SurfaceLight}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="7">
+                                    <Grid Margin="11,0,10,0">
+                                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding TargetSummary}" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                        <Path Grid.Column="1" Data="M 0 0 L 4 4 L 8 0 Z" Fill="{StaticResource TextSecondary}" VerticalAlignment="Center"/>
+                                    </Grid>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Shell" Property="BorderBrush" Value="{StaticResource PrimaryHover}"/></Trigger>
+                                    <Trigger Property="IsChecked" Value="True"><Setter TargetName="Shell" Property="BorderBrush" Value="{StaticResource Primary}"/></Trigger>
+                                    <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Shell" Property="Opacity" Value="0.45"/></Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </ToggleButton.Template>
+                    </ToggleButton>
+                    <Popup x:Name="TargetMenuPopup" Placement="Bottom" PlacementTarget="{Binding ElementName=TargetMenuButton}"
+                           StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade">
+                        <Border Width="{Binding ActualWidth, ElementName=TargetMenuButton}" MaxHeight="310"
+                                Background="{StaticResource SurfaceLight}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="9" Padding="8">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <ItemsControl ItemsSource="{Binding TargetOptions}">
+                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <CheckBox Content="{Binding DisplayName}" IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                                      Style="{StaticResource DarkCheckBox}" Width="170" Padding="6" Margin="1"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
                         </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
+                    </Popup>
+                </Grid>
+            </StackPanel>
+
+            <!-- 3. 调整检测行为 -->
+            <StackPanel Margin="0,0,0,16">
+                <TextBlock Text="检测参数" Style="{StaticResource SectionLabel}" Margin="0,0,0,7"/>
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                    <StackPanel Margin="0,0,3,0"><TextBlock Text="阈值 %" Style="{StaticResource CaptionText}"/><TextBox Text="{Binding ThresholdPercent}" Style="{StaticResource DarkTextBox}" IsEnabled="{Binding CanEdit}" Margin="0,4,0,0"/></StackPanel>
+                    <StackPanel Grid.Column="1" Margin="3,0"><TextBlock Text="频率/秒" Style="{StaticResource CaptionText}"/><TextBox Text="{Binding TargetFps}" Style="{StaticResource DarkTextBox}" IsEnabled="{Binding CanEdit}" Margin="0,4,0,0"/></StackPanel>
+                    <StackPanel Grid.Column="2" Margin="3,0,0,0"><TextBlock Text="冷却秒" Style="{StaticResource CaptionText}"/><TextBox Text="{Binding Cooldown}" Style="{StaticResource DarkTextBox}" IsEnabled="{Binding CanEdit}" Margin="0,4,0,0"/></StackPanel>
+                </Grid>
+            </StackPanel>
+
+            <!-- 4. 排除无需检测的区域 -->
+            <StackPanel Margin="0,0,0,18">
+                <TextBlock Text="区域排除" Style="{StaticResource SectionLabel}" Margin="0,0,0,7"/>
+                <Button Content="{Binding MaskInfo, StringFormat=编辑遮罩区域 · {0}}" Style="{StaticResource DarkButton}" Command="{Binding EditMasksCommand}"/>
+            </StackPanel>
+
+            <!-- 5. 完成 -->
+            <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                <Button Content="保存此路配置" Style="{StaticResource PrimaryButton}" Command="{Binding SaveCommand}" Margin="0,0,5,0"/>
+                <Button Grid.Column="1" Content="撤销修改" Style="{StaticResource GhostButton}" Command="{Binding CancelCommand}" Margin="5,0,0,0"/>
+            </Grid>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

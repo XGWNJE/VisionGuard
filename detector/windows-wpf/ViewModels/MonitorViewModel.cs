@@ -55,12 +55,7 @@ namespace VisionGuard.ViewModels
                     EditMasksCommand.RaiseCanExecuteChanged();
                     ResetWindowCommand.RaiseCanExecuteChanged();
 
-                    // 同步主窗口状态栏与预览
-                    if (_mainVm != null)
-                    {
-                        _mainVm.StatusText = value ? $"● 监控中 · {_monitorService.ActiveBackend}" : "○ 已停止";
-                        if (!value) _mainVm.ClearPreview();
-                    }
+                    // 旧单路 ViewModel 仅保留兼容代码；正式预览由四槽各自维护。
                 }
             }
         }
@@ -72,8 +67,7 @@ namespace VisionGuard.ViewModels
         public bool CanResetWindow => !IsMonitoring && TargetWindow != null;
 
         /// <summary>是否已设定有效的捕获目标（窗口 或 屏幕区域）。</summary>
-        public bool HasCaptureTarget => TargetWindow != null ||
-            (ScreenRegion != Rectangle.Empty && ScreenRegion.Width >= 32 && ScreenRegion.Height >= 32);
+        public bool HasCaptureTarget => TargetWindow != null || CaptureSizeConstraints.IsValid(ScreenRegion);
 
         private bool _isDownloadingModel;
         public bool IsDownloadingModel
@@ -138,8 +132,7 @@ namespace VisionGuard.ViewModels
                 using (e.Frame)
                 {
                     var bitmapSource = ConvertBitmapToSource(e.Frame);
-                    _mainVm.UpdatePreview(bitmapSource, e.Detections);
-                    _mainVm.InferMsText = $"推理 {e.InferenceMs} ms";
+                    // 正式四槽路径不会实例化此 ViewModel；逐路耗时由 SignalSourceViewModel 维护。
                 }
             });
         }
@@ -151,9 +144,9 @@ namespace VisionGuard.ViewModels
             // 校验已选定有效捕获源
             if (config.CaptureMode == CaptureMode.ScreenRegion)
             {
-                if (config.CaptureRegion.Width < 32 || config.CaptureRegion.Height < 32)
+                if (!CaptureSizeConstraints.IsValid(config.CaptureRegion))
                 {
-                    string msg = "请先选择捕获区域（最小 32×32）。";
+                    string msg = "屏幕选区宽度和高度必须都大于 100 像素。";
                     if (remote)
                     {
                         _serverPushService.SendCommandAck("resume", false, msg, requestId);
@@ -165,9 +158,11 @@ namespace VisionGuard.ViewModels
             }
             else if (config.CaptureMode == CaptureMode.WindowHandle)
             {
-                if (config.TargetWindowHandle == IntPtr.Zero)
+                if (config.TargetWindowHandle == IntPtr.Zero
+                    || !CaptureSizeConstraints.IsValid(WindowEnumerator.GetWindowBounds(config.TargetWindowHandle))
+                    || (config.WindowSubRegion != Rectangle.Empty && !CaptureSizeConstraints.IsValid(config.WindowSubRegion)))
                 {
-                    string msg = "请先点击「选择窗口…」选择目标窗口。";
+                    string msg = "目标窗口或窗口选区无效，宽度和高度必须都大于 100 像素。";
                     if (remote)
                     {
                         _serverPushService.SendCommandAck("resume", false, msg, requestId);
@@ -361,7 +356,7 @@ namespace VisionGuard.ViewModels
         {
             TargetWindow = null;
             WindowSubRegion = Rectangle.Empty;
-            if (ScreenRegion == Rectangle.Empty || ScreenRegion.Width < 32 || ScreenRegion.Height < 32)
+            if (!CaptureSizeConstraints.IsValid(ScreenRegion))
                 RegionInfo = "未选择区域";
             ClearMasks();
             OnPropertyChanged(nameof(CanResetWindow));
@@ -476,7 +471,7 @@ namespace VisionGuard.ViewModels
                 // WindowSubRegion 是相对于窗口的坐标；Empty 表示捕获整个窗口
                 return WindowCapturer.CaptureWindow(TargetWindow.Handle, WindowSubRegion);
             }
-            if (ScreenRegion != Rectangle.Empty && ScreenRegion.Width >= 32 && ScreenRegion.Height >= 32)
+            if (CaptureSizeConstraints.IsValid(ScreenRegion))
             {
                 return ScreenCapturer.CaptureRegion(ScreenRegion);
             }

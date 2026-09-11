@@ -38,7 +38,7 @@ namespace VisionGuard.Views
             WindowList.ItemsSource = windows;
             WindowList.IsEnabled = true;
             LoadingIndicator.Visibility = Visibility.Collapsed;
-            HeaderText.Text = $"找到 {windows.Count} 个窗口，双击或单击后点击确定";
+            HeaderText.Text = $"找到 {windows.Count} 个有效窗口 · 宽高均须大于 100 像素";
         }
 
         private void WindowList_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -61,7 +61,16 @@ namespace VisionGuard.Views
         {
             if (WindowList.SelectedItem is WindowInfo win)
             {
-                SelectedWindow = win;
+                var currentBounds = WindowEnumerator.GetWindowBounds(win.Handle);
+                if (!CaptureSizeConstraints.IsValid(currentBounds))
+                {
+                    MessageBox.Show("该窗口当前尺寸过小，宽度和高度必须都大于 100 像素。", "VisionGuard",
+                        MessageBoxButton.OK, MessageBoxImage.Information);
+                    _ = LoadWindowsAsync();
+                    return;
+                }
+
+                SelectedWindow = new WindowInfo(win.Handle, win.Title, win.ClassName, currentBounds);
                 DialogResult = true;
                 Close();
             }

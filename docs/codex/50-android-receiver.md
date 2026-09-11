@@ -18,6 +18,7 @@
 - `receiver/android/app/src/main/java/com/xgwnje/visionguard_android/service/NetworkMonitor.kt`
 - `receiver/android/app/src/main/java/com/xgwnje/visionguard_android/data/model/DeviceRegistryModels.kt`
 - `receiver/android/app/src/main/java/com/xgwnje/visionguard_android/data/repository/DeviceRegistryRepository.kt`
+- `receiver/android/app/src/main/java/com/xgwnje/visionguard_android/data/remote/CurrentDeviceInfoParser.kt`
 - `receiver/android/app/src/main/java/com/xgwnje/visionguard_android/data/remote/WebSocketClient.kt`
 - `receiver/android/app/src/main/java/com/xgwnje/visionguard_android/ui/screen/DeviceListScreen.kt`
 - `receiver/android/app/src/main/java/com/xgwnje/visionguard_android/ui/screen/AlertListScreen.kt`
@@ -31,6 +32,9 @@
 - 缺席实时列表的历史设备显示为离线，并清除本地监控中状态。
 - 在线设备不允许删除；离线设备允许在设备页侧滑删除。
 - 长按设备卡片右上角拖拽手柄可以调整顺序。
+- Server 实时设备记录必须符合当前协议并包含 `modelOptions`、`capabilities`、`components` 和 `sources`；旧格式或集合类型错误的记录直接丢弃并记日志，不进入设备状态列表。
+- 父设备状态按全部来源聚合；只有 `isMonitoring && isReady && error` 为空的来源计为健康运行。四路中三路健康、一条未就绪或报错时显示“部分运行 3/4”，不能误报为全部运行。
+- 多来源设备继续禁用旧整机启停入口；逐来源命令和参数调整携带稳定 `targetSourceId`。
 
 ## 已验证事实
 
@@ -44,3 +48,4 @@
 - WS 消息模型与检测端/Server 对齐
 - 本地也缓存 `targets`，默认值为 `person`
 - 2026-07-08 模拟器验证：设备页启动、手动拖拽排序、强停重启后排序保留、断网离线卡片保留、离线侧滑删除、恢复联网后实时设备并回列表均通过；该验证不等同于完整检测端到接收端真实告警链路。
+- 2026-09-11 MI 6X 真机验证：接收端认证成功，3 条缺少当前字段的旧协议设备记录被丢弃；应用保持运行且界面显示已连接。证据见 `artifacts/e2e/20260911-004712/`。

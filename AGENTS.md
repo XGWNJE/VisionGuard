@@ -40,18 +40,21 @@ node --test scripts/check-docs.test.js scripts/release-workflow.test.js
 项目级 Skill 只保留三个有明确脚本或授权边界的流程；操作细节见[运维文档](docs/codex/60-operations.md)：
 
 - `visionguard-build`：调用 `.agents/skills/visionguard-build/scripts/build-all.ps1` 做 Release 编译和产物核验，不发布。
-- `visionguard-e2e`：调用 `.agents/skills/visionguard-e2e/scripts/e2e-smoke.ps1` 做环境发现、ServerBuild、Android 运行烟测和 WPF 含人图片推理；不把这些结果称为完整 E2E。
+- `visionguard-e2e`：调用 `.agents/skills/visionguard-e2e/scripts/e2e-smoke.ps1` 做环境发现、ServerBuild、Android 运行烟测和 WPF 四窗口人员推理；不把这些结果称为完整 E2E。
 - `visionguard-release`：调用 `scripts/publish-release.ps1` 做需要明确授权的版本发布、部署和公网验证。
 
 构建、运行烟测、完整 E2E 和发布必须分开报告：
 
 - `ServerBuild` 只证明 Server 编译和 `server/dist/index.js` 存在。
 - Android 启动 smoke 只证明安装、启动、进程/前台服务和观测窗口内无崩溃。
-- WPF 人员图片 smoke 必须使用三张含人图片，并断言每路至少一帧 `person`；界面截图只能作负样本或性能输入。
-- 真实窗口采集、真机 UI、完整检测端→Server→接收端报警链、持续运行和生产状态必须单独列为人工/真机/生产验证。
+- WPF 人员窗口 smoke 必须使用四个独立可见窗口，经 `WindowHandle` 捕获并断言每路至少一帧 `person` 和逐路 FPS；静态图片窗口不能替代动态视频。
+- 真机 UI、完整检测端→Server→接收端报警链、持续运行和生产状态必须单独列为人工/真机/生产验证。
 
 ## 变更交付
 
 - 保留 owner 已有改动，不覆盖无关文件；本任务结束不自动提交。
+- 新增功能必须优先采用满足当前需求的最小设计，并评估长期维护成本；不为未经验证的未来需求增加抽象层、兼容分支或基础设施，不得无必要提高系统复杂度。
 - 改动后按影响范围运行最小但真实的语法检查、契约测试和构建验证，并记录失败、跳过和人工验收项。
+- 涉及 Android 真机 UI 或运行流程的 ADB 调试，以及模拟器调试，默认开启 `scrcpy`、模拟器窗口或等效的可见预览，全程保持过程可见并在结束后关闭；纯构建、安装包签名验证和只读设备信息检查可以不启动预览。
 - UI 改动分批交付，由 owner 在真实设备目检；ADB/模拟器操作不得擅自修改锁屏、休眠或唤醒设置。
+- 真机锁屏或休眠后无法由 owner 正常唤醒时，停止调试并报告，等待 owner 解锁后再继续。

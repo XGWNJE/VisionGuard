@@ -225,7 +225,8 @@ function Run-AndroidAppSmoke {
     param(
         [string]$Name,
         [string]$ProjectDirectory,
-        [string]$PackageName
+        [string]$PackageName,
+        [string[]]$RuntimePermissions
     )
     $tools = Get-AndroidTools
     Set-GradleJava -JavaHome $tools.JavaHome
@@ -260,7 +261,7 @@ function Run-AndroidAppSmoke {
 
     $permissionLog = Join-Path $artifactRoot "$Name-permissions.txt"
     $permissionResults = @()
-    foreach ($permission in @('android.permission.CAMERA', 'android.permission.POST_NOTIFICATIONS')) {
+    foreach ($permission in $RuntimePermissions) {
         & $tools.Adb -s $selected.Serial shell pm grant $PackageName $permission *> $permissionLog
         $grantExitCode = $LASTEXITCODE
         $packageDump = (& $tools.Adb -s $selected.Serial shell dumpsys package $PackageName 2>$null) -join "`n"
@@ -330,8 +331,8 @@ function Run-WpfPersonDetection {
     $report = Join-Path $artifactRoot 'wpf-person-detection.json'
     $log = Join-Path $artifactRoot 'wpf-person-detection.txt'
     if (-not (Test-Path -LiteralPath $script)) { throw "WPF person test script missing: $script" }
-    Invoke-NativeLogged -FilePath 'powershell' -Arguments @('-ExecutionPolicy', 'Bypass', '-File', $script, '-PrepareFixtures', '-ReportPath', $report) -WorkingDirectory $repoRoot -LogPath $log
-    Add-Result -Name 'WPF three-source person detection' -Status 'PASS' -Evidence $report
+    Invoke-NativeLogged -FilePath 'powershell' -Arguments @('-ExecutionPolicy', 'Bypass', '-File', $script, '-ReportPath', $report) -WorkingDirectory $repoRoot -LogPath $log
+    Add-Result -Name 'WPF four-window person detection' -Status 'PASS' -Evidence $report
 }
 
 try {
@@ -342,8 +343,20 @@ try {
             Add-Result -Name 'ServerSmoke compatibility alias' -Status 'PASS' -Note 'Running compile/artifact smoke only.'
             Run-ServerBuild
         }
-        'AndroidDetectorSmoke' { Run-AndroidAppSmoke -Name 'android-detector' -ProjectDirectory 'detector\android' -PackageName 'com.xgwnje.visionguard' }
-        'AndroidReceiverSmoke' { Run-AndroidAppSmoke -Name 'android-receiver' -ProjectDirectory 'receiver\android' -PackageName 'com.xgwnje.visionguard_android' }
+        'AndroidDetectorSmoke' {
+            Run-AndroidAppSmoke `
+                -Name 'android-detector' `
+                -ProjectDirectory 'detector\android' `
+                -PackageName 'com.xgwnje.visionguard' `
+                -RuntimePermissions @('android.permission.CAMERA', 'android.permission.POST_NOTIFICATIONS')
+        }
+        'AndroidReceiverSmoke' {
+            Run-AndroidAppSmoke `
+                -Name 'android-receiver' `
+                -ProjectDirectory 'receiver\android' `
+                -PackageName 'com.xgwnje.visionguard_android' `
+                -RuntimePermissions @('android.permission.POST_NOTIFICATIONS')
+        }
         'WpfPersonDetection' { Run-WpfPersonDetection }
     }
 }

@@ -1,89 +1,48 @@
 <UserControl x:Class="VisionGuard.Views.SettingsPage"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             Background="{StaticResource BackgroundDark}">
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <StackPanel Margin="16">
-            <TextBlock Text="检测设置" Style="{StaticResource TitleText}" Margin="0,0,0,16"/>
-
-            <!-- 置信度阈值 -->
-            <Border Style="{StaticResource CardBorder}">
-                <StackPanel>
-                    <TextBlock Text="置信度阈值" Style="{StaticResource BodyText}" Margin="0,0,0,8"/>
-                    <Slider Style="{StaticResource DarkSlider}" Minimum="10" Maximum="95" Value="{Binding Threshold}"
-                            TickFrequency="5" IsSnapToTickEnabled="True"/>
-                    <TextBlock Text="{Binding ThresholdText}" Style="{StaticResource CaptionText}" HorizontalAlignment="Right" Margin="0,4,0,0"/>
-                </StackPanel>
-            </Border>
-
-            <!-- 目标采样率 -->
-            <Border Style="{StaticResource CardBorder}">
-                <StackPanel>
-                    <TextBlock Text="目标采样率" Style="{StaticResource BodyText}" Margin="0,0,0,8"/>
-                    <Slider Style="{StaticResource DarkSlider}" Minimum="1" Maximum="5" Value="{Binding SamplingRate}"
-                            TickFrequency="1" IsSnapToTickEnabled="True"/>
-                    <TextBlock Text="{Binding SamplingRateText}" Style="{StaticResource CaptionText}" HorizontalAlignment="Right" Margin="0,4,0,0"/>
-                </StackPanel>
-            </Border>
-
-            <!-- 警报推送冷却时间 -->
-            <Border Style="{StaticResource CardBorder}">
-                <StackPanel>
-                    <TextBlock Text="警报推送冷却时间" Style="{StaticResource BodyText}" Margin="0,0,0,8"/>
-                    <Slider Style="{StaticResource DarkSlider}" Minimum="1" Maximum="300" Value="{Binding Cooldown}"
-                            TickFrequency="1" IsSnapToTickEnabled="True"/>
-                    <TextBlock Text="{Binding CooldownText}" Style="{StaticResource CaptionText}" HorizontalAlignment="Right" Margin="0,4,0,0"/>
-                </StackPanel>
-            </Border>
-
-            <!-- 模型选择 -->
-            <Border Style="{StaticResource CardBorder}">
-                <StackPanel>
-                    <TextBlock Text="模型选择" Style="{StaticResource BodyText}" Margin="0,0,0,8"/>
-                    <ComboBox Style="{StaticResource DarkComboBox}" SelectedIndex="{Binding SelectedModelIndex}">
-                        <ComboBoxItem>YOLO26n 320 (9MB)</ComboBoxItem>
-                        <ComboBoxItem>YOLO26n 640 (10MB)</ComboBoxItem>
-                        <ComboBoxItem>YOLO26s 320 (36MB)</ComboBoxItem>
-                        <ComboBoxItem>YOLO26s 640 (37MB)</ComboBoxItem>
-                        <ComboBoxItem>YOLO26m 320 (78MB)</ComboBoxItem>
-                        <ComboBoxItem>YOLO26m 640 (78MB)</ComboBoxItem>
+             Background="Transparent">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="4,8,8,8">
+            <!-- 推理后端：标签与选择器共用一行 -->
+            <StackPanel Margin="0,0,0,18">
+                <TextBlock Text="推理设备" Style="{StaticResource SectionLabel}" Margin="0,0,0,7"/>
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="64"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                    <TextBlock Text="后端" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Column="1" Style="{StaticResource DarkComboBox}" SelectedIndex="{Binding SelectedBackendIndex}">
+                        <ComboBoxItem>DirectML · GPU 加速</ComboBoxItem>
+                        <ComboBoxItem>CPU · 兼容与诊断</ComboBoxItem>
                     </ComboBox>
-                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                        <TextBlock Text="{Binding ModelStatusText}" Style="{StaticResource CaptionText}" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                        <Button Content="下载模型" Style="{StaticResource DarkButton}" Width="90" Height="26" FontSize="11"
-                                Command="{Binding DownloadModelCommand}"/>
+                </Grid>
+                <TextBlock Text="重启后生效 · CPU 仅支持一路" Foreground="{StaticResource WarningBrush}" FontSize="11" Margin="64,6,0,0"
+                           ToolTip="加速失败时，具体回退原因会显示在对应信号中。"/>
+            </StackPanel>
+
+            <!-- 模型：选择、状态与动作形成两行 -->
+            <StackPanel>
+                <TextBlock Text="模型资源" Style="{StaticResource SectionLabel}" Margin="0,0,0,7"/>
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="64"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                    <TextBlock Text="模型" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Column="1" Style="{StaticResource DarkComboBox}" SelectedIndex="{Binding SelectedModelIndex}">
+                        <ComboBoxItem>YOLO26n 320 · 9 MB</ComboBoxItem>
+                        <ComboBoxItem>YOLO26n 640 · 10 MB</ComboBoxItem>
+                        <ComboBoxItem>YOLO26s 320 · 36 MB</ComboBoxItem>
+                        <ComboBoxItem>YOLO26s 640 · 37 MB</ComboBoxItem>
+                        <ComboBoxItem>YOLO26m 320 · 78 MB</ComboBoxItem>
+                        <ComboBoxItem>YOLO26m 640 · 78 MB</ComboBoxItem>
+                    </ComboBox>
+                </Grid>
+                <Grid Margin="64,7,0,0">
+                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding ModelStatusText}" Style="{StaticResource CaptionText}" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding ModelDownloadProgress}" Foreground="{StaticResource Primary}" FontSize="11" Margin="0,2,0,0"/>
                     </StackPanel>
-                    <TextBlock Text="{Binding ModelDownloadProgress}" Style="{StaticResource CaptionText}"
-                               Foreground="{StaticResource Primary}" Margin="0,4,0,0"/>
-                </StackPanel>
-            </Border>
-
-            <!-- 推理后端 -->
-            <Border Style="{StaticResource CardBorder}">
-                <StackPanel>
-                    <TextBlock Text="推理后端" Style="{StaticResource BodyText}" Margin="0,0,0,8"/>
-                    <ComboBox Style="{StaticResource DarkComboBox}" SelectedIndex="{Binding SelectedBackendIndex}">
-                        <ComboBoxItem>DirectML（NVIDIA / AMD / Intel GPU，失败时明确回退 CPU）</ComboBoxItem>
-                        <ComboBoxItem>CPU（兼容与问题诊断）</ComboBoxItem>
-                    </ComboBox>
-                    <TextBlock Text="实际生效后端会显示在主窗口状态栏。" Style="{StaticResource CaptionText}" Margin="0,6,0,0"/>
-                </StackPanel>
-            </Border>
-
-            <!-- 监控目标 -->
-            <Border Style="{StaticResource CardBorder}">
-                <StackPanel>
-                    <TextBlock Text="监控目标" Style="{StaticResource BodyText}" Margin="0,0,0,12"/>
-                    <UniformGrid Columns="2">
-                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="人" IsChecked="{Binding WatchPerson}" Margin="0,4"/>
-                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="自行车" IsChecked="{Binding WatchBicycle}" Margin="0,4"/>
-                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="汽车" IsChecked="{Binding WatchCar}" Margin="0,4"/>
-                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="摩托车" IsChecked="{Binding WatchMotorcycle}" Margin="0,4"/>
-                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="客车" IsChecked="{Binding WatchBus}" Margin="0,4"/>
-                        <CheckBox Style="{StaticResource DarkCheckBox}" Content="卡车" IsChecked="{Binding WatchTruck}" Margin="0,4"/>
-                    </UniformGrid>
-                </StackPanel>
-            </Border>
+                    <Button Grid.Column="1" Content="下载" Style="{StaticResource PrimaryButton}" Command="{Binding DownloadModelCommand}" MinWidth="72" Margin="8,0,0,0"/>
+                </Grid>
+            </StackPanel>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

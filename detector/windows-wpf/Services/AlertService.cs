@@ -24,13 +24,16 @@ namespace VisionGuard.Services
     public class AlertService : IDisposable
     {
         private readonly string _sourceId;
-        private readonly string _sourceName;
+        private string _sourceName;
 
         public AlertService(string sourceId = "default", string sourceName = "默认来源")
         {
             _sourceId = string.IsNullOrWhiteSpace(sourceId) ? "default" : sourceId;
             _sourceName = string.IsNullOrWhiteSpace(sourceName) ? "默认来源" : sourceName;
         }
+
+        public void UpdateSourceName(string sourceName)
+            => _sourceName = string.IsNullOrWhiteSpace(sourceName) ? "默认来源" : sourceName;
         // ── 对外事件 ─────────────────────────────────────────────────
         public event EventHandler<AlertEvent> AlertTriggered;
 

@@ -1,183 +1,130 @@
 using System.Collections.Concurrent;
+using System.Drawing;
 using System.Text.Json;
+using VisionGuard.Capture;
 using VisionGuard.Inference;
 using VisionGuard.Models;
 using VisionGuard.Services;
-using VisionGuard.Utils;
 
 if (args.Length is < 3 or > 4)
 {
-    Console.Error.WriteLine("Usage: VisionGuard.WpfSmoke <three-image-directory> <model.onnx> <report.json> [confidence-threshold]");
+    Console.Error.WriteLine("Usage: VisionGuard.WpfSmoke <four-window-title-file> <model.onnx> <report.json> [confidence-threshold]");
     return 2;
 }
 
-var imageExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".bmp" };
-var imagePaths = Directory.Exists(args[0])
-    ? Directory.EnumerateFiles(args[0])
-        .Where(path => imageExtensions.Contains(Path.GetExtension(path)))
-        .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
-        .Select(Path.GetFullPath)
-        .ToArray()
-    : Array.Empty<string>();
-if (imagePaths.Length != 3)
-    throw new InvalidOperationException($"人员检测 smoke 必须提供恰好三张 jpg/jpeg/png/bmp 图片，实际找到 {imagePaths.Length} 张：{Path.GetFullPath(args[0])}");
+var titles = File.ReadAllLines(Path.GetFullPath(args[0]))
+    .Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).ToArray();
+if (titles.Length != 4 || titles.Distinct(StringComparer.Ordinal).Count() != 4)
+    throw new InvalidOperationException("真实窗口 smoke 必须提供恰好四个不同的窗口标题。");
 
-var imageNames = imagePaths.Select(path => Path.GetFileName(path)!).ToArray();
-var confidenceThreshold = args.Length == 4 && float.TryParse(args[3], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsedThreshold)
-    ? parsedThreshold
-    : 0.25f;
-if (confidenceThreshold is < 0 or > 1)
-    throw new ArgumentOutOfRangeException(nameof(confidenceThreshold), "置信度阈值必须在 0 到 1 之间。");
+var visibleWindows = WindowEnumerator.GetWindows(IntPtr.Zero);
+var windows = titles.Select(title => visibleWindows.SingleOrDefault(w => string.Equals(w.Title, title, StringComparison.Ordinal))
+    ?? throw new InvalidOperationException($"未找到唯一目标窗口：{title}")).ToArray();
+if (windows.Select(w => w.Handle).Distinct().Count() != 4)
+    throw new InvalidOperationException("四个目标必须是四个独立顶层窗口。");
 
-var modelKey = "yolo26n_320";
+var threshold = args.Length == 4 && float.TryParse(args[3], System.Globalization.NumberStyles.Float,
+    System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : 0.25f;
+if (threshold is < 0 or > 1) throw new ArgumentOutOfRangeException(nameof(threshold));
 var modelPath = Path.GetFullPath(args[1]);
 if (!File.Exists(modelPath)) throw new FileNotFoundException("Model is not cached.", modelPath);
 
+var sourceIds = new[] { "default", "signal-2", "signal-3", "signal-4" };
 const int requiredFrames = 30;
 var counts = new ConcurrentDictionary<string, int>();
-var personHitFrames = new ConcurrentDictionary<string, int>();
-var maxPersonConfidence = new ConcurrentDictionary<string, float>();
+var personHits = new ConcurrentDictionary<string, int>();
+var maxConfidence = new ConcurrentDictionary<string, float>();
+var samples = new ConcurrentDictionary<string, ConcurrentQueue<long>>();
 var errors = new ConcurrentQueue<string>();
-var processingSamples = new ConcurrentDictionary<string, ConcurrentQueue<long>>();
-using var done = new CountdownEvent(3);
+using var done = new CountdownEvent(4);
 using var coordinator = new MultiSourceMonitorCoordinator();
 
 coordinator.FrameProcessed += (_, e) =>
 {
     try
     {
-        if (e.Frame.HasError) errors.Enqueue($"{e.SourceId}: {e.Frame.Error?.Message}");
-        if (!e.Frame.HasError)
+        if (e.Frame.HasError) { errors.Enqueue($"{e.SourceId}: {e.Frame.Error?.Message}"); return; }
+        samples.GetOrAdd(e.SourceId, _ => new()).Enqueue(e.Frame.ProcessingMs);
+        var people = e.Frame.Detections.Where(d => string.Equals(d.Label, "person", StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (people.Length > 0)
         {
-            processingSamples.GetOrAdd(e.SourceId, _ => new ConcurrentQueue<long>()).Enqueue(e.Frame.ProcessingMs);
-            var personDetections = e.Frame.Detections
-                .Where(d => string.Equals(d.Label, "person", StringComparison.OrdinalIgnoreCase))
-                .ToArray();
-            if (personDetections.Length > 0)
-            {
-                personHitFrames.AddOrUpdate(e.SourceId, 1, (_, old) => old + 1);
-                var frameMax = personDetections.Max(d => d.Confidence);
-                maxPersonConfidence.AddOrUpdate(e.SourceId, frameMax, (_, old) => Math.Max(old, frameMax));
-            }
+            personHits.AddOrUpdate(e.SourceId, 1, (_, old) => old + 1);
+            var frameMax = people.Max(d => d.Confidence);
+            maxConfidence.AddOrUpdate(e.SourceId, frameMax, (_, old) => Math.Max(old, frameMax));
         }
-        var count = counts.AddOrUpdate(e.SourceId, 1, (_, old) => old + 1);
-        if (count == requiredFrames) done.Signal();
+        if (counts.AddOrUpdate(e.SourceId, 1, (_, old) => old + 1) == requiredFrames) done.Signal();
     }
-    finally
-    {
-        e.Frame.Frame?.Dispose();
-    }
+    finally { e.Frame.Frame?.Dispose(); }
 };
 
-for (var i = 0; i < imagePaths.Length; i++)
-{
-    var id = $"image-{i + 1}";
-    coordinator.Add(new MonitorSource(id, imageNames[i], modelKey, new MonitorConfig
+MonitorSource CreateSource(int index, string? name = null, int fps = 3, InferenceBackend backend = InferenceBackend.DirectML) =>
+    new(sourceIds[index], name ?? windows[index].Title, "yolo26n_320", new MonitorConfig
     {
-        CaptureMode = CaptureMode.ImageFile,
-        ImageFilePath = imagePaths[i],
-        TargetFps = 30,
-        SaveAlertSnapshot = false,
-        ConfidenceThreshold = confidenceThreshold,
+        CaptureMode = CaptureMode.WindowHandle, TargetWindowHandle = windows[index].Handle,
+        TargetWindowTitle = windows[index].Title, WindowSubRegion = Rectangle.Empty,
+        TargetFps = fps, SaveAlertSnapshot = false, ConfidenceThreshold = threshold,
         WatchedClasses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "person" },
-    }, InferenceBackend.DirectML));
-}
+    }, backend);
 
+for (var i = 0; i < 4; i++) coordinator.Add(CreateSource(i));
 var startedAt = DateTime.UtcNow;
-foreach (var status in coordinator.Statuses) coordinator.Start(status.SourceId, modelPath);
-var completed = done.Wait(TimeSpan.FromSeconds(30));
-var running = coordinator.Statuses;
-coordinator.Stop("image-1");
-var countsAfterFirstStop = counts.ToDictionary(x => x.Key, x => x.Value);
-await Task.Delay(1000);
-var isolationPassed = counts.GetValueOrDefault("image-1") == countsAfterFirstStop.GetValueOrDefault("image-1")
-    && counts.GetValueOrDefault("image-2") > countsAfterFirstStop.GetValueOrDefault("image-2")
-    && counts.GetValueOrDefault("image-3") > countsAfterFirstStop.GetValueOrDefault("image-3");
-var countsBeforeReconfigure = counts.ToDictionary(x => x.Key, x => x.Value);
-coordinator.Remove("image-1");
-coordinator.Add(new MonitorSource("image-1", "reconfigured-detector.png", modelKey, new MonitorConfig
-{
-    CaptureMode = CaptureMode.ImageFile,
-    ImageFilePath = imagePaths[0],
-    TargetFps = 5,
-    ConfidenceThreshold = confidenceThreshold,
-    AlertCooldownSeconds = 17,
-    SaveAlertSnapshot = false,
-    WatchedClasses = new HashSet<string> { "person" },
-}, InferenceBackend.DirectML));
-coordinator.Start("image-1", modelPath);
-await Task.Delay(1000);
-var configChangeIsolationPassed = counts.GetValueOrDefault("image-1") > countsBeforeReconfigure.GetValueOrDefault("image-1")
-    && counts.GetValueOrDefault("image-2") > countsBeforeReconfigure.GetValueOrDefault("image-2")
-    && counts.GetValueOrDefault("image-3") > countsBeforeReconfigure.GetValueOrDefault("image-3")
-    && coordinator.Statuses.Single(x => x.SourceId == "image-1").SourceName == "reconfigured-detector.png"
-    && personHitFrames.GetValueOrDefault("image-1") > 0;
+foreach (var id in sourceIds) coordinator.Start(id, modelPath);
+var completed = done.Wait(TimeSpan.FromSeconds(60));
+var running = coordinator.Statuses.OrderBy(s => Array.IndexOf(sourceIds, s.SourceId)).ToArray();
+
+coordinator.Stop("default");
+var afterStop = counts.ToDictionary(x => x.Key, x => x.Value);
+await Task.Delay(1500);
+var stopIsolation = counts.GetValueOrDefault("default") == afterStop.GetValueOrDefault("default")
+    && sourceIds.Skip(1).All(id => counts.GetValueOrDefault(id) > afterStop.GetValueOrDefault(id));
+
+var beforeReconfigure = counts.ToDictionary(x => x.Key, x => x.Value);
+coordinator.Remove("default");
+coordinator.Add(CreateSource(0, "reconfigured-default"));
+coordinator.Start("default", modelPath);
+await Task.Delay(1500);
+var configIsolation = sourceIds.All(id => counts.GetValueOrDefault(id) > beforeReconfigure.GetValueOrDefault(id))
+    && coordinator.Statuses.Single(s => s.SourceId == "default").SourceName == "reconfigured-default";
 foreach (var status in coordinator.Statuses.Where(s => s.IsMonitoring)) coordinator.Stop(status.SourceId);
 var stopped = coordinator.Statuses;
 
 var cpuMultiSourceRejected = false;
-using (var cpuCoordinator = new MultiSourceMonitorCoordinator())
+using (var cpu = new MultiSourceMonitorCoordinator())
 {
-    for (var i = 0; i < 2; i++)
-        cpuCoordinator.Add(new MonitorSource($"cpu-{i + 1}", $"CPU {i + 1}", modelKey, new MonitorConfig
-        {
-            CaptureMode = CaptureMode.ImageFile, ImageFilePath = imagePaths[i], TargetFps = 1,
-            SaveAlertSnapshot = false, WatchedClasses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "person" },
-        }, InferenceBackend.Cpu));
-    cpuCoordinator.FrameProcessed += (_, e) => e.Frame.Frame?.Dispose();
-    cpuCoordinator.Start("cpu-1", modelPath);
-    try { cpuCoordinator.Start("cpu-2", modelPath); }
-    catch (InvalidOperationException) { cpuMultiSourceRejected = true; }
-    cpuCoordinator.Stop("cpu-1");
+    cpu.Add(CreateSource(0, backend: InferenceBackend.Cpu));
+    cpu.Add(CreateSource(1, backend: InferenceBackend.DirectML));
+    cpu.FrameProcessed += (_, e) => e.Frame.Frame?.Dispose();
+    cpu.Start("default", modelPath);
+    try { cpu.Start("signal-2", modelPath); } catch (InvalidOperationException) { cpuMultiSourceRejected = true; }
+    cpu.Stop("default");
 }
 
-using var fallbackEngine = new OnnxInferenceEngine(modelPath, preferredBackend: InferenceBackend.DirectML, directMlDeviceId: int.MaxValue);
-var directMlFailureFallsBackToCpu = fallbackEngine.ActiveBackend == InferenceBackend.Cpu
-    && !string.IsNullOrWhiteSpace(fallbackEngine.BackendFallbackReason);
-
-var passed = completed
-    && errors.IsEmpty
-    && isolationPassed
-    && configChangeIsolationPassed
-    && cpuMultiSourceRejected
-    && directMlFailureFallsBackToCpu
-    && imagePaths.Select((_, i) => $"image-{i + 1}").All(id => personHitFrames.GetValueOrDefault(id) > 0)
-    && running.Count == 3
-    && running.All(s => s.IsMonitoring && s.IsReady && s.ActiveBackend == nameof(InferenceBackend.DirectML) && s.ActualFps > 0)
+using var fallback = new OnnxInferenceEngine(modelPath, preferredBackend: InferenceBackend.DirectML, directMlDeviceId: int.MaxValue);
+var fallbackToCpu = fallback.ActiveBackend == InferenceBackend.Cpu && !string.IsNullOrWhiteSpace(fallback.BackendFallbackReason);
+var passed = completed && errors.IsEmpty && stopIsolation && configIsolation && cpuMultiSourceRejected && fallbackToCpu
+    && sourceIds.All(id => personHits.GetValueOrDefault(id) > 0)
+    && running.Length == 4 && running.All(s => s.IsMonitoring && s.IsReady && s.ActiveBackend == nameof(InferenceBackend.DirectML) && s.ActualFps >= 2.5)
     && stopped.All(s => !s.IsMonitoring);
+
 var report = new
 {
-    passed,
-    inputKind = "ImageFile product capture mode",
-    modelKey,
-    confidenceThreshold,
-    expectedLabel = "person",
-    requiredFramesPerSource = requiredFrames,
-    stopOneSourceIsolationPassed = isolationPassed,
-    configChangeIsolationPassed,
-    cpuMultiSourceRejected,
-    directMlFailureFallsBackToCpu,
-    directMlFallbackReason = fallbackEngine.BackendFallbackReason,
+    passed, inputKind = "four independent WindowHandle captures", expectedLabel = "person", requiredFramesPerSource = requiredFrames,
+    threshold, stopOneSourceIsolationPassed = stopIsolation, configChangeIsolationPassed = configIsolation,
+    cpuMultiSourceRejected, directMlFailureFallsBackToCpu = fallbackToCpu, directMlFallbackReason = fallback.BackendFallbackReason,
     elapsedMs = Math.Round((DateTime.UtcNow - startedAt).TotalMilliseconds, 2),
-    sources = running.Select(s =>
+    sources = running.Select((s, i) =>
     {
-        var samples = processingSamples.GetValueOrDefault(s.SourceId)?.Order().ToArray() ?? Array.Empty<long>();
-        long percentile(double p) => samples.Length == 0 ? 0 : samples[Math.Min(samples.Length - 1, (int)Math.Ceiling(samples.Length * p) - 1)];
-        return new
-        {
-            s.SourceId, s.SourceName, imageFile = Path.GetFileName(imagePaths[int.Parse(s.SourceId[^1..]) - 1]),
-            frames = counts.GetValueOrDefault(s.SourceId),
-            personHitFrames = personHitFrames.GetValueOrDefault(s.SourceId),
-            maxPersonConfidence = Math.Round(maxPersonConfidence.GetValueOrDefault(s.SourceId), 4),
-            s.IsReady, s.IsMonitoring,
-            s.ActiveBackend, s.ActualFps, meanProcessingMs = samples.Length == 0 ? 0 : Math.Round(samples.Average(), 2),
-            p95ProcessingMs = percentile(0.95), p99ProcessingMs = percentile(0.99), s.Error,
-        };
+        var values = samples.GetValueOrDefault(s.SourceId)?.Order().ToArray() ?? Array.Empty<long>();
+        long Percentile(double p) => values.Length == 0 ? 0 : values[Math.Min(values.Length - 1, (int)Math.Ceiling(values.Length * p) - 1)];
+        return new { s.SourceId, s.SourceName, hwnd = windows[i].Handle.ToInt64(), frames = counts.GetValueOrDefault(s.SourceId),
+            personHitFrames = personHits.GetValueOrDefault(s.SourceId), maxPersonConfidence = Math.Round(maxConfidence.GetValueOrDefault(s.SourceId), 4),
+            s.IsReady, s.IsMonitoring, s.ActiveBackend, s.ActualFps, meanProcessingMs = values.Length == 0 ? 0 : Math.Round(values.Average(), 2),
+            p95ProcessingMs = Percentile(0.95), p99ProcessingMs = Percentile(0.99), s.Error };
     }),
-    stopped = stopped.Select(s => new { s.SourceId, s.IsMonitoring }),
-    errors = errors.ToArray(),
+    stopped = stopped.Select(s => new { s.SourceId, s.IsMonitoring }), errors = errors.ToArray(),
 };
-Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(args[2]))!);
-await File.WriteAllTextAsync(args[2], JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+var reportPath = Path.GetFullPath(args[2]);
+Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
+await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
 Console.WriteLine(JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
 return passed ? 0 : 1;

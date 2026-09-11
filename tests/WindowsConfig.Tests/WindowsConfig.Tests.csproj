@@ -8,5 +8,9 @@
 
   <ItemGroup>
     <Compile Include="..\..\detector\windows-shared\Utils\ApiKeyProvider.cs" Link="ApiKeyProvider.cs" />
+    <Compile Include="..\..\detector\windows-wpf\Capture\CaptureSizeConstraints.cs" Link="CaptureSizeConstraints.cs" />
+    <Compile Include="..\..\detector\windows-wpf\Capture\NativeMethods.cs" Link="NativeMethods.cs" />
+    <Compile Include="..\..\detector\windows-wpf\Capture\WindowEnumerator.cs" Link="WindowEnumerator.cs" />
+    <Compile Include="..\..\detector\windows-wpf\Capture\WindowInfo.cs" Link="WindowInfo.cs" />
   </ItemGroup>
 </Project>

@@ -8,7 +8,7 @@ namespace VisionGuard.Services
 {
     public sealed class MultiSourceMonitorCoordinator : IDisposable
     {
-        public const int MaxSources = 3;
+        public const int MaxSources = 4;
         private readonly object _sync = new();
         private readonly Dictionary<string, Runtime> _runtimes = new(StringComparer.Ordinal);
 
@@ -25,7 +25,7 @@ namespace VisionGuard.Services
         {
             lock (_sync)
             {
-                if (_runtimes.Count >= MaxSources) throw new InvalidOperationException("最多只能配置三个检测来源。");
+                if (_runtimes.Count >= MaxSources) throw new InvalidOperationException("最多只能配置四个检测来源。");
                 if (_runtimes.ContainsKey(source.SourceId)) throw new InvalidOperationException("来源 ID 已存在。");
                 var alerts = new AlertService(source.SourceId, source.SourceName);
                 var monitor = new MonitorService(alerts);
@@ -48,6 +48,18 @@ namespace VisionGuard.Services
             runtime.Dispose();
         }
 
+        public void Rename(string sourceId, string sourceName)
+        {
+            Runtime runtime;
+            lock (_sync)
+            {
+                runtime = Get(sourceId);
+                runtime.Source.SourceName = sourceName;
+                runtime.Alerts.UpdateSourceName(sourceName);
+            }
+            RaiseStatus(runtime);
+        }
+
         public void Start(string sourceId, string modelPath)
         {
             Runtime runtime;
@@ -55,7 +67,9 @@ namespace VisionGuard.Services
             {
                 runtime = Get(sourceId);
                 if (runtime.Monitor.IsStarted) return;
-                if (runtime.Source.PreferredBackend == InferenceBackend.Cpu && _runtimes.Values.Any(r => r.Monitor.IsStarted))
+                var running = _runtimes.Values.Where(r => r.Monitor.IsStarted).ToArray();
+                if (running.Length > 0 && (runtime.Source.PreferredBackend == InferenceBackend.Cpu
+                    || running.Any(r => r.Monitor.ActiveBackend == nameof(InferenceBackend.Cpu))))
                     throw new InvalidOperationException("CPU 模式只允许运行一个来源。");
             }
 
@@ -110,15 +124,28 @@ namespace VisionGuard.Services
 
         private MonitorSourceStatus BuildStatus(Runtime runtime)
         {
+            var now = DateTime.UtcNow;
+            while (runtime.FrameTimes.Count > 0 && (now - runtime.FrameTimes.Peek()).TotalSeconds > 10)
+                runtime.FrameTimes.Dequeue();
             var frames = runtime.FrameTimes.ToArray();
             var fps = frames.Length < 2 ? 0 : (frames.Length - 1) / Math.Max(0.001, (frames[^1] - frames[0]).TotalSeconds);
             return new MonitorSourceStatus
             {
                 SourceId = runtime.Source.SourceId, SourceName = runtime.Source.SourceName,
                 ModelKey = runtime.Source.ModelKey, IsMonitoring = runtime.Monitor.IsStarted,
-                IsReady = runtime.Monitor.IsReady, ActiveBackend = runtime.Monitor.ActiveBackend,
+                IsReady = IsConfigured(runtime.Source.Config), ActiveBackend = runtime.Monitor.ActiveBackend,
                 ActualFps = Math.Round(fps, 2), Error = runtime.Error,
             };
+        }
+
+        private static bool IsConfigured(MonitorConfig config)
+        {
+            if (config.CaptureMode == CaptureMode.WindowHandle)
+                return config.TargetWindowHandle != IntPtr.Zero
+                    && (config.WindowSubRegion == System.Drawing.Rectangle.Empty || VisionGuard.Capture.CaptureSizeConstraints.IsValid(config.WindowSubRegion));
+            if (config.CaptureMode == CaptureMode.ScreenRegion)
+                return VisionGuard.Capture.CaptureSizeConstraints.IsValid(config.CaptureRegion);
+            return false;
         }
 
         private void RaiseStatus(Runtime runtime)

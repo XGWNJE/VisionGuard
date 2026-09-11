@@ -72,7 +72,7 @@
     <Resource Include="Assets\capture.png" />
     <Resource Include="Assets\settings.png" />
     <Resource Include="Assets\server.png" />
-    <Content Include="favico3n.ico" />
+    <Resource Include="favico3n.ico" />
     <Content Include="favicon.ico" />
     <Content Include="VisionGuard.ico" />
     <None Include="app.manifest" />

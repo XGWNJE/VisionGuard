@@ -15,7 +15,7 @@ namespace VisionGuard.Capture
     /// <summary>
     /// 枚举系统中所有可见的顶层窗口，过滤后返回 <see cref="WindowInfo"/> 列表。
     /// </summary>
-    internal static class WindowEnumerator
+    public static class WindowEnumerator
     {
         // 黑名单：不应出现在选择列表中的 Shell 窗口类名
         private static readonly HashSet<string> _classBlacklist = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -66,6 +66,9 @@ namespace VisionGuard.Capture
 
                 // 获取边界（优先 DWM 真实边界，失败回退 GetWindowRect）
                 Rectangle bounds = GetWindowBounds(hwnd);
+
+                // 过小窗口无法提供有效采集分辨率，也会导致后续遮罩编辑体验失真。
+                if (!CaptureSizeConstraints.IsValid(bounds)) return true;
 
                 result.Add(new WindowInfo(hwnd, title, className, bounds));
                 return true;

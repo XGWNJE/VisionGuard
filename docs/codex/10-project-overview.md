@@ -29,7 +29,7 @@ VisionGuard 当前是由视觉检测端、Server、Android 接收端和 Windows 
 | 规范名称 | 路径 | 当前状态 | 自动验证边界 |
 |---|---|---|---|
 | Windows WinForms 检测端（WinForms Visual Detector） | `detector/windows-winforms/` | 主体实现；Win7 兼容线 | Release 编译可单独验证；完整告警链和 Win7 真实环境待补 |
-| Windows WPF 检测端（WPF Visual Detector） | `detector/windows-wpf/` | 主体实现；三图片来源能力已接入 | 三路含人图片推理自动验证；真实窗口采集和 UI 视觉待人工目检 |
+| Windows WPF 检测端（WPF Visual Detector） | `detector/windows-wpf/` | 四窗口来源主体实现 | 四路真实窗口人员推理自动验证；动态视频、完整报警链和 UI 视觉待验收 |
 | Windows 驻留程序（Windows Resident） | `detector/windows-resident/` | 主体原型；独立 WS 身份和进程握手已接入；当前仅支持现代 Windows，Win7 兼容尚未实现 | 单实例/进程级握手可测；Win7 SP1 x64、重启、崩溃、完整远控链路待补 |
 | Android 检测端（Android Visual Detector） | `detector/android/` | 主体实现；真实加速尚未实现 | 单测、构建和历史启动证据可分别报告；QNN/NCNN 与完整报警链待补 |
 | Android 接收端（Android Receiver） | `receiver/android/` | 主体实现；设备/来源 UI 已接入 | JVM 单测、构建和历史启动证据可分别报告；完整报警链待补 |

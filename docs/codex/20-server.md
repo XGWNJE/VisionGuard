@@ -64,6 +64,8 @@ visionguard.xgwnje.cn:443
 - 检测端幽灵阈值当前也按 45s 统一处理
 - 截图目录当前为 `data/screenshots/<alertId>.(png|jpg)`；服务端按图片魔数决定扩展名
 - WS 认证存在超时控制，当前实现为 5000ms
+- 检测端心跳最多保留四个来源；第五个及以后被截断。逐来源命令与参数调整只接受最近一次心跳中存在的 `targetSourceId`。
+- 业务控制命令只允许 `pause`、`resume`、`stop-alarm`；驻留生命周期只允许四个既定打开/关闭命令。无效命令或来源不会占用 `requestId`。
 - `visionguard.xgwnje.cn` 当前用于 VisionGuard 服务，公网 443 由 Nginx stream 共享，HTTPS 虚拟主机监听 `127.0.0.1:9443`
 - 当前 VPS 使用共享证书目录 `/etc/letsencrypt/live/xgwnje.cn/`
 - 历史公网 smoke 与 Android 接收端实机启动记录见[验证报告](90-verification-report.md)；这些记录不等同于当前生产状态或完整真实告警链路

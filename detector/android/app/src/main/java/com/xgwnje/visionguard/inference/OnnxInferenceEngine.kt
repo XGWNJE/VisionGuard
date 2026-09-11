@@ -69,13 +69,16 @@ class OnnxInferenceEngine(private val context: Context) {
 
             val modelFile = File(localDir, modelFileName)
 
-            // 如果本地不存在，或文件为空，从服务器下载
+            // 如果本地不存在，先尝试使用 APK 内置模型，再从服务器下载。
+            // 正式包默认不内置模型；debug/e2e 构建可通过 assets/models 注入确定性测试模型。
             if (!modelFile.exists() || modelFile.length() == 0L) {
-                Log.i(TAG, "Model not found locally, downloading from server: $modelFileName")
-                if (!downloadModel(modelFileName, modelFile)) {
-                    Log.e(TAG, "Failed to download model")
-                    if (modelFile.exists()) modelFile.delete()
-                    return false
+                if (!copyBundledModel(modelFileName, modelFile)) {
+                    Log.i(TAG, "Model not found locally or in assets, downloading from server: $modelFileName")
+                    if (!downloadModel(modelFileName, modelFile)) {
+                        Log.e(TAG, "Failed to download model")
+                        if (modelFile.exists()) modelFile.delete()
+                        return false
+                    }
                 }
             }
 
@@ -299,6 +302,7 @@ class OnnxInferenceEngine(private val context: Context) {
                 TAG,
                 "Inference backend evidence: requested=${updatedStatus.requested} " +
                     "active=${updatedStatus.active} provider=${updatedStatus.actualProvider ?: "none"} " +
+                    "providerConfirmed=${updatedStatus.providerExecutionConfirmed} " +
                     "hardwareConfirmed=${updatedStatus.hardwareExecutionConfirmed} profile=$profilePath"
             )
         } catch (e: Exception) {
@@ -322,8 +326,10 @@ class OnnxInferenceEngine(private val context: Context) {
                   "requestedBackend":"${backendStatus.requested}",
                   "activeBackend":"${backendStatus.active}",
                   "actualProvider":${backendStatus.actualProvider?.let { "\"${escapeJson(it)}\"" } ?: "null"},
+                  "executionDevice":${backendStatus.executionDevice?.let { "\"${escapeJson(it)}\"" } ?: "null"},
                   "nnapiCpuDisabled":true,
-                  "hardwareExecutionConfirmed":$nnapiUsed,
+                  "providerExecutionConfirmed":$nnapiUsed,
+                  "hardwareExecutionConfirmed":${backendStatus.hardwareExecutionConfirmed},
                   "profilePath":"${escapeJson(profilePath)}",
                   "providerCounts":{$countsJson}
                 }
@@ -349,6 +355,26 @@ class OnnxInferenceEngine(private val context: Context) {
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(300, TimeUnit.SECONDS)
         .build()
+
+    private fun copyBundledModel(fileName: String, destFile: File): Boolean {
+        val assetPath = "$ASSETS_MODEL_DIR/$fileName"
+        return try {
+            context.assets.open(assetPath).use { input ->
+                FileOutputStream(destFile).use { output ->
+                    input.copyTo(output)
+                    output.flush()
+                }
+            }
+            Log.i(TAG, "Copied bundled model from assets: $assetPath (${destFile.length()} bytes)")
+            destFile.length() > 0L
+        } catch (_: java.io.FileNotFoundException) {
+            false
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to copy bundled model from assets: $assetPath", e)
+            if (destFile.exists()) destFile.delete()
+            false
+        }
+    }
 
     private fun downloadModel(fileName: String, destFile: File): Boolean {
         return try {

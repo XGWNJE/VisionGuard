@@ -88,16 +88,17 @@ namespace VisionGuard.Views
         {
             if (!_isDragging) return;
             var pos = e.GetPosition(OverlayCanvas);
-            double x = Math.Min(_startPoint.X, pos.X);
-            double y = Math.Min(_startPoint.Y, pos.Y);
-            double w = Math.Abs(pos.X - _startPoint.X);
-            double h = Math.Abs(pos.Y - _startPoint.Y);
+            GetClampedSelection(pos, out double x, out double y, out double w, out double h);
             Canvas.SetLeft(SelectionRect, x);
             Canvas.SetTop(SelectionRect, y);
             SelectionRect.Width = w;
             SelectionRect.Height = h;
+
+            var captureRegion = MapToCapturePixels(x, y, w, h);
             DimensionLabel.Visibility = Visibility.Visible;
-            DimensionLabel.Text = $"{(int)w} × {(int)h}";
+            DimensionLabel.Text = VisionGuard.Capture.CaptureSizeConstraints.IsValid(captureRegion)
+                ? $"{captureRegion.Width} × {captureRegion.Height} px"
+                : $"{captureRegion.Width} × {captureRegion.Height} px · 最小 101 × 101";
             Canvas.SetLeft(DimensionLabel, x + w + 4);
             Canvas.SetTop(DimensionLabel, y + h + 4);
         }
@@ -108,20 +109,8 @@ namespace VisionGuard.Views
             _isDragging = false;
             ReleaseMouseCapture();
 
-            double left = Canvas.GetLeft(SelectionRect);
-            double top = Canvas.GetTop(SelectionRect);
-            double width = SelectionRect.Width;
-            double height = SelectionRect.Height;
-
-            // Clamp 到画布边界（防止鼠标在画布外释放导致负坐标）
-            double canvasW = OverlayCanvas.ActualWidth;
-            double canvasH = OverlayCanvas.ActualHeight;
-            left   = Math.Max(0, Math.Min(left,   canvasW));
-            top    = Math.Max(0, Math.Min(top,    canvasH));
-            width  = Math.Max(0, Math.Min(width,  canvasW - left));
-            height = Math.Max(0, Math.Min(height, canvasH - top));
-
-            DimensionLabel.Visibility = Visibility.Collapsed;
+            var releasePoint = e.GetPosition(OverlayCanvas);
+            GetClampedSelection(releasePoint, out double left, out double top, out double width, out double height);
 
             if (width < 4 || height < 4)
             {
@@ -130,33 +119,61 @@ namespace VisionGuard.Views
                 return;
             }
 
-            // 将 OverlayCanvas DIP 坐标归一化后映射到源图像物理像素
-            double normX = left / canvasW;
-            double normY = top / canvasH;
-            double normW = width / canvasW;
-            double normH = height / canvasH;
+            SelectedRegion = MapToCapturePixels(left, top, width, height);
 
-            if (BackgroundImage.Source is BitmapSource bmpSrc)
+            if (!VisionGuard.Capture.CaptureSizeConstraints.IsValid(SelectedRegion))
             {
-                int pixelLeft = (int)(normX * bmpSrc.PixelWidth);
-                int pixelTop = (int)(normY * bmpSrc.PixelHeight);
-                int pixelWidth = (int)(normW * bmpSrc.PixelWidth);
-                int pixelHeight = (int)(normH * bmpSrc.PixelHeight);
-                SelectedRegion = new System.Drawing.Rectangle(pixelLeft, pixelTop, pixelWidth, pixelHeight);
+                DimensionLabel.Visibility = Visibility.Visible;
+                DimensionLabel.Text = $"{SelectedRegion.Width} × {SelectedRegion.Height} px · 选区过小";
+                HintText.Text = "选区过小 · 宽度和高度必须都至少为 101 px · 请重新拖拽";
+                IsConfirmed = false;
+                return;
+            }
+
+            DimensionLabel.Visibility = Visibility.Collapsed;
+            IsConfirmed = true;
+            Close();
+        }
+
+        private void GetClampedSelection(
+            Point currentPoint,
+            out double left,
+            out double top,
+            out double width,
+            out double height)
+        {
+            double canvasWidth = OverlayCanvas.ActualWidth;
+            double canvasHeight = OverlayCanvas.ActualHeight;
+            double currentX = Math.Max(0, Math.Min(currentPoint.X, canvasWidth));
+            double currentY = Math.Max(0, Math.Min(currentPoint.Y, canvasHeight));
+            double startX = Math.Max(0, Math.Min(_startPoint.X, canvasWidth));
+            double startY = Math.Max(0, Math.Min(_startPoint.Y, canvasHeight));
+
+            left = Math.Min(startX, currentX);
+            top = Math.Min(startY, currentY);
+            width = Math.Abs(currentX - startX);
+            height = Math.Abs(currentY - startY);
+        }
+
+        private System.Drawing.Rectangle MapToCapturePixels(double left, double top, double width, double height)
+        {
+            double scaleX;
+            double scaleY;
+
+            if (BackgroundImage.Source is BitmapSource bitmap)
+            {
+                scaleX = OverlayCanvas.ActualWidth > 0 ? bitmap.PixelWidth / OverlayCanvas.ActualWidth : 0;
+                scaleY = OverlayCanvas.ActualHeight > 0 ? bitmap.PixelHeight / OverlayCanvas.ActualHeight : 0;
             }
             else
             {
-                // 全屏模式：OverlayCanvas 填满屏幕，用 DPI 缩放因子转换
                 var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
-                SelectedRegion = new System.Drawing.Rectangle(
-                    (int)(left * dpi.DpiScaleX),
-                    (int)(top * dpi.DpiScaleY),
-                    (int)(width * dpi.DpiScaleX),
-                    (int)(height * dpi.DpiScaleY));
+                scaleX = dpi.DpiScaleX;
+                scaleY = dpi.DpiScaleY;
             }
 
-            IsConfirmed = true;
-            Close();
+            return VisionGuard.Capture.CaptureSizeConstraints.MapToCapturePixels(
+                left, top, width, height, scaleX, scaleY);
         }
     }
 }

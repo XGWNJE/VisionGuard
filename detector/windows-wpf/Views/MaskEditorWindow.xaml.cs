@@ -38,8 +38,8 @@ namespace VisionGuard.Views
                 double maxH = SystemParameters.WorkArea.Height * 0.9;
                 double scale = Math.Min(1.0, Math.Min(maxW / background.Width, maxH / background.Height));
 
-                Width = background.Width * scale;
-                Height = background.Height * scale + 48; // +48 = 底部工具栏预估高度
+                Width = Math.Max(MinWidth, background.Width * scale);
+                Height = Math.Max(MinHeight, background.Height * scale + 64);
                 WindowState = WindowState.Normal;
                 WindowStartupLocation = WindowStartupLocation.CenterScreen;
                 ResizeMode = ResizeMode.NoResize;

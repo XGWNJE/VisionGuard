@@ -198,23 +198,26 @@ fun buildAlertDetailChrome(): AlertDetailChrome =
     )
 
 fun buildDeviceCardUiModel(device: DeviceInfo): DeviceCardUiModel {
-    val controllableSources = device.sources.filter { it.isReady }
-    val runningSources = controllableSources.count { it.isMonitoring }
+    val totalSourceCount = device.sources.size
+    val runningSources = device.sources.count {
+        it.isMonitoring && it.isReady && it.error.isNullOrBlank()
+    }
+    val allSourcesRunning = totalSourceCount > 0 && runningSources == totalSourceCount
     val hasSourceControls = "source-control" in device.capabilities && device.sources.isNotEmpty()
     val statusTone = when {
         !device.online -> DeviceStatusTone.OFFLINE
         device.components["resident"] == "running" && device.components["detectorApp"] != "running" -> DeviceStatusTone.RESIDENT_ONLY
-        controllableSources.isNotEmpty() && runningSources == controllableSources.size -> DeviceStatusTone.MONITORING
+        allSourcesRunning -> DeviceStatusTone.MONITORING
         runningSources > 0 -> DeviceStatusTone.PARTIAL_MONITORING
-        device.isMonitoring -> DeviceStatusTone.MONITORING
+        totalSourceCount == 0 && device.isMonitoring -> DeviceStatusTone.MONITORING
         !device.isReady -> DeviceStatusTone.NOT_READY
         else -> DeviceStatusTone.READY
     }
     val statusLabel = when (statusTone) {
         DeviceStatusTone.OFFLINE -> "离线"
         DeviceStatusTone.RESIDENT_ONLY -> "驻留在线 · 程序关闭"
-        DeviceStatusTone.MONITORING -> if (controllableSources.isNotEmpty()) "全部运行" else "监控中"
-        DeviceStatusTone.PARTIAL_MONITORING -> "部分运行 $runningSources/${controllableSources.size}"
+        DeviceStatusTone.MONITORING -> if (totalSourceCount > 0) "全部运行" else "监控中"
+        DeviceStatusTone.PARTIAL_MONITORING -> "部分运行 $runningSources/$totalSourceCount"
         DeviceStatusTone.NOT_READY -> "选区未设定"
         DeviceStatusTone.READY -> "已就绪"
     }

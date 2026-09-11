@@ -280,6 +280,57 @@ class ReceiverHomeModelsTest {
     }
 
     @Test
+    fun fourSourceAggregateCountsUnhealthySourceInsteadOfReportingAllRunning() {
+        val unhealthyFourthSources = listOf(
+            com.xgwnje.visionguard_android.data.model.SourceInfo("four", "四", true, false),
+            com.xgwnje.visionguard_android.data.model.SourceInfo(
+                "four", "四", isMonitoring = true, isReady = true, error = "窗口失联"
+            )
+        )
+
+        unhealthyFourthSources.forEach { fourthSource ->
+            val device = DeviceInfo(
+                deviceId = "pc", deviceName = "PC", clientType = "windows", online = true,
+                isMonitoring = true, isReady = true, lastSeen = "刚刚",
+                capabilities = listOf("source-control"),
+                sources = listOf(
+                    com.xgwnje.visionguard_android.data.model.SourceInfo("one", "一", true, true),
+                    com.xgwnje.visionguard_android.data.model.SourceInfo("two", "二", true, true),
+                    com.xgwnje.visionguard_android.data.model.SourceInfo("three", "三", true, true),
+                    fourthSource
+                )
+            )
+
+            val model = buildDeviceCardUiModel(device)
+
+            assertEquals(DeviceStatusTone.PARTIAL_MONITORING, model.statusTone)
+            assertEquals("部分运行 3/4", model.statusLabel)
+            assertEquals(false, model.controlsEnabled)
+        }
+    }
+
+    @Test
+    fun fourSourceAggregateReportsAllRunningOnlyWhenEverySourceIsHealthyAndRunning() {
+        val device = DeviceInfo(
+            deviceId = "pc", deviceName = "PC", clientType = "windows", online = true,
+            isMonitoring = true, isReady = true, lastSeen = "刚刚",
+            capabilities = listOf("source-control"),
+            sources = listOf(
+                com.xgwnje.visionguard_android.data.model.SourceInfo("one", "一", true, true),
+                com.xgwnje.visionguard_android.data.model.SourceInfo("two", "二", true, true),
+                com.xgwnje.visionguard_android.data.model.SourceInfo("three", "三", true, true),
+                com.xgwnje.visionguard_android.data.model.SourceInfo("four", "四", true, true)
+            )
+        )
+
+        val model = buildDeviceCardUiModel(device)
+
+        assertEquals(DeviceStatusTone.MONITORING, model.statusTone)
+        assertEquals("全部运行", model.statusLabel)
+        assertEquals(false, model.controlsEnabled)
+    }
+
+    @Test
     fun deviceConfigChangesIncludesDiscreteCooldownSamplingRateAndModel() {
         val initialConfig = DeviceConfig(
             cooldown = 10,

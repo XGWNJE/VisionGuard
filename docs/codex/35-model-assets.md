@@ -35,6 +35,7 @@
 - 改写保留原有逻辑模型名和下载路由，Server 最终仍提供上述文件名；WPF/CPU、WPF/DirectML 和 Android/NNAPI 均使用同一份归一化后的 YOLO26 文件。
 - 脚本要求 Python 与 `onnx`、`numpy` 包；正式发布脚本在复制 YOLO26 模型后自动执行，准备失败时中止发布，不静默提供未验证的原始模型。
 - 该处理不是量化，不改变模型输入/输出契约；发布前仍须以目标模型的 ONNX 校验和对应端推理烟测确认语义。
+- Android 加载器会在本地缓存缺失时先检查 `assets/models/{filename}`，再访问 Server；正式包默认不内置模型，Debug/E2E 可临时注入确定性模型，适用于禁止 `run-as` 的真机验证。
 
 ## 模型按需下载
 
@@ -49,7 +50,7 @@
 |---|---|---|
 | WinForms | `%APPDATA%\VisionGuard\models\{modelKey}.onnx` | `Utils\ModelManager.cs` |
 | WPF | `%APPDATA%\VisionGuard\models\{modelKey}.onnx` | `Utils\ModelManager.cs` |
-| Android | `filesDir/models/{modelName}_{inputSize}.onnx` | `OnnxInferenceEngine.kt` → `downloadModel()` |
+| Android | `filesDir/models/{modelName}_{inputSize}.onnx` | `OnnxInferenceEngine.kt` → 内置 asset（存在时）→ `downloadModel()` |
 
 ### 首次安装 / 旧版升级
 

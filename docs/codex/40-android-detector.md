@@ -20,11 +20,11 @@
 - 当前实现不绑定 `Preview`，仅 `ImageAnalysis`
 - 数码变焦是软件中心裁切逻辑，不是 CameraX API 缩放
 - `SettingsRepository` 默认 `targets=person`、`selected_model=yolo26n`
-- 模型文件**不打包**到 APK；当前不存在模型 assets 目录，首次启动从 Server 下载到 `filesDir/models/`
+- 正式包默认不把模型打包到 APK；加载器支持先从 `assets/models/` 复制确定性模型，未提供 asset 时再从 Server 下载到 `filesDir/models/`
 - Release 编译：`isMinifyEnabled=true` + `isShrinkResources=true` + R8/ProGuard
 - NDK ABI 过滤：仅 `arm64-v8a`（节省 ~53 MB）
 - Android 推理默认请求 ONNX Runtime `NNAPI`；API 29+ 使用 `CPU_DISABLED` + `USE_NCHW` 注册 NNAPI，不能创建时显式回退 CPU 并保留原因
-- NNAPI session 完成至少 3 次实际推理后结束 profiling，解析 profile 中的 `NnapiExecutionProvider`，并在 `filesDir/inference-backend-evidence.json` 写入实际 provider、CPU/NNAPI 事件计数和硬件执行确认结果
+- NNAPI session 完成至少 3 次实际推理后结束 profiling，解析 profile 中的 `NnapiExecutionProvider`，并在 `filesDir/inference-backend-evidence.json` 写入 provider 证据和 CPU/NNAPI 事件计数；provider 命中只能确认 NNAPI 分区，只有另有非 `reference/CPU` 执行设备证据时才能标记硬件执行确认
 
 ## 关键文件
 
@@ -51,4 +51,4 @@
 
 ## 验证边界
 
-当前 Android 单测、Debug 构建、启动 smoke 和小米 15 上使用归一化 `yolo26n_320` 的真实相机推理/NNAPI provider 证据可以分别报告；QNN/NCNN、长时温升、精度矩阵、完整检测端→Server→接收端报警链和真机 UI 目检尚未验收。当前未执行正式版本发布，因此公网现有模型不因本地证据自动更新。
+当前 Android 单测、Debug 构建、启动 smoke 和小米 15 上使用归一化 `yolo26n_320` 的真实相机推理/NNAPI provider 证据可以分别报告。MI 6X（SDM660/Adreno 512）实测证明原始公网模型因 `Split` 回退 CPU，约 `157–179 ms/次`；归一化模型虽进入 `NnapiExecutionProvider`，但系统编译目标是 `nnapi-reference`，约 `471–499 ms/次`，属于更慢的参考 CPU 路径而非硬件加速。QNN/NCNN、可靠的 NNAPI 设备识别、长时温升、精度矩阵、完整检测端→Server→接收端报警链和真机 UI 目检尚未验收。当前未执行正式版本发布，因此公网现有模型不因本地证据自动更新。

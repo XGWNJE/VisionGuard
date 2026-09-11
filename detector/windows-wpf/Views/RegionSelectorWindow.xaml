@@ -17,15 +17,16 @@
 
         <!-- 交互画布 -->
         <Canvas x:Name="OverlayCanvas">
-            <TextBlock x:Name="HintText" Text="拖拽鼠标绘制选区，按 ESC 取消"
-                       Foreground="White" FontSize="16"
-                       Canvas.Left="20" Canvas.Top="20"/>
+            <Border Canvas.Left="20" Canvas.Top="20" Background="#E6171719" BorderBrush="#66FF3B30" BorderThickness="1" CornerRadius="10" Padding="14,9">
+                <TextBlock x:Name="HintText" Text="拖拽绘制采集区域 · 宽高 &gt; 100 px · ESC 取消"
+                           Foreground="White" FontSize="14" FontWeight="SemiBold"/>
+            </Border>
             <Rectangle x:Name="SelectionRect"
-                       Stroke="LimeGreen" StrokeThickness="2"
-                       Fill="Transparent"
+                       Stroke="#FFFF3B30" StrokeThickness="2"
+                       Fill="#20FF3B30"
                        Visibility="Collapsed"/>
             <TextBlock x:Name="DimensionLabel" Text=""
-                       Foreground="#FF00FF00" FontSize="13" FontFamily="Consolas"
+                       Foreground="#FFFF3B30" FontSize="13" FontFamily="Cascadia Mono, Consolas"
                        Visibility="Collapsed"/>
         </Canvas>
     </Grid>

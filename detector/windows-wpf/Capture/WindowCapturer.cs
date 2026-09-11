@@ -34,6 +34,8 @@ namespace VisionGuard.Capture
             Rectangle bounds = WindowEnumerator.GetWindowBounds(hwnd);
             if (bounds.IsEmpty || bounds.Width <= 0 || bounds.Height <= 0)
                 throw new InvalidOperationException("无法获取目标窗口尺寸，窗口可能已关闭。");
+            if (!CaptureSizeConstraints.IsValid(bounds))
+                throw new InvalidOperationException("目标窗口宽度和高度必须都大于 100 像素。");
 
             // 2. 创建匹配尺寸的目标 Bitmap + HDC
             var bitmap  = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppArgb);
@@ -81,6 +83,12 @@ namespace VisionGuard.Capture
                 {
                     bitmap.Dispose();
                     throw new InvalidOperationException("子区域超出窗口边界。");
+                }
+
+                if (!CaptureSizeConstraints.IsValid(clipped))
+                {
+                    bitmap.Dispose();
+                    throw new InvalidOperationException("窗口选区宽度和高度必须都大于 100 像素。");
                 }
 
                 Bitmap cropped = bitmap.Clone(clipped, PixelFormat.Format32bppArgb);

@@ -385,7 +385,7 @@ function checkSkillContract(root, errors) {
 function checkValidationContract(root, readme, operations, verificationReport, errors) {
   const wpfScript = readUtf8(root, 'scripts/test-wpf-person-detection.ps1', errors, { checkBom: false });
   const wpfSmokeProgram = readUtf8(root, 'detector/windows-wpf-smoke/Program.cs', errors, { checkBom: false });
-  requireText(wpfScript, '$images.Count -ne 3', 'scripts/test-wpf-person-detection.ps1', 'the exactly-three-image fixture contract', errors);
+  requireText(wpfScript, '$images.Count -ne 4', 'scripts/test-wpf-person-detection.ps1', 'the exactly-four-window fixture contract', errors);
   requireText(wpfScript, 'personHitFrames', 'scripts/test-wpf-person-detection.ps1', 'the person detection assertion', errors);
   requireText(wpfScript, '$report.passed', 'scripts/test-wpf-person-detection.ps1', 'the explicit passing report', errors);
   requireText(wpfSmokeProgram, 'WatchedClasses', 'detector/windows-wpf-smoke/Program.cs', 'the watched person class configuration', errors);

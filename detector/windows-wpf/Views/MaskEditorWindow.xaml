@@ -7,6 +7,8 @@
         Background="Black"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
+        MinWidth="520"
+        MinHeight="360"
         KeyDown="Window_KeyDown">
     <Grid>
         <Grid.RowDefinitions>
@@ -22,18 +24,21 @@
                     MouseLeftButtonDown="MaskCanvas_MouseLeftButtonDown"
                     MouseMove="MaskCanvas_MouseMove"
                     MouseLeftButtonUp="MaskCanvas_MouseLeftButtonUp"/>
+            <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="18" Padding="12,8" Background="#E6171719" CornerRadius="10" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                <TextBlock Text="拖拽绘制遮罩 · 遮罩区域不会参与检测" Foreground="White" FontSize="13"/>
+            </Border>
         </Grid>
 
         <!-- 底部工具栏 -->
-        <Border Grid.Row="1" Background="{StaticResource SurfaceDark}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="8">
-                <Button Content="↩ 撤销" Style="{StaticResource DarkButton}" Margin="4,0"
+        <Border Grid.Row="1" Background="#FA171719" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="12">
+                <Button Content="撤销" Style="{StaticResource GhostButton}" Margin="4,0"
                         Command="{Binding UndoCommand}"/>
-                <Button Content="🗑 清空" Style="{StaticResource DarkButton}" Margin="4,0"
+                <Button Content="清空遮罩" Style="{StaticResource DangerButton}" Margin="4,0"
                         Command="{Binding ClearCommand}"/>
                 <Separator Margin="8,0" Style="{x:Null}" Width="1" Background="{StaticResource BorderBrush}"/>
-                <Button Content="❌ 取消" Style="{StaticResource DarkButton}" Margin="4,0" Click="Cancel_Click"/>
-                <Button Content="✓ 确定" Style="{StaticResource PrimaryButton}" Margin="4,0" Click="Confirm_Click"/>
+                <Button Content="取消" Style="{StaticResource DarkButton}" Margin="4,0" Click="Cancel_Click"/>
+                <Button Content="保存遮罩" Style="{StaticResource PrimaryButton}" Margin="4,0" Click="Confirm_Click"/>
             </StackPanel>
         </Border>
     </Grid>

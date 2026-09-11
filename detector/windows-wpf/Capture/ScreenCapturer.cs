@@ -24,6 +24,9 @@ namespace VisionGuard.Capture
         /// </summary>
         public static Bitmap CaptureRegion(Rectangle region)
         {
+            if (!CaptureSizeConstraints.IsValid(region))
+                throw new ArgumentOutOfRangeException(nameof(region), "屏幕选区宽度和高度必须都大于 100 像素。");
+
             IntPtr desktop  = IntPtr.Zero;
             IntPtr screenDC = IntPtr.Zero;
             IntPtr memDC    = IntPtr.Zero;

@@ -7,225 +7,139 @@
         xmlns:local="clr-namespace:VisionGuard.Views"
         mc:Ignorable="d"
         Title="VisionGuard"
-        Height="640" Width="960"
-        MinHeight="480" MinWidth="720"
+        Width="1420" Height="880" MinWidth="1100" MinHeight="700"
         Background="{StaticResource BackgroundDark}"
-        WindowStartupLocation="CenterScreen"
-        Loaded="Window_Loaded">
+        WindowStartupLocation="CenterScreen" Loaded="Window_Loaded">
+    <Window.DataContext><vm:MainViewModel/></Window.DataContext>
 
-    <Window.DataContext>
-        <vm:MainViewModel/>
-    </Window.DataContext>
-
-    <Grid>
+    <Grid Background="{StaticResource BackgroundDark}">
         <Grid.RowDefinitions>
+            <RowDefinition Height="54"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- 主内容区 -->
-        <Grid Grid.Row="0">
+        <!-- 单一顶栏：品牌、运行状态与整机操作 -->
+        <Border Grid.Row="0" Background="{StaticResource SurfaceDark}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
+            <Grid Margin="16,0">
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                    <Border Style="{StaticResource StatusPill}" Margin="0,0,8,0">
+                        <TextBlock Text="{Binding MultiSourceVm.RunningSummary}" Style="{StaticResource BodyText}" FontWeight="SemiBold"/>
+                    </Border>
+                    <Border Style="{StaticResource StatusPill}" Margin="0,0,8,0">
+                        <TextBlock Text="{Binding MultiSourceVm.ConnectionSummary}" Style="{StaticResource CaptionText}"/>
+                    </Border>
+                    <Border Style="{StaticResource StatusPill}">
+                        <TextBlock Text="{Binding MultiSourceVm.ErrorSummary}" Style="{StaticResource CaptionText}"/>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="启动已配置" Style="{StaticResource PrimaryButton}" Command="{Binding MultiSourceVm.StartConfiguredCommand}" Margin="0,0,8,0"/>
+                    <Button Content="全部停止" Style="{StaticResource DangerButton}" Command="{Binding MultiSourceVm.StopAllCommand}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 中央只承担监控；右侧是唯一配置入口 -->
+        <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="72"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="360"/>
+                <ColumnDefinition Width="*" MinWidth="620"/>
+                <ColumnDefinition Width="376"/>
             </Grid.ColumnDefinitions>
 
-            <!-- 左侧导航 -->
-            <Border Grid.Column="0" Background="{StaticResource SurfaceDark}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
-                <StackPanel Margin="0,8,0,0">
-
-                    <!-- 监控 -->
-                    <Button x:Name="BtnMonitor" Height="64" Margin="4,0,4,4"
-                            BorderThickness="0" Cursor="Hand"
-                            Command="{Binding DataContext.NavigateToMonitorCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                            Click="BtnMonitor_Click">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border Background="{TemplateBinding Background}" CornerRadius="4">
-                                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                    <Image Source="pack://application:,,,/Assets/capture.png" Width="22" Height="22"
-                                                           RenderOptions.BitmapScalingMode="HighQuality" HorizontalAlignment="Center"/>
-                                                    <TextBlock Text="监控" FontSize="11" Foreground="{StaticResource TextSecondary}"
-                                                               HorizontalAlignment="Center" Margin="0,4,0,0"/>
-                                                </StackPanel>
-                                            </Border>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding DataContext.IsMonitorPage, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource SurfaceLight}"/>
-                                    </DataTrigger>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource BorderBrush}"/>
-                                    </Trigger>
-                                    <Trigger Property="IsPressed" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource PrimaryPressed}"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-
-                    <!-- 设置 -->
-                    <Button x:Name="BtnSettings" Height="64" Margin="4,0,4,4"
-                            BorderThickness="0" Cursor="Hand"
-                            Command="{Binding DataContext.NavigateToSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                            Click="BtnSettings_Click">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border Background="{TemplateBinding Background}" CornerRadius="4">
-                                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                    <Image Source="pack://application:,,,/Assets/settings.png" Width="22" Height="22"
-                                                           RenderOptions.BitmapScalingMode="HighQuality" HorizontalAlignment="Center"/>
-                                                    <TextBlock Text="设置" FontSize="11" Foreground="{StaticResource TextSecondary}"
-                                                               HorizontalAlignment="Center" Margin="0,4,0,0"/>
-                                                </StackPanel>
-                                            </Border>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding DataContext.IsSettingsPage, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource SurfaceLight}"/>
-                                    </DataTrigger>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource BorderBrush}"/>
-                                    </Trigger>
-                                    <Trigger Property="IsPressed" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource PrimaryPressed}"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-
-                    <!-- 服务器 -->
-                    <Button x:Name="BtnServer" Height="64" Margin="4,0,4,4"
-                            BorderThickness="0" Cursor="Hand"
-                            Command="{Binding DataContext.NavigateToServerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                            Click="BtnServer_Click">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border Background="{TemplateBinding Background}" CornerRadius="4">
-                                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                    <Image Source="pack://application:,,,/Assets/server.png" Width="22" Height="22"
-                                                           RenderOptions.BitmapScalingMode="HighQuality" HorizontalAlignment="Center"/>
-                                                    <TextBlock Text="服务器" FontSize="11" Foreground="{StaticResource TextSecondary}"
-                                                               HorizontalAlignment="Center" Margin="0,4,0,0"/>
-                                                </StackPanel>
-                                            </Border>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding DataContext.IsServerPage, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource SurfaceLight}"/>
-                                    </DataTrigger>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource BorderBrush}"/>
-                                    </Trigger>
-                                    <Trigger Property="IsPressed" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource PrimaryPressed}"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-                </StackPanel>
-            </Border>
-
-            <!-- 中间预览区 -->
-            <Border Grid.Column="1" Background="{StaticResource BackgroundDark}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0">
-                <Grid>
-                    <Border Background="{StaticResource SurfaceDark}" CornerRadius="6" Margin="12"
-                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-                        <Grid>
-                            <!-- 未监控时显示占位文字 -->
-                            <TextBlock Text="点击「开始监控」以显示实时画面"
-                                       Foreground="{StaticResource TextSecondary}"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Visibility" Value="Collapsed"/>
+            <Grid Grid.Column="0" Margin="8,7,7,7">
+                <ItemsControl ItemsSource="{Binding MultiSourceVm.Sources}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><UniformGrid Rows="2" Columns="2"/></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Margin="3" Padding="7" CornerRadius="12" Background="{StaticResource SurfaceDark}">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                                        <Setter Property="BorderThickness" Value="1"/>
                                         <Style.Triggers>
-                                            <DataTrigger Binding="{Binding PreviewImage}" Value="{x:Null}">
-                                                <Setter Property="Visibility" Value="Visible"/>
+                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                <Setter Property="BorderBrush" Value="{StaticResource Primary}"/>
+                                                <Setter Property="BorderThickness" Value="2"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
+                                </Border.Style>
+                                <Grid>
+                                    <Grid.RowDefinitions><RowDefinition Height="36"/><RowDefinition Height="*"/><RowDefinition Height="38"/></Grid.RowDefinitions>
 
-                            <!-- 实时画面：Viewbox 自动按比例缩放 -->
-                            <Viewbox Stretch="Uniform" Margin="4">
-                                <Grid Width="{Binding FrameWidth}" Height="{Binding FrameHeight}">
-                                    <Image Source="{Binding PreviewImage}" Stretch="None"/>
-                                    <ItemsControl ItemsSource="{Binding Detections}">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                                <Canvas IsItemsHost="True"/>
-                                            </ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                        <ItemsControl.ItemContainerStyle>
-                                            <Style TargetType="ContentPresenter">
-                                                <Setter Property="Canvas.Left" Value="{Binding Left}"/>
-                                                <Setter Property="Canvas.Top" Value="{Binding Top}"/>
-                                            </Style>
-                                        </ItemsControl.ItemContainerStyle>
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Grid>
-                                                    <Rectangle Width="{Binding Width}" Height="{Binding Height}"
-                                                               Stroke="#FF4444" StrokeThickness="2" Fill="Transparent"/>
-                                                    <TextBlock Text="{Binding Label}" Foreground="#FF4444"
-                                                               FontSize="10" Background="#CC000000"
-                                                               Padding="2,0" VerticalAlignment="Top"
-                                                               Margin="0,-14,0,0"/>
+                                    <Button Grid.Row="0" Style="{StaticResource GhostButton}" Command="{Binding SelectCommand}" HorizontalContentAlignment="Stretch" Padding="7,2" MinHeight="34" Margin="0,0,0,3">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                            <Ellipse Width="7" Height="7" Fill="{StaticResource Primary}" VerticalAlignment="Center" Margin="6,0,1,0"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding SourceName}" Style="{StaticResource TitleText}" VerticalAlignment="Center" Margin="8,0" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding StatusText}" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                                        </Grid>
+                                    </Button>
+
+                                    <Border Grid.Row="1" Background="{StaticResource CanvasBrush}" BorderBrush="#FF1C2731" BorderThickness="1" CornerRadius="9" ClipToBounds="True" MinHeight="210">
+                                        <Grid>
+                                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="230">
+                                                <TextBlock Text="暂无画面" Foreground="#FF5A5A60" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                                <TextBlock Text="{Binding TargetInfo}" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap" TextAlignment="Center" Margin="0,8,0,0">
+                                                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding PreviewImage}" Value="{x:Null}"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                                                </TextBlock>
+                                            </StackPanel>
+                                            <Viewbox Stretch="Uniform" Margin="3">
+                                                <Grid Width="{Binding FrameWidth}" Height="{Binding FrameHeight}">
+                                                    <Image Source="{Binding PreviewImage}" Stretch="None"/>
+                                                    <ItemsControl ItemsSource="{Binding Detections}">
+                                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><Canvas IsItemsHost="True"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                                        <ItemsControl.ItemContainerStyle><Style TargetType="ContentPresenter"><Setter Property="Canvas.Left" Value="{Binding Left}"/><Setter Property="Canvas.Top" Value="{Binding Top}"/></Style></ItemsControl.ItemContainerStyle>
+                                                        <ItemsControl.ItemTemplate><DataTemplate><Grid><Rectangle Width="{Binding Width}" Height="{Binding Height}" Stroke="{StaticResource DangerBrush}" StrokeThickness="2"/><TextBlock Text="{Binding Label}" Foreground="White" Background="#DDFF6B5E" FontSize="10" Padding="4,1" VerticalAlignment="Top" Margin="0,-17,0,0"/></Grid></DataTemplate></ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
                                                 </Grid>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
+                                            </Viewbox>
+                                            <Border Background="#E6101011" VerticalAlignment="Bottom" Padding="9,6">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                                    <TextBlock Text="{Binding LastFrameText}" Style="{StaticResource CaptionText}"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding InferenceText}" Style="{StaticResource CaptionText}" Margin="12,0,0,0"/>
+                                                    <TextBlock Grid.Row="1" Text="{Binding LastAlertText}" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="0,3,0,0" TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding BackendText}" Foreground="{StaticResource TextSecondary}" FontSize="11" FontWeight="SemiBold" Margin="12,3,0,0"/>
+                                                </Grid>
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+
+                                    <Grid Grid.Row="2" Margin="0,4,0,0">
+                                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+                                        <Button Content="启动此路" Style="{StaticResource PrimaryButton}" Command="{Binding StartCommand}" Margin="0,0,3,0" Padding="10,5" MinHeight="36"/>
+                                        <Button Grid.Column="1" Content="停止" Style="{StaticResource GhostButton}" Command="{Binding StopCommand}" Margin="3,0,0,0" Padding="10,5" MinHeight="36"/>
+                                    </Grid>
                                 </Grid>
-                            </Viewbox>
-                        </Grid>
-                    </Border>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+
+            <Border Grid.Column="1" Background="{StaticResource MutedSurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
+                <Grid Margin="12,8,10,8">
+                    <TabControl Style="{StaticResource InspectorTabs}" Background="Transparent">
+                        <TabItem Header="当前信号" Style="{StaticResource InspectorTabItem}">
+                            <local:MonitorPage DataContext="{Binding MultiSourceVm}"/>
+                        </TabItem>
+                        <TabItem Header="运行环境" Style="{StaticResource InspectorTabItem}">
+                            <local:SettingsPage DataContext="{Binding SettingsVm}"/>
+                        </TabItem>
+                        <TabItem Header="连接" Style="{StaticResource InspectorTabItem}">
+                            <local:ServerPage DataContext="{Binding ServerVm}"/>
+                        </TabItem>
+                    </TabControl>
                 </Grid>
             </Border>
-
-            <!-- 右侧页面区 -->
-            <Grid Grid.Column="2" Background="{StaticResource BackgroundDark}">
-                <local:MonitorPage    DataContext="{Binding MonitorVm}"    Visibility="{Binding DataContext.IsMonitorPage,  RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
-                <local:SettingsPage   DataContext="{Binding SettingsVm}"   Visibility="{Binding DataContext.IsSettingsPage, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
-                <local:ServerPage     DataContext="{Binding ServerVm}"     Visibility="{Binding DataContext.IsServerPage,   RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}"/>
-            </Grid>
         </Grid>
 
-        <!-- 状态栏 -->
-        <StatusBar Grid.Row="1" Background="{StaticResource SurfaceDark}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
-            <StatusBarItem>
-                <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource TextSecondary}" FontSize="12"/>
-            </StatusBarItem>
-            <StatusBarItem>
-                <TextBlock Text="{Binding LastAlertText}" Foreground="{StaticResource TextSecondary}" FontSize="12"/>
-            </StatusBarItem>
-            <StatusBarItem HorizontalAlignment="Right">
-                <TextBlock Text="{Binding InferMsText}" Foreground="{StaticResource TextSecondary}" FontSize="12"/>
-            </StatusBarItem>
-        </StatusBar>
     </Grid>
 </Window>

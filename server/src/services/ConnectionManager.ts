@@ -110,7 +110,9 @@ const MAX_TARGETS_LENGTH = 500;
 const MAX_MODEL_OPTIONS = 16;
 const MAX_CAPABILITIES = 32;
 const MAX_COMPONENTS = 8;
-const MAX_SOURCES = 3;
+const MAX_SOURCES = 4;
+const DETECTOR_COMMANDS = new Set(['pause', 'resume', 'stop-alarm']);
+const RESIDENT_COMMANDS = new Set(['open-wpf', 'open-winforms', 'close-wpf', 'close-winforms']);
 
 function validateDetection(d: any): boolean {
   if (!d || typeof d !== 'object') return false;
@@ -815,7 +817,16 @@ function handleSessionInfo(msg: WsSessionInfo): void {
 // ════════════════════════════════════════════════════════════
 
 function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
-  const residentCommand = /^(open|close)-(wpf|winforms)$/.test(msg.command);
+  const residentCommand = RESIDENT_COMMANDS.has(msg.command);
+  const detectorCommand = DETECTOR_COMMANDS.has(msg.command);
+  if (!residentCommand && !detectorCommand) {
+    sendJson(senderWs, {
+      type: 'command-ack', requestId: msg.requestId, phase: 'completed',
+      targetDeviceId: msg.targetDeviceId, targetSourceId: msg.targetSourceId,
+      command: String(msg.command ?? ''), success: false, reason: '无效的命令',
+    }, 'command-ack->sender');
+    return;
+  }
   const target = residentCommand ? residentWindowsClients.get(msg.targetDeviceId) : findDetector(msg.targetDeviceId);
 
   const ack: WsCommandAck = {
@@ -843,6 +854,10 @@ function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
   }
   if (msg.targetSourceId && (residentCommand || !(target as DetectorClient).capabilities.includes('source-control'))) {
     ack.phase = 'completed'; ack.reason = '目标不支持逐来源控制';
+    sendJson(senderWs, ack, 'command-ack->sender'); return;
+  }
+  if (msg.targetSourceId && !(target as DetectorClient).sources.some(source => source.sourceId === msg.targetSourceId)) {
+    ack.phase = 'completed'; ack.reason = '目标来源不存在';
     sendJson(senderWs, ack, 'command-ack->sender'); return;
   }
   if (msg.requestId && !registerPendingControlRequest(msg.requestId, senderWs, msg.targetDeviceId, msg.command, msg.targetSourceId)) {
@@ -900,6 +915,11 @@ function handleSetConfig(senderWs: WebSocket, msg: WsSetConfig): void {
   if (msg.targetSourceId && !target.capabilities.includes('source-control')) {
     sendJson(senderWs, { type: 'command-ack', requestId: msg.requestId, phase: 'completed', targetDeviceId: msg.targetDeviceId,
       targetSourceId: msg.targetSourceId, command: `set-config:${msg.key}`, success: false, reason: '目标不支持逐来源控制' }, 'set-config-ack->sender');
+    return;
+  }
+  if (msg.targetSourceId && !target.sources.some(source => source.sourceId === msg.targetSourceId)) {
+    sendJson(senderWs, { type: 'command-ack', requestId: msg.requestId, phase: 'completed', targetDeviceId: msg.targetDeviceId,
+      targetSourceId: msg.targetSourceId, command: `set-config:${msg.key}`, success: false, reason: '目标来源不存在' }, 'set-config-ack->sender');
     return;
   }
   if (msg.requestId && !registerPendingControlRequest(msg.requestId, senderWs, msg.targetDeviceId, command, msg.targetSourceId)) {

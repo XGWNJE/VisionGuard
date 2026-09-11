@@ -7,16 +7,25 @@ data class InferenceBackendStatus(
     val active: InferenceBackend = InferenceBackend.CPU,
     val fallbackReason: String = "",
     val actualProvider: String? = null,
+    val executionDevice: String? = null,
     val profilePath: String? = null
 ) {
-    val hardwareExecutionConfirmed: Boolean
+    val providerExecutionConfirmed: Boolean
         get() = active == InferenceBackend.NNAPI &&
             actualProvider == "NnapiExecutionProvider"
+
+    val hardwareExecutionConfirmed: Boolean
+        get() = providerExecutionConfirmed &&
+            executionDevice?.let { device ->
+                !device.contains("reference", ignoreCase = true) &&
+                    !device.contains("cpu", ignoreCase = true)
+            } == true
 
     val displayText: String
         get() {
             val state = when {
-                hardwareExecutionConfirmed -> "已确认实际执行"
+                hardwareExecutionConfirmed -> "已确认硬件执行：$executionDevice"
+                providerExecutionConfirmed -> "已确认 NNAPI 分区；硬件设备未确认"
                 active == InferenceBackend.NNAPI -> "已注册，等待执行证据"
                 else -> ""
             }

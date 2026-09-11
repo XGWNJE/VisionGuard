@@ -7,7 +7,7 @@
 | 规范名称 | 路径 | 职责 |
 |---|---|---|
 | Windows WinForms 检测端（WinForms Visual Detector） | `detector/windows-winforms/` | .NET Framework 4.7.2 / WinForms；维护 Win7+ 兼容视觉检测 |
-| Windows WPF 检测端（WPF Visual Detector） | `detector/windows-wpf/` | .NET 9 / WPF / MVVM；提供现代 Windows 视觉检测和最多三路图片来源原型 |
+| Windows WPF 检测端（WPF Visual Detector） | `detector/windows-wpf/` | .NET 9 / WPF / MVVM；提供现代 Windows 视觉检测和最多四路窗口来源 |
 | Windows 驻留程序（Windows Resident） | `detector/windows-resident/` | .NET 9 当前用户后台进程；承接主程序生命周期远控，不承接推理；当前仅支持现代 Windows，Win7 兼容列为后续交付硬门槛 |
 
 Windows 两个检测端使用 WS 角色 `windows`；驻留程序使用独立的 `windows-resident` 角色。驻留程序与检测端按同一 `deviceId` 聚合，但连接和状态不能混为一个组件。
@@ -28,10 +28,12 @@ Windows 两个检测端使用 WS 角色 `windows`；驻留程序使用独立的 
 ## WPF 当前实现
 
 - .NET 9、WPF + MVVM、YOLO26 输出格式 `[1,300,6]`、DirectML 默认后端并支持显式 CPU 回退。
-- `MonitorService` 负责捕获、推理、告警和 UI 更新；多来源协调器支持最多三个独立配置、ONNX Session、定时器和冷却状态。
-- 设置页模型选择处显示下载状态并提供下载；模型缓存为 `%APPDATA%\VisionGuard\models\`，旧 `Assets/` 模型会迁移。
+- `MonitorService` 负责窗口/区域捕获、推理、告警和 UI 更新；多来源协调器支持最多四个独立配置、ONNX Session、定时器和冷却状态，不再提供产品图片直读来源。
+- 主窗口移除左侧导航、页内重复品牌块、信号区说明栏和全局底部信息栏，中央固定四路 2×2 监控矩阵；右侧控制台统一承载“当前信号 / 运行环境 / 连接”。控制台移除重复页标题、操作说明和嵌套卡片，主要按钮、单行输入框、下拉框与多选入口统一为 40px 高，次要清除动作允许使用 28px 紧凑高度。当前来源名称与状态合并为单行，点击名称原位编辑，回车或失焦只自动保存名称。“当前信号”其余设置按“采集目标 → 识别设置 → 检测参数 → 区域排除 → 保存”这一实际作业顺序排列；采集目标的清除动作进入区块标题，两个选择动作并排。运行环境的后端与模型分别采用“短标签 + 控件”单行布局；连接页的状态、设备名称和版本操作也各占一个操作行。逐路阈值、类别、频率和冷却只在当前信号中配置，其中检测类别使用基于 COCO 80 类中英文映射的下拉多选菜单。每路画面内独立显示更新时间、推理耗时、最后报警与实际后端，共享页只管理推理后端与模型资源，避免重复职责。
+- 运行环境中的模型选择显示下载状态并提供下载；模型缓存为 `%APPDATA%\VisionGuard\models\`，旧 `Assets/` 模型会迁移。
 - WPF Release 输出统一为 `bin\x64\`；导航 PNG 以内嵌 Resource 提供，模型和 `Assets/` 不随发行包分发。
-- WPF 人员图片 smoke 已通过每路 `person` 命中断言；真实窗口采集、其他 GPU、持续运行和 UI 视觉仍需单独验收。
+- WPF 采集目标使用统一物理像素下限：窗口、屏幕选区和窗口子区域的宽度与高度必须分别严格大于 100 像素；屏幕选区拖拽提示与提交校验共用同一套 DIP 到实际采集像素映射，高 DPI 下界面显示的尺寸就是最终校验尺寸。窗口枚举直接过滤任一边不达标的候选，确认、启动和实际截图层继续做防御式校验。遮罩编辑窗口最小为 520×360 逻辑像素，避免小来源导致工具栏按钮显示不完整。
+- WPF 四窗口人员 smoke 已通过独立 `WindowHandle` 捕获、逐路 `person`、每路 3 FPS、停止/重配隔离、CPU 多路拒绝与 DirectML 回退断言；动态视频、其他 GPU、持续运行、报警链和 UI 视觉仍需单独验收。
 
 ## Windows 驻留程序当前实现
 
@@ -45,6 +47,6 @@ Windows 两个检测端使用 WS 角色 `windows`；驻留程序使用独立的 
 ## 不应夸大的结论
 
 - Release 编译通过不等于 Windows 功能完整交付。
-- WPF ImageFile 三路推理通过不等于真实窗口采集、报警截图、Server 中继或 UI 目检通过。
+- WPF 四个静态图片窗口推理通过不等于动态业务视频、报警截图、Server 中继或 UI 目检通过。
 - DirectML 会话成功不等于所有节点都在 GPU 执行，也不等于其他 GPU/640 输入已验证。
 - 驻留进程存在不等于远程控制全链路已验收；具体证据以验证报告为准。

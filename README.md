@@ -45,13 +45,13 @@ npm test
 npm run build
 ```
 
-WPF 三路人员图片检测 smoke：
+WPF 四路真实窗口人员检测 smoke：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\test-wpf-person-detection.ps1 -PrepareFixtures
+powershell -ExecutionPolicy Bypass -File .\scripts\test-wpf-person-detection.ps1
 ```
 
-该工具使用三张含人的图片，并要求每路实际产生 `person` 检测；仅有帧处理、FPS 或界面启动不会通过。漏报风险是检测效果与故障处置的最高优先级。构建、环境发现、设备 smoke 和证据边界见[运维文档](./docs/codex/60-operations.md)。
+该工具打开四个独立可见浏览器窗口，经 `WindowHandle` 捕获并要求每路实际产生 `person` 检测且达到 2.5 FPS；同时断言停一路、单路重配、CPU 并行拒绝和 DirectML 回退。漏报风险仍是检测效果与故障处置的最高优先级。它不替代动态视频、完整报警链或 UI 目检。构建、环境发现、设备 smoke 和证据边界见[运维文档](./docs/codex/60-operations.md)。
 
 ## 产品与文档
 

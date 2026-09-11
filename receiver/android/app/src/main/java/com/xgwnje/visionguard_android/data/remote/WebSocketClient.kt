@@ -511,7 +511,11 @@ class WebSocketClient {
                 }
                 "device-list" -> {
                     val devicesArr = obj.getAsJsonArray("devices")
-                    val devices = devicesArr?.map { gson.fromJson(it, DeviceInfo::class.java) } ?: emptyList()
+                    val devices = devicesArr?.mapNotNull { parseCurrentDeviceInfo(it, gson) } ?: emptyList()
+                    val rejectedCount = (devicesArr?.size() ?: 0) - devices.size
+                    if (rejectedCount > 0) {
+                        Log.w(TAG, "已丢弃 $rejectedCount 条非当前协议设备记录")
+                    }
                     _onDeviceList.value = devices
                 }
                 "command-ack" -> {

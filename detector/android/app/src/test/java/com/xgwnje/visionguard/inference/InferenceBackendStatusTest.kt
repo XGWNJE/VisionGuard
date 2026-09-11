@@ -36,4 +36,35 @@ class InferenceBackendStatusTest {
         assertEquals(InferenceBackend.CPU, status.active)
         assertEquals("", status.fallbackReason)
     }
+
+    @Test fun nnapiProviderEvidenceDoesNotClaimUnknownHardware() {
+        val status = InferenceBackendStatus(
+            requested = InferenceBackend.NNAPI,
+            active = InferenceBackend.NNAPI,
+            actualProvider = "NnapiExecutionProvider"
+        )
+        assertTrue(status.providerExecutionConfirmed)
+        assertEquals(false, status.hardwareExecutionConfirmed)
+    }
+
+    @Test fun nnapiReferenceDeviceIsNotHardwareAcceleration() {
+        val status = InferenceBackendStatus(
+            requested = InferenceBackend.NNAPI,
+            active = InferenceBackend.NNAPI,
+            actualProvider = "NnapiExecutionProvider",
+            executionDevice = "nnapi-reference"
+        )
+        assertTrue(status.providerExecutionConfirmed)
+        assertEquals(false, status.hardwareExecutionConfirmed)
+    }
+
+    @Test fun nonCpuNnapiDeviceCanConfirmHardwareExecution() {
+        val status = InferenceBackendStatus(
+            requested = InferenceBackend.NNAPI,
+            active = InferenceBackend.NNAPI,
+            actualProvider = "NnapiExecutionProvider",
+            executionDevice = "qti-default"
+        )
+        assertTrue(status.hardwareExecutionConfirmed)
+    }
 }

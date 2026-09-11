@@ -27,6 +27,7 @@ if (localPropertiesFile.exists()) {
 
 fun secretProperty(name: String): String {
     return localProperties.getProperty(name)
+        ?: sharedSigningProperties.getProperty(name)
         ?: providers.gradleProperty(name).orNull
         ?: System.getenv(name)
         ?: ""

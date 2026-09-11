@@ -40,6 +40,23 @@ function waitForMessage(ws: WebSocket, predicate: (message: any) => boolean): Pr
   });
 }
 
+function expectNoMessage(ws: WebSocket, predicate: (message: any) => boolean, waitMs = 250): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      ws.off('message', onMessage);
+      resolve();
+    }, waitMs);
+    const onMessage = (raw: WebSocket.RawData) => {
+      const message = JSON.parse(raw.toString());
+      if (!predicate(message)) return;
+      clearTimeout(timer);
+      ws.off('message', onMessage);
+      reject(new Error(`unexpected message: ${raw.toString()}`));
+    };
+    ws.on('message', onMessage);
+  });
+}
+
 async function connect(port: number): Promise<WebSocket> {
   const ws = new WebSocket(`ws://127.0.0.1:${port}`);
   await new Promise<void>((resolve, reject) => {
@@ -58,9 +75,11 @@ test('correlates detector completion with the requesting receiver', async (t) =>
 
   const detector = await connect(address.port);
   const receiver = await connect(address.port);
+  const otherReceiver = await connect(address.port);
   t.after(() => {
     detector.terminate();
     receiver.terminate();
+    otherReceiver.terminate();
     wss.close();
   });
 
@@ -78,6 +97,13 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   }));
   assert.equal((await receiverAuth).success, true);
 
+  const otherReceiverAuth = waitForMessage(otherReceiver, msg => msg.type === 'auth-result');
+  otherReceiver.send(JSON.stringify({
+    type: 'auth', apiKey: process.env.API_KEY, role: 'android',
+    deviceId: 'other-receiver-control-test', deviceName: 'Other Receiver', version: '4.4.4',
+  }));
+  assert.equal((await otherReceiverAuth).success, true);
+
   const capabilityListPromise = waitForMessage(receiver, msg =>
     msg.type === 'device-list' && msg.devices?.some((device: any) =>
       device.deviceId === 'detector-control-test' && device.capabilities?.includes('request-correlation')));
@@ -89,7 +115,10 @@ test('correlates detector completion with the requesting receiver', async (t) =>
     sources: [
       { sourceId: 'front', sourceName: 'Front Door', isMonitoring: true, isReady: true, modelKey: 'yolo26n_320', actualFps: 3.2,
         cooldown: 999, confidence: 0.7, targets: 'person,car', targetSamplingRate: 9 },
-      { sourceId: '../bad', sourceName: 'Bad', isMonitoring: true, isReady: true, modelKey: 'bad key' },
+      { sourceId: 'side', sourceName: 'Side Door', isMonitoring: true, isReady: true, modelKey: 'yolo26n_320' },
+      { sourceId: 'garage', sourceName: 'Garage', isMonitoring: false, isReady: true, modelKey: 'yolo26n_320' },
+      { sourceId: 'fourth', sourceName: 'Fourth Source', isMonitoring: true, isReady: false, modelKey: 'yolo26n_640', error: 'window missing' },
+      { sourceId: 'fifth', sourceName: 'Fifth Source', isMonitoring: true, isReady: true, modelKey: 'yolo26n_320' },
     ],
   }));
   const capabilityDevice = (await capabilityListPromise).devices
@@ -99,6 +128,9 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   assert.deepEqual(capabilityDevice.sources, [
     { sourceId: 'front', sourceName: 'Front Door', isMonitoring: true, isReady: true, modelKey: 'yolo26n_320', actualFps: 3.2,
       cooldown: 300, confidence: 0.7, targets: 'person,car', targetSamplingRate: 5 },
+    { sourceId: 'side', sourceName: 'Side Door', isMonitoring: true, isReady: true, modelKey: 'yolo26n_320' },
+    { sourceId: 'garage', sourceName: 'Garage', isMonitoring: false, isReady: true, modelKey: 'yolo26n_320' },
+    { sourceId: 'fourth', sourceName: 'Fourth Source', isMonitoring: true, isReady: false, modelKey: 'yolo26n_640', error: 'window missing' },
   ]);
 
   const requestId = 'request-12345678';
@@ -144,6 +176,72 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   assert.equal(sourceCompleted.targetSourceId, 'front');
   assert.equal(sourceCompleted.reason, '正确来源回执');
 
+  const fourthRequestId = 'fourth-source-request-1234';
+  const fourthRelayPromise = waitForMessage(detector, msg => msg.type === 'command' && msg.requestId === fourthRequestId);
+  const fourthForwardedPromise = waitForMessage(receiver, msg => msg.type === 'command-ack' && msg.phase === 'forwarded' && msg.requestId === fourthRequestId);
+  receiver.send(JSON.stringify({
+    type: 'command', requestId: fourthRequestId, targetDeviceId: 'detector-control-test', targetSourceId: 'fourth', command: 'resume',
+  }));
+  assert.equal((await fourthRelayPromise).targetSourceId, 'fourth');
+  assert.equal((await fourthForwardedPromise).success, true);
+
+  const isolatedCompletionPromise = expectNoMessage(otherReceiver, msg =>
+    msg.type === 'command-ack' && msg.requestId === fourthRequestId);
+  const fourthCompletedPromise = waitForMessage(receiver, msg =>
+    msg.type === 'command-ack' && msg.phase === 'completed' && msg.requestId === fourthRequestId);
+  detector.send(JSON.stringify({
+    type: 'command-ack', requestId: fourthRequestId, targetDeviceId: 'detector-control-test',
+    targetSourceId: 'fourth', command: 'resume', success: true, reason: '第四路已启动',
+  }));
+  assert.equal((await fourthCompletedPromise).reason, '第四路已启动');
+  await isolatedCompletionPromise;
+
+  const unknownSourceRequestId = 'unknown-source-request-1234';
+  const unknownSourceAckPromise = waitForMessage(receiver, msg =>
+    msg.type === 'command-ack' && msg.phase === 'completed' && msg.requestId === unknownSourceRequestId);
+  receiver.send(JSON.stringify({
+    type: 'command', requestId: unknownSourceRequestId, targetDeviceId: 'detector-control-test', targetSourceId: 'missing', command: 'pause',
+  }));
+  const unknownSourceAck = await unknownSourceAckPromise;
+  assert.equal(unknownSourceAck.success, false);
+  assert.equal(unknownSourceAck.reason, '目标来源不存在');
+
+  const reusedSourceRelayPromise = waitForMessage(detector, msg =>
+    msg.type === 'command' && msg.requestId === unknownSourceRequestId);
+  receiver.send(JSON.stringify({
+    type: 'command', requestId: unknownSourceRequestId, targetDeviceId: 'detector-control-test', targetSourceId: 'fourth', command: 'pause',
+  }));
+  assert.equal((await reusedSourceRelayPromise).targetSourceId, 'fourth');
+
+  const unknownCommandRequestId = 'unknown-command-request-1234';
+  const unknownCommandAckPromise = waitForMessage(receiver, msg =>
+    msg.type === 'command-ack' && msg.phase === 'completed' && msg.requestId === unknownCommandRequestId);
+  receiver.send(JSON.stringify({
+    type: 'command', requestId: unknownCommandRequestId, targetDeviceId: 'detector-control-test', command: 'run-shell',
+  }));
+  const unknownCommandAck = await unknownCommandAckPromise;
+  assert.equal(unknownCommandAck.success, false);
+  assert.equal(unknownCommandAck.reason, '无效的命令');
+
+  const reusedCommandRelayPromise = waitForMessage(detector, msg =>
+    msg.type === 'command' && msg.requestId === unknownCommandRequestId);
+  receiver.send(JSON.stringify({
+    type: 'command', requestId: unknownCommandRequestId, targetDeviceId: 'detector-control-test', targetSourceId: 'fourth', command: 'pause',
+  }));
+  assert.equal((await reusedCommandRelayPromise).command, 'pause');
+
+  const lifecycleToDetectorRequestId = 'lifecycle-to-detector-1234';
+  const lifecycleToDetectorAckPromise = waitForMessage(receiver, msg =>
+    msg.type === 'command-ack' && msg.requestId === lifecycleToDetectorRequestId);
+  const lifecycleNotRelayedPromise = expectNoMessage(detector, msg =>
+    msg.type === 'command' && msg.requestId === lifecycleToDetectorRequestId);
+  receiver.send(JSON.stringify({
+    type: 'command', requestId: lifecycleToDetectorRequestId,
+    targetDeviceId: 'detector-control-test', command: 'open-wpf',
+  }));
+  assert.equal((await lifecycleToDetectorAckPromise).reason, '驻留组件离线');
+  await lifecycleNotRelayedPromise;
+
   const configRequestId = 'source-config-12345678';
   const configRelayPromise = waitForMessage(detector, msg => msg.type === 'set-config' && msg.requestId === configRequestId);
   receiver.send(JSON.stringify({
@@ -163,6 +261,25 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const configCompleted = await configCompletedPromise;
   assert.equal(configCompleted.targetSourceId, 'front');
   assert.equal(configCompleted.success, true);
+
+  const unknownConfigSourceRequestId = 'unknown-config-source-1234';
+  const unknownConfigSourceAckPromise = waitForMessage(receiver, msg =>
+    msg.type === 'command-ack' && msg.phase === 'completed' && msg.requestId === unknownConfigSourceRequestId);
+  receiver.send(JSON.stringify({
+    type: 'set-config', requestId: unknownConfigSourceRequestId, targetDeviceId: 'detector-control-test',
+    targetSourceId: 'missing', key: 'confidence', value: '0.65',
+  }));
+  const unknownConfigSourceAck = await unknownConfigSourceAckPromise;
+  assert.equal(unknownConfigSourceAck.success, false);
+  assert.equal(unknownConfigSourceAck.reason, '目标来源不存在');
+
+  const reusedConfigRelayPromise = waitForMessage(detector, msg =>
+    msg.type === 'set-config' && msg.requestId === unknownConfigSourceRequestId);
+  receiver.send(JSON.stringify({
+    type: 'set-config', requestId: unknownConfigSourceRequestId, targetDeviceId: 'detector-control-test',
+    targetSourceId: 'fourth', key: 'confidence', value: '0.65',
+  }));
+  assert.equal((await reusedConfigRelayPromise).targetSourceId, 'fourth');
 
   const replayAckPromise = waitForMessage(receiver, msg =>
     msg.type === 'command-ack' && msg.phase === 'completed' && msg.requestId === configRequestId);
@@ -227,6 +344,18 @@ test('keeps resident identity separate and routes lifecycle commands only to it'
   const listed = (await listPromise).devices.find((d: any) => d.deviceId === 'resident-control-test');
   assert.deepEqual(listed.capabilities, ['app-lifecycle-control']);
   assert.equal(listed.isMonitoring, false);
+
+  const businessRequestId = 'business-to-resident-1234';
+  const businessAckPromise = waitForMessage(receiver, msg =>
+    msg.type === 'command-ack' && msg.requestId === businessRequestId);
+  const businessNotRelayedPromise = expectNoMessage(resident, msg =>
+    msg.type === 'command' && msg.requestId === businessRequestId);
+  receiver.send(JSON.stringify({
+    type: 'command', requestId: businessRequestId,
+    targetDeviceId: 'resident-control-test', command: 'pause',
+  }));
+  assert.equal((await businessAckPromise).reason, '设备离线');
+  await businessNotRelayedPromise;
 
   const requestId = 'resident-request-12345678';
   const relayPromise = waitForMessage(resident, msg => msg.type === 'command' && msg.requestId === requestId);
