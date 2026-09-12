@@ -1,8 +1,17 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs';
 import test from 'node:test';
 import WebSocket, { WebSocketServer } from 'ws';
 
 process.env.API_KEY = 'control-request-test-key';
+process.env.VISIONGUARD_CHANNEL = 'test-vnext';
+const alertStorePath = path.join(os.tmpdir(), `visionguard-alert-store-${process.pid}.json`);
+process.env.ALERT_STORE_PATH = alertStorePath;
+test.after(() => { try { fs.rmSync(alertStorePath, { force: true }); } catch {} });
+test.after(() => { try { fs.rmSync(`${alertStorePath}.tmp`, { force: true }); } catch {} });
 
 const { associateScreenshotPayload, handleConnection } = require('../src/services/ConnectionManager') as typeof import('../src/services/ConnectionManager');
 
@@ -21,6 +30,73 @@ test('associates screenshot identity from the authoritative alert record', () =>
   assert.equal(associated?.deviceId, 'detector-1');
   assert.equal(associated?.sourceId, 'window-2');
   assert.equal(associated?.sourceName, 'Back Door');
+});
+
+test('acknowledges durable alerts and suppresses retry duplicates', async (t) => {
+  const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+  wss.on('connection', handleConnection);
+  await new Promise<void>((resolve) => wss.once('listening', resolve));
+  const address = wss.address();
+  assert.ok(address && typeof address === 'object');
+
+  const detector = await connect(address.port);
+  const receiver = await connect(address.port);
+  const foreign = await connect(address.port);
+  t.after(() => { detector.terminate(); receiver.terminate(); foreign.terminate(); wss.close(); });
+
+  const foreignAuth = waitForMessage(foreign, msg => msg.type === 'auth-result');
+  foreign.send(JSON.stringify({
+    type: 'auth', channel: 'legacy-live', apiKey: process.env.API_KEY, role: 'android',
+    deviceId: 'foreign-channel-receiver', deviceName: 'Foreign Receiver',
+  }));
+  assert.deepEqual(await foreignAuth, { type: 'auth-result', success: false, reason: 'channel mismatch' });
+
+  const detectorAuth = waitForMessage(detector, msg => msg.type === 'auth-result');
+  detector.send(JSON.stringify({
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY, role: 'windows',
+    deviceId: 'alert-retry-detector', deviceName: 'Alert Retry Detector',
+  }));
+  assert.equal((await detectorAuth).success, true);
+
+  const receiverAuth = waitForMessage(receiver, msg => msg.type === 'auth-result');
+  receiver.send(JSON.stringify({
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY, role: 'android',
+    deviceId: 'alert-retry-receiver', deviceName: 'Alert Retry Receiver',
+  }));
+  assert.equal((await receiverAuth).success, true);
+
+  const alertId = crypto.randomUUID();
+  const alert = {
+    type: 'alert', alertId, deviceId: 'spoofed', deviceName: 'Spoofed',
+    sourceId: 'front', sourceName: 'Front', timestamp: new Date().toISOString(),
+    detections: [{ label: 'person', confidence: 0.9, bbox: { x: 1, y: 2, w: 3, h: 4 } }],
+  };
+  const firstDelivery = waitForMessage(receiver, msg => msg.type === 'alert' && msg.alertId === alertId);
+  const firstAck = waitForMessage(detector, msg => msg.type === 'alert-ack' && msg.alertId === alertId);
+  detector.send(JSON.stringify(alert));
+  assert.equal((await firstDelivery).deviceId, 'alert-retry-detector');
+  const stored = await firstAck;
+  assert.equal(stored.type, 'alert-ack');
+  assert.equal(stored.alertId, alertId);
+  assert.equal(stored.accepted, true);
+  assert.equal(stored.duplicate, false);
+  assert.equal(stored.reason, 'stored');
+  assert.match(stored.serverReceivedAt, /^\d{4}-\d{2}-\d{2}T/);
+
+  const noDuplicateDelivery = expectNoMessage(receiver, msg => msg.type === 'alert' && msg.alertId === alertId);
+  const duplicateAck = waitForMessage(detector, msg => msg.type === 'alert-ack' && msg.alertId === alertId);
+  detector.send(JSON.stringify(alert));
+  const duplicate = await duplicateAck;
+  assert.equal(duplicate.accepted, true);
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.reason, 'duplicate');
+  await noDuplicateDelivery;
+
+  const conflictAck = waitForMessage(detector, msg => msg.type === 'alert-ack' && msg.alertId === alertId);
+  detector.send(JSON.stringify({ ...alert, timestamp: new Date(Date.now() + 1000).toISOString() }));
+  const conflict = await conflictAck;
+  assert.equal(conflict.accepted, false);
+  assert.equal(conflict.reason, 'alert-id-conflict');
 });
 
 function waitForMessage(ws: WebSocket, predicate: (message: any) => boolean): Promise<any> {
@@ -85,21 +161,21 @@ test('correlates detector completion with the requesting receiver', async (t) =>
 
   const detectorAuth = waitForMessage(detector, msg => msg.type === 'auth-result');
   detector.send(JSON.stringify({
-    type: 'auth', apiKey: process.env.API_KEY, role: 'android-detector',
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY, role: 'android-detector',
     deviceId: 'detector-control-test', deviceName: 'Detector', version: '4.4.4',
   }));
   assert.equal((await detectorAuth).success, true);
 
   const receiverAuth = waitForMessage(receiver, msg => msg.type === 'auth-result');
   receiver.send(JSON.stringify({
-    type: 'auth', apiKey: process.env.API_KEY, role: 'android',
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY, role: 'android',
     deviceId: 'receiver-control-test', deviceName: 'Receiver', version: '4.4.4',
   }));
   assert.equal((await receiverAuth).success, true);
 
   const otherReceiverAuth = waitForMessage(otherReceiver, msg => msg.type === 'auth-result');
   otherReceiver.send(JSON.stringify({
-    type: 'auth', apiKey: process.env.API_KEY, role: 'android',
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY, role: 'android',
     deviceId: 'other-receiver-control-test', deviceName: 'Other Receiver', version: '4.4.4',
   }));
   assert.equal((await otherReceiverAuth).success, true);
@@ -324,14 +400,14 @@ test('keeps resident identity separate and routes lifecycle commands only to it'
 
   const residentAuth = waitForMessage(resident, msg => msg.type === 'auth-result');
   resident.send(JSON.stringify({
-    type: 'auth', apiKey: process.env.API_KEY, role: 'windows-resident',
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY, role: 'windows-resident',
     deviceId: 'resident-control-test', deviceName: 'Resident PC',
   }));
   assert.equal((await residentAuth).success, true);
 
   const receiverAuth = waitForMessage(receiver, msg => msg.type === 'auth-result');
   receiver.send(JSON.stringify({
-    type: 'auth', apiKey: process.env.API_KEY, role: 'android',
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY, role: 'android',
     deviceId: 'resident-receiver-test', deviceName: 'Receiver',
   }));
   assert.equal((await receiverAuth).success, true);

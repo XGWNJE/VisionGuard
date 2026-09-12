@@ -52,5 +52,8 @@ namespace VisionGuard.Utils
             try { return _js.Deserialize<T>(json); }
             catch { return default(T); }
         }
+
+        /// <summary>严格反序列化；持久状态损坏时由调用方显式处理，禁止静默回退。</summary>
+        public static T DeserializeStrict<T>(string json) => _js.Deserialize<T>(json);
     }
 }

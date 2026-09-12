@@ -26,10 +26,10 @@ if (localPropertiesFile.exists()) {
 }
 
 fun secretProperty(name: String): String {
-    return localProperties.getProperty(name)
-        ?: sharedSigningProperties.getProperty(name)
-        ?: providers.gradleProperty(name).orNull
+    return providers.gradleProperty(name).orNull
         ?: System.getenv(name)
+        ?: localProperties.getProperty(name)
+        ?: sharedSigningProperties.getProperty(name)
         ?: ""
 }
 
@@ -38,6 +38,9 @@ fun quotedBuildConfigString(value: String): String {
 }
 
 val visionguardApiKey = secretProperty("VISIONGUARD_API_KEY")
+val visionguardServerUrl = secretProperty("VISIONGUARD_SERVER_URL")
+    .ifBlank { "https://visionguard.xgwnje.cn" }
+val visionguardChannel = secretProperty("VISIONGUARD_CHANNEL").ifBlank { "vnext" }
 
 fun signingProperty(environmentName: String, legacyName: String): String {
     return System.getenv(environmentName)?.takeIf { it.isNotBlank() }
@@ -105,6 +108,8 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "API_KEY", quotedBuildConfigString(visionguardApiKey))
+        buildConfigField("String", "SERVER_URL", quotedBuildConfigString(visionguardServerUrl))
+        buildConfigField("String", "CHANNEL", quotedBuildConfigString(visionguardChannel))
     }
 
     signingConfigs {

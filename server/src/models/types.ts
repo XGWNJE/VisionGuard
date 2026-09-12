@@ -42,6 +42,7 @@ export interface AlertRecord {
 /** 客户端 → 服务器：认证 */
 export interface WsAuthMessage {
   type: 'auth';
+  channel: string;
   apiKey: string;
   role: 'windows' | 'android' | 'android-detector' | 'windows-resident';
   deviceId: string;
@@ -187,6 +188,16 @@ export interface WsSetConfigRelay {
   value: string;
   targetDeviceId: string;
   targetSourceId?: string;
+}
+
+/** 服务器 → 检测端：报警持久化确认；同一 alertId 可安全重试。 */
+export interface WsAlertAck {
+  type: 'alert-ack';
+  alertId: string;
+  accepted: boolean;
+  duplicate: boolean;
+  reason: 'stored' | 'duplicate' | 'alert-id-conflict' | 'storage-failed';
+  serverReceivedAt: string;
 }
 
 /** 客户端 → 服务器：主动断开原因 */

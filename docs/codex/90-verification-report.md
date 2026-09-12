@@ -15,7 +15,11 @@
 | 范围 | 状态 | 本次证据能证明什么 | 证据 |
 |---|---|---|---|
 | 文档与治理审核 | 已自动验证（本次运行） | Markdown 链接/锚点、编码、版本、组件、入口、Skill 和产品边界符合契约 | `node scripts/check-docs.js`；本文件所在提交后的命令输出 |
-| Server 单测与协议测试 | 已自动验证 | Server 配置、告警/截图安全、控制请求关联和 WS 协议测试通过 | `npm --prefix server test`；`server/dist/index.js` |
+| Server 单测与协议测试 | 已自动验证（本次运行） | 14 项测试通过；覆盖通道不匹配拒绝、报警落盘后 ACK、重复重试不广播、同 ID 冲突拒绝、告警/截图安全和控制请求关联 | `npm --prefix server test`；`server/dist/index.js` |
+| 新协议隔离测试通道 | 已自动验证（本次运行） | 独立 Server 进程使用临时端口和独立数据目录启动，`/health` 返回指定 `vnext-runtime-smoke` 通道；协议测试证明其他通道认证被拒绝 | `scripts/start-isolated-test-server.ps1`；本次本地运行输出；`server/test/control-request.test.ts` |
+| Windows 报警可靠发件箱 | 已自动验证（单元/构建） | WPF 队列跨实例保留、同 ID 替换、ACK 后持久删除、损坏文件隔离均通过；WPF/WinForms Release 编译通过。尚未执行真实断网重连和跨进程截图链 | `dotnet run --project tests/WindowsConfig.Tests/WindowsConfig.Tests.csproj -c Release`；`visionguard-build -Target WPF`；`visionguard-build -Target WinForms` |
+| Android 接收端控制完成语义 | 已自动验证（单元/构建） | 只把字段完整的 `completed` 回执映射为结构化结果，缺失阶段的旧载荷被拒绝；Debug 单测与 APK 构建通过 | `receiver/android/gradlew.bat testDebugUnitTest assembleDebug` |
+| WPF → 隔离 Server → Android 接收端报警链 | 已自动验证（确定性传输链） | `WpfAlertChain.Probe` 复用生产 WPF `ServerPushService` 发送 `person` 报警与真实 PNG；Server 完成落盘、ACK、广播和截图备份，Android API 36 模拟器认证隔离通道、收到报警并缓存同一 `alertId` 截图，界面可检索到探针报警。修复发件箱按通道分区后复测只新增一条记录。该测试与同轮四窗口人员推理分别通过，但尚未把推理触发与传输探针合成一个进程内测试 | `artifacts/e2e/20260912-234853/summary.json`；`tests/WpfAlertChain.Probe/`；隔离数据 `.local/e2e-server/vnext-e2e/alerts.json`；模拟器日志中的 `6c5dc71a-7c83-4cb5-ae57-0ff82ee89c35` |
 | ServerBuild | 已自动验证 | TypeScript 编译成功且 `server/dist/index.js` 存在；不是 HTTP/WS 运行 E2E | `artifacts/e2e/20260910-063530/summary.json`、`server-build.txt` |
 | WPF 四路真实窗口人员推理 | 已自动验证（本次运行） | 四个独立可见浏览器窗口经固定 `WindowHandle` 捕获，避免动态标题竞态；每路至少 30 帧、`person` 命中且实际 3 FPS，并通过停止/重配隔离、移动缩放、遮挡、最小化故障隔离与恢复、关闭隔离、CPU 多路拒绝、DirectML 初始化回退和运行期故障全局停机 | `artifacts/e2e/20260912-170807/summary.json`、`artifacts/e2e/20260912-170807/wpf-person-detection.json` |
 | WPF 三路人员图片推理 | 已自动验证 | 三张含人图片每路至少一帧 `person`，并通过停止隔离、配置隔离、DirectML 失败回退和 CPU 多路拒绝 | `artifacts/e2e/20260910-063535/summary.json`、`artifacts/e2e/20260910-063535/wpf-person-detection.json` |
@@ -33,7 +37,7 @@
 ## 当前实现与未来能力边界
 
 - 当前 Server 维护 WS 认证、心跳、告警广播、截图/更新路由和连接在线状态；`online=false` 不等于 `DeviceOfflineAlert` 已生成或送达。
-- `DeviceOfflineAlert`、权威多租户事件存储、可靠 outbox/逐接收端 ACK、独立 Web Management Console、Linux Edge Detector、多传感器融合和 Qualcomm QNN/NCNN 加速仍属于路线图范围；Android NNAPI 已有小米 15 的局部实际 provider 证据，但尚未完成 V4 闭环验收。
+- `DeviceOfflineAlert`、权威多租户事件存储、逐接收端 inbox/ACK、独立 Web Management Console、Linux Edge Detector、多传感器融合和 Qualcomm QNN/NCNN 加速仍属于路线图范围；Windows 检测端到 Server 的持久 outbox/幂等 ACK 已实现，但不等于接收端离线可靠投递完成。
 - WPF 四个静态图片窗口 smoke 证明真实 `WindowHandle` 捕获和人员推理，但不证明动态业务视频、报警截图、中继链路、长时稳定性或 UI 外观。
 - Android 启动 smoke 不证明摄像头推理、模型下载、Server 连接或接收端展示的完整链路。
 - Release 构建不等于正式发行包已通过；正式发行还需要签名、ZIP 清洁度、元数据、上传/部署和公网验证。
@@ -42,7 +46,7 @@
 
 1. Windows 四路现代化 UI 的视觉层级、品牌配色和高 DPI 表现仍待 owner 目检；动态窗口移动缩放、遮挡、关闭、最小化故障隔离及恢复已自动验证。
 2. Android 检测端与接收端的真机 UI、归一化模型正式下载、摄像头长时运行、网络切换和温升/资源表现：仍待真机验收。
-3. 检测端 → Server → Android 接收端的真实报警、截图归属、重复/重试、离线恢复和 ACK：完整 E2E 尚未执行。
+3. WPF 生产传输服务 → Server → Android 接收端的报警、截图归属和 ACK 已在隔离通道自动贯通；仍需补推理自然触发到传输的单进程测试、真实断网恢复、接收端离线补发和真机通知验收。
 4. Win7 SP1 x64 下 Windows 驻留程序与 WinForms 的安装、TLS/WSS、进程握手、网络/休眠恢复和退出清理：待目标环境；驻留 Win7 兼容是路线图硬门槛，当前未实现。
 5. 生产 VPS、正式发行 ZIP/APK、发布回滚和公网更新接口：本次治理未执行。
 

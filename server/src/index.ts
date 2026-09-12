@@ -47,7 +47,7 @@ const healthLimiter = rateLimit({
   message: { ok: false, error: 'too many requests' },
 });
 app.get('/health', healthLimiter, (_req, res) => {
-  res.json({ ok: true, uptime: process.uptime() });
+  res.json({ ok: true, channel: config.channelId, uptime: process.uptime() });
 });
 
 // 路由
@@ -90,6 +90,7 @@ startCleanupTimer();
 
 server.listen(config.port, config.host, () => {
   console.log(`[server] VisionGuard Server v4.4.4 已启动`);
+  console.log(`[server] 隔离通道: ${config.channelId} / 数据目录: ${config.dataDir}`);
   console.log(`[server] HTTP + WS 监听地址: ${config.host}:${config.port}`);
   console.log(`[server] 截图模式: 内嵌 Base64 自动推送 (无 HTTP 文件存储)`);
   console.log(`[server] 报警记录 TTL: ${config.alertTtlHours} 小时`);

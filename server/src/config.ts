@@ -12,6 +12,12 @@ export function parseBindHost(value: string | undefined): string {
 }
 
 export const config = {
+  /** 进程级隔离通道。新协议实例只接受同一通道客户端。 */
+  channelId: (process.env.VISIONGUARD_CHANNEL || 'vnext').trim(),
+
+  /** 运行数据根目录；测试通道必须使用独立目录。 */
+  dataDir: path.resolve(process.env.VISIONGUARD_DATA_DIR || path.resolve(__dirname, '..', 'data')),
+
   /** HTTP/WS bind address; defaults to loopback to prevent direct public exposure. */
   host: parseBindHost(process.env.BIND_HOST),
 
@@ -22,7 +28,7 @@ export const config = {
   apiKey: process.env.API_KEY || '',
 
   /** 截图存储目录 */
-  screenshotDir: path.resolve(__dirname, '..', 'data', 'screenshots'),
+  screenshotDir: path.resolve(process.env.VISIONGUARD_DATA_DIR || path.resolve(__dirname, '..', 'data'), 'screenshots'),
 
   /** 截图过期时间 (小时)，默认 72 小时 */
   screenshotTtlHours: parsePositiveIntEnv('SCREENSHOT_TTL_HOURS', 72, 1, 24 * 365),
@@ -59,6 +65,10 @@ export const config = {
 export function validateConfig(): void {
   if (!config.apiKey) {
     console.error('[config] ❌ API_KEY 未设置，服务器拒绝启动。请在 .env 中配置 API_KEY');
+    process.exit(1);
+  }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(config.channelId)) {
+    console.error('[config] ❌ VISIONGUARD_CHANNEL 必须是 1-64 位安全标识符');
     process.exit(1);
   }
 }

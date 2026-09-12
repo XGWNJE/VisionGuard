@@ -11,6 +11,7 @@ import androidx.lifecycle.ViewModelProvider
 import com.xgwnje.visionguard_android.data.model.DeviceInfo
 import com.xgwnje.visionguard_android.data.model.RemovedDevice
 import com.xgwnje.visionguard_android.service.AlertForegroundService
+import com.xgwnje.visionguard_android.data.model.CommandResult
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -18,7 +19,7 @@ class DeviceViewModel(private val service: AlertForegroundService) : ViewModel()
 
     val devices: StateFlow<List<DeviceInfo>> = service.devices
 
-    val commandAck: SharedFlow<Pair<String, Boolean>> = service.commandAck
+    val commandAck: SharedFlow<CommandResult> = service.commandAck
 
     fun sendCommand(targetDeviceId: String, command: String, targetSourceId: String? = null) {
         service.sendCommand(targetDeviceId, command, targetSourceId)

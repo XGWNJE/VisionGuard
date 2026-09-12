@@ -4,7 +4,10 @@ namespace VisionGuard.Utils
     internal static class AppConfig
     {
         public const string Version = "4.4.4";
-        public const string ServerUrl = "https://visionguard.xgwnje.cn";
+        public static readonly string ServerUrl =
+            System.Environment.GetEnvironmentVariable("VISIONGUARD_SERVER_URL") ?? "https://visionguard.xgwnje.cn";
+        public static readonly string Channel =
+            System.Environment.GetEnvironmentVariable("VISIONGUARD_CHANNEL") ?? "vnext";
         public static readonly string ApiKey = ApiKeyProvider.ResolveFromEnvironment();
 
         /// <summary>运行时设备唯一 ID（UUID，首次生成后持久化到 settings.ini）。</summary>

@@ -60,7 +60,8 @@ internal static class Program
                     ? "wss://" + endpoint[8..]
                     : "ws://" + endpoint[7..];
                 await ws.ConnectAsync(new Uri(endpoint), token);
-                await SendAsync(ws, new { type = "auth", role = "windows-resident", apiKey, config.DeviceId, config.DeviceName }, token);
+                var channel = Environment.GetEnvironmentVariable("VISIONGUARD_CHANNEL") ?? "vnext";
+                await SendAsync(ws, new { type = "auth", channel, role = "windows-resident", apiKey, config.DeviceId, config.DeviceName }, token);
                 await SessionAsync(ws, config, token);
                 delay = TimeSpan.FromSeconds(1);
             }

@@ -12,7 +12,9 @@ import { config } from '../config';
 import type { AlertRecord } from '../models/types';
 
 /** 持久化文件路径 */
-const PERSIST_PATH = path.resolve(process.cwd(), 'data', 'alerts.json');
+const PERSIST_PATH = process.env.ALERT_STORE_PATH
+  ? path.resolve(process.env.ALERT_STORE_PATH)
+  : path.resolve(config.dataDir, 'alerts.json');
 
 /** deviceId → AlertRecord[] (最多 maxAlertsPerDevice 条) */
 const store = new Map<string, AlertRecord[]>();
@@ -46,27 +48,50 @@ function loadFromDisk(): void {
  * 保存到磁盘（防抖：多次快速写入合并为一次）
  */
 let saveTimer: NodeJS.Timeout | null = null;
+function saveToDisk(): void {
+  const data: Record<string, AlertRecord[]> = {};
+  for (const [deviceId, list] of store) data[deviceId] = list;
+  fs.mkdirSync(path.dirname(PERSIST_PATH), { recursive: true });
+  const tempPath = `${PERSIST_PATH}.tmp`;
+  const fd = fs.openSync(tempPath, 'w');
+  try {
+    fs.writeFileSync(fd, JSON.stringify(data), 'utf-8');
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  fs.renameSync(tempPath, PERSIST_PATH);
+}
+
 function scheduleSaveToDisk(): void {
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = null;
-    try {
-      const data: Record<string, AlertRecord[]> = {};
-      for (const [deviceId, list] of store) {
-        data[deviceId] = list;
-      }
-      fs.mkdirSync(path.dirname(PERSIST_PATH), { recursive: true });
-      fs.writeFileSync(PERSIST_PATH, JSON.stringify(data), 'utf-8');
-    } catch (err: any) {
-      console.warn(`[alert-store] 磁盘保存失败: ${err.message}`);
-    }
+    try { saveToDisk(); }
+    catch (err: any) { console.warn(`[alert-store] 磁盘保存失败: ${err.message}`); }
   }, 500);
 }
 
 /**
  * 添加报警记录，超出上限时淘汰最旧的
  */
-export function addAlert(record: AlertRecord): void {
+export type AddAlertResult = 'stored' | 'duplicate' | 'conflict';
+
+function isSameAlert(existing: AlertRecord, incoming: AlertRecord): boolean {
+  return existing.deviceId === incoming.deviceId
+    && existing.sourceId === incoming.sourceId
+    && existing.timestamp === incoming.timestamp
+    && JSON.stringify(existing.detections) === JSON.stringify(incoming.detections);
+}
+
+export function addAlert(record: AlertRecord): AddAlertResult {
+  const existing = getAlertById(record.alertId);
+  if (existing) {
+    if (!isSameAlert(existing, record)) return 'conflict';
+    saveToDisk();
+    return 'duplicate';
+  }
+
   if (!record.screenshotPath) {
     const backedUpScreenshot = path.join(config.screenshotDir, `${record.alertId}.jpg`);
     if (fs.existsSync(backedUpScreenshot)) {
@@ -74,16 +99,18 @@ export function addAlert(record: AlertRecord): void {
     }
   }
 
-  let list = store.get(record.deviceId);
-  if (!list) {
-    list = [];
-    store.set(record.deviceId, list);
+  const previous = store.get(record.deviceId);
+  const next = [...(previous ?? []), record].slice(-config.maxAlertsPerDevice);
+  store.set(record.deviceId, next);
+  try {
+    // alert-ack 只能在记录写入磁盘并完成 fsync 后发送，避免把内存接收误报为持久化成功。
+    saveToDisk();
+  } catch (error) {
+    if (previous) store.set(record.deviceId, previous);
+    else store.delete(record.deviceId);
+    throw error;
   }
-  list.push(record);
-  if (list.length > config.maxAlertsPerDevice) {
-    list.shift();
-  }
-  scheduleSaveToDisk();
+  return 'stored';
 }
 
 export function markAlertScreenshot(alertId: string, screenshotPath: string): boolean {

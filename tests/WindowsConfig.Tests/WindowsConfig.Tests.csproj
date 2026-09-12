@@ -16,6 +16,7 @@
     <Compile Include="..\..\detector\windows-wpf\Capture\WindowCapturer.cs" Link="WindowCapturer.cs" />
     <Compile Include="..\..\detector\windows-wpf\Capture\WindowMatchResolver.cs" Link="WindowMatchResolver.cs" />
     <Compile Include="..\..\detector\windows-wpf\Services\MonitorFailurePolicy.cs" Link="MonitorFailurePolicy.cs" />
+    <Compile Include="..\..\detector\windows-wpf\Services\AlertOutbox.cs" Link="AlertOutbox.cs" />
   </ItemGroup>
 
   <ItemGroup>

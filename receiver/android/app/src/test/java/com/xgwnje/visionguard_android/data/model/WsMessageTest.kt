@@ -22,14 +22,28 @@ class WsMessageTest {
     }
 
     @Test
-    fun commandAckDefaultsLegacyPayloadToCompletedPhase() {
+    fun commandAckRejectsPayloadWithoutExplicitCompletionPhase() {
         val ack = gson.fromJson(
             """{"type":"command-ack","command":"pause","success":true}""",
             WsCommandAck::class.java
         )
 
         assertEquals("", ack.requestId)
-        assertEquals("completed", ack.phase)
+        assertEquals("", ack.phase)
+        assertEquals(null, ack.toCompletedResult())
+    }
+
+    @Test
+    fun completedCommandAckMapsToStructuredResult() {
+        val ack = gson.fromJson(
+            """{"type":"command-ack","requestId":"r1","phase":"completed","targetDeviceId":"d1","targetSourceId":"front","command":"pause","success":false,"reason":"busy"}""",
+            WsCommandAck::class.java
+        )
+
+        assertEquals(
+            CommandResult("r1", "d1", "front", "pause", false, "busy"),
+            ack.toCompletedResult()
+        )
     }
 
     @Test

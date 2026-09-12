@@ -66,10 +66,12 @@ visionguard.xgwnje.cn:443
 - WS 认证存在超时控制，当前实现为 5000ms
 - 检测端心跳最多保留四个来源；第五个及以后被截断。逐来源命令与参数调整只接受最近一次心跳中存在的 `targetSourceId`。
 - 业务控制命令只允许 `pause`、`resume`、`stop-alarm`；驻留生命周期只允许四个既定打开/关闭命令。无效命令或来源不会占用 `requestId`。
+- 新协议 Server 实例由 `VISIONGUARD_CHANNEL` 标识隔离域，认证消息必须携带完全一致的 `channel`；错误或缺失通道直接拒绝。测试实例使用独立端口、进程和 `VISIONGUARD_DATA_DIR`，因此连接表、报警、截图和广播不会与仍在线的旧版本混合。
+- WS 报警以 `alertId` 幂等入库：首次报警原子落盘并 `fsync` 后返回 `alert-ack/stored`，相同内容重试返回 `duplicate` 且不重复广播，同 ID 不同内容返回永久 `alert-id-conflict`；临时落盘失败返回 `storage-failed`，检测端保留队列继续重试。
 - `visionguard.xgwnje.cn` 当前用于 VisionGuard 服务，公网 443 由 Nginx stream 共享，HTTPS 虚拟主机监听 `127.0.0.1:9443`
 - 当前 VPS 使用共享证书目录 `/etc/letsencrypt/live/xgwnje.cn/`
 - 历史公网 smoke 与 Android 接收端实机启动记录见[验证报告](90-verification-report.md)；这些记录不等同于当前生产状态或完整真实告警链路
-- 根域 `/releases/*` 仅作为旧客户端更新兼容入口，新配置不应继续写入根域
+- 根域 `/releases/*` 仅作为既有线上版本入口，新协议测试通道不使用该入口
 
 ## 写文档时要避免的点
 

@@ -54,6 +54,7 @@ namespace VisionGuard.Services
         private WsState _state = WsState.Disconnected;
         private Session _session;
         private Timer _backoffTimer;
+        private readonly AlertOutbox _alertOutbox = new AlertOutbox();
 
         // ── 事件循环 ────────────────────────────────────────────────
         private readonly BlockingCollection<Action> _events = new BlockingCollection<Action>();
@@ -82,6 +83,8 @@ namespace VisionGuard.Services
 
         public ServerPushService()
         {
+            if (!string.IsNullOrWhiteSpace(_alertOutbox.RecoveryWarning))
+                LogManager.StaticWarn($"[Server] {_alertOutbox.RecoveryWarning}");
             _loopThread = new Thread(EventLoop) { IsBackground = true, Name = "VG_WsEventLoop" };
             _loopThread.Start();
 
@@ -181,37 +184,45 @@ namespace VisionGuard.Services
         public void PushAlert(AlertEvent alert)
         {
             if (alert == null) return;
-
-            var s = _session;
-            if (s != null)
+            var msg = new Dictionary<string, object>
             {
-                var msg = new Dictionary<string, object>
-                {
-                    ["type"] = "alert",
-                    ["alertId"] = alert.AlertId,
-                    ["deviceId"] = _deviceId,
-                    ["deviceName"] = _deviceName,
-                    ["sourceId"] = alert.SourceId,
-                    ["sourceName"] = alert.SourceName,
-                    ["timestamp"] = alert.Timestamp.ToString("o"),
-                    ["detections"] = BuildDetectionsPayload(alert.Detections),
-                    ["timings"] = alert.Timings,
-                    ["capturedAt"] = NtpSync.UtcNow.ToString("o"),
-                };
+                ["type"] = "alert", ["alertId"] = alert.AlertId,
+                ["deviceId"] = _deviceId, ["deviceName"] = _deviceName,
+                ["sourceId"] = alert.SourceId, ["sourceName"] = alert.SourceName,
+                ["timestamp"] = alert.Timestamp.ToString("o"),
+                ["detections"] = BuildDetectionsPayload(alert.Detections),
+                ["timings"] = alert.Timings, ["capturedAt"] = NtpSync.UtcNow.ToString("o"),
+            };
+            _alertOutbox.Enqueue(alert.AlertId, SimpleJson.ToJson(msg));
+            LogManager.StaticInfo($"[Server] 报警已进入持久发件箱: alertId={alert.AlertId}, pending={_alertOutbox.Snapshot().Count}");
+            Post(FlushAlertOutbox);
+        }
 
-                // 协议分离: alert 元数据先发(最高优先级)
-                var labels = string.Join(",", alert.Detections.Select(d => d.Label));
-                var totalMs = alert.Timings.TryGetValue("totalProcessMs", out var t) ? $"{t}ms" : "N/A";
-                if (s.SendJson(msg))
+        private void FlushAlertOutbox()
+        {
+            var session = _session;
+            if (_state != WsState.Connected || session == null) return;
+            foreach (var entry in _alertOutbox.Snapshot())
+                if (!session.SendRawJson(entry.PayloadJson)) break;
+        }
+
+        private void OnAlertAck(Session session, string alertId, bool accepted, bool duplicate, string reason)
+        {
+            if (session != _session || string.IsNullOrWhiteSpace(alertId)) return;
+            if (!accepted)
+            {
+                if (reason == "alert-id-conflict")
                 {
-                    LogManager.StaticInfo($"[Server] 报警已推送: alertId={alert.AlertId}, targets={alert.Detections.Count}, [{labels}], total={totalMs}");
-                    // 截图独立异步推送(复用现有 SendScreenshotData,从磁盘读取避免 Bitmap 生命周期问题)
-                    Task.Run(() => SendScreenshotData(alert.AlertId));
+                    _alertOutbox.Acknowledge(alertId);
+                    LogManager.StaticWarn($"[Server] 报警 ID 冲突并移出发件箱: alertId={alertId}");
                 }
-                else
-                {
-                    LogManager.StaticWarn($"[Server] 报警推送失败 alertId={alert.AlertId}");
-                }
+                else LogManager.StaticWarn($"[Server] 报警暂未持久化，将继续重试: alertId={alertId}, reason={reason}");
+                return;
+            }
+            if (_alertOutbox.Acknowledge(alertId))
+            {
+                LogManager.StaticInfo($"[Server] 报警持久化已确认: alertId={alertId}, duplicate={duplicate}");
+                Task.Run(() => SendScreenshotData(alertId));
             }
         }
 
@@ -458,6 +469,7 @@ namespace VisionGuard.Services
             s.SendJson(new Dictionary<string, object>
             {
                 ["type"] = "auth",
+                ["channel"] = AppConfig.Channel,
                 ["apiKey"] = _apiKey,
                 ["role"] = "windows",
                 ["deviceId"] = _deviceId,
@@ -475,6 +487,7 @@ namespace VisionGuard.Services
                 _attempt = 0;
                 SetState(WsState.Connected);
                 s.StartHeartbeat();
+                FlushAlertOutbox();
             }
             else
             {
@@ -802,6 +815,18 @@ namespace VisionGuard.Services
                                 Task.Run(() => _parent.SendScreenshotData(alertId));
                             break;
                         }
+                        case "alert-ack":
+                        {
+                            string alertId = SimpleJson.GetString(d, "alertId");
+                            bool accepted = d.TryGetValue("accepted", out object? av) && av is bool acceptedValue && acceptedValue;
+                            bool duplicate = d.TryGetValue("duplicate", out object? dv) && dv is bool duplicateValue && duplicateValue;
+                            string reason = SimpleJson.GetString(d, "reason");
+                            _parent.Post(() => _parent.OnAlertAck(this, alertId, accepted, duplicate, reason));
+                            break;
+                        }
+                        case "heartbeat-ack":
+                            _parent.Post(_parent.FlushAlertOutbox);
+                            break;
                     }
                 }
                 catch { }
@@ -829,6 +854,26 @@ namespace VisionGuard.Services
                     catch (Exception ex)
                     {
                         LogManager.StaticWarn($"[Server] WS 发送异常: {ex.Message}");
+                        return false;
+                    }
+                }
+            }
+
+            public bool SendRawJson(string json)
+            {
+                if (_shutdown || string.IsNullOrWhiteSpace(json)) return false;
+                lock (_sendLock)
+                {
+                    if (_ws == null || _ws.State != WebSocketState.Open) return false;
+                    try
+                    {
+                        var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+                        var task = _ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, _cts.Token);
+                        return task.Wait(SEND_TIMEOUT_MS);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogManager.StaticWarn($"[Server] WS 重发异常: {ex.Message}");
                         return false;
                     }
                 }

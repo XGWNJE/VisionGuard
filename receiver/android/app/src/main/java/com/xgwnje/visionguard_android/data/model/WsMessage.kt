@@ -7,6 +7,7 @@ package com.xgwnje.visionguard_android.data.model
 // └─────────────────────────────────────────────────────────┘
 
 import com.google.gson.JsonObject
+import com.xgwnje.visionguard_android.AppConstants
 import com.xgwnje.visionguard_android.BuildConfig
 
 /** 所有 WS 消息的原始容器；先按 type 字段决定具体类型 */
@@ -17,6 +18,7 @@ data class RawWsMessage(
 /** Android → 服务器：认证 */
 data class WsAuthMessage(
     val type: String = "auth",
+    val channel: String = AppConstants.CHANNEL,
     val apiKey: String,
     val role: String = "android",
     val deviceId: String,
@@ -54,13 +56,27 @@ data class WsSetConfigMessage(
 data class WsCommandAck(
     val type: String = "command-ack",
     val requestId: String = "",
-    val phase: String = "completed",
+    val phase: String = "",
     val targetDeviceId: String = "",
     val targetSourceId: String? = null,
     val command: String = "",
     val success: Boolean = false,
     val reason: String = ""
 )
+
+data class CommandResult(
+    val requestId: String,
+    val targetDeviceId: String,
+    val targetSourceId: String?,
+    val command: String,
+    val success: Boolean,
+    val reason: String
+)
+
+fun WsCommandAck.toCompletedResult(): CommandResult? {
+    if (phase != "completed" || requestId.isBlank() || targetDeviceId.isBlank() || command.isBlank()) return null
+    return CommandResult(requestId, targetDeviceId, targetSourceId, command, success, reason)
+}
 
 /** Android → 服务器：请求指定设备的截图 */
 data class WsScreenshotDataMessage(

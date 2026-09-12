@@ -135,6 +135,8 @@ namespace VisionGuard
 
         private string ResolveServerUrlForCurrentSystem()
         {
+            string overrideUrl = Environment.GetEnvironmentVariable("VISIONGUARD_SERVER_URL");
+            if (!string.IsNullOrWhiteSpace(overrideUrl)) return overrideUrl.TrimEnd('/');
             bool enabled = SettingsStore.GetBool("UseLegacyTlsTunnel", false);
             if (!enabled)
                 return ServerUrl;

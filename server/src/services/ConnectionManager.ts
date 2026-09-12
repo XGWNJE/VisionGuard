@@ -11,7 +11,7 @@ import fs from 'fs';
 import path from 'path';
 import { config } from '../config';
 import { validateApiKey } from '../middleware/auth';
-import { addAlert, getAlertById, markAlertScreenshot } from '../services/AlertStore';
+import { addAlert, getAlertById, markAlertScreenshot, type AddAlertResult } from '../services/AlertStore';
 import { isValidSetConfigKey, validateSetConfigValue } from '../services/ControlProtocol';
 import { getSafeScreenshotPath, isSafeAlertId, validateAlertMeta, validateImageMagic } from '../utils/security';
 import type {
@@ -460,17 +460,39 @@ export function handleConnection(ws: WebSocket): void {
           const createdAt = Date.now();
           alert.serverReceivedAt = new Date(createdAt).toISOString();
           alert.createdAt = createdAt;
-          addAlert({
-            alertId: alert.alertId,
-            deviceId: alert.deviceId,
-            deviceName: alert.deviceName,
-            sourceId: alert.sourceId,
-            sourceName: alert.sourceName,
-            timestamp: alert.timestamp,
-            detections: alert.detections,
-            createdAt,
-          });
-          broadcastAlert(alert);
+          let insertResult: AddAlertResult;
+          try {
+            insertResult = addAlert({
+              alertId: alert.alertId,
+              deviceId: alert.deviceId,
+              deviceName: alert.deviceName,
+              sourceId: alert.sourceId,
+              sourceName: alert.sourceName,
+              timestamp: alert.timestamp,
+              detections: alert.detections,
+              createdAt,
+            });
+          } catch (error: any) {
+            console.error(`[ws] 报警持久化失败: alertId=${alert.alertId} error=${error?.message ?? error}`);
+            sendJson(ws, {
+              type: 'alert-ack', alertId: alert.alertId, accepted: false, duplicate: false,
+              reason: 'storage-failed', serverReceivedAt: alert.serverReceivedAt,
+            }, `alert-ack:${alert.alertId}`);
+            break;
+          }
+          if (insertResult === 'conflict') {
+            sendJson(ws, {
+              type: 'alert-ack', alertId: alert.alertId, accepted: false, duplicate: false,
+              reason: 'alert-id-conflict', serverReceivedAt: alert.serverReceivedAt,
+            }, `alert-ack:${alert.alertId}`);
+            break;
+          }
+          if (insertResult === 'stored') broadcastAlert(alert);
+          sendJson(ws, {
+            type: 'alert-ack', alertId: alert.alertId, accepted: true,
+            duplicate: insertResult === 'duplicate', reason: insertResult,
+            serverReceivedAt: alert.serverReceivedAt,
+          }, `alert-ack:${alert.alertId}`);
         }
         break;
       case 'screenshot-data':
@@ -591,6 +613,13 @@ function handleAuth(
 ): void {
   clearTimeout(authTimer);
   const ts = new Date().toISOString();
+
+  if (msg.channel !== config.channelId) {
+    console.log(`[ws][${ts}] 认证失败: 通道不匹配 expected=${config.channelId} actual=${msg.channel || '<missing>'}`);
+    sendJson(ws, { type: 'auth-result', success: false, reason: 'channel mismatch' });
+    ws.close();
+    return;
+  }
 
   if (!validateApiKey(msg.apiKey)) {
     console.log(`[ws][${ts}] 认证失败: API Key 无效 role=${msg.role} deviceId=${msg.deviceId}`);

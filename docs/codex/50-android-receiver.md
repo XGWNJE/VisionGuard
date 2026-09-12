@@ -35,6 +35,9 @@
 - Server 实时设备记录必须符合当前协议并包含 `modelOptions`、`capabilities`、`components` 和 `sources`；旧格式或集合类型错误的记录直接丢弃并记日志，不进入设备状态列表。
 - 父设备状态按全部来源聚合；只有 `isMonitoring && isReady && error` 为空的来源计为健康运行。四路中三路健康、一条未就绪或报错时显示“部分运行 3/4”，不能误报为全部运行。
 - 多来源设备继续禁用旧整机启停入口；逐来源命令和参数调整携带稳定 `targetSourceId`。
+- 控制结果只接受显式 `phase=completed` 且包含 `requestId`、目标设备和命令的结构化回执；缺字段或仅转发阶段不会向用户显示成执行完成。
+- Server 地址与隔离通道由 Gradle 注入 `BuildConfig.SERVER_URL` 和 `BuildConfig.CHANNEL`；测试 APK 可连接独立 Server 进程，不接收其他通道的设备、报警或控制结果。
+- 显式 Gradle 属性或环境变量优先于本地默认配置，避免测试包误连线上；仅 `src/debug/AndroidManifest.xml` 允许本机模拟器使用明文 HTTP/WS，Release 清单不放宽 HTTPS/WSS。
 
 ## 已验证事实
 

@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using VisionGuard.Capture;
 using VisionGuard.Services;
@@ -75,6 +76,25 @@ internal static class Program
             "a capture failure must remain isolated to its source");
         AssertFalse(MonitorFailurePolicy.RequiresGlobalStop(MonitorFailureKind.Inference, "Cpu"),
             "a CPU inference failure must not be classified as a multi-source GPU fallback risk");
+
+        var outboxDirectory = Path.Combine(Path.GetTempPath(), "visionguard-outbox-test-" + Guid.NewGuid().ToString("N"));
+        var outboxPath = Path.Combine(outboxDirectory, "outbox.json");
+        var outbox = new AlertOutbox(outboxPath);
+        outbox.Enqueue("alert-1", "{\"type\":\"alert\"}");
+        AssertTrue(new AlertOutbox(outboxPath).Snapshot().Single().AlertId == "alert-1",
+            "alert outbox must survive process recreation");
+        outbox.Enqueue("alert-1", "{\"type\":\"alert\",\"retry\":true}");
+        AssertTrue(outbox.Snapshot().Count == 1,
+            "same alert id must replace rather than duplicate an outbox entry");
+        AssertTrue(outbox.Acknowledge("alert-1") && new AlertOutbox(outboxPath).Snapshot().Count == 0,
+            "acknowledged alert must be removed durably");
+        File.WriteAllText(outboxPath, "not-json");
+        var recoveredOutbox = new AlertOutbox(outboxPath);
+        AssertTrue(recoveredOutbox.Snapshot().Count == 0 && !string.IsNullOrWhiteSpace(recoveredOutbox.RecoveryWarning),
+            "a corrupt alert outbox must be isolated and reported explicitly");
+        AssertTrue(Directory.GetFiles(outboxDirectory, "outbox.json.corrupt-*").Length == 1,
+            "a corrupt alert outbox must be preserved for diagnosis");
+        Directory.Delete(outboxDirectory, true);
 
         using (var blackFrame = new System.Drawing.Bitmap(200, 200))
         {

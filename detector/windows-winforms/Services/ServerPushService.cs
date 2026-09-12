@@ -55,6 +55,7 @@ namespace VisionGuard.Services
         // ── 状态（仅事件循环访问） ──────────────────���────────────────
         private WsState _state = WsState.Disconnected;
         private Session _session;
+        private readonly AlertOutbox _alertOutbox = new AlertOutbox();
         private Timer _backoffTimer;
 
         // ── 事件循环 ────────────────────────────────────────────────
@@ -83,6 +84,8 @@ namespace VisionGuard.Services
 
         public ServerPushService()
         {
+            if (!string.IsNullOrWhiteSpace(_alertOutbox.RecoveryWarning))
+                LogManager.StaticWarn("[Server] " + _alertOutbox.RecoveryWarning);
             _loopThread = new Thread(EventLoop) { IsBackground = true, Name = "VG_WsEventLoop" };
             _loopThread.Start();
 
@@ -175,17 +178,6 @@ namespace VisionGuard.Services
         public void PushAlert(AlertEvent alert)
         {
             if (alert == null) return;
-            var s = _session;
-            if (s == null || _state != WsState.Connected)
-            {
-                LogManager.StaticWarn($"[Server] WS 未连接，报警丢弃: {alert.AlertId}");
-                return;
-            }
-            DoPushAlert(s, alert);
-        }
-
-        private void DoPushAlert(Session s, AlertEvent alert)
-        {
             var msg = new Dictionary<string, object>
             {
                 ["type"] = "alert",
@@ -198,18 +190,36 @@ namespace VisionGuard.Services
                 ["capturedAt"] = NtpSync.UtcNow.ToString("o"),
             };
 
-            // 协议分离: alert 元数据先发(最高优先级)
-            var labels = string.Join(",", alert.Detections.Select(d => d.Label));
-            var totalMs = alert.Timings.TryGetValue("totalProcessMs", out var t) ? $"{t}ms" : "N/A";
-            if (s.SendJson(msg))
+            _alertOutbox.Enqueue(alert.AlertId, SimpleJson.ToJson(msg));
+            LogManager.StaticInfo($"[Server] 报警已进入持久发件箱: alertId={alert.AlertId}, pending={_alertOutbox.Snapshot().Length}");
+            Post(FlushAlertOutbox);
+        }
+
+        private void FlushAlertOutbox()
+        {
+            var session = _session;
+            if (_state != WsState.Connected || session == null) return;
+            foreach (var entry in _alertOutbox.Snapshot())
+                if (!session.SendRawJson(entry.PayloadJson)) break;
+        }
+
+        private void OnAlertAck(Session session, string alertId, bool accepted, bool duplicate, string reason)
+        {
+            if (session != _session || string.IsNullOrWhiteSpace(alertId)) return;
+            if (!accepted)
             {
-                LogManager.StaticInfo($"[Server] 报警已推送: alertId={alert.AlertId}, targets={alert.Detections.Count}, [{labels}], total={totalMs}");
-                // 截图独立异步推送(不阻塞 alert,编码失败不影响通知到达)
-                ThreadPool.QueueUserWorkItem(_ => PushScreenshotData(s, alert.AlertId));
+                if (reason == "alert-id-conflict")
+                {
+                    _alertOutbox.Acknowledge(alertId);
+                    LogManager.StaticWarn($"[Server] 报警 ID 冲突并移出发件箱: alertId={alertId}");
+                }
+                else LogManager.StaticWarn($"[Server] 报警暂未持久化，将继续重试: alertId={alertId}, reason={reason}");
+                return;
             }
-            else
+            if (_alertOutbox.Acknowledge(alertId))
             {
-                LogManager.StaticWarn($"[Server] 报警推送失败 alertId={alert.AlertId}");
+                LogManager.StaticInfo($"[Server] 报警持久化已确认: alertId={alertId}, duplicate={duplicate}");
+                ThreadPool.QueueUserWorkItem(_ => PushScreenshotData(session, alertId));
             }
         }
 
@@ -430,6 +440,7 @@ namespace VisionGuard.Services
             s.SendJson(new Dictionary<string, object>
             {
                 ["type"] = "auth",
+                ["channel"] = Environment.GetEnvironmentVariable("VISIONGUARD_CHANNEL") ?? "vnext",
                 ["apiKey"] = _apiKey,
                 ["role"] = "windows",
                 ["deviceId"] = _deviceId,
@@ -447,6 +458,7 @@ namespace VisionGuard.Services
                 _attempt = 0;
                 SetState(WsState.Connected);
                 s.StartHeartbeat();
+                FlushAlertOutbox();
             }
             else
             {
@@ -779,6 +791,18 @@ namespace VisionGuard.Services
                                 ThreadPool.QueueUserWorkItem(_ => _parent.PushScreenshotData(this, alertId));
                             break;
                         }
+                        case "alert-ack":
+                        {
+                            string alertId = SimpleJson.GetString(d, "alertId");
+                            bool accepted = d.TryGetValue("accepted", out object av) && av is bool acceptedValue && acceptedValue;
+                            bool duplicate = d.TryGetValue("duplicate", out object dv) && dv is bool duplicateValue && duplicateValue;
+                            string reason = SimpleJson.GetString(d, "reason", "");
+                            _parent.Post(() => _parent.OnAlertAck(this, alertId, accepted, duplicate, reason));
+                            break;
+                        }
+                        case "heartbeat-ack":
+                            _parent.Post(_parent.FlushAlertOutbox);
+                            break;
                     }
                 }
                 catch (Exception ex)
@@ -793,6 +817,13 @@ namespace VisionGuard.Services
                 string json;
                 try { json = SimpleJson.ToJson(msg); }
                 catch { return false; }
+
+                return SendRawJson(json);
+            }
+
+            public bool SendRawJson(string json)
+            {
+                if (_shutdown || string.IsNullOrWhiteSpace(json)) return false;
 
                 lock (_sendLock)
                 {

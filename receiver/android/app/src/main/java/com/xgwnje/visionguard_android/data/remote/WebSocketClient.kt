@@ -13,6 +13,8 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.xgwnje.visionguard_android.data.model.AlertMessage
+import com.xgwnje.visionguard_android.data.model.CommandResult
+import com.xgwnje.visionguard_android.data.model.toCompletedResult
 import com.xgwnje.visionguard_android.data.model.DeviceInfo
 import com.xgwnje.visionguard_android.data.model.ScreenshotData
 import com.xgwnje.visionguard_android.data.model.WsAuthMessage
@@ -72,8 +74,8 @@ class WebSocketClient {
     private val _onDeviceList = MutableStateFlow<List<DeviceInfo>>(emptyList())
     val onDeviceList: StateFlow<List<DeviceInfo>> = _onDeviceList.asStateFlow()
 
-    private val _onCommandAck = MutableSharedFlow<Pair<String, Boolean>>(extraBufferCapacity = 8)
-    val onCommandAck: SharedFlow<Pair<String, Boolean>> = _onCommandAck
+    private val _onCommandAck = MutableSharedFlow<CommandResult>(extraBufferCapacity = 16)
+    val onCommandAck: SharedFlow<CommandResult> = _onCommandAck
 
     private val _onScreenshotData = MutableSharedFlow<ScreenshotData>(extraBufferCapacity = 8)
     val onScreenshotData: SharedFlow<ScreenshotData> = _onScreenshotData
@@ -519,14 +521,9 @@ class WebSocketClient {
                     _onDeviceList.value = devices
                 }
                 "command-ack" -> {
-                    val cmd = obj.get("command")?.asString ?: ""
-                    val success = obj.get("success")?.asBoolean ?: false
-                    val reason = obj.get("reason")?.asString ?: ""
-                    val phase = obj.get("phase")?.asString ?: "completed"
-                    // 兼容旧 Server 文案，同时以结构化阶段过滤转发确认。
-                    if (phase != "forwarded" && reason != "relayed" && reason != "已转发") {
-                        val display = if (!success && reason.isNotEmpty()) "$cmd（$reason）" else cmd
-                        scope.launch { _onCommandAck.emit(Pair(display, success)) }
+                    val ack = gson.fromJson(text, com.xgwnje.visionguard_android.data.model.WsCommandAck::class.java)
+                    ack.toCompletedResult()?.let { result ->
+                        scope.launch { _onCommandAck.emit(result) }
                     }
                 }
                 "screenshot-data" -> {

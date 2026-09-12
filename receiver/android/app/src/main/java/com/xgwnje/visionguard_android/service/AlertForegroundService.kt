@@ -20,6 +20,7 @@ import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.xgwnje.visionguard_android.AppConstants
 import com.xgwnje.visionguard_android.data.model.AlertMessage
+import com.xgwnje.visionguard_android.data.model.CommandResult
 import com.xgwnje.visionguard_android.data.model.DeviceInfo
 import com.xgwnje.visionguard_android.data.model.RemovedDevice
 import com.xgwnje.visionguard_android.data.model.ScreenshotData
@@ -74,8 +75,8 @@ class AlertForegroundService : LifecycleService() {
     private val _devices = MutableStateFlow<List<DeviceInfo>>(emptyList())
     val devices: StateFlow<List<DeviceInfo>> = _devices
 
-    private val _commandAck = MutableSharedFlow<Pair<String, Boolean>>(extraBufferCapacity = 8)
-    val commandAck: SharedFlow<Pair<String, Boolean>> = _commandAck
+    private val _commandAck = MutableSharedFlow<CommandResult>(extraBufferCapacity = 16)
+    val commandAck: SharedFlow<CommandResult> = _commandAck
 
     // ── 内部状态 ──────────────────────────────────────────────
     private val wsClient = WebSocketClient()

@@ -27,6 +27,22 @@ Windows 发行输出不得包含 `.pdb`、`.lib`、`.dll.config`、`.onnx`、`As
 
 ## 运行与设备验证
 
+新协议端到端测试必须使用独立 Server 进程，不能连接仍承载旧客户端的线上通道。先在当前 PowerShell 进程设置测试密钥，再以前台方式启动：
+
+```powershell
+$env:VISIONGUARD_API_KEY = '<local-test-key>'
+powershell -ExecutionPolicy Bypass -File .\scripts\start-isolated-test-server.ps1 -Port 3100 -Channel vnext-e2e
+```
+
+该入口把数据写入被忽略的 `.local/e2e-server/<channel>/`。WPF、WinForms 和驻留进程使用 `VISIONGUARD_SERVER_URL=http://127.0.0.1:3100` 与同名 `VISIONGUARD_CHANNEL`；模拟器接收端构建使用 `VISIONGUARD_SERVER_URL=http://10.0.2.2:3100`。通道不一致必须认证失败，不能回退到旧协议或公共广播域。
+
+确定性 WPF 报警传输探针复用生产 `ServerPushService`，必须在独立 Server 与接收端已连接后运行：
+
+```powershell
+$env:VISIONGUARD_CHANNEL = 'vnext-e2e'
+dotnet run --project .\tests\WpfAlertChain.Probe\WpfAlertChain.Probe.csproj -c Release -- http://127.0.0.1:3100 '<local-test-key>'
+```
+
 运行验证入口：
 
 ```powershell

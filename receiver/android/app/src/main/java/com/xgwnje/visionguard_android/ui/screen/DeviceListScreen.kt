@@ -93,11 +93,12 @@ fun DeviceListScreen(
     }
 
     LaunchedEffect(Unit) {
-        deviceVm.commandAck.collect { (cmd, success) ->
-            val message = if (success) {
-                "命令已执行：$cmd"
+        deviceVm.commandAck.collect { result ->
+            val target = result.targetSourceId?.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
+            val message = if (result.success) {
+                "已执行：${result.command}$target"
             } else {
-                "命令失败：$cmd"
+                "执行失败：${result.command}$target · ${result.reason}"
             }
             snackbarHost.showSnackbar(message)
         }
