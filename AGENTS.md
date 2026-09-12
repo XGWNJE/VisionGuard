@@ -40,14 +40,14 @@ node --test scripts/check-docs.test.js scripts/release-workflow.test.js
 项目级 Skill 只保留三个有明确脚本或授权边界的流程；操作细节见[运维文档](docs/codex/60-operations.md)：
 
 - `visionguard-build`：调用 `.agents/skills/visionguard-build/scripts/build-all.ps1` 做 Release 编译和产物核验，不发布。
-- `visionguard-e2e`：调用 `.agents/skills/visionguard-e2e/scripts/e2e-smoke.ps1` 做环境发现、ServerBuild、Android 运行烟测和 WPF 四窗口人员推理；不把这些结果称为完整 E2E。
+- `visionguard-e2e`：调用 `.agents/skills/visionguard-e2e/scripts/e2e-smoke.ps1` 做环境发现、ServerBuild、Android 运行烟测和 WPF 多窗口人员推理；不把这些结果称为完整 E2E。
 - `visionguard-release`：调用 `scripts/publish-release.ps1` 做需要明确授权的版本发布、部署和公网验证。
 
 构建、运行烟测、完整 E2E 和发布必须分开报告：
 
 - `ServerBuild` 只证明 Server 编译和 `server/dist/index.js` 存在。
 - Android 启动 smoke 只证明安装、启动、进程/前台服务和观测窗口内无崩溃。
-- WPF 人员窗口 smoke 必须使用四个独立可见窗口，经 `WindowHandle` 捕获并断言每路至少一帧 `person` 和逐路 FPS；静态图片窗口不能替代动态视频。
+- WPF 人员窗口 smoke 必须使用独立可见窗口，经 `WindowHandle` 捕获并断言每路至少一帧 `person` 和逐路 FPS；窗口数量按当次验证覆盖的来源数量确定，四路保留为回归基线；静态图片窗口不能替代动态视频。来源容量扩展落地时同步 smoke 脚本，使其按配置的来源数量取证。
 - 真机 UI、完整检测端→Server→接收端报警链、持续运行和生产状态必须单独列为人工/真机/生产验证。
 
 ## 变更交付
