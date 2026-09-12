@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using VisionGuard.Capture;
+using VisionGuard.Services;
 using VisionGuard.Utils;
 
 internal static class Program
@@ -39,10 +40,71 @@ internal static class Program
         AssertTrue(CaptureSizeConstraints.IsValid(highDpiValid),
             "a 101x101 capture-pixel selection must be accepted at 200% DPI");
 
+        var selectedWindow = new WindowInfo(new IntPtr(1), "监控画面", "Chrome_WidgetWin_1",
+            new System.Drawing.Rectangle(0, 0, 800, 600), 10, "chrome");
+        var sameIdentityNewTitle = new WindowInfo(new IntPtr(2), "监控画面 - 新标题", "Chrome_WidgetWin_1",
+            new System.Drawing.Rectangle(0, 0, 800, 600), 10, "chrome");
+        var exactMatch = WindowMatchResolver.Resolve(
+            new[] { selectedWindow, sameIdentityNewTitle }, "监控画面", "Chrome_WidgetWin_1", "chrome");
+        AssertTrue(exactMatch.Status == WindowMatchStatus.Found && exactMatch.Window?.Handle == new IntPtr(1),
+            "exact title and stable identity must restore the selected window");
+
+        var changedTitleMatch = WindowMatchResolver.Resolve(
+            new[] { sameIdentityNewTitle }, "监控画面", "Chrome_WidgetWin_1", "chrome");
+        AssertTrue(changedTitleMatch.Status == WindowMatchStatus.Found && changedTitleMatch.Window?.Handle == new IntPtr(2),
+            "a unique process and class identity may restore a window after its title changes");
+
+        var ambiguousMatch = WindowMatchResolver.Resolve(
+            new[] { selectedWindow, sameIdentityNewTitle }, "已关闭标题", "Chrome_WidgetWin_1", "chrome");
+        AssertTrue(ambiguousMatch.Status == WindowMatchStatus.Ambiguous && ambiguousMatch.Window == null,
+            "multiple stable-identity candidates must not be rebound silently");
+
+        var duplicateTitleMatch = WindowMatchResolver.Resolve(
+            new[]
+            {
+                selectedWindow,
+                new WindowInfo(new IntPtr(3), "监控画面", "OtherClass", new System.Drawing.Rectangle(0, 0, 800, 600)),
+            },
+            "监控画面", "", "");
+        AssertTrue(duplicateTitleMatch.Status == WindowMatchStatus.Ambiguous,
+            "legacy title-only configuration must reject duplicate window titles");
+
+        AssertTrue(MonitorFailurePolicy.RequiresGlobalStop(MonitorFailureKind.Inference, "DirectML"),
+            "a DirectML inference failure must stop all active sources");
+        AssertFalse(MonitorFailurePolicy.RequiresGlobalStop(MonitorFailureKind.Capture, "DirectML"),
+            "a capture failure must remain isolated to its source");
+        AssertFalse(MonitorFailurePolicy.RequiresGlobalStop(MonitorFailureKind.Inference, "Cpu"),
+            "a CPU inference failure must not be classified as a multi-source GPU fallback risk");
+
+        using (var blackFrame = new System.Drawing.Bitmap(200, 200))
+        {
+            AssertTrue(WindowCapturer.IsLikelyBlack(blackFrame),
+                "an all-black captured frame must be classified as a black-screen fault");
+            blackFrame.SetPixel(40, 100, System.Drawing.Color.White);
+            AssertFalse(WindowCapturer.IsLikelyBlack(blackFrame),
+                "a captured frame with visible sampled content must not be classified as black");
+        }
+
         var visibleWindows = WindowEnumerator.GetWindows(IntPtr.Zero);
         AssertTrue(visibleWindows.All(window => CaptureSizeConstraints.IsValid(window.Bounds)),
             "window enumeration must return only windows whose width and height are above 100");
-        if (args.Length > 0)
+        if (args.Length >= 2 && string.Equals(args[0], "--expect-black", StringComparison.Ordinal))
+        {
+            var blackWindow = visibleWindows.SingleOrDefault(window => string.Equals(window.Title, args[1], StringComparison.Ordinal));
+            AssertTrue(blackWindow != null, "the named black-screen test window must be enumerable");
+            bool blackScreenRejected = false;
+            try
+            {
+                using var ignored = WindowCapturer.CaptureWindow(blackWindow.Handle, System.Drawing.Rectangle.Empty);
+            }
+            catch (CaptureBlackFrameException)
+            {
+                blackScreenRejected = true;
+            }
+            AssertTrue(blackScreenRejected,
+                "an actual all-black PrintWindow result must raise an explicit black-screen fault");
+        }
+        else if (args.Length > 0)
         {
             AssertFalse(visibleWindows.Any(window => string.Equals(window.Title, args[0], StringComparison.Ordinal)),
                 "the named undersized test window must be filtered from enumeration");

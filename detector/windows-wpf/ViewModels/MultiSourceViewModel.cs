@@ -221,6 +221,7 @@ namespace VisionGuard.ViewModels
         private readonly MultiSourceViewModel _owner;
         private readonly int _index;
         private string _sourceName = "", _modelKey = "", _targets = "", _statusText = "未配置", _targetWindowTitle = "";
+        private string _targetWindowClassName = "", _targetWindowProcessName = "", _windowResolutionError = "";
         private int _thresholdPercent, _targetFps, _cooldown;
         private bool _isMonitoring, _isSelected, _isDirty, _syncingTargetOptions;
         private CaptureMode _captureMode;
@@ -311,7 +312,7 @@ namespace VisionGuard.ViewModels
             CancelCommand = new RelayCommand(CancelDraft, () => CanEdit);
             StartCommand = new RelayCommand(Start, () => CanStart);
             StopCommand = new RelayCommand(() => _owner.Stop(this), () => IsMonitoring);
-            StatusText = IsReady ? "就绪" : (!string.IsNullOrWhiteSpace(_targetWindowTitle) ? "窗口未找到" : "未配置");
+            StatusText = IsReady ? "就绪" : (!string.IsNullOrWhiteSpace(_targetWindowTitle) ? (string.IsNullOrWhiteSpace(_windowResolutionError) ? "窗口未找到" : _windowResolutionError) : "未配置");
         }
 
         private string Prefix => $"Signal.{_index}.";
@@ -327,6 +328,8 @@ namespace VisionGuard.ViewModels
             _cooldown = Math.Clamp(SettingsStore.GetInt(Prefix + "Cooldown", 5), 1, 300);
             _captureMode = Enum.TryParse<CaptureMode>(SettingsStore.GetString(Prefix + "CaptureMode", CaptureMode.ScreenRegion.ToString()), out var mode) && mode == CaptureMode.WindowHandle ? CaptureMode.WindowHandle : CaptureMode.ScreenRegion;
             _targetWindowTitle = SettingsStore.GetString(Prefix + "TargetWindowTitle", string.Empty);
+            _targetWindowClassName = SettingsStore.GetString(Prefix + "TargetWindowClassName", string.Empty);
+            _targetWindowProcessName = SettingsStore.GetString(Prefix + "TargetWindowProcessName", string.Empty);
             _screenRegion = ParseRectangle(SettingsStore.GetString(Prefix + "ScreenRegion", string.Empty));
             _windowSubRegion = ParseRectangle(SettingsStore.GetString(Prefix + "WindowSubRegion", string.Empty));
             MaskRegions = ParseMasks(SettingsStore.GetString(Prefix + "Masks", string.Empty));
@@ -383,6 +386,7 @@ namespace VisionGuard.ViewModels
             var config = new MonitorConfig
             {
                 CaptureMode = _captureMode, CaptureRegion = _screenRegion, TargetWindowTitle = _targetWindowTitle,
+                TargetWindowClassName = _targetWindowClassName, TargetWindowProcessName = _targetWindowProcessName,
                 TargetWindowHandle = _targetWindow?.Handle ?? IntPtr.Zero, WindowSubRegion = _windowSubRegion,
                 ConfidenceThreshold = ThresholdPercent / 100f, AlertCooldownSeconds = Cooldown, TargetFps = TargetFps,
                 WatchedClasses = Targets.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.OrdinalIgnoreCase),
@@ -394,7 +398,7 @@ namespace VisionGuard.ViewModels
 
         internal bool ResolveWindowForStart()
         {
-            if (_captureMode == CaptureMode.WindowHandle) { ResolveWindow(); if (_targetWindow == null) { StatusText = "目标窗口不存在或尺寸过小，请重新选择窗口。"; OnPropertyChanged(nameof(IsReady)); return false; } }
+            if (_captureMode == CaptureMode.WindowHandle) { ResolveWindow(); if (_targetWindow == null) { StatusText = _windowResolutionError; OnPropertyChanged(nameof(IsReady)); return false; } }
             if (!IsReady) { StatusText = "采集目标宽度和高度必须都大于 100 像素。"; return false; }
             return true;
         }
@@ -402,10 +406,21 @@ namespace VisionGuard.ViewModels
         private void ResolveWindow()
         {
             _targetWindow = null;
+            _windowResolutionError = "";
             if (_captureMode != CaptureMode.WindowHandle || string.IsNullOrWhiteSpace(_targetWindowTitle)) return;
             var main = Application.Current?.MainWindow;
             var excluded = main == null ? IntPtr.Zero : new System.Windows.Interop.WindowInteropHelper(main).Handle;
-            _targetWindow = WindowEnumerator.GetWindows(excluded).FirstOrDefault(w => w.Title.Equals(_targetWindowTitle, StringComparison.OrdinalIgnoreCase));
+            var match = WindowMatchResolver.Resolve(
+                WindowEnumerator.GetWindows(excluded),
+                _targetWindowTitle,
+                _targetWindowClassName,
+                _targetWindowProcessName);
+            _targetWindow = match.Window;
+            _windowResolutionError = match.Status == WindowMatchStatus.Ambiguous
+                ? "发现多个符合配置的窗口，无法安全自动重绑，请重新选择目标窗口。"
+                : match.Status == WindowMatchStatus.NotFound
+                    ? "目标窗口不存在、已最小化或尺寸过小，请重新选择窗口。"
+                    : "";
         }
 
         private void PickWindow()
@@ -415,6 +430,7 @@ namespace VisionGuard.ViewModels
             var picker = new WindowPickerWindow(excluded) { Owner = main };
             if (picker.ShowDialog() != true || picker.SelectedWindow == null || !ConfirmTargetChange()) return;
             _captureMode = CaptureMode.WindowHandle; _targetWindow = picker.SelectedWindow; _targetWindowTitle = picker.SelectedWindow.Title;
+            _targetWindowClassName = picker.SelectedWindow.ClassName; _targetWindowProcessName = picker.SelectedWindow.ProcessName; _windowResolutionError = "";
             _screenRegion = Rectangle.Empty; _windowSubRegion = Rectangle.Empty; ClearMasksInternal(); NotifyTargetChanged();
         }
 
@@ -429,14 +445,14 @@ namespace VisionGuard.ViewModels
             selector.ShowDialog();
             if (!selector.IsConfirmed || !ConfirmTargetChange()) return;
             if (windowMode) _windowSubRegion = selector.SelectedRegion;
-            else { _captureMode = CaptureMode.ScreenRegion; _screenRegion = selector.SelectedRegion; _targetWindow = null; _targetWindowTitle = string.Empty; _windowSubRegion = Rectangle.Empty; }
+            else { _captureMode = CaptureMode.ScreenRegion; _screenRegion = selector.SelectedRegion; _targetWindow = null; _targetWindowTitle = string.Empty; _targetWindowClassName = string.Empty; _targetWindowProcessName = string.Empty; _windowResolutionError = ""; _windowSubRegion = Rectangle.Empty; }
             ClearMasksInternal(); NotifyTargetChanged();
         }
 
         private void ClearTarget()
         {
             if (!ConfirmTargetChange()) return;
-            _captureMode = CaptureMode.ScreenRegion; _targetWindow = null; _targetWindowTitle = string.Empty;
+            _captureMode = CaptureMode.ScreenRegion; _targetWindow = null; _targetWindowTitle = string.Empty; _targetWindowClassName = string.Empty; _targetWindowProcessName = string.Empty; _windowResolutionError = "";
             _screenRegion = Rectangle.Empty; _windowSubRegion = Rectangle.Empty; ClearMasksInternal(); NotifyTargetChanged();
         }
 
@@ -493,13 +509,14 @@ namespace VisionGuard.ViewModels
         {
             SettingsStore.Set(Prefix + "Initialized", true); SettingsStore.Set(Prefix + "Name", SourceName);
             SettingsStore.Set(Prefix + "CaptureMode", _captureMode.ToString()); SettingsStore.Set(Prefix + "TargetWindowTitle", _targetWindowTitle);
+            SettingsStore.Set(Prefix + "TargetWindowClassName", _targetWindowClassName); SettingsStore.Set(Prefix + "TargetWindowProcessName", _targetWindowProcessName);
             SettingsStore.Set(Prefix + "WindowSubRegion", FormatRectangle(_windowSubRegion)); SettingsStore.Set(Prefix + "ScreenRegion", FormatRectangle(_screenRegion));
             SettingsStore.Set(Prefix + "ModelKey", ModelKey); SettingsStore.Set(Prefix + "Targets", Targets);
             SettingsStore.Set(Prefix + "Threshold", ThresholdPercent); SettingsStore.Set(Prefix + "Fps", TargetFps); SettingsStore.Set(Prefix + "Cooldown", Cooldown);
             SettingsStore.Set(Prefix + "Masks", FormatMasks(MaskRegions));
         }
 
-        private SavedState CaptureState() => new(SourceName, ModelKey, Targets, ThresholdPercent, TargetFps, Cooldown, _captureMode, _targetWindowTitle, _screenRegion, _windowSubRegion, new List<RectangleF>(MaskRegions));
+        private SavedState CaptureState() => new(SourceName, ModelKey, Targets, ThresholdPercent, TargetFps, Cooldown, _captureMode, _targetWindowTitle, _targetWindowClassName, _targetWindowProcessName, _screenRegion, _windowSubRegion, new List<RectangleF>(MaskRegions));
 
         private bool HasUnsavedChanges()
             => SourceName != _saved.SourceName
@@ -510,6 +527,8 @@ namespace VisionGuard.ViewModels
                 || Cooldown != _saved.Cooldown
                 || _captureMode != _saved.CaptureMode
                 || _targetWindowTitle != _saved.TargetWindowTitle
+                || _targetWindowClassName != _saved.TargetWindowClassName
+                || _targetWindowProcessName != _saved.TargetWindowProcessName
                 || _screenRegion != _saved.ScreenRegion
                 || _windowSubRegion != _saved.WindowSubRegion
                 || !MaskRegions.SequenceEqual(_saved.Masks);
@@ -517,11 +536,11 @@ namespace VisionGuard.ViewModels
         private void RefreshIdleStatus()
             => StatusText = IsReady
                 ? (PreviewImage == null ? "就绪" : "已停止 · 保留最后画面")
-                : (!string.IsNullOrWhiteSpace(_targetWindowTitle) ? "窗口未找到" : "未配置");
+                : (!string.IsNullOrWhiteSpace(_targetWindowTitle) ? (string.IsNullOrWhiteSpace(_windowResolutionError) ? "窗口未找到" : _windowResolutionError) : "未配置");
         private void RestoreState(SavedState state)
         {
             SourceName = state.SourceName; ModelKey = state.ModelKey; Targets = state.Targets; ThresholdPercent = state.ThresholdPercent; TargetFps = state.TargetFps; Cooldown = state.Cooldown;
-            _captureMode = state.CaptureMode; _targetWindowTitle = state.TargetWindowTitle; _screenRegion = state.ScreenRegion; _windowSubRegion = state.WindowSubRegion;
+            _captureMode = state.CaptureMode; _targetWindowTitle = state.TargetWindowTitle; _targetWindowClassName = state.TargetWindowClassName; _targetWindowProcessName = state.TargetWindowProcessName; _screenRegion = state.ScreenRegion; _windowSubRegion = state.WindowSubRegion;
             MaskRegions = new List<RectangleF>(state.Masks); ResolveWindow(); IsDirty = false;
             OnPropertyChanged(nameof(TargetInfo)); OnPropertyChanged(nameof(MaskInfo)); OnPropertyChanged(nameof(IsReady)); RaiseCommandStates();
         }
@@ -539,7 +558,7 @@ namespace VisionGuard.ViewModels
                     ? "运行中"
                     : IsDirty
                         ? "配置待保存"
-                        : (IsReady ? (PreviewImage == null ? "就绪" : "已停止 · 保留最后画面") : (!string.IsNullOrWhiteSpace(_targetWindowTitle) ? "窗口未找到" : "未配置"));
+                        : (IsReady ? (PreviewImage == null ? "就绪" : "已停止 · 保留最后画面") : (!string.IsNullOrWhiteSpace(_targetWindowTitle) ? (string.IsNullOrWhiteSpace(_windowResolutionError) ? "窗口未找到" : _windowResolutionError) : "未配置"));
         }
 
         internal void ApplyFrame(BitmapSource image, List<Detection> detections, long inferenceMs)
@@ -591,7 +610,7 @@ namespace VisionGuard.ViewModels
             return result;
         }
         private static string FormatMasks(IEnumerable<RectangleF> masks) => string.Join(";", masks.Select(r => string.Join(",", r.X.ToString("R", System.Globalization.CultureInfo.InvariantCulture), r.Y.ToString("R", System.Globalization.CultureInfo.InvariantCulture), r.Width.ToString("R", System.Globalization.CultureInfo.InvariantCulture), r.Height.ToString("R", System.Globalization.CultureInfo.InvariantCulture))));
-        private sealed record SavedState(string SourceName, string ModelKey, string Targets, int ThresholdPercent, int TargetFps, int Cooldown, CaptureMode CaptureMode, string TargetWindowTitle, Rectangle ScreenRegion, Rectangle WindowSubRegion, List<RectangleF> Masks);
+        private sealed record SavedState(string SourceName, string ModelKey, string Targets, int ThresholdPercent, int TargetFps, int Cooldown, CaptureMode CaptureMode, string TargetWindowTitle, string TargetWindowClassName, string TargetWindowProcessName, Rectangle ScreenRegion, Rectangle WindowSubRegion, List<RectangleF> Masks);
     }
 
     public sealed class DetectionClassOption : ViewModelBase

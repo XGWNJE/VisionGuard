@@ -25,7 +25,8 @@ namespace VisionGuard.Services
     {
         public event EventHandler<FrameResultEventArgs> FrameProcessed;
 
-        private OnnxInferenceEngine  _engine;
+        private IInferenceEngine     _engine;
+        private readonly Func<string, int, InferenceBackend, IInferenceEngine> _engineFactory;
         private AlertService         _alertService;
         private MonitorConfig        _config;
         private Timer                _timer;
@@ -53,9 +54,13 @@ namespace VisionGuard.Services
             }
         }
 
-        public MonitorService(AlertService alertService)
+        public MonitorService(
+            AlertService alertService,
+            Func<string, int, InferenceBackend, IInferenceEngine>? engineFactory = null)
         {
             _alertService = alertService;
+            _engineFactory = engineFactory ?? ((path, threads, backend) =>
+                new OnnxInferenceEngine(path, intraOpNumThreads: threads, preferredBackend: backend));
         }
 
         /// <summary>
@@ -74,7 +79,7 @@ namespace VisionGuard.Services
                 throw new InvalidOperationException("目标窗口或窗口选区无效，宽度和高度必须都大于 100 像素。");
 
             _config  = config;
-            _engine  = new OnnxInferenceEngine(modelPath, intraOpNumThreads: 2, preferredBackend: preferredBackend);
+            _engine  = _engineFactory(modelPath, 2, preferredBackend);
 
             int intervalMs = 1000 / Math.Max(1, config.TargetFps);
             _timer = new Timer(OnTick, null, 0, intervalMs);
@@ -133,6 +138,7 @@ namespace VisionGuard.Services
 
             MonitorConfig cfg = Volatile.Read(ref _config);
             Bitmap frame    = null;
+            MonitorFailureKind failureKind = MonitorFailureKind.Capture;
 
             try
             {
@@ -156,17 +162,20 @@ namespace VisionGuard.Services
                     MaskApplier.ApplyMasks(frame, cfg.MaskRegions);
 
                 // 2. 预处理（内部 resize + 转张量）
+                failureKind = MonitorFailureKind.Processing;
                 int modelSize = _engine.ModelInputSize;
                 sw.Restart();
                 float[] tensor = ImagePreprocessor.ToTensor(frame, modelSize);
                 long preprocessMs = sw.ElapsedMilliseconds;
 
                 // 3. 推理
+                failureKind = MonitorFailureKind.Inference;
                 sw.Restart();
                 float[] rawOutput = _engine.Run(tensor, ImagePreprocessor.InputShape(modelSize));
                 long inferMs = sw.ElapsedMilliseconds;
 
                 // 4. 解析（使用实际帧尺寸，避免窗口缩放导致坐标偏移）
+                failureKind = MonitorFailureKind.Processing;
                 sw.Restart();
                 var frameRegion = new Rectangle(0, 0, frame.Width, frame.Height);
                 List<Detection> detections = YoloOutputParser.Parse(
@@ -197,7 +206,10 @@ namespace VisionGuard.Services
             }
             catch (Exception ex)
             {
-                FrameProcessed?.Invoke(this, new FrameResultEventArgs(ex));
+                var actualKind = ex is CaptureBlackFrameException
+                    ? MonitorFailureKind.BlackFrame
+                    : failureKind;
+                FrameProcessed?.Invoke(this, new FrameResultEventArgs(ex, actualKind));
             }
             finally
             {
@@ -226,6 +238,7 @@ namespace VisionGuard.Services
         public long            ProcessingMs { get; }
         public Exception       Error       { get; }
         public bool            HasError    => Error != null;
+        public MonitorFailureKind FailureKind { get; }
 
         public FrameResultEventArgs(List<Detection> dets, Bitmap frame, long inferMs, long processingMs = 0)
         {
@@ -235,9 +248,10 @@ namespace VisionGuard.Services
             ProcessingMs = processingMs;
         }
 
-        public FrameResultEventArgs(Exception error)
+        public FrameResultEventArgs(Exception error, MonitorFailureKind failureKind = MonitorFailureKind.Processing)
         {
             Error = error;
+            FailureKind = failureKind;
         }
     }
 }

@@ -17,15 +17,23 @@ namespace VisionGuard.Capture
         public string   Title     { get; }
         public string   ClassName { get; }
         public Rectangle Bounds   { get; }
+        public int ProcessId { get; }
+        public string ProcessName { get; }
 
-        public WindowInfo(IntPtr handle, string title, string className, Rectangle bounds)
+        public WindowInfo(IntPtr handle, string title, string className, Rectangle bounds,
+            int processId = 0, string processName = "")
         {
             Handle    = handle;
             Title     = title;
             ClassName = className;
             Bounds    = bounds;
+            ProcessId = processId;
+            ProcessName = processName ?? string.Empty;
         }
 
-        public override string ToString() => $"{Title}  [{ClassName}]";
+        public override string ToString()
+            => string.IsNullOrWhiteSpace(ProcessName)
+                ? $"{Title}  [{ClassName}]"
+                : $"{Title}  [{ProcessName} · {ClassName}]";
     }
 }

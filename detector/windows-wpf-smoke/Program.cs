@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using VisionGuard.Capture;
 using VisionGuard.Inference;
@@ -8,18 +9,22 @@ using VisionGuard.Services;
 
 if (args.Length is < 3 or > 4)
 {
-    Console.Error.WriteLine("Usage: VisionGuard.WpfSmoke <four-window-title-file> <model.onnx> <report.json> [confidence-threshold]");
+    Console.Error.WriteLine("Usage: VisionGuard.WpfSmoke <four-window-handle-file> <model.onnx> <report.json> [confidence-threshold]");
     return 2;
 }
 
-var titles = File.ReadAllLines(Path.GetFullPath(args[0]))
-    .Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).ToArray();
-if (titles.Length != 4 || titles.Distinct(StringComparer.Ordinal).Count() != 4)
-    throw new InvalidOperationException("真实窗口 smoke 必须提供恰好四个不同的窗口标题。");
+var handleValues = File.ReadAllLines(Path.GetFullPath(args[0]))
+    .Where(x => !string.IsNullOrWhiteSpace(x))
+    .Select(x => long.TryParse(x.Trim(), out var value) && value != 0
+        ? value
+        : throw new InvalidOperationException($"无效窗口句柄：{x}"))
+    .ToArray();
+if (handleValues.Length != 4 || handleValues.Distinct().Count() != 4)
+    throw new InvalidOperationException("真实窗口 smoke 必须提供恰好四个不同的窗口句柄。");
 
 var visibleWindows = WindowEnumerator.GetWindows(IntPtr.Zero);
-var windows = titles.Select(title => visibleWindows.SingleOrDefault(w => string.Equals(w.Title, title, StringComparison.Ordinal))
-    ?? throw new InvalidOperationException($"未找到唯一目标窗口：{title}")).ToArray();
+var windows = handleValues.Select(value => visibleWindows.SingleOrDefault(w => w.Handle == new IntPtr(value))
+    ?? throw new InvalidOperationException($"目标窗口句柄不可用：{value}")).ToArray();
 if (windows.Select(w => w.Handle).Distinct().Count() != 4)
     throw new InvalidOperationException("四个目标必须是四个独立顶层窗口。");
 
@@ -72,6 +77,27 @@ foreach (var id in sourceIds) coordinator.Start(id, modelPath);
 var completed = done.Wait(TimeSpan.FromSeconds(60));
 var running = coordinator.Statuses.OrderBy(s => Array.IndexOf(sourceIds, s.SourceId)).ToArray();
 
+var beforeWindowChange = counts.ToDictionary(x => x.Key, x => x.Value);
+NativeWindowTest.MoveAndResize(windows[0].Handle, 120, 120, 640, 360);
+await Task.Delay(1500);
+var moveResizePassed = sourceIds.All(id => counts.GetValueOrDefault(id) > beforeWindowChange.GetValueOrDefault(id));
+
+var beforeMinimize = counts.ToDictionary(x => x.Key, x => x.Value);
+var errorsBeforeMinimize = errors.Count;
+NativeWindowTest.Minimize(windows[0].Handle);
+await Task.Delay(1500);
+var minimizeFaultIsolated = errors.Count > errorsBeforeMinimize
+    && sourceIds.Skip(1).All(id => counts.GetValueOrDefault(id) > beforeMinimize.GetValueOrDefault(id));
+NativeWindowTest.Restore(windows[0].Handle);
+var beforeRestore = counts.GetValueOrDefault("default");
+await Task.Delay(1500);
+var restoreRecoveryPassed = counts.GetValueOrDefault("default") > beforeRestore;
+
+var beforeOcclusion = counts.GetValueOrDefault("default");
+NativeWindowTest.MoveAndResize(windows[1].Handle, 120, 120, 640, 360);
+await Task.Delay(1500);
+var occlusionCapturePassed = counts.GetValueOrDefault("default") > beforeOcclusion;
+
 coordinator.Stop("default");
 var afterStop = counts.ToDictionary(x => x.Key, x => x.Value);
 await Task.Delay(1500);
@@ -85,7 +111,21 @@ coordinator.Start("default", modelPath);
 await Task.Delay(1500);
 var configIsolation = sourceIds.All(id => counts.GetValueOrDefault(id) > beforeReconfigure.GetValueOrDefault(id))
     && coordinator.Statuses.Single(s => s.SourceId == "default").SourceName == "reconfigured-default";
+
+var errorsBeforeClose = errors.Count;
+var beforeClose = counts.ToDictionary(x => x.Key, x => x.Value);
+NativeWindowTest.Close(windows[3].Handle);
+var closeDeadline = DateTime.UtcNow.AddSeconds(5);
+while (DateTime.UtcNow < closeDeadline && errors.Count == errorsBeforeClose) await Task.Delay(50);
+await Task.Delay(500);
+var closeIsolationPassed = errors.Count > errorsBeforeClose
+    && sourceIds.Take(3).All(id => counts.GetValueOrDefault(id) > beforeClose.GetValueOrDefault(id));
+coordinator.Stop("signal-4");
 foreach (var status in coordinator.Statuses.Where(s => s.IsMonitoring)) coordinator.Stop(status.SourceId);
+var expectedRuntimeErrors = errors.ToArray();
+var unexpectedRuntimeErrors = expectedRuntimeErrors.Where(error =>
+    !error.StartsWith("default:", StringComparison.Ordinal)
+    && !(error.StartsWith("signal-4:", StringComparison.Ordinal) && error.Contains("已关闭", StringComparison.Ordinal))).ToArray();
 var stopped = coordinator.Statuses;
 
 var cpuMultiSourceRejected = false;
@@ -101,7 +141,30 @@ using (var cpu = new MultiSourceMonitorCoordinator())
 
 using var fallback = new OnnxInferenceEngine(modelPath, preferredBackend: InferenceBackend.DirectML, directMlDeviceId: int.MaxValue);
 var fallbackToCpu = fallback.ActiveBackend == InferenceBackend.Cpu && !string.IsNullOrWhiteSpace(fallback.BackendFallbackReason);
-var passed = completed && errors.IsEmpty && stopIsolation && configIsolation && cpuMultiSourceRejected && fallbackToCpu
+
+var directMlRuntimeFailureStopsAll = false;
+using (var failureGate = new ManualResetEventSlim(false))
+using (var faulting = new MultiSourceMonitorCoordinator((_, _, _) => new FaultingDirectMlEngine(failureGate)))
+{
+    faulting.Add(CreateSource(0));
+    faulting.Add(CreateSource(1));
+    faulting.FrameProcessed += (_, e) => e.Frame.Frame?.Dispose();
+    faulting.Start("default", modelPath);
+    faulting.Start("signal-2", modelPath);
+    failureGate.Set();
+    var deadline = DateTime.UtcNow.AddSeconds(5);
+    while (DateTime.UtcNow < deadline && faulting.Statuses.Any(status => status.IsMonitoring))
+        await Task.Delay(50);
+    var faulted = faulting.Statuses;
+    directMlRuntimeFailureStopsAll = faulted.Count == 2
+        && faulted.All(status => !status.IsMonitoring)
+        && faulted.All(status => status.Error.Contains("DirectML 运行失败", StringComparison.Ordinal));
+}
+
+var passed = completed && unexpectedRuntimeErrors.Length == 0 && stopIsolation && configIsolation && moveResizePassed
+    && minimizeFaultIsolated && restoreRecoveryPassed && occlusionCapturePassed && closeIsolationPassed
+    && cpuMultiSourceRejected && fallbackToCpu
+    && directMlRuntimeFailureStopsAll
     && sourceIds.All(id => personHits.GetValueOrDefault(id) > 0)
     && running.Length == 4 && running.All(s => s.IsMonitoring && s.IsReady && s.ActiveBackend == nameof(InferenceBackend.DirectML) && s.ActualFps >= 2.5)
     && stopped.All(s => !s.IsMonitoring);
@@ -110,7 +173,9 @@ var report = new
 {
     passed, inputKind = "four independent WindowHandle captures", expectedLabel = "person", requiredFramesPerSource = requiredFrames,
     threshold, stopOneSourceIsolationPassed = stopIsolation, configChangeIsolationPassed = configIsolation,
+    moveResizePassed, minimizeFaultIsolated, restoreRecoveryPassed, occlusionCapturePassed, closeIsolationPassed,
     cpuMultiSourceRejected, directMlFailureFallsBackToCpu = fallbackToCpu, directMlFallbackReason = fallback.BackendFallbackReason,
+    directMlRuntimeFailureStopsAll,
     elapsedMs = Math.Round((DateTime.UtcNow - startedAt).TotalMilliseconds, 2),
     sources = running.Select((s, i) =>
     {
@@ -121,10 +186,50 @@ var report = new
             s.IsReady, s.IsMonitoring, s.ActiveBackend, s.ActualFps, meanProcessingMs = values.Length == 0 ? 0 : Math.Round(values.Average(), 2),
             p95ProcessingMs = Percentile(0.95), p99ProcessingMs = Percentile(0.99), s.Error };
     }),
-    stopped = stopped.Select(s => new { s.SourceId, s.IsMonitoring }), errors = errors.ToArray(),
+    stopped = stopped.Select(s => new { s.SourceId, s.IsMonitoring }), expectedRuntimeErrors, unexpectedRuntimeErrors,
 };
 var reportPath = Path.GetFullPath(args[2]);
 Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
 await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
 Console.WriteLine(JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
 return passed ? 0 : 1;
+
+sealed class FaultingDirectMlEngine : IInferenceEngine
+{
+    private readonly ManualResetEventSlim _failureGate;
+    public FaultingDirectMlEngine(ManualResetEventSlim failureGate) => _failureGate = failureGate;
+    public int ModelInputSize => 320;
+    public InferenceBackend ActiveBackend => InferenceBackend.DirectML;
+    public string BackendFallbackReason => string.Empty;
+    public float[] Run(float[] inputData, int[] shape)
+    {
+        _failureGate.Wait(TimeSpan.FromSeconds(5));
+        throw new InvalidOperationException("injected DirectML runtime failure");
+    }
+    public void Dispose() { }
+}
+
+static class NativeWindowTest
+{
+    private const uint SwpNoZOrder = 0x0004;
+    private const int SwMinimize = 6;
+    private const int SwRestore = 9;
+    private const uint WmClose = 0x0010;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int width, int height, uint flags);
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int command);
+    [DllImport("user32.dll")]
+    private static extern bool PostMessage(IntPtr hWnd, uint message, IntPtr wParam, IntPtr lParam);
+
+    public static void MoveAndResize(IntPtr handle, int x, int y, int width, int height)
+    {
+        if (!SetWindowPos(handle, IntPtr.Zero, x, y, width, height, SwpNoZOrder))
+            throw new InvalidOperationException($"SetWindowPos failed: {Marshal.GetLastWin32Error()}");
+    }
+
+    public static void Minimize(IntPtr handle) => ShowWindow(handle, SwMinimize);
+    public static void Restore(IntPtr handle) => ShowWindow(handle, SwRestore);
+    public static void Close(IntPtr handle) => PostMessage(handle, WmClose, IntPtr.Zero, IntPtr.Zero);
+}

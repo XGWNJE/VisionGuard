@@ -24,7 +24,7 @@ namespace VisionGuard.Inference
     /// 封装 ONNX Runtime InferenceSession 生命周期。
     /// 线程安全：每次 Run 是无状态的，但 InferenceSession 本身线程安全。
     /// </summary>
-    public sealed class OnnxInferenceEngine : IDisposable
+    public sealed class OnnxInferenceEngine : IInferenceEngine
     {
         private InferenceSession _session;
         private readonly string  _inputName;

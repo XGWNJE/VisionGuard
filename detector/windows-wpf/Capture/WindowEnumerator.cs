@@ -7,6 +7,7 @@
 // └─────────────────────────────────────────────────────────┘
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Text;
 
@@ -70,7 +71,18 @@ namespace VisionGuard.Capture
                 // 过小窗口无法提供有效采集分辨率，也会导致后续遮罩编辑体验失真。
                 if (!CaptureSizeConstraints.IsValid(bounds)) return true;
 
-                result.Add(new WindowInfo(hwnd, title, className, bounds));
+                NativeMethods.GetWindowThreadProcessId(hwnd, out uint processIdValue);
+                int processId = processIdValue <= int.MaxValue ? (int)processIdValue : 0;
+                string processName = string.Empty;
+                if (processId > 0)
+                {
+                    try { processName = Process.GetProcessById(processId).ProcessName; }
+                    catch (ArgumentException) { }
+                    catch (InvalidOperationException) { }
+                    catch (System.ComponentModel.Win32Exception) { }
+                }
+
+                result.Add(new WindowInfo(hwnd, title, className, bounds, processId, processName));
                 return true;
             }, IntPtr.Zero);
 

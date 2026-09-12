@@ -13,7 +13,7 @@ namespace VisionGuard.Capture
 {
     /// <summary>
     /// 使用 PrintWindow API 捕获目标窗口内容。
-    /// 即使窗口被其他窗口遮挡或最小化，也能正常捕获。
+    /// 遮挡时仍可捕获；部分应用最小化后会返回黑帧，此时显式报告故障，恢复后可继续。
     /// 调用方负责 Dispose 返回的 Bitmap。
     /// </summary>
     public static class WindowCapturer
@@ -64,14 +64,7 @@ namespace VisionGuard.Capture
                 }
             }
 
-            // 4. 可选：黑屏检测（采样10点，全黑时记录警告但不抛出）
-            if (IsAllBlack(bitmap))
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    "[WindowCapturer] 警告：捕获画面全黑，目标窗口可能使用 GPU 加速渲染。");
-            }
-
-            // 5. 裁剪子区域
+            // 4. 裁剪子区域
             if (subRegion != Rectangle.Empty && subRegion.Width > 0 && subRegion.Height > 0)
             {
                 // 确保子区域在 Bitmap 范围内
@@ -93,16 +86,25 @@ namespace VisionGuard.Capture
 
                 Bitmap cropped = bitmap.Clone(clipped, PixelFormat.Format32bppArgb);
                 bitmap.Dispose();
+                ThrowIfLikelyBlack(cropped);
                 return cropped;
             }
 
+            ThrowIfLikelyBlack(bitmap);
             return bitmap;
         }
 
         /// <summary>
         /// 采样10个点检测是否为全黑（判断 PrintWindow 黑屏情形）。
         /// </summary>
-        private static bool IsAllBlack(Bitmap bmp)
+        private static void ThrowIfLikelyBlack(Bitmap bitmap)
+        {
+            if (!IsLikelyBlack(bitmap)) return;
+            bitmap.Dispose();
+            throw new CaptureBlackFrameException();
+        }
+
+        internal static bool IsLikelyBlack(Bitmap bmp)
         {
             if (bmp.Width == 0 || bmp.Height == 0) return true;
 

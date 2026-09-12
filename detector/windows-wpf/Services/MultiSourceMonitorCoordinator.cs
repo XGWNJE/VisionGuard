@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using VisionGuard.Inference;
 using VisionGuard.Models;
 
@@ -11,6 +12,12 @@ namespace VisionGuard.Services
         public const int MaxSources = 4;
         private readonly object _sync = new();
         private readonly Dictionary<string, Runtime> _runtimes = new(StringComparer.Ordinal);
+        private readonly Func<string, int, InferenceBackend, IInferenceEngine>? _engineFactory;
+        private int _gpuFailureStopScheduled;
+
+        public MultiSourceMonitorCoordinator(
+            Func<string, int, InferenceBackend, IInferenceEngine>? engineFactory = null)
+            => _engineFactory = engineFactory;
 
         public event EventHandler<AlertEvent>? AlertTriggered;
         public event EventHandler<MonitorSourceStatus>? StatusChanged;
@@ -28,7 +35,7 @@ namespace VisionGuard.Services
                 if (_runtimes.Count >= MaxSources) throw new InvalidOperationException("最多只能配置四个检测来源。");
                 if (_runtimes.ContainsKey(source.SourceId)) throw new InvalidOperationException("来源 ID 已存在。");
                 var alerts = new AlertService(source.SourceId, source.SourceName);
-                var monitor = new MonitorService(alerts);
+                var monitor = new MonitorService(alerts, _engineFactory);
                 var runtime = new Runtime(source, alerts, monitor);
                 alerts.AlertTriggered += (_, alert) => AlertTriggered?.Invoke(this, alert);
                 monitor.FrameProcessed += (_, frame) => OnFrame(runtime, frame);
@@ -65,6 +72,8 @@ namespace VisionGuard.Services
             Runtime runtime;
             lock (_sync)
             {
+                if (Volatile.Read(ref _gpuFailureStopScheduled) == 1)
+                    throw new InvalidOperationException("DirectML 故障停机尚未完成，请稍后重试。");
                 runtime = Get(sourceId);
                 if (runtime.Monitor.IsStarted) return;
                 var running = _runtimes.Values.Where(r => r.Monitor.IsStarted).ToArray();
@@ -109,14 +118,44 @@ namespace VisionGuard.Services
         private void OnFrame(Runtime runtime, FrameResultEventArgs frame)
         {
             var now = DateTime.UtcNow;
+            bool scheduleGlobalStop = false;
             lock (_sync)
             {
-                runtime.FrameTimes.Enqueue(now);
+                if (!frame.HasError) runtime.FrameTimes.Enqueue(now);
                 while (runtime.FrameTimes.Count > 0 && (now - runtime.FrameTimes.Peek()).TotalSeconds > 10) runtime.FrameTimes.Dequeue();
-                runtime.Error = frame.HasError ? frame.Error?.Message ?? "捕获或推理失败" : "";
+                if (Volatile.Read(ref _gpuFailureStopScheduled) == 0)
+                    runtime.Error = frame.HasError ? frame.Error?.Message ?? "捕获或推理失败" : "";
+
+                if (frame.HasError
+                    && MonitorFailurePolicy.RequiresGlobalStop(frame.FailureKind, runtime.Monitor.ActiveBackend)
+                    && Interlocked.CompareExchange(ref _gpuFailureStopScheduled, 1, 0) == 0)
+                {
+                    string message = $"DirectML 运行失败，已停止全部来源以避免静默回退多路 CPU；故障来源：{runtime.Source.SourceName}。请切换为 CPU 后仅启动一路，或检查 GPU 后重试。";
+                    foreach (var item in _runtimes.Values.Where(item => item.Monitor.IsStarted))
+                        item.Error = message;
+                    scheduleGlobalStop = true;
+                }
             }
             FrameProcessed?.Invoke(this, new SourceFrameEventArgs(runtime.Source.SourceId, frame));
             RaiseStatus(runtime);
+
+            // OnFrame 运行在发生故障的 Timer 回调内，不能在这里同步 Stop 自己。
+            if (scheduleGlobalStop) ThreadPool.QueueUserWorkItem(_ => StopAllAfterGpuFailure());
+        }
+
+        private void StopAllAfterGpuFailure()
+        {
+            Runtime[] running;
+            lock (_sync) running = _runtimes.Values.Where(runtime => runtime.Monitor.IsStarted).ToArray();
+
+            foreach (var runtime in running)
+            {
+                try { runtime.Monitor.Stop(); }
+                catch (Exception ex) { runtime.Error += $" 停止失败：{ex.Message}"; }
+            }
+
+            foreach (var runtime in running) RaiseStatus(runtime);
+            Interlocked.Exchange(ref _gpuFailureStopScheduled, 0);
         }
 
         private Runtime Get(string sourceId) => _runtimes.TryGetValue(sourceId, out var runtime)

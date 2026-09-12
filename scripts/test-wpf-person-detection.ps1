@@ -11,7 +11,7 @@ $repoRoot = (Get-Location).Path
 $smokeProject = Join-Path $repoRoot 'detector\windows-wpf-smoke\VisionGuard.WpfSmoke.csproj'
 $localRoot = [System.IO.Path]::GetFullPath((Join-Path $repoRoot '.local'))
 $profileRoot = [System.IO.Path]::GetFullPath((Join-Path $localRoot ("wpf-window-smoke-" + [Guid]::NewGuid().ToString('N'))))
-$titleFile = Join-Path $profileRoot 'window-titles.txt'
+$handleFile = Join-Path $profileRoot 'window-handles.txt'
 
 function Resolve-Browser {
     $command = Get-Command chrome.exe -ErrorAction SilentlyContinue
@@ -62,13 +62,17 @@ try {
     } while ($matched.Count -ne 4 -and (Get-Date) -lt $deadline)
 
     if ($matched.Count -ne 4) { throw "Only $($matched.Count)/4 independent browser windows became visible." }
-    $titles = foreach ($image in $images) {
-        ($windowProcesses | Where-Object { $_.MainWindowTitle -like "*$($image.Name)*" } | Select-Object -First 1 -ExpandProperty MainWindowTitle)
+    # MainWindowHandle 出现早于首帧图片完成绘制；给浏览器一次稳定渲染窗口，避免捕获到空白页。
+    Start-Sleep -Seconds 2
+    $windowProcesses = @(Get-Process chrome,msedge -ErrorAction SilentlyContinue |
+        Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle })
+    $handles = foreach ($image in $images) {
+        ($windowProcesses | Where-Object { $_.MainWindowTitle -like "*$($image.Name)*" } | Select-Object -First 1).MainWindowHandle.ToInt64().ToString([System.Globalization.CultureInfo]::InvariantCulture)
     }
-    [System.IO.File]::WriteAllLines($titleFile, $titles, [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllLines($handleFile, $handles, [System.Text.UTF8Encoding]::new($false))
 
     Write-Host 'Running WPF person-detection smoke with four real WindowHandle sources...'
-    & dotnet run --project $smokeProject -c Release -- $titleFile $ModelPath $fullReportPath $ConfidenceThreshold
+    & dotnet run --project $smokeProject -c Release -- $handleFile $ModelPath $fullReportPath $ConfidenceThreshold
     if ($LASTEXITCODE -ne 0) { throw "WPF four-window smoke failed with exit code $LASTEXITCODE. Report: $fullReportPath" }
     $report = Get-Content -LiteralPath $fullReportPath -Raw | ConvertFrom-Json
     $missing = @($report.sources | Where-Object { $_.personHitFrames -lt 1 })

@@ -34,6 +34,12 @@ namespace VisionGuard.Models
         /// <summary>目标窗口标题（跨会话恢复用，不可序列化 HWND 时用此重匹配）</summary>
         public string TargetWindowTitle { get; set; } = string.Empty;
 
+        /// <summary>目标窗口类名；与进程名共同用于安全重绑和同名窗口歧义检测。</summary>
+        public string TargetWindowClassName { get; set; } = string.Empty;
+
+        /// <summary>目标窗口所属进程名，不包含路径，避免持久化安装目录。</summary>
+        public string TargetWindowProcessName { get; set; } = string.Empty;
+
         /// <summary>
         /// WindowHandle 模式下捕获的子区域（相对于窗口客户区坐标）。
         /// Rectangle.Empty 表示捕获整个窗口。

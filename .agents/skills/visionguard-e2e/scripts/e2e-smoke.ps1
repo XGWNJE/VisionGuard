@@ -21,9 +21,10 @@ $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $artifactRoot = Join-Path $repoRoot "artifacts\e2e\$timestamp"
 New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
 
+$effectiveBuildType = if ($Mode -eq 'WpfPersonDetection') { 'Release' } else { $BuildType }
 $summary = [ordered]@{
     mode = $Mode
-    buildType = $BuildType
+    buildType = $effectiveBuildType
     startedAt = (Get-Date).ToString('o')
     artifactRoot = $artifactRoot
     selectedDevice = $null

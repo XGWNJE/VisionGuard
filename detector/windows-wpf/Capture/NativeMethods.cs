@@ -102,6 +102,9 @@ namespace VisionGuard.Capture
         [DllImport("user32.dll")]
         internal static extern int GetSystemMetrics(int nIndex);
 
+        [DllImport("user32.dll")]
+        internal static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
         internal const int SM_CXSCREEN = 0;
         internal const int SM_CYSCREEN = 1;
 
