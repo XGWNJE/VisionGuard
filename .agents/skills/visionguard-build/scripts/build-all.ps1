@@ -145,7 +145,7 @@ try {
         Invoke-Step `
             -Name "Windows Resident" `
             -CommandText "dotnet build detector\windows-resident\VisionGuard.Resident.csproj -c Release" `
-            -Artifact "detector/windows-resident/bin/Release/net9.0-windows/VisionGuard.Resident.exe" `
+            -Artifact "detector/windows-resident/bin/Release/net472/VisionGuard.Resident.exe" `
             -Script { dotnet build "detector\windows-resident\VisionGuard.Resident.csproj" -c Release }
     }
 

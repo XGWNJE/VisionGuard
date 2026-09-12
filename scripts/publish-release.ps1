@@ -1214,7 +1214,7 @@ if (Test-TargetEnabled @('Windows', 'WinForms')) {
     $fileName = "VisionGuard-v$Version.zip"
     $zipPath = Join-Path $releaseDir $fileName
     New-ZipPackage -SourceDir (Join-Path $repoRoot 'detector\windows-winforms\bin\Release') -Destination $zipPath `
-        -AdditionalSourceDirs @((Join-Path $repoRoot 'detector\windows-resident\bin\Release\net9.0-windows'))
+        -AdditionalSourceDirs @((Join-Path $repoRoot 'detector\windows-resident\bin\Release\net472'))
     Assert-ZipIsClean -ZipPath $zipPath
     Add-ReleaseEntry -Metadata $metadata -Key 'winforms' -FileName $fileName -FilePath $zipPath
     $artifacts.Add([pscustomobject]@{ Platform = 'winforms'; Path = $zipPath; FileName = $fileName }) | Out-Null
@@ -1225,7 +1225,7 @@ if (Test-TargetEnabled @('Windows', 'WPF')) {
     $fileName = "VisionGuard-WPF-v$Version.zip"
     $zipPath = Join-Path $releaseDir $fileName
     New-ZipPackage -SourceDir (Join-Path $repoRoot 'detector\windows-wpf\bin\x64') -Destination $zipPath `
-        -AdditionalSourceDirs @((Join-Path $repoRoot 'detector\windows-resident\bin\Release\net9.0-windows'))
+        -AdditionalSourceDirs @((Join-Path $repoRoot 'detector\windows-resident\bin\Release\net472'))
     Assert-ZipIsClean -ZipPath $zipPath
     Add-ReleaseEntry -Metadata $metadata -Key 'wpf' -FileName $fileName -FilePath $zipPath
     $artifacts.Add([pscustomobject]@{ Platform = 'wpf'; Path = $zipPath; FileName = $fileName }) | Out-Null

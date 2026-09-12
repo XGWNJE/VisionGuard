@@ -96,6 +96,8 @@ test('publish-release.ps1 keeps GitHub optional and release deployment reproduci
   assert.match(script, /scripts\\check-docs\.js/);
   assert.match(script, /Preflight only complete/);
   assert.match(script, /Restore-WinFormsPackages/);
+  assert.match(script, /windows-resident\\bin\\Release\\net472/);
+  assert.doesNotMatch(script, /windows-resident\\bin\\Release\\net9\.0-windows/);
   assert.match(script, /Test-PythonParamiko/);
   assert.match(script, /Deploy-ServerCode/);
   assert.match(script, /Verify-OnlineServer/);

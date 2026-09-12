@@ -1,12 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <TargetFramework>net9.0-windows</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>7.3</LangVersion>
     <AssemblyName>VisionGuard.Resident</AssemblyName>
     <RootNamespace>VisionGuard.Resident</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
     <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
     <DebugSymbols Condition="'$(Configuration)' == 'Release'">false</DebugSymbols>
   </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Web.Extensions" />
+    <PackageReference Include="websocket-sharp" Version="1.0.0" />
+  </ItemGroup>
 </Project>

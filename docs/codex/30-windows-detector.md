@@ -8,7 +8,7 @@
 |---|---|---|
 | Windows WinForms 检测端（WinForms Visual Detector） | `detector/windows-winforms/` | .NET Framework 4.7.2 / WinForms；维护 Win7+ 兼容视觉检测 |
 | Windows WPF 检测端（WPF Visual Detector） | `detector/windows-wpf/` | .NET 9 / WPF / MVVM；提供现代 Windows 视觉检测和最多四路窗口来源 |
-| Windows 驻留程序（Windows Resident） | `detector/windows-resident/` | .NET 9 当前用户后台进程；承接主程序生命周期远控，不承接推理；当前仅支持现代 Windows，Win7 兼容列为后续交付硬门槛 |
+| Windows 驻留程序（Windows Resident） | `detector/windows-resident/` | .NET Framework 4.7.2 x64 当前用户后台进程；承接主程序生命周期远控，不承接推理；框架与 API 已对齐 Win7 SP1 x64 |
 
 Windows 两个检测端使用 WS 角色 `windows`；驻留程序使用独立的 `windows-resident` 角色。驻留程序与检测端按同一 `deviceId` 聚合，但连接和状态不能混为一个组件。
 
@@ -41,6 +41,9 @@ Windows 两个检测端使用 WS 角色 `windows`；驻留程序使用独立的 
 ## Windows 驻留程序当前实现
 
 - 使用独立 `windows-resident` WS 身份与 Server 通信；只接受 `open-wpf`、`open-winforms`、`close-wpf`、`close-winforms` 四个固定生命周期命令。
+- 驻留程序目标框架为 .NET Framework 4.7.2 x64，使用 `websocket-sharp` 与 `JavaScriptSerializer`，不要求安装 .NET 9；Release 目录必须同时包含主 EXE、配置文件和 `websocket-sharp.dll`。
+- 驻留自身使用当前用户会话命名互斥体防止重复启动；连接认证成功后才发送组件心跳，远控完成回执携带 `requestId`、`phase=completed` 与目标设备，供 Server 严格关联请求。
+- Win7 支持基线为 Windows 7 SP1 x64 + .NET Framework 4.7.2 + TLS 1.2 系统更新；代码与产物满足该基线不替代 Win7 实机/WSS 证书链验收。
 - 与两个主程序通过当前用户会话事件完成启动握手和正常退出请求；远程打开只启动主程序，不自动开始监控。
 - 共用当前用户会话命名互斥体，阻止手动启动和远程启动产生第二实例。
 - 登录启动仅由 `--enable-startup <config>` / `--disable-startup` 显式切换；进程级握手可自动验证，登录重启、崩溃恢复、网络中断和完整远控 WSS 链路仍待补。

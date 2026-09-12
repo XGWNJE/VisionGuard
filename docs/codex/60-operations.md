@@ -19,7 +19,7 @@ Windows 驻留程序的生命周期命令以源码为准：`open-wpf`、`open-wi
 - Server：`server/dist/index.js`
 - Windows WinForms 检测端：`detector/windows-winforms/bin/Release/VisionGuard.exe`
 - Windows WPF 检测端：`detector/windows-wpf/bin/x64/VisionGuard.exe`
-- Windows 驻留程序：`detector/windows-resident/bin/Release/net9.0-windows/VisionGuard.Resident.exe`
+- Windows 驻留程序：`detector/windows-resident/bin/Release/net472/VisionGuard.Resident.exe`
 - Android 检测端：`detector/android/app/build/outputs/apk/release/app-release.apk`
 - Android 接收端：`receiver/android/app/build/outputs/apk/release/app-release.apk`
 
@@ -35,6 +35,14 @@ powershell -ExecutionPolicy Bypass -File .\scripts\start-isolated-test-server.ps
 ```
 
 该入口把数据写入被忽略的 `.local/e2e-server/<channel>/`。WPF、WinForms 和驻留进程使用 `VISIONGUARD_SERVER_URL=http://127.0.0.1:3100` 与同名 `VISIONGUARD_CHANNEL`；模拟器接收端构建使用 `VISIONGUARD_SERVER_URL=http://10.0.2.2:3100`。通道不一致必须认证失败，不能回退到旧协议或公共广播域。
+
+驻留程序完成 Release 构建且隔离 Server 已启动后，可验证认证、心跳和带请求关联的生命周期失败回执：
+
+```powershell
+$env:VISIONGUARD_SERVER_URL = 'http://127.0.0.1:3100'
+$env:VISIONGUARD_CHANNEL = 'vnext-e2e'
+node .\scripts\test-windows-resident.js
+```
 
 确定性 WPF 报警传输探针复用生产 `ServerPushService`，必须在独立 Server 与接收端已连接后运行：
 
@@ -59,7 +67,7 @@ Android 运行 smoke 使用 `-Mode AndroidDetectorSmoke` 或 `-Mode AndroidRecei
 - Android 启动 smoke 只验证安装、启动、前台服务/进程状态和观测窗口内无崩溃，不验证检测端→Server→接收端报警链。
 - `WpfPersonDetection` 打开四个独立可见浏览器窗口，经 `WindowHandle` 捕获，要求每路至少一帧 `person` 且实际达到 2.5 FPS，并验证来源隔离和后端边界；不证明动态视频、报警链或 UI 目检。
 - 真实窗口采集、真机 UI、完整报警链、持续运行和故障恢复分别记录为人工/真机/完整 E2E 结果。
-- Windows 驻留程序的 Win7 SP1 x64 兼容不是当前构建 smoke 结论，必须在目标环境单独验收；本轮仅登记路线与验收门槛，不执行代码实现。
+- Windows 驻留程序已经迁移到 .NET Framework 4.7.2 x64；构建和隔离链路 smoke 仍不能替代 Win7 SP1 x64 目标环境中的启动、WSS、登录重启和网络恢复验收。
 
 证据写入 `artifacts/e2e/<timestamp>/`。不要为了本地验证清除应用数据，除非任务明确要求；脚本启动的模拟器必须在结束时关闭。未明确要求时不操作生产服务。
 

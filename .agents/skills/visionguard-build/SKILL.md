@@ -40,7 +40,7 @@ The script currently accepts `All`, `Server`, `Windows`, `WinForms`, `WPF`, `Win
 - Server: `server/dist/index.js`
 - WinForms: `detector/windows-winforms/bin/Release/VisionGuard.exe`
 - WPF: `detector/windows-wpf/bin/x64/VisionGuard.exe`
-- Windows Resident: `detector/windows-resident/bin/Release/net9.0-windows/VisionGuard.Resident.exe`
+- Windows Resident: `detector/windows-resident/bin/Release/net472/VisionGuard.Resident.exe`
 - Android Detector: `detector/android/app/build/outputs/apk/release/app-release.apk`
 - Android Receiver: `receiver/android/app/build/outputs/apk/release/app-release.apk`
 
