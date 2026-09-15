@@ -8,16 +8,19 @@
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 
 namespace VisionGuard.Capture
 {
     /// <summary>
     /// 使用 PrintWindow API 捕获目标窗口内容。
-    /// 即使窗口被其他窗口遮挡或最小化，也能正常捕获。
+    /// 遮挡时仍可捕获；无法取得有效画面时显式报告逐来源故障。
     /// 调用方负责 Dispose 返回的 Bitmap。
     /// </summary>
     public static class WindowCapturer
     {
+        private static readonly Color UnpaintedSentinel = Color.FromArgb(255, 255, 0, 255);
+
         /// <summary>
         /// 捕获指定窗口的内容。
         /// </summary>
@@ -30,23 +33,31 @@ namespace VisionGuard.Capture
         /// <exception cref="InvalidOperationException">PrintWindow 失败时抛出。</exception>
         public static Bitmap CaptureWindow(IntPtr hwnd, Rectangle subRegion)
         {
-            // 1. 获取窗口真实边界（含 DWM 阴影补偿）
-            Rectangle bounds = WindowEnumerator.GetWindowBounds(hwnd);
+            // 1. PrintWindow 由目标窗口在自身客户区坐标系中重绘。不能使用 DWM 的屏幕边界：
+            //    DPI 不感知窗口会被 DWM 拉伸，但 PrintWindow 不会复制这层拉伸，二者尺寸会错配。
+            Rectangle bounds = WindowEnumerator.GetPrintWindowBounds(hwnd);
             if (bounds.IsEmpty || bounds.Width <= 0 || bounds.Height <= 0)
                 throw new InvalidOperationException("无法获取目标窗口尺寸，窗口可能已关闭。");
+            if (!CaptureSizeConstraints.IsValid(bounds))
+                throw new InvalidOperationException("目标窗口宽度和高度必须都大于 100 像素。");
 
-            // 2. 创建匹配尺寸的目标 Bitmap + HDC
+            // 2. 创建候选 Bitmap。跨进程 GetClientRect 仍可能按调用方 DPI 返回 DWM 拉伸尺寸，
+            //    因此先铺哨兵色，PrintWindow 后再裁到目标窗口真正写入的范围。
             var bitmap  = new Bitmap(bounds.Width, bounds.Height, PixelFormat.Format32bppArgb);
             using (Graphics g = Graphics.FromImage(bitmap))
             {
+                g.Clear(UnpaintedSentinel);
                 IntPtr hdc = g.GetHdc();
                 try
                 {
-                    // 3. 尝试 PW_RENDERFULLCONTENT（含 GPU 加速内容）
-                    bool ok = NativeMethods.PrintWindow(hwnd, hdc, NativeMethods.PW_RENDERFULLCONTENT);
+                    // 3. 在客户区平面请求完整内容；返回 Bitmap 不包含标题栏/边框。
+                    bool ok = NativeMethods.PrintWindow(
+                        hwnd,
+                        hdc,
+                        NativeMethods.PW_CLIENTONLY | NativeMethods.PW_RENDERFULLCONTENT);
                     if (!ok)
                     {
-                        // 回退：PW_CLIENTONLY
+                        // 回退：普通客户区重绘
                         ok = NativeMethods.PrintWindow(hwnd, hdc, NativeMethods.PW_CLIENTONLY);
                     }
                     if (!ok)
@@ -62,14 +73,9 @@ namespace VisionGuard.Capture
                 }
             }
 
-            // 4. 可选：黑屏检测（采样10点，全黑时记录警告但不抛出）
-            if (IsAllBlack(bitmap))
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    "[WindowCapturer] 警告：捕获画面全黑，目标窗口可能使用 GPU 加速渲染。");
-            }
+            bitmap = NormalizePrintedBounds(bitmap);
 
-            // 5. 裁剪子区域
+            // 4. 裁剪子区域
             if (subRegion != Rectangle.Empty && subRegion.Width > 0 && subRegion.Height > 0)
             {
                 // 确保子区域在 Bitmap 范围内
@@ -83,18 +89,80 @@ namespace VisionGuard.Capture
                     throw new InvalidOperationException("子区域超出窗口边界。");
                 }
 
+                if (!CaptureSizeConstraints.IsValid(clipped))
+                {
+                    bitmap.Dispose();
+                    throw new InvalidOperationException("窗口选区宽度和高度必须都大于 100 像素。");
+                }
+
                 Bitmap cropped = bitmap.Clone(clipped, PixelFormat.Format32bppArgb);
                 bitmap.Dispose();
+                ThrowIfLikelyBlack(cropped);
                 return cropped;
             }
 
+            ThrowIfLikelyBlack(bitmap);
             return bitmap;
+        }
+
+        private static Bitmap NormalizePrintedBounds(Bitmap bitmap)
+        {
+            Rectangle painted = FindPaintedBounds(bitmap);
+            if (painted.IsEmpty)
+            {
+                bitmap.Dispose();
+                throw new CaptureBlackFrameException();
+            }
+            if (painted.X == 0 && painted.Y == 0 && painted.Width == bitmap.Width && painted.Height == bitmap.Height)
+                return bitmap;
+
+            Bitmap normalized = bitmap.Clone(painted, PixelFormat.Format32bppArgb);
+            bitmap.Dispose();
+            return normalized;
+        }
+
+        private static Rectangle FindPaintedBounds(Bitmap bitmap)
+        {
+            var area = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
+            BitmapData data = bitmap.LockBits(area, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            try
+            {
+                int stride = Math.Abs(data.Stride);
+                byte[] pixels = new byte[stride * bitmap.Height];
+                Marshal.Copy(data.Scan0, pixels, 0, pixels.Length);
+                int minX = bitmap.Width, minY = bitmap.Height, maxX = -1, maxY = -1;
+                for (int y = 0; y < bitmap.Height; y++)
+                {
+                    int row = data.Stride >= 0 ? y * stride : (bitmap.Height - 1 - y) * stride;
+                    for (int x = 0; x < bitmap.Width; x++)
+                    {
+                        int i = row + x * 4;
+                        if (pixels[i] == UnpaintedSentinel.B && pixels[i + 1] == UnpaintedSentinel.G
+                            && pixels[i + 2] == UnpaintedSentinel.R && pixels[i + 3] == UnpaintedSentinel.A) continue;
+                        if (x < minX) minX = x;
+                        if (x > maxX) maxX = x;
+                        if (y < minY) minY = y;
+                        if (y > maxY) maxY = y;
+                    }
+                }
+                return maxX < minX || maxY < minY
+                    ? Rectangle.Empty
+                    : Rectangle.FromLTRB(minX, minY, maxX + 1, maxY + 1);
+            }
+            finally { bitmap.UnlockBits(data); }
         }
 
         /// <summary>
         /// 采样10个点检测是否为全黑（判断 PrintWindow 黑屏情形）。
         /// </summary>
-        private static bool IsAllBlack(Bitmap bmp)
+        private static void ThrowIfLikelyBlack(Bitmap bitmap)
+        {
+            if (!IsLikelyBlack(bitmap)) return;
+            bitmap.Dispose();
+            throw new CaptureBlackFrameException();
+        }
+
+        internal static bool IsLikelyBlack(Bitmap bmp)
         {
             if (bmp.Width == 0 || bmp.Height == 0) return true;
 

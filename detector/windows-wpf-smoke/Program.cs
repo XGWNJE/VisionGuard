@@ -9,7 +9,7 @@ using VisionGuard.Services;
 
 if (args.Length is < 3 or > 4)
 {
-    Console.Error.WriteLine("Usage: VisionGuard.WpfSmoke <four-window-handle-file> <model.onnx> <report.json> [confidence-threshold]");
+    Console.Error.WriteLine("Usage: VisionGuard.WpfSmoke <window-handle-file> <model.onnx> <report.json> [confidence-threshold]");
     return 2;
 }
 
@@ -19,14 +19,14 @@ var handleValues = File.ReadAllLines(Path.GetFullPath(args[0]))
         ? value
         : throw new InvalidOperationException($"无效窗口句柄：{x}"))
     .ToArray();
-if (handleValues.Length != 4 || handleValues.Distinct().Count() != 4)
-    throw new InvalidOperationException("真实窗口 smoke 必须提供恰好四个不同的窗口句柄。");
+if (handleValues.Length is < 2 or > 16 || handleValues.Distinct().Count() != handleValues.Length)
+    throw new InvalidOperationException("真实窗口 smoke 必须提供 2–16 个不同的窗口句柄。");
 
 var visibleWindows = WindowEnumerator.GetWindows(IntPtr.Zero);
 var windows = handleValues.Select(value => visibleWindows.SingleOrDefault(w => w.Handle == new IntPtr(value))
     ?? throw new InvalidOperationException($"目标窗口句柄不可用：{value}")).ToArray();
-if (windows.Select(w => w.Handle).Distinct().Count() != 4)
-    throw new InvalidOperationException("四个目标必须是四个独立顶层窗口。");
+if (windows.Select(w => w.Handle).Distinct().Count() != windows.Length)
+    throw new InvalidOperationException("所有目标必须是独立顶层窗口。");
 
 var threshold = args.Length == 4 && float.TryParse(args[3], System.Globalization.NumberStyles.Float,
     System.Globalization.CultureInfo.InvariantCulture, out var parsed) ? parsed : 0.25f;
@@ -34,14 +34,24 @@ if (threshold is < 0 or > 1) throw new ArgumentOutOfRangeException(nameof(thresh
 var modelPath = Path.GetFullPath(args[1]);
 if (!File.Exists(modelPath)) throw new FileNotFoundException("Model is not cached.", modelPath);
 
-var sourceIds = new[] { "default", "signal-2", "signal-3", "signal-4" };
+var subRegionCapturePassed = false;
+using (var fullFrame = WindowCapturer.CaptureWindow(windows[0].Handle, Rectangle.Empty))
+{
+    var subRegion = new Rectangle(fullFrame.Width / 4, fullFrame.Height / 4,
+        fullFrame.Width / 2, fullFrame.Height / 2);
+    using var croppedFrame = WindowCapturer.CaptureWindow(windows[0].Handle, subRegion);
+    subRegionCapturePassed = croppedFrame.Width == subRegion.Width
+        && croppedFrame.Height == subRegion.Height;
+}
+
+var sourceIds = Enumerable.Range(1, windows.Length).Select(i => i == 1 ? "default" : $"signal-{i}").ToArray();
 const int requiredFrames = 30;
 var counts = new ConcurrentDictionary<string, int>();
 var personHits = new ConcurrentDictionary<string, int>();
 var maxConfidence = new ConcurrentDictionary<string, float>();
 var samples = new ConcurrentDictionary<string, ConcurrentQueue<long>>();
 var errors = new ConcurrentQueue<string>();
-using var done = new CountdownEvent(4);
+using var done = new CountdownEvent(sourceIds.Length);
 using var coordinator = new MultiSourceMonitorCoordinator();
 
 coordinator.FrameProcessed += (_, e) =>
@@ -71,7 +81,7 @@ MonitorSource CreateSource(int index, string? name = null, int fps = 3, Inferenc
         WatchedClasses = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "person" },
     }, backend);
 
-for (var i = 0; i < 4; i++) coordinator.Add(CreateSource(i));
+for (var i = 0; i < sourceIds.Length; i++) coordinator.Add(CreateSource(i));
 var startedAt = DateTime.UtcNow;
 foreach (var id in sourceIds) coordinator.Start(id, modelPath);
 var completed = done.Wait(TimeSpan.FromSeconds(60));
@@ -114,35 +124,37 @@ var configIsolation = sourceIds.All(id => counts.GetValueOrDefault(id) > beforeR
 
 var errorsBeforeClose = errors.Count;
 var beforeClose = counts.ToDictionary(x => x.Key, x => x.Value);
-NativeWindowTest.Close(windows[3].Handle);
+var lastSourceId = sourceIds[^1];
+NativeWindowTest.Close(windows[^1].Handle);
 var closeDeadline = DateTime.UtcNow.AddSeconds(5);
 while (DateTime.UtcNow < closeDeadline && errors.Count == errorsBeforeClose) await Task.Delay(50);
 await Task.Delay(500);
 var closeIsolationPassed = errors.Count > errorsBeforeClose
-    && sourceIds.Take(3).All(id => counts.GetValueOrDefault(id) > beforeClose.GetValueOrDefault(id));
-coordinator.Stop("signal-4");
+    && sourceIds.Take(sourceIds.Length - 1).All(id => counts.GetValueOrDefault(id) > beforeClose.GetValueOrDefault(id));
+coordinator.Stop(lastSourceId);
 foreach (var status in coordinator.Statuses.Where(s => s.IsMonitoring)) coordinator.Stop(status.SourceId);
 var expectedRuntimeErrors = errors.ToArray();
 var unexpectedRuntimeErrors = expectedRuntimeErrors.Where(error =>
     !error.StartsWith("default:", StringComparison.Ordinal)
-    && !(error.StartsWith("signal-4:", StringComparison.Ordinal) && error.Contains("已关闭", StringComparison.Ordinal))).ToArray();
+    && !(error.StartsWith(lastSourceId + ":", StringComparison.Ordinal) && error.Contains("已关闭", StringComparison.Ordinal))).ToArray();
 var stopped = coordinator.Statuses;
 
-var cpuMultiSourceRejected = false;
-using (var cpu = new MultiSourceMonitorCoordinator())
+var cpuMultiSourceAllowedWithWarning = false;
+using (var cpu = new MultiSourceMonitorCoordinator(capacityProvider: _ => 1))
 {
     cpu.Add(CreateSource(0, backend: InferenceBackend.Cpu));
-    cpu.Add(CreateSource(1, backend: InferenceBackend.DirectML));
+    cpu.Add(CreateSource(1, backend: InferenceBackend.Cpu));
     cpu.FrameProcessed += (_, e) => e.Frame.Frame?.Dispose();
     cpu.Start("default", modelPath);
-    try { cpu.Start("signal-2", modelPath); } catch (InvalidOperationException) { cpuMultiSourceRejected = true; }
-    cpu.Stop("default");
+    cpu.Start("signal-2", modelPath);
+    cpuMultiSourceAllowedWithWarning = cpu.Statuses.All(status => status.IsMonitoring && status.PerformanceWarning.Contains("允许继续运行", StringComparison.Ordinal));
+    cpu.Stop("default"); cpu.Stop("signal-2");
 }
 
 using var fallback = new OnnxInferenceEngine(modelPath, preferredBackend: InferenceBackend.DirectML, directMlDeviceId: int.MaxValue);
 var fallbackToCpu = fallback.ActiveBackend == InferenceBackend.Cpu && !string.IsNullOrWhiteSpace(fallback.BackendFallbackReason);
 
-var directMlRuntimeFailureStopsAll = false;
+var directMlRuntimeFailureIsolated = false;
 using (var failureGate = new ManualResetEventSlim(false))
 using (var faulting = new MultiSourceMonitorCoordinator((_, _, _) => new FaultingDirectMlEngine(failureGate)))
 {
@@ -153,29 +165,31 @@ using (var faulting = new MultiSourceMonitorCoordinator((_, _, _) => new Faultin
     faulting.Start("signal-2", modelPath);
     failureGate.Set();
     var deadline = DateTime.UtcNow.AddSeconds(5);
-    while (DateTime.UtcNow < deadline && faulting.Statuses.Any(status => status.IsMonitoring))
+    while (DateTime.UtcNow < deadline && faulting.Statuses.All(status => string.IsNullOrWhiteSpace(status.Error)))
         await Task.Delay(50);
     var faulted = faulting.Statuses;
-    directMlRuntimeFailureStopsAll = faulted.Count == 2
-        && faulted.All(status => !status.IsMonitoring)
-        && faulted.All(status => status.Error.Contains("DirectML 运行失败", StringComparison.Ordinal));
+    directMlRuntimeFailureIsolated = faulted.Count == 2
+        && faulted.All(status => status.IsMonitoring)
+        && faulted.All(status => status.Error.Contains("injected DirectML runtime failure", StringComparison.Ordinal));
 }
 
 var passed = completed && unexpectedRuntimeErrors.Length == 0 && stopIsolation && configIsolation && moveResizePassed
     && minimizeFaultIsolated && restoreRecoveryPassed && occlusionCapturePassed && closeIsolationPassed
-    && cpuMultiSourceRejected && fallbackToCpu
-    && directMlRuntimeFailureStopsAll
+    && cpuMultiSourceAllowedWithWarning && fallbackToCpu
+    && directMlRuntimeFailureIsolated
+    && subRegionCapturePassed
     && sourceIds.All(id => personHits.GetValueOrDefault(id) > 0)
-    && running.Length == 4 && running.All(s => s.IsMonitoring && s.IsReady && s.ActiveBackend == nameof(InferenceBackend.DirectML) && s.ActualFps >= 2.5)
+    && running.Length == sourceIds.Length && running.All(s => s.IsMonitoring && s.IsReady && s.ActiveBackend == nameof(InferenceBackend.DirectML) && s.ActualFps >= 2.5)
     && stopped.All(s => !s.IsMonitoring);
 
 var report = new
 {
-    passed, inputKind = "four independent WindowHandle captures", expectedLabel = "person", requiredFramesPerSource = requiredFrames,
+    passed, inputKind = $"{sourceIds.Length} independent WindowHandle captures", sourceCount = sourceIds.Length, expectedLabel = "person", requiredFramesPerSource = requiredFrames,
     threshold, stopOneSourceIsolationPassed = stopIsolation, configChangeIsolationPassed = configIsolation,
     moveResizePassed, minimizeFaultIsolated, restoreRecoveryPassed, occlusionCapturePassed, closeIsolationPassed,
-    cpuMultiSourceRejected, directMlFailureFallsBackToCpu = fallbackToCpu, directMlFallbackReason = fallback.BackendFallbackReason,
-    directMlRuntimeFailureStopsAll,
+    subRegionCapturePassed,
+    cpuMultiSourceAllowedWithWarning, directMlFailureFallsBackToCpu = fallbackToCpu, directMlFallbackReason = fallback.BackendFallbackReason,
+    directMlRuntimeFailureIsolated,
     elapsedMs = Math.Round((DateTime.UtcNow - startedAt).TotalMilliseconds, 2),
     sources = running.Select((s, i) =>
     {

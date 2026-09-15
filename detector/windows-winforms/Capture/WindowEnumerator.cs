@@ -8,6 +8,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Diagnostics;
 using System.Text;
 
 namespace VisionGuard.Capture
@@ -66,8 +67,18 @@ namespace VisionGuard.Capture
 
                 // 获取边界（优先 DWM 真实边界，失败回退 GetWindowRect）
                 Rectangle bounds = GetWindowBounds(hwnd);
+                if (!CaptureSizeConstraints.IsValid(bounds)) return true;
 
-                result.Add(new WindowInfo(hwnd, title, className, bounds));
+                string processName = string.Empty;
+                try
+                {
+                    uint processId;
+                    NativeMethods.GetWindowThreadProcessId(hwnd, out processId);
+                    using (Process process = Process.GetProcessById((int)processId)) processName = process.ProcessName;
+                }
+                catch { }
+
+                result.Add(new WindowInfo(hwnd, title, className, bounds, processName));
                 return true;
             }, IntPtr.Zero);
 
@@ -93,6 +104,17 @@ namespace VisionGuard.Capture
                 return winRect.ToRectangle();
 
             return Rectangle.Empty;
+        }
+
+        /// <summary>
+        /// 获取 PrintWindow 客户区重绘平面的尺寸。客户区坐标属于目标窗口自身，
+        /// 不会混入 DWM 对 DPI 不感知窗口施加的屏幕位图拉伸。
+        /// </summary>
+        internal static Rectangle GetPrintWindowBounds(IntPtr hwnd)
+        {
+            return NativeMethods.GetClientRect(hwnd, out NativeMethods.RECT clientRect)
+                ? clientRect.ToRectangle()
+                : Rectangle.Empty;
         }
     }
 }

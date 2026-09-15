@@ -10,6 +10,7 @@ namespace VisionGuard.Views
     public partial class MainWindow : Window
     {
         private NotifyIcon? _notifyIcon;
+        private bool _resourcesDisposed;
 
         public MainWindow()
         {
@@ -37,11 +38,6 @@ namespace VisionGuard.Views
             _notifyIcon.ContextMenuStrip = menu;
         }
 
-        private void Window_Loaded(object sender, RoutedEventArgs e)
-        {
-            // 窗口加载完成后的初始化（如有需要）
-        }
-
         protected override void OnStateChanged(EventArgs e)
         {
             base.OnStateChanged(e);
@@ -53,8 +49,8 @@ namespace VisionGuard.Views
 
         protected override void OnClosing(CancelEventArgs e)
         {
-            // 直接退出程序（与 WinForms 行为对齐）
-            ExitApp();
+            DisposeResourcesOnce();
+            base.OnClosing(e);
         }
 
         private void ShowFromTray()
@@ -66,6 +62,14 @@ namespace VisionGuard.Views
 
         private void ExitApp()
         {
+            Close();
+        }
+
+        private void DisposeResourcesOnce()
+        {
+            if (_resourcesDisposed) return;
+            _resourcesDisposed = true;
+
             if (DataContext is ViewModels.MainViewModel vm)
             {
                 vm.Shutdown();
@@ -77,8 +81,6 @@ namespace VisionGuard.Views
                 _notifyIcon.Dispose();
                 _notifyIcon = null;
             }
-
-            System.Windows.Application.Current.Shutdown();
         }
 
     }

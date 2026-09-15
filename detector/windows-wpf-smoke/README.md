@@ -12,8 +12,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\test-wpf-person-detection.ps1
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\test-wpf-person-detection.ps1 `
-  -FixtureDirectory .\path\to\four-person-images `
+  -FixtureDirectory .\path\to\person-images `
+  -SourceCount 4 `
   -ModelPath .\artifacts\v0\yolo26n_320.onnx
 ```
 
-默认报告写入 `artifacts/e2e/wpf-four-window-person-detection.json`，包含每路帧数、`personHitFrames`、最高置信度、实际后端与 FPS，并验证停止一路不影响其他路、单路重配隔离、CPU 并行拒绝和 DirectML 失败回退。阈值默认是 `0.25`，可通过 `-ConfidenceThreshold` 调整。
+默认报告写入 `artifacts/e2e/wpf-window-person-detection.json`，包含每路帧数、`personHitFrames`、最高置信度、实际后端与 FPS，并验证停止一路不影响其他路、单路重配隔离、CPU 多路允许运行且超容量可见提示、DirectML 失败回退和运行期故障隔离。来源数默认 4，可通过 `-SourceCount` 调整；阈值默认是 `0.25`。

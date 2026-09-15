@@ -8,6 +8,7 @@
 using System;
 using System.Drawing;
 using System.Windows.Forms;
+using VisionGuard.Capture;
 
 namespace VisionGuard.UI
 {
@@ -111,12 +112,17 @@ namespace VisionGuard.UI
             _dragging = false;
 
             Rectangle r = NormalizeRect(_startPoint, e.Location);
-            if (r.Width > 10 && r.Height > 10)
+            if (CaptureSizeConstraints.IsValid(r))
             {
                 SelectedRegion = r;
                 DialogResult   = DialogResult.OK;
+                Close();
+                return;
             }
-            Close();
+            MessageBox.Show(this, "选区宽度和高度都必须大于 100 像素。", "选区过小",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            _current = Rectangle.Empty;
+            Invalidate();
         }
 
         // ── 绘制 ─────────────────────────────────────────────────────

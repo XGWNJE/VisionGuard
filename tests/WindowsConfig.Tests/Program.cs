@@ -4,6 +4,7 @@ using System.Linq;
 using VisionGuard.Capture;
 using VisionGuard.Services;
 using VisionGuard.Utils;
+using VisionGuard.Models;
 
 internal static class Program
 {
@@ -19,6 +20,83 @@ internal static class Program
             "whitespace environment value should use fallback");
         AssertEqual("custom-key", ApiKeyProvider.Resolve("  custom-key  ", "fallback-key"),
             "non-empty environment value should be trimmed and used");
+
+        var settingsDirectory = Path.Combine(Path.GetTempPath(), "visionguard-settings-test-" + Guid.NewGuid().ToString("N"));
+        var settingsPath = Path.Combine(settingsDirectory, "settings.ini");
+        var wpfSettings = new SharedSettingsFile(settingsPath);
+        var winFormsSettings = new SharedSettingsFile(settingsPath);
+        wpfSettings.Load();
+        winFormsSettings.Load();
+        wpfSettings.Set("Wpf.Signal.1.Name", "门口");
+        winFormsSettings.Set("WinForms.Signal.1.Name", "仓库");
+        wpfSettings.Save();
+        winFormsSettings.Save();
+        var mergedSettings = new SharedSettingsFile(settingsPath);
+        mergedSettings.Load();
+        AssertEqual("门口", mergedSettings.GetString("Wpf.Signal.1.Name", ""),
+            "a later WinForms save must preserve WPF keys written after its load");
+        AssertEqual("仓库", mergedSettings.GetString("WinForms.Signal.1.Name", ""),
+            "a WinForms save must persist its own dirty keys");
+        Directory.Delete(settingsDirectory, true);
+
+        // “信号”→“来源”键名迁移：补写新键、保留旧键、可重复执行，数量键不覆盖用户当前值。
+        var migrationDirectory = Path.Combine(Path.GetTempPath(), "visionguard-migration-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(migrationDirectory);
+        var migrationPath = Path.Combine(migrationDirectory, "settings.ini");
+        File.WriteAllText(migrationPath,
+            "Signal.1.Name=信号 1\nSignal.2.Name=信号 2\nSignal.2.Cooldown=45\nWinForms.Signal.Count=2\n",
+            new System.Text.UTF8Encoding(false));
+        var migrationStore = new SharedSettingsFile(migrationPath);
+        migrationStore.Load();
+        var suffixes = new[] { "Name", "Cooldown" };
+        AssertEqual(2, SourceSettingsMigration.Migrate(migrationStore, "Signal.", "Source.", suffixes, 16),
+            "migration must report the highest source index that carried data");
+        AssertEqual("信号 2", migrationStore.GetString("Source.2.Name", ""),
+            "legacy per-source values must be carried over to the unified prefix");
+        AssertEqual("信号 2", migrationStore.GetString("Signal.2.Name", ""),
+            "legacy keys must stay as a backup after migration");
+        AssertEqual(2, SourceSettingsMigration.MigrateCount(migrationStore, "WinForms.Signal.Count", "WinForms.Source.Count", 1),
+            "the source count must migrate from its legacy key");
+        migrationStore.Save();
+        var migratedAgain = new SharedSettingsFile(migrationPath);
+        migratedAgain.Load();
+        AssertEqual(null, migratedAgain.GetString("Signal.1.Cooldown", null),
+            "migration must not invent keys the legacy file never had");
+        AssertEqual(2, SourceSettingsMigration.Migrate(migratedAgain, "Signal.", "Source.", suffixes, 16),
+            "migration must be idempotent");
+        migratedAgain.Set("WinForms.Source.Count", "4");
+        migratedAgain.Save();
+        var countEdited = new SharedSettingsFile(migrationPath);
+        countEdited.Load();
+        AssertEqual(4, SourceSettingsMigration.MigrateCount(countEdited, "WinForms.Signal.Count", "WinForms.Source.Count", 1),
+            "an existing unified count must win over the legacy value");
+        Directory.Delete(migrationDirectory, true);
+
+        var sourceConfig = new MonitorConfig
+        {
+            AlertCooldownSeconds = 9,
+            ConfidenceThreshold = 0.55f,
+            TargetFps = 3,
+        };
+        sourceConfig.WatchedClasses.Add("person");
+        var source = new MonitorSource("winforms-source-1", "门口", "yolov5nu_320", sourceConfig);
+        var sourcePayload = new MonitorSourceStatus
+        {
+            SourceId = source.SourceId,
+            SourceName = source.SourceName,
+            ModelKey = source.ModelKey,
+            IsMonitoring = true,
+            IsReady = true,
+            ActualFps = 2.75,
+        }.ToHeartbeatPayload(sourceConfig);
+        AssertEqual("winforms-source-1", (string)sourcePayload["sourceId"],
+            "WinForms source heartbeat must preserve stable source identity");
+        AssertEqual("门口", (string)sourcePayload["sourceName"],
+            "WinForms source heartbeat must preserve the editable source name");
+        AssertTrue((bool)sourcePayload["isMonitoring"] && (bool)sourcePayload["isReady"],
+            "WinForms source heartbeat must expose per-source runtime state");
+        AssertTrue(Math.Abs((double)sourcePayload["actualFps"] - 2.75) < 0.001,
+            "WinForms source heartbeat must expose measured FPS without silently replacing it");
 
         AssertFalse(CaptureSizeConstraints.IsValid(100, 101),
             "width equal to 100 must be rejected");
@@ -40,6 +118,15 @@ internal static class Program
             "50.5 DIP at 200% DPI must be reported as 101 capture pixels");
         AssertTrue(CaptureSizeConstraints.IsValid(highDpiValid),
             "a 101x101 capture-pixel selection must be accepted at 200% DPI");
+
+        foreach (var scale in new[] { 1.0, 1.25, 1.5, 1.75, 2.0 })
+        {
+            var mapped = CaptureSizeConstraints.MapToCapturePixels(8, 12, 320, 180, scale, scale);
+            AssertEqual((int)(320 * scale), mapped.Width,
+                $"320 DIP width must map consistently at {scale * 100:0}% DPI");
+            AssertEqual((int)(180 * scale), mapped.Height,
+                $"180 DIP height must map consistently at {scale * 100:0}% DPI");
+        }
 
         var selectedWindow = new WindowInfo(new IntPtr(1), "监控画面", "Chrome_WidgetWin_1",
             new System.Drawing.Rectangle(0, 0, 800, 600), 10, "chrome");
@@ -70,12 +157,15 @@ internal static class Program
         AssertTrue(duplicateTitleMatch.Status == WindowMatchStatus.Ambiguous,
             "legacy title-only configuration must reject duplicate window titles");
 
-        AssertTrue(MonitorFailurePolicy.RequiresGlobalStop(MonitorFailureKind.Inference, "DirectML"),
-            "a DirectML inference failure must stop all active sources");
-        AssertFalse(MonitorFailurePolicy.RequiresGlobalStop(MonitorFailureKind.Capture, "DirectML"),
-            "a capture failure must remain isolated to its source");
-        AssertFalse(MonitorFailurePolicy.RequiresGlobalStop(MonitorFailureKind.Inference, "Cpu"),
-            "a CPU inference failure must not be classified as a multi-source GPU fallback risk");
+        // 故障分类仍逐来源上报；早已没有“某种故障要全局停机”的策略位（见 30-windows-detector.md）。
+        AssertTrue(Enum.IsDefined(typeof(MonitorFailureKind), MonitorFailureKind.BlackFrame),
+            "per-source failure kinds must stay available for reporting");
+        AssertEqual((int)MonitorFailureKind.None, 0,
+            "MonitorFailureKind.None must keep its serialized value");
+        AssertEqual("", CapacityPolicy.GetWarning("Cpu", 1, 1),
+            "running at the configured capacity must not produce a warning");
+        AssertTrue(CapacityPolicy.GetWarning("Cpu", 2, 1).Contains("允许继续运行"),
+            "exceeding capacity must warn without representing an admission failure");
 
         var outboxDirectory = Path.Combine(Path.GetTempPath(), "visionguard-outbox-test-" + Guid.NewGuid().ToString("N"));
         var outboxPath = Path.Combine(outboxDirectory, "outbox.json");

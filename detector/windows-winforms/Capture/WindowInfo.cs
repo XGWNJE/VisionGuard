@@ -16,14 +16,16 @@ namespace VisionGuard.Capture
         public IntPtr   Handle    { get; }
         public string   Title     { get; }
         public string   ClassName { get; }
+        public string   ProcessName { get; }
         public Rectangle Bounds   { get; }
 
-        public WindowInfo(IntPtr handle, string title, string className, Rectangle bounds)
+        public WindowInfo(IntPtr handle, string title, string className, Rectangle bounds, string processName = "")
         {
             Handle    = handle;
             Title     = title;
             ClassName = className;
             Bounds    = bounds;
+            ProcessName = processName ?? string.Empty;
         }
 
         public override string ToString() => $"{Title}  [{ClassName}]";

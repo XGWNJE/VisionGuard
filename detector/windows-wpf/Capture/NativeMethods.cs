@@ -75,6 +75,10 @@ namespace VisionGuard.Capture
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
+
         // ── 窗口枚举 ────────────────────────────────────────────────
         internal delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 

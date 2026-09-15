@@ -109,5 +109,16 @@ namespace VisionGuard.Capture
 
             return Rectangle.Empty;
         }
+
+        /// <summary>
+        /// 获取 PrintWindow 客户区重绘平面的尺寸。客户区坐标属于目标窗口自身，
+        /// 不会混入 DWM 对 DPI 不感知窗口施加的屏幕位图拉伸。
+        /// </summary>
+        internal static Rectangle GetPrintWindowBounds(IntPtr hwnd)
+        {
+            return NativeMethods.GetClientRect(hwnd, out NativeMethods.RECT clientRect)
+                ? clientRect.ToRectangle()
+                : Rectangle.Empty;
+        }
     }
 }

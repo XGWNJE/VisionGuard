@@ -8,14 +8,19 @@
 
   <ItemGroup>
     <Compile Include="..\..\detector\windows-shared\Utils\ApiKeyProvider.cs" Link="ApiKeyProvider.cs" />
-    <Compile Include="..\..\detector\windows-wpf\Capture\CaptureSizeConstraints.cs" Link="CaptureSizeConstraints.cs" />
-    <Compile Include="..\..\detector\windows-wpf\Capture\CaptureBlackFrameException.cs" Link="CaptureBlackFrameException.cs" />
+    <Compile Include="..\..\detector\windows-shared\Utils\SharedSettingsFile.cs" Link="SharedSettingsFile.cs" />
+    <Compile Include="..\..\detector\windows-shared\Utils\SourceSettingsMigration.cs" Link="SourceSettingsMigration.cs" />
+    <Compile Include="..\..\detector\windows-winforms\Models\MonitorConfig.cs" Link="WinFormsMonitorConfig.cs" />
+    <Compile Include="..\..\detector\windows-winforms\Models\MonitorSource.cs" Link="WinFormsMonitorSource.cs" />
+    <Compile Include="..\..\detector\windows-shared\Capture\CaptureSizeConstraints.cs" Link="CaptureSizeConstraints.cs" />
+    <Compile Include="..\..\detector\windows-shared\Capture\CaptureBlackFrameException.cs" Link="CaptureBlackFrameException.cs" />
     <Compile Include="..\..\detector\windows-wpf\Capture\NativeMethods.cs" Link="NativeMethods.cs" />
     <Compile Include="..\..\detector\windows-wpf\Capture\WindowEnumerator.cs" Link="WindowEnumerator.cs" />
     <Compile Include="..\..\detector\windows-wpf\Capture\WindowInfo.cs" Link="WindowInfo.cs" />
     <Compile Include="..\..\detector\windows-wpf\Capture\WindowCapturer.cs" Link="WindowCapturer.cs" />
     <Compile Include="..\..\detector\windows-wpf\Capture\WindowMatchResolver.cs" Link="WindowMatchResolver.cs" />
-    <Compile Include="..\..\detector\windows-wpf\Services\MonitorFailurePolicy.cs" Link="MonitorFailurePolicy.cs" />
+    <Compile Include="..\..\detector\windows-wpf\Services\MonitorFailureKind.cs" Link="MonitorFailureKind.cs" />
+    <Compile Include="..\..\detector\windows-wpf\Services\CapacityPolicy.cs" Link="CapacityPolicy.cs" />
     <Compile Include="..\..\detector\windows-wpf\Services\AlertOutbox.cs" Link="AlertOutbox.cs" />
   </ItemGroup>
 
