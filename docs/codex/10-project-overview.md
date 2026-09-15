@@ -28,10 +28,10 @@ VisionGuard 当前是由视觉检测端、Server、Android 接收端和 Windows 
 
 | 规范名称 | 路径 | 当前状态 | 自动验证边界 |
 |---|---|---|---|
-| Windows WinForms 检测端（WinForms Visual Detector） | `detector/windows-winforms/` | 主体实现；Win7 兼容线 | Release 编译可单独验证；完整告警链和 Win7 真实环境待补 |
-| Windows WPF 检测端（WPF Visual Detector） | `detector/windows-wpf/` | 四窗口来源主体实现 | 四路真实窗口人员推理自动验证；动态视频、完整报警链和 UI 视觉待验收 |
+| Windows WinForms 检测端（WinForms Visual Detector） | `detector/windows-winforms/` | 主体实现；Win7 兼容线；多来源与逐来源配置已对齐功能基线 | Release 编译与多来源窗口推理可单独验证；完整告警链、长时稳定性和 Win7 真实环境待补 |
+| Windows WPF 检测端（WPF Visual Detector） | `detector/windows-wpf/` | 多来源主体实现；来源数量按 Server 协商上限生成 | 按配置来源数量取证的窗口人员推理自动验证（四路为回归基线）；动态视频、完整报警链和 UI 视觉待验收 |
 | Windows 驻留程序（Windows Resident） | `detector/windows-resident/` | .NET Framework 4.7.2 x64 后台进程；独立 WS 身份、单实例和进程握手已接入 | 框架/API 已对齐 Win7 SP1 x64；Win7 实机、重启、崩溃、完整远控链路待验收 |
-| Android 检测端（Android Visual Detector） | `detector/android/` | 主体实现；真实加速尚未实现 | 单测、构建和历史启动证据可分别报告；QNN/NCNN 与完整报警链待补 |
+| Android 检测端（Android Visual Detector） | `detector/android/` | 主体实现；**当前暂缓**（[路线图决策 19](15-product-roadmap.md)） | 单测、构建和历史启动证据可分别报告；当前协议下缺少 `channel` 无法认证、且没有来源维度；恢复实施时先统一三端语义 |
 | Android 接收端（Android Receiver） | `receiver/android/` | 主体实现；设备/来源 UI 已接入 | JVM 单测、构建和历史启动证据可分别报告；完整报警链待补 |
 | Server | `server/` | 当前 4.x 中继实现 | TypeScript 构建、单测和协议测试可自动验证；生产状态需独立核验 |
 
@@ -52,11 +52,12 @@ Server 当前实现连接认证、心跳、告警广播、截图/更新路由和
 | `detector/windows-wpf/` | Windows WPF 检测端 |
 | `detector/windows-resident/` | Windows 驻留程序 |
 | `detector/windows-shared/` | Windows 两种检测端与驻留程序共用的进程/身份代码 |
+| `detector/windows-wpf-smoke/`、`detector/windows-winforms-smoke/` | 人员检测 smoke 工具，按配置的来源数量取证；WPF 用独立浏览器窗口，WinForms 用独立 net472 图片窗口以便在 Win7 运行 |
 | `detector/android/` | Android 检测端 |
 | `receiver/android/` | Android 接收端 |
 | `server/` | HTTP / WebSocket 中继服务 |
 | `scripts/` | 版本、构建、验证、发行和模型导出脚本 |
-| `tests/` | 跨模块约束和 WPF 推理辅助测试 |
+| `tests/` | 跨模块约束、WPF 推理辅助和 WinForms 多来源测试 |
 | `.agents/skills/` | 三个需要脚本化或授权边界的项目级 Skill |
 | `docs/codex/` | 项目事实、操作和验证文档 |
 | `docs/design/` | 当前设计规范入口 |
