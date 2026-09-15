@@ -16,7 +16,7 @@ param(
     [switch]$DryRun,
     [switch]$GitHubOnly,
 
-    [string]$ServerEnvPath = 'D:\ObjectCode\Server-infra\server.local.env',
+    [string]$ServerEnvPath,
     [string]$RemoteRoot = '/opt/visionguard-server',
     [string]$BaseUrl = 'https://visionguard.xgwnje.cn',
     [string]$GitHubReleaseNotesPath,
@@ -28,6 +28,11 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+# Server-infra lives next to this repository; derive it when -ServerEnvPath is not passed.
+$serverInfraRoot = Join-Path (Split-Path -Parent $repoRoot) 'Server-infra'
+if ([string]::IsNullOrWhiteSpace($ServerEnvPath)) {
+    $ServerEnvPath = Join-Path $serverInfraRoot 'server.local.env'
+}
 $releaseDir = Join-Path $repoRoot 'server\data\releases'
 $modelsDir = Join-Path $repoRoot 'server\data\models'
 $releasesJsonPath = Join-Path $repoRoot 'server\data\releases.json'
@@ -229,7 +234,7 @@ function Get-AndroidSecretMap {
     foreach ($file in @(
         (Join-Path $ProjectRoot 'keystore.local.env'),
         (Join-Path $repoRoot '.local\visionguard-release.env'),
-        'D:\ObjectCode\Server-infra\visionguard-release.local.env'
+        (Join-Path $serverInfraRoot 'visionguard-release.local.env')
     )) {
         foreach ($entry in (Read-EnvFile -Path $file).GetEnumerator()) {
             $map[$entry.Key] = $entry.Value

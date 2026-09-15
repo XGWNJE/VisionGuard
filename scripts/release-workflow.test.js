@@ -102,7 +102,9 @@ test('publish-release.ps1 keeps GitHub optional and release deployment reproduci
   assert.match(script, /Deploy-ServerCode/);
   assert.match(script, /Verify-OnlineServer/);
   assert.match(script, /\$serverDeployPlanned/);
-  assert.match(script, /D:\\ObjectCode\\Server-infra\\server\.local\.env/);
+  assert.match(script, /\$serverInfraRoot = Join-Path/);
+  assert.match(script, /Join-Path \$serverInfraRoot 'server\.local\.env'/);
+  assert.doesNotMatch(script, /D:\\ObjectCode/);
   assert.match(script, /\/opt\/visionguard-server/);
   assert.match(script, /app-release-unsigned\.apk/);
   assert.match(script, /apksigner/);
