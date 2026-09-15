@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WpfPersonDetection')]
+    [ValidateSet('Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WindowsTests', 'WpfPersonDetection', 'WinFormsPersonDetection')]
     [string]$Mode = 'Discover',
 
     [ValidateSet('Auto', 'Physical', 'Emulator', 'None')]
@@ -12,7 +12,12 @@ param(
     [string]$Avd = 'VisionGuard_API36',
     [switch]$ClearAppData,
     [switch]$NoLaunchEmulator,
-    [int]$BootTimeoutSeconds = 180
+    [int]$BootTimeoutSeconds = 180,
+    [ValidateRange(2,16)][int]$WpfSourceCount = 4,
+    [string]$WpfFixtureDirectory = '',
+    [ValidateRange(2,16)][int]$WinFormsSourceCount = 4,
+    [ValidateRange(0,3600)][int]$WinFormsDurationSeconds = 0,
+    [string]$WinFormsModelPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,7 +26,7 @@ $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $artifactRoot = Join-Path $repoRoot "artifacts\e2e\$timestamp"
 New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
 
-$effectiveBuildType = if ($Mode -eq 'WpfPersonDetection') { 'Release' } else { $BuildType }
+$effectiveBuildType = if ($Mode -in @('WindowsTests', 'WpfPersonDetection', 'WinFormsPersonDetection')) { 'Release' } else { $BuildType }
 $summary = [ordered]@{
     mode = $Mode
     buildType = $effectiveBuildType
@@ -327,13 +332,52 @@ function Run-AndroidAppSmoke {
     Add-Result -Name "$Name runtime" -Status 'PASS' -Evidence $artifactRoot
 }
 
+function Run-WindowsTests {
+    # 宿主机上的机器可判定约束测试，不依赖设备、模拟器或 Server。
+    $configProject = Join-Path $repoRoot 'tests\WindowsConfig.Tests\WindowsConfig.Tests.csproj'
+    $multiProject = Join-Path $repoRoot 'tests\WinFormsMultiSource.Tests\WinFormsMultiSource.Tests.csproj'
+    $multiExe = Join-Path $repoRoot 'tests\WinFormsMultiSource.Tests\bin\Release\net472\WinFormsMultiSource.Tests.exe'
+    if (-not (Test-Path -LiteralPath $configProject)) { throw "Windows config test project missing: $configProject" }
+    if (-not (Test-Path -LiteralPath $multiProject)) { throw "WinForms multi-source test project missing: $multiProject" }
+
+    $configLog = Join-Path $artifactRoot 'windows-config-tests.txt'
+    Invoke-NativeLogged -FilePath 'dotnet' -Arguments @('run', '--project', $configProject, '-c', 'Release') -WorkingDirectory $repoRoot -LogPath $configLog
+    Add-Result -Name 'Windows config and protocol constraints' -Status 'PASS' -Evidence $configLog
+
+    $multiBuildLog = Join-Path $artifactRoot 'winforms-multi-source-tests-build.txt'
+    Invoke-NativeLogged -FilePath 'dotnet' -Arguments @('build', $multiProject, '-c', 'Release') -WorkingDirectory $repoRoot -LogPath $multiBuildLog
+    if (-not (Test-Path -LiteralPath $multiExe)) { throw "WinForms multi-source test executable missing: $multiExe" }
+    $multiLog = Join-Path $artifactRoot 'winforms-multi-source-tests.txt'
+    Invoke-NativeLogged -FilePath $multiExe -Arguments @() -WorkingDirectory $repoRoot -LogPath $multiLog
+    Add-Result -Name 'WinForms multi-source coordinator isolation' -Status 'PASS' -Evidence $multiLog
+}
+
 function Run-WpfPersonDetection {
     $script = Join-Path $repoRoot 'scripts\test-wpf-person-detection.ps1'
     $report = Join-Path $artifactRoot 'wpf-person-detection.json'
     $log = Join-Path $artifactRoot 'wpf-person-detection.txt'
     if (-not (Test-Path -LiteralPath $script)) { throw "WPF person test script missing: $script" }
-    Invoke-NativeLogged -FilePath 'powershell' -Arguments @('-ExecutionPolicy', 'Bypass', '-File', $script, '-ReportPath', $report) -WorkingDirectory $repoRoot -LogPath $log
-    Add-Result -Name 'WPF four-window person detection' -Status 'PASS' -Evidence $report
+    $arguments = @('-ExecutionPolicy', 'Bypass', '-File', $script, '-ReportPath', $report, '-SourceCount', $WpfSourceCount.ToString())
+    # 夹具目录必须至少包含与来源数量相同的人像图，脚本会直接报错而不是降低来源数量。
+    if (-not [string]::IsNullOrWhiteSpace($WpfFixtureDirectory)) { $arguments += @('-FixtureDirectory', $WpfFixtureDirectory) }
+    Invoke-NativeLogged -FilePath 'powershell' -Arguments $arguments -WorkingDirectory $repoRoot -LogPath $log
+    Add-Result -Name "WPF $WpfSourceCount-window person detection" -Status 'PASS' -Evidence $report
+}
+
+function Run-WinFormsPersonDetection {
+    $script = Join-Path $repoRoot 'scripts\test-winforms-person-detection.ps1'
+    $windowProject = Join-Path $repoRoot 'detector\windows-winforms-smoke\VisionGuard.WinFormsSmoke.csproj'
+    $inferenceProject = Join-Path $repoRoot 'detector\windows-winforms-smoke\VisionGuard.WinFormsInferenceSmoke.csproj'
+    $report = Join-Path $artifactRoot 'winforms-person-detection.json'
+    $log = Join-Path $artifactRoot 'winforms-person-detection.txt'
+    if (-not (Test-Path -LiteralPath $script)) { throw "WinForms person test script missing: $script" }
+    Invoke-NativeLogged -FilePath 'dotnet' -Arguments @('build', $windowProject, '-c', 'Release') -WorkingDirectory $repoRoot -LogPath (Join-Path $artifactRoot 'winforms-window-tool-build.txt')
+    Invoke-NativeLogged -FilePath 'dotnet' -Arguments @('build', $inferenceProject, '-c', 'Release') -WorkingDirectory $repoRoot -LogPath (Join-Path $artifactRoot 'winforms-inference-tool-build.txt')
+    $arguments = @('-ExecutionPolicy', 'Bypass', '-File', $script, '-RepoRoot', $repoRoot, '-ReportPath', $report, '-SourceCount', $WinFormsSourceCount.ToString())
+    if (-not [string]::IsNullOrWhiteSpace($WinFormsModelPath)) { $arguments += @('-ModelPath', $WinFormsModelPath) }
+    if ($WinFormsDurationSeconds -gt 0) { $arguments += @('-DurationSeconds', $WinFormsDurationSeconds.ToString()) }
+    Invoke-NativeLogged -FilePath 'powershell' -Arguments $arguments -WorkingDirectory $repoRoot -LogPath $log
+    Add-Result -Name "WinForms $WinFormsSourceCount-window person detection" -Status 'PASS' -Evidence $report
 }
 
 try {
@@ -358,7 +402,9 @@ try {
                 -PackageName 'com.xgwnje.visionguard_android' `
                 -RuntimePermissions @('android.permission.POST_NOTIFICATIONS')
         }
+        'WindowsTests' { Run-WindowsTests }
         'WpfPersonDetection' { Run-WpfPersonDetection }
+        'WinFormsPersonDetection' { Run-WinFormsPersonDetection }
     }
 }
 catch {

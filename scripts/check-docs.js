@@ -20,7 +20,7 @@ const WS_ROLES = ['windows', 'android', 'android-detector', 'windows-resident'];
 
 const RETAINED_SKILLS = [
   { name: 'visionguard-build', script: '.agents/skills/visionguard-build/scripts/build-all.ps1', modes: ['All', 'Server', 'Windows', 'WinForms', 'WPF', 'WindowsResident', 'Android', 'AndroidDetector', 'AndroidReceiver'] },
-  { name: 'visionguard-e2e', script: '.agents/skills/visionguard-e2e/scripts/e2e-smoke.ps1', modes: ['Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WpfPersonDetection'] },
+  { name: 'visionguard-e2e', script: '.agents/skills/visionguard-e2e/scripts/e2e-smoke.ps1', modes: ['Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WindowsTests', 'WpfPersonDetection', 'WinFormsPersonDetection'] },
   { name: 'visionguard-release', script: 'scripts/publish-release.ps1', modes: ['-PreflightOnly', '-SkipServerDeploy', '-UploadVps'] }
 ];
 
@@ -372,7 +372,7 @@ function checkSkillContract(root, errors) {
   requireText(buildScript, 'Windows Resident', RETAINED_SKILLS[0].script, 'the Windows Resident build target', errors);
 
   const e2eScript = readUtf8(root, RETAINED_SKILLS[1].script, errors, { checkBom: false });
-  requirePattern(e2eScript, /ValidateSet\('Discover'.*'WpfPersonDetection'\)/s, RETAINED_SKILLS[1].script, 'the complete e2e mode contract', errors);
+  requirePattern(e2eScript, /ValidateSet\('Discover'.*'WpfPersonDetection'.*'WinFormsPersonDetection'\)/s, RETAINED_SKILLS[1].script, 'the complete e2e mode contract', errors);
   requirePattern(e2eScript, /ServerSmoke compatibility alias[\s\S]*compile\/artifact smoke only/, RETAINED_SKILLS[1].script, 'the non-E2E ServerSmoke alias boundary', errors);
   requireText(e2eScript, 'WpfPersonDetection', RETAINED_SKILLS[1].script, 'the WPF person semantic mode', errors);
 
@@ -385,12 +385,18 @@ function checkSkillContract(root, errors) {
 function checkValidationContract(root, readme, operations, verificationReport, errors) {
   const wpfScript = readUtf8(root, 'scripts/test-wpf-person-detection.ps1', errors, { checkBom: false });
   const wpfSmokeProgram = readUtf8(root, 'detector/windows-wpf-smoke/Program.cs', errors, { checkBom: false });
-  requireText(wpfScript, '$images.Count -ne 4', 'scripts/test-wpf-person-detection.ps1', 'the exactly-four-window fixture contract', errors);
+  requireText(wpfScript, '$images.Count -lt $SourceCount', 'scripts/test-wpf-person-detection.ps1', 'the configured source-count fixture contract', errors);
   requireText(wpfScript, 'personHitFrames', 'scripts/test-wpf-person-detection.ps1', 'the person detection assertion', errors);
   requireText(wpfScript, '$report.passed', 'scripts/test-wpf-person-detection.ps1', 'the explicit passing report', errors);
   requireText(wpfSmokeProgram, 'WatchedClasses', 'detector/windows-wpf-smoke/Program.cs', 'the watched person class configuration', errors);
   requireText(wpfSmokeProgram, 'string.Equals(d.Label, "person"', 'detector/windows-wpf-smoke/Program.cs', 'the exact person-label assertion', errors);
   requireText(wpfSmokeProgram, 'expectedLabel = "person"', 'detector/windows-wpf-smoke/Program.cs', 'the person evidence label', errors);
+  const winformsScript = readUtf8(root, 'scripts/test-winforms-person-detection.ps1', errors, { checkBom: false });
+  const winformsSmokeProgram = readUtf8(root, 'detector/windows-winforms-smoke/InferenceSmokeProgram.cs', errors, { checkBom: false });
+  requireText(winformsScript, '$handles.Length -ne $SourceCount', 'scripts/test-winforms-person-detection.ps1', 'the configured source-count fixture contract', errors);
+  requireText(winformsScript, "$result['passed']", 'scripts/test-winforms-person-detection.ps1', 'the explicit passing report', errors);
+  requireText(winformsSmokeProgram, 'personHits', 'detector/windows-winforms-smoke/InferenceSmokeProgram.cs', 'the person detection assertion', errors);
+  requireText(winformsSmokeProgram, 'UpdateSourceLimit', 'detector/windows-winforms-smoke/InferenceSmokeProgram.cs', 'the negotiated source limit usage', errors);
   requireText(readme, 'person', 'README.md', 'the WPF person semantic assertion', errors);
   requireText(operations, '真实窗口采集', 'docs/codex/60-operations.md', 'the real-window boundary', errors);
   requirePattern(operations, /完整(?:报警|告警)链/, 'docs/codex/60-operations.md', 'the full-alert-chain boundary', errors);
