@@ -28,7 +28,11 @@ data class DeviceInfo(
     val clientType: String = "windows",
     val capabilities: List<String> = emptyList(),
     val components: Map<String, String> = emptyMap(),
-    val sources: List<SourceInfo> = emptyList()
+    val sources: List<SourceInfo> = emptyList(),
+    /** 服务端持有的来源上限；旧服务端不下发时为 null。 */
+    val maxSources: Int? = null,
+    /** 最近一次心跳的来源数超过上限而被整组拒绝：此时 sources 是旧快照，必须在界面上说明。 */
+    val sourceLimitExceeded: Boolean = false
 )
 
 @Immutable

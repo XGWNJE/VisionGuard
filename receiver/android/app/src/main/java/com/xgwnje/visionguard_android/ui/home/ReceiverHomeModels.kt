@@ -216,9 +216,9 @@ fun buildDeviceCardUiModel(device: DeviceInfo): DeviceCardUiModel {
     val statusLabel = when (statusTone) {
         DeviceStatusTone.OFFLINE -> "离线"
         DeviceStatusTone.RESIDENT_ONLY -> "驻留在线 · 程序关闭"
-        DeviceStatusTone.MONITORING -> if (totalSourceCount > 0) "全部运行" else "监控中"
-        DeviceStatusTone.PARTIAL_MONITORING -> "部分运行 $runningSources/$totalSourceCount"
-        DeviceStatusTone.NOT_READY -> "选区未设定"
+        DeviceStatusTone.MONITORING -> "检测中"
+        DeviceStatusTone.PARTIAL_MONITORING -> "部分检测中 $runningSources/$totalSourceCount"
+        DeviceStatusTone.NOT_READY -> "未就绪"
         DeviceStatusTone.READY -> "已就绪"
     }
 
@@ -349,6 +349,22 @@ fun buildDeviceConfigChanges(
 
     return changes
 }
+
+/**
+ * 冷却时间的快捷档位，只用于“一点即中”。取值范围统一为 1–300 秒，
+ * 任意值都能通过自定义输入表达；设备当前值一律原样显示，不吸附到档位。
+ */
+internal val CooldownOptions = listOf(
+    5 to "5秒",
+    10 to "10秒",
+    30 to "30秒",
+    60 to "1分钟",
+    120 to "2分钟",
+    300 to "5分钟"
+)
+
+internal fun cooldownLabel(seconds: Int): String =
+    CooldownOptions.firstOrNull { it.first == seconds }?.second ?: "$seconds 秒"
 
 fun buildDeviceConfigFromDevice(device: DeviceInfo): DeviceConfig =
     DeviceConfig(

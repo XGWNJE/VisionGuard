@@ -14,6 +14,55 @@ import org.junit.Test
 class ReceiverHomeModelsTest {
 
     @Test
+    fun cooldownLabelCoversPresetAndArbitrarySeconds() {
+        assertEquals("5秒", cooldownLabel(5))
+        assertEquals("5分钟", cooldownLabel(300))
+        // 设备上报的任意秒数（例如 45 秒）原样显示，不吸附到档位。
+        assertEquals("45 秒", cooldownLabel(45))
+    }
+
+    @Test
+    fun cooldownRangeCoversOneToThreeHundredSeconds() {
+        val initialConfig = DeviceConfig(cooldown = 5, confidence = 0.45, targets = "person")
+
+        val atMax = buildDeviceConfigChanges(
+            initialConfig = initialConfig,
+            editedCooldown = 300f,
+            editedConfidence = 0.45f,
+            selectedTargets = setOf("person"),
+            editedTargetSamplingRate = 3,
+            editedModelKey = ""
+        )
+        assertEquals("300", atMax.single { it.key == "cooldown" }.value)
+
+        val clamped = buildDeviceConfigChanges(
+            initialConfig = initialConfig,
+            editedCooldown = 999f,
+            editedConfidence = 0.45f,
+            selectedTargets = setOf("person"),
+            editedTargetSamplingRate = 3,
+            editedModelKey = ""
+        )
+        assertEquals("300", clamped.single { it.key == "cooldown" }.value)
+    }
+
+    @Test
+    fun untouchedCooldownDoesNotProduceAChange() {
+        val initialConfig = DeviceConfig(cooldown = 5, confidence = 0.45, targets = "person")
+
+        val changes = buildDeviceConfigChanges(
+            initialConfig = initialConfig,
+            editedCooldown = initialConfig.cooldown.toFloat(),
+            editedConfidence = 0.45f,
+            selectedTargets = setOf("person"),
+            editedTargetSamplingRate = 3,
+            editedModelKey = ""
+        )
+
+        assertEquals(emptyList<String>(), changes.map { it.key })
+    }
+
+    @Test
     fun alertListChromeOmitsStandaloneTitleHeader() {
         val chrome = buildAlertListChrome()
 
@@ -69,7 +118,7 @@ class ReceiverHomeModelsTest {
         val offlineModel = buildDeviceCardUiModel(offline)
 
         assertEquals("Win-门口", monitoringModel.deviceName)
-        assertEquals("监控中", monitoringModel.statusLabel)
+        assertEquals("检测中", monitoringModel.statusLabel)
         assertEquals(DeviceStatusTone.MONITORING, monitoringModel.statusTone)
         assertEquals("停止监控", monitoringModel.controlActionLabel)
         assertEquals("pause", monitoringModel.controlCommand)
@@ -275,7 +324,7 @@ class ReceiverHomeModelsTest {
         )
         val model = buildDeviceCardUiModel(device)
         assertEquals(DeviceStatusTone.PARTIAL_MONITORING, model.statusTone)
-        assertEquals("部分运行 1/2", model.statusLabel)
+        assertEquals("部分检测中 1/2", model.statusLabel)
         assertEquals(false, model.controlsEnabled)
     }
 
@@ -304,7 +353,7 @@ class ReceiverHomeModelsTest {
             val model = buildDeviceCardUiModel(device)
 
             assertEquals(DeviceStatusTone.PARTIAL_MONITORING, model.statusTone)
-            assertEquals("部分运行 3/4", model.statusLabel)
+            assertEquals("部分检测中 3/4", model.statusLabel)
             assertEquals(false, model.controlsEnabled)
         }
     }
@@ -326,7 +375,7 @@ class ReceiverHomeModelsTest {
         val model = buildDeviceCardUiModel(device)
 
         assertEquals(DeviceStatusTone.MONITORING, model.statusTone)
-        assertEquals("全部运行", model.statusLabel)
+        assertEquals("检测中", model.statusLabel)
         assertEquals(false, model.controlsEnabled)
     }
 

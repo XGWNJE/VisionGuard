@@ -20,6 +20,19 @@ class CurrentDeviceInfoParserTest {
     }
 
     @Test
+    fun readsSourceLimitFieldsAndDefaultsThemForOlderServers() {
+        val withLimit = currentDeviceJson()
+            .replace("\"sources\":[]", "\"sources\":[],\"maxSources\":6,\"sourceLimitExceeded\":true")
+        val device = parseCurrentDeviceInfo(JsonParser.parseString(withLimit), gson)
+        assertEquals(6, device?.maxSources)
+        assertEquals(true, device?.sourceLimitExceeded)
+
+        val legacy = parseCurrentDeviceInfo(JsonParser.parseString(currentDeviceJson()), gson)
+        assertNull(legacy?.maxSources)
+        assertEquals(false, legacy?.sourceLimitExceeded)
+    }
+
+    @Test
     fun rejectsOldRecordWithoutCapabilities() {
         val json = currentDeviceJson().replace(
             "\"capabilities\":[\"source-control\"],",

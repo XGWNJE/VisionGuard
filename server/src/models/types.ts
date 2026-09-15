@@ -89,6 +89,8 @@ export interface SourceStatus {
   modelKey: string;
   actualFps?: number;
   error?: string;
+  activeBackend?: string;
+  performanceWarning?: string;
   cooldown?: number;
   confidence?: number;
   targets?: string;
@@ -150,6 +152,10 @@ export interface DeviceStatus {
   capabilities: string[];
   components: Record<string, string>;
   sources: SourceStatus[];
+  /** 服务端持有的来源上限；接收端据此解释设备为什么只有这些来源。 */
+  maxSources: number;
+  /** 最近一次心跳的 sources 因超过上限被整组拒绝；接收端需要看到该状态，而不是静默的旧快照。 */
+  sourceLimitExceeded: boolean;
 }
 
 /** 接收端 → 服务器：反向控制命令 */
@@ -251,6 +257,8 @@ export interface DetectorClient {
   capabilities: string[];
   components: Record<string, string>;
   sources: SourceStatus[];
+  /** 最近一次心跳的 sources 因超过服务端上限被整组拒绝。 */
+  sourceLimitExceeded: boolean;
 }
 
 export interface ReceiverClient {

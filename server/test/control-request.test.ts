@@ -190,19 +190,23 @@ test('correlates detector completion with the requesting receiver', async (t) =>
     components: { detectorApp: 'running', invalidComponent: 'invented-state' },
     sources: [
       { sourceId: 'front', sourceName: 'Front Door', isMonitoring: true, isReady: true, modelKey: 'yolo26n_320', actualFps: 3.2,
+        activeBackend: 'Cpu', performanceWarning: '当前运行路数超过容量提示值',
         cooldown: 999, confidence: 0.7, targets: 'person,car', targetSamplingRate: 9 },
       { sourceId: 'side', sourceName: 'Side Door', isMonitoring: true, isReady: true, modelKey: 'yolo26n_320' },
       { sourceId: 'garage', sourceName: 'Garage', isMonitoring: false, isReady: true, modelKey: 'yolo26n_320' },
       { sourceId: 'fourth', sourceName: 'Fourth Source', isMonitoring: true, isReady: false, modelKey: 'yolo26n_640', error: 'window missing' },
-      { sourceId: 'fifth', sourceName: 'Fifth Source', isMonitoring: true, isReady: true, modelKey: 'yolo26n_320' },
     ],
   }));
   const capabilityDevice = (await capabilityListPromise).devices
     .find((device: any) => device.deviceId === 'detector-control-test');
   assert.deepEqual(capabilityDevice.capabilities, ['monitor-control', 'request-correlation', 'source-control']);
   assert.deepEqual(capabilityDevice.components, { detectorApp: 'running' });
+  // 接收端必须能解释“来源为什么只有这些”，因此上限与超限状态都要下发。
+  assert.equal(capabilityDevice.maxSources, 4);
+  assert.equal(capabilityDevice.sourceLimitExceeded, false);
   assert.deepEqual(capabilityDevice.sources, [
     { sourceId: 'front', sourceName: 'Front Door', isMonitoring: true, isReady: true, modelKey: 'yolo26n_320', actualFps: 3.2,
+      activeBackend: 'Cpu', performanceWarning: '当前运行路数超过容量提示值',
       cooldown: 300, confidence: 0.7, targets: 'person,car', targetSamplingRate: 5 },
     { sourceId: 'side', sourceName: 'Side Door', isMonitoring: true, isReady: true, modelKey: 'yolo26n_320' },
     { sourceId: 'garage', sourceName: 'Garage', isMonitoring: false, isReady: true, modelKey: 'yolo26n_320' },
@@ -386,6 +390,42 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   }));
   const reusedRelay = await reusedRelayPromise;
   assert.equal(reusedRelay.targetSourceId, 'front');
+
+  // 超限心跳：sources 整组被拒并保留旧快照，但接收端必须看到超限状态，而不是静默的旧来源。
+  const overLimitListPromise = waitForMessage(receiver, msg =>
+    msg.type === 'device-list' && msg.devices?.some((device: any) =>
+      device.deviceId === 'detector-control-test' && device.sourceLimitExceeded === true));
+  detector.send(JSON.stringify({
+    type: 'heartbeat', deviceId: 'detector-control-test', deviceName: 'Detector',
+    isMonitoring: false, isReady: true,
+    capabilities: ['monitor-control', 'request-correlation', 'source-control'],
+    sources: [
+      { sourceId: 's1', sourceName: 'S1', isMonitoring: false, isReady: true, modelKey: 'yolo26n_320' },
+      { sourceId: 's2', sourceName: 'S2', isMonitoring: false, isReady: true, modelKey: 'yolo26n_320' },
+      { sourceId: 's3', sourceName: 'S3', isMonitoring: false, isReady: true, modelKey: 'yolo26n_320' },
+      { sourceId: 's4', sourceName: 'S4', isMonitoring: false, isReady: true, modelKey: 'yolo26n_320' },
+      { sourceId: 's5', sourceName: 'S5', isMonitoring: false, isReady: true, modelKey: 'yolo26n_320' },
+    ],
+  }));
+  const overLimitDevice = (await overLimitListPromise).devices
+    .find((device: any) => device.deviceId === 'detector-control-test');
+  assert.equal(overLimitDevice.maxSources, 4);
+  assert.equal(overLimitDevice.sourceLimitExceeded, true);
+  assert.deepEqual(overLimitDevice.sources.map((source: any) => source.sourceId),
+    ['front', 'side', 'garage', 'fourth']);
+
+  // 正常心跳必须清除超限状态，否则接收端会一直显示过期的告警。
+  const recoveredListPromise = waitForMessage(receiver, msg =>
+    msg.type === 'device-list' && msg.devices?.some((device: any) =>
+      device.deviceId === 'detector-control-test' && device.sourceLimitExceeded === false));
+  detector.send(JSON.stringify({
+    type: 'heartbeat', deviceId: 'detector-control-test', deviceName: 'Detector',
+    isMonitoring: false, isReady: true,
+    capabilities: ['monitor-control', 'request-correlation', 'source-control'],
+    sources: [{ sourceId: 'front', sourceName: 'Front Door', isMonitoring: false, isReady: true, modelKey: 'yolo26n_320' }],
+  }));
+  assert.equal((await recoveredListPromise).devices
+    .find((device: any) => device.deviceId === 'detector-control-test').sources.length, 1);
 });
 
 test('keeps resident identity separate and routes lifecycle commands only to it', async (t) => {
@@ -430,7 +470,8 @@ test('keeps resident identity separate and routes lifecycle commands only to it'
     type: 'command', requestId: businessRequestId,
     targetDeviceId: 'resident-control-test', command: 'pause',
   }));
-  assert.equal((await businessAckPromise).reason, '设备离线');
+  // 只有驻留在线的设备仍算在线，业务命令必须给出比“设备离线”更准确的原因。
+  assert.equal((await businessAckPromise).reason, '该设备当前没有检测端在线');
   await businessNotRelayedPromise;
 
   const requestId = 'resident-request-12345678';

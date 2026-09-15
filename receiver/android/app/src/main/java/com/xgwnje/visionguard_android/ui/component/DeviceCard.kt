@@ -33,10 +33,14 @@ import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,6 +74,8 @@ import com.xgwnje.visionguard_android.ui.home.buildDeviceCardChrome
 import com.xgwnje.visionguard_android.ui.home.buildDeviceCardUiModel
 import com.xgwnje.visionguard_android.ui.home.buildDeviceConfigChanges
 import com.xgwnje.visionguard_android.ui.home.buildDeviceConfigEditorUiModel
+import com.xgwnje.visionguard_android.ui.home.CooldownOptions
+import com.xgwnje.visionguard_android.ui.home.cooldownLabel
 import com.xgwnje.visionguard_android.ui.theme.ReceiverAlert
 import com.xgwnje.visionguard_android.ui.theme.ReceiverAlertSoft
 import com.xgwnje.visionguard_android.ui.theme.ReceiverAmber
@@ -114,6 +120,15 @@ fun DeviceCard(
                 onCommand = { command -> onCommand(command, null) },
                 onConfigClick = { configSourceId = null; showConfigEditor = true }
             )
+            if (device.sourceLimitExceeded) {
+                val limit = device.maxSources?.let { "最多 $it 路" } ?: "服务端上限"
+                Text(
+                    text = "来源数量超过服务端上限（$limit），超出部分未被上报；下面显示的是上一次成功上报的来源。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                )
+            }
             if (device.sources.isNotEmpty()) {
                 SourceControlList(
                     device = device,
@@ -383,7 +398,7 @@ private fun SourceControlList(
                         Text(source.sourceName, style = MaterialTheme.typography.titleSmall, color = ReceiverPrimary, fontWeight = FontWeight.Bold)
                         val status = when {
                             source.error?.isNotBlank() == true -> source.error
-                            source.isMonitoring -> "监控中 · ${source.actualFps?.let { "%.1f FPS".format(it) } ?: "频率计算中"}"
+                            source.isMonitoring -> "检测中 · ${source.actualFps?.let { "%.1f FPS".format(it) } ?: "频率计算中"}"
                             !source.isReady -> "未绑定"
                             else -> "已停止 · ${source.modelKey.ifBlank { "未选模型" }}"
                         }
@@ -401,7 +416,10 @@ private fun SourceControlList(
                     DeviceActionButton(
                         label = "参数",
                         icon = Icons.Default.Tune,
-                        enabled = device.online && "source-control" in device.capabilities && source.isReady,
+                        // 统一语义：监控中的来源必须先停止才能改配置（检测端会直接拒绝），
+                        // 因此运行中不提供必然失败的入口。
+                        enabled = device.online && "source-control" in device.capabilities &&
+                            source.isReady && !source.isMonitoring,
                         emphasized = false, danger = false,
                         heightDp = 42, contentHorizontalPaddingDp = 8,
                         onClick = { onConfig(source.sourceId) },
@@ -484,7 +502,8 @@ private fun DeviceConfigBottomSheet(
     onDismiss: () -> Unit
 ) {
     var cooldown by remember(initialConfig.cooldown) {
-        mutableStateOf(normalizeCooldownOption(initialConfig.cooldown))
+        // 保留设备实际值：吸附到档位会让“未修改也下发新冷却值”。
+        mutableStateOf(initialConfig.cooldown.coerceIn(1, 300))
     }
     var confidence by remember(initialConfig.confidence) { mutableStateOf(initialConfig.confidence.toFloat()) }
     var selectedTargets by remember(initialConfig.targets) {
@@ -728,6 +747,9 @@ private fun CooldownEditor(
     value: Int,
     onChange: (Int) -> Unit
 ) {
+    // 1–300 秒在小屏上很难用滑块精确选，所以用“常用档一点即中 + 数字键盘精确输入”。
+    var customDraft by remember { mutableStateOf<String?>(null) }
+    val isPreset = CooldownOptions.any { it.first == value }
     ConfigSection(
         icon = Icons.Default.Timer,
         title = "警报推送冷却时间",
@@ -742,8 +764,33 @@ private fun CooldownEditor(
                 QuickValueChip(
                     text = label,
                     selected = value == seconds,
-                    onClick = { onChange(seconds) }
+                    onClick = { onChange(seconds); customDraft = null }
                 )
+            }
+            QuickValueChip(
+                text = if (isPreset) "自定义" else "$value 秒",
+                selected = !isPreset,
+                onClick = { customDraft = value.toString() }
+            )
+        }
+        if (customDraft != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = customDraft.orEmpty(),
+                    onValueChange = { raw -> customDraft = raw.filter { it.isDigit() }.take(3) },
+                    label = { Text("1–300 秒") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = {
+                    customDraft?.toIntOrNull()?.let { onChange(it.coerceIn(1, 300)) }
+                    customDraft = null
+                }) { Text("确定") }
             }
         }
     }
@@ -1051,21 +1098,6 @@ private fun illustrationDrawableRes(illustration: DeviceCardIllustration): Int =
         DeviceCardIllustration.ANDROID_CAMERA -> R.drawable.device_bg_android_detector
         DeviceCardIllustration.GENERIC_VIEWFINDER -> R.drawable.device_bg_generic
     }
-
-private val CooldownOptions = listOf(
-    10 to "10秒",
-    30 to "30秒",
-    60 to "1分钟",
-    100 to "100秒",
-    120 to "2分钟",
-    180 to "3分钟"
-)
-
-private fun normalizeCooldownOption(seconds: Int): Int =
-    CooldownOptions.minByOrNull { kotlin.math.abs(it.first - seconds) }?.first ?: 10
-
-private fun cooldownLabel(seconds: Int): String =
-    CooldownOptions.firstOrNull { it.first == seconds }?.second ?: "$seconds 秒"
 
 private fun statusForeground(tone: DeviceStatusTone): Color =
     when (tone) {

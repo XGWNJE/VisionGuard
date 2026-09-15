@@ -110,7 +110,6 @@ const MAX_TARGETS_LENGTH = 500;
 const MAX_MODEL_OPTIONS = 16;
 const MAX_CAPABILITIES = 32;
 const MAX_COMPONENTS = 8;
-const MAX_SOURCES = 4;
 const DETECTOR_COMMANDS = new Set(['pause', 'resume', 'stop-alarm']);
 const RESIDENT_COMMANDS = new Set(['open-wpf', 'open-winforms', 'close-wpf', 'close-winforms']);
 
@@ -191,7 +190,8 @@ function sanitizeSources(value: unknown): SourceStatus[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const ids = new Set<string>();
   const sources: SourceStatus[] = [];
-  for (const item of value.slice(0, MAX_SOURCES)) {
+  if (value.length > config.maxSourcesPerDetector) return undefined;
+  for (const item of value) {
     if (!item || typeof item !== 'object') continue;
     const sourceId = typeof item.sourceId === 'string' ? item.sourceId.trim() : '';
     const sourceName = typeof item.sourceName === 'string' ? item.sourceName.trim() : '';
@@ -201,6 +201,10 @@ function sanitizeSources(value: unknown): SourceStatus[] | undefined {
       ? Math.max(0, Math.min(240, item.actualFps)) : undefined;
     const error = typeof item.error === 'string' && item.error.trim()
       ? item.error.trim().slice(0, 256) : undefined;
+    const activeBackend = typeof item.activeBackend === 'string' && /^(Cpu|DirectML|NNAPI|Unavailable)$/.test(item.activeBackend)
+      ? item.activeBackend : undefined;
+    const performanceWarning = typeof item.performanceWarning === 'string' && item.performanceWarning.trim()
+      ? item.performanceWarning.trim().slice(0, 256) : undefined;
     const cooldown = typeof item.cooldown === 'number' && Number.isInteger(item.cooldown)
       ? Math.max(1, Math.min(300, item.cooldown)) : undefined;
     const confidence = typeof item.confidence === 'number' && isFinite(item.confidence)
@@ -211,7 +215,7 @@ function sanitizeSources(value: unknown): SourceStatus[] | undefined {
       ? Math.max(1, Math.min(5, item.targetSamplingRate)) : undefined;
     sources.push({
       sourceId, sourceName, isMonitoring: !!item.isMonitoring, isReady: !!item.isReady,
-      modelKey: sanitizeModelKey(item.modelKey) ?? '', actualFps, error,
+      modelKey: sanitizeModelKey(item.modelKey) ?? '', actualFps, error, activeBackend, performanceWarning,
       cooldown, confidence, targets, targetSamplingRate,
     });
   }
@@ -272,6 +276,7 @@ function createDetectorClient(
     capabilities: [],
     components: { detectorApp: 'running' },
     sources: [],
+    sourceLimitExceeded: false,
   };
 }
 
@@ -521,10 +526,11 @@ export function handleConnection(ws: WebSocket): void {
         if (role === 'windows' || role === 'android-detector' || role === 'windows-resident') handleCommandAck(msg as WsCommandAck, deviceId!);
         break;
       case 'disconnect-reason':
-        handleDisconnectReason(msg as WsDisconnectReason, role, deviceId);
+        if (role === 'android') handleDisconnectReason(msg as WsDisconnectReason, role, deviceId);
         break;
       case 'session-info':
-        handleSessionInfo(msg as WsSessionInfo);
+        // 会话信息只对接收端有意义，且必须绑定认证身份，不能由消息自称 deviceId。
+        if (role === 'android' && deviceId) handleSessionInfo(msg as WsSessionInfo, deviceId);
         break;
     }
   });
@@ -715,7 +721,7 @@ function handleAuth(
   }
 
   console.log(`[ws][${ts}] 认证成功: role=${msg.role} deviceId=${msg.deviceId} deviceName=${msg.deviceName ?? 'n/a'}`);
-  sendJson(ws, { type: 'auth-result', success: true });
+  sendJson(ws, { type: 'auth-result', success: true, maxSources: config.maxSourcesPerDetector });
   onSuccess(msg.role, msg.deviceId);
   sendJson(ws, { type: 'device-list', devices: buildDeviceList() });
   if (msg.role === 'windows' || msg.role === 'android-detector' || msg.role === 'windows-resident') {
@@ -747,6 +753,11 @@ function handleHeartbeat(msg: WsHeartbeat): void {
     return;
   }
 
+  const sanitizedSources = msg.sources === undefined ? undefined : sanitizeSources(msg.sources);
+  const sourcesRejected = msg.sources !== undefined && sanitizedSources === undefined;
+  // 超限会让 sources 整组被拒、客户端保留旧快照，因此必须把这个状态也告诉接收端。
+  const sourceOverLimit = Array.isArray(msg.sources) && msg.sources.length > config.maxSourcesPerDetector;
+  const sourceLimitChanged = msg.sources !== undefined && client.sourceLimitExceeded !== sourceOverLimit;
   const nameChanged = msg.deviceName !== undefined && msg.deviceName !== client.deviceName;
   const changed =
     client.isMonitoring !== msg.isMonitoring ||
@@ -762,6 +773,7 @@ function handleHeartbeat(msg: WsHeartbeat): void {
     JSON.stringify(client.capabilities) !== JSON.stringify(msg.capabilities ?? client.capabilities) ||
     JSON.stringify(client.components) !== JSON.stringify(msg.components ?? client.components) ||
     JSON.stringify(client.sources) !== JSON.stringify(msg.sources ?? client.sources) ||
+    sourceLimitChanged ||
     nameChanged;
 
   client.isMonitoring = msg.isMonitoring;
@@ -776,7 +788,8 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   if (msg.hasPendingConfigChanges !== undefined) client.hasPendingConfigChanges = !!msg.hasPendingConfigChanges;
   if (msg.capabilities !== undefined) client.capabilities = sanitizeCapabilities(msg.capabilities) ?? client.capabilities;
   if (msg.components !== undefined) client.components = sanitizeComponents(msg.components) ?? client.components;
-  if (msg.sources !== undefined) client.sources = sanitizeSources(msg.sources) ?? client.sources;
+  if (sanitizedSources !== undefined) client.sources = sanitizedSources;
+  if (msg.sources !== undefined) client.sourceLimitExceeded = sourceOverLimit;
   if (nameChanged) {
     client.deviceName = msg.deviceName!;
     console.log(`[ws][${new Date().toISOString()}] 设备名称更新: ${client.deviceName} (${msg.deviceId})`);
@@ -793,6 +806,9 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   client.lastSeen = new Date();
   sendJson(client.ws, {
     type: 'heartbeat-ack',
+    accepted: !sourcesRejected,
+    reason: sourcesRejected ? 'source-limit-exceeded' : undefined,
+    maxSources: config.maxSourcesPerDetector,
     deviceId: msg.deviceId,
     serverTime: client.lastSeen.toISOString(),
   }, `heartbeat-ack:${msg.deviceId}`);
@@ -829,12 +845,12 @@ function handleDisconnectReason(msg: WsDisconnectReason, role: string | null, de
   }
 }
 
-function handleSessionInfo(msg: WsSessionInfo): void {
+function handleSessionInfo(msg: WsSessionInfo, authenticatedDeviceId: string): void {
   const ts = new Date().toISOString();
   const durationSec = msg.lastSessionDurationMs >= 0 ? `${Math.round(msg.lastSessionDurationMs / 1000)}s` : '未知';
   const reasonDesc = SessionEndReasonNames[msg.lastSessionEndReason] ?? msg.lastSessionEndReason;
-  console.log(`[ws][${ts}] 接收端 Session 上报: deviceId=${msg.deviceId} isReconnect=${msg.isReconnect} 上次结束原因=${reasonDesc} 上次持续=${durationSec}`);
-  const session = androidSessions.get(msg.deviceId);
+  console.log(`[ws][${ts}] 接收端 Session 上报: deviceId=${authenticatedDeviceId} isReconnect=${msg.isReconnect} 上次结束原因=${reasonDesc} 上次持续=${durationSec}`);
+  const session = androidSessions.get(authenticatedDeviceId);
   if (session) {
     session.lastSessionEndReason = msg.lastSessionEndReason;
     if (msg.lastSessionDurationMs >= 0) session.lastSessionDurationMs = msg.lastSessionDurationMs;
@@ -871,9 +887,11 @@ function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
   }
 
   if (!target || target.ws.readyState !== WebSocket.OPEN) {
-    ack.reason = residentCommand ? '驻留组件离线' : '设备离线';
+    // 只有驻留在线的设备仍算在线（生命周期命令可用），因此不能说"设备离线"。
+    ack.reason = residentCommand ? '驻留组件离线'
+      : residentWindowsClients.has(msg.targetDeviceId) ? '该设备当前没有检测端在线' : '设备离线';
     sendJson(senderWs, ack, 'command-ack->sender');
-    console.warn(`[ws][${new Date().toISOString()}] 命令路由失败: target=${msg.targetDeviceId} command=${msg.command} reason=设备离线`);
+    console.warn(`[ws][${new Date().toISOString()}] 命令路由失败: target=${msg.targetDeviceId} command=${msg.command} reason=${ack.reason}`);
     return;
   }
 
@@ -889,6 +907,8 @@ function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
     ack.phase = 'completed'; ack.reason = '目标来源不存在';
     sendJson(senderWs, ack, 'command-ack->sender'); return;
   }
+  // 设备级命令（无 targetSourceId）由检测端解释为“全部来源”，与界面上的“启动已配置/全部停止”一致；
+  // 检测端不得把它静默落到第一路。逐来源控制由 targetSourceId 表达，两者语义分离。
   if (msg.requestId && !registerPendingControlRequest(msg.requestId, senderWs, msg.targetDeviceId, msg.command, msg.targetSourceId)) {
     ack.phase = 'completed';
     ack.reason = 'requestId 重复';
@@ -963,9 +983,14 @@ function handleSetConfig(senderWs: WebSocket, msg: WsSetConfig): void {
 function handleRequestScreenshot(senderWs: WebSocket, msg: any): void {
   const alertId = msg?.alertId;
   const targetDeviceId = typeof msg?.targetDeviceId === 'string' ? msg.targetDeviceId : '';
+  // 成功路径没有回执：检测端把截图作为 screenshot-data 异步广播，请求者按 alertId 关联。
+  // 失败必须回结构化回执，否则严格解析请求者（务必带 requestId/phase）看不到任何反馈。
+  const requestId = typeof msg?.requestId === 'string' ? msg.requestId : undefined;
   if (!isSafeAlertId(alertId) || !targetDeviceId) {
     sendJson(senderWs, {
       type: 'command-ack',
+      requestId,
+      phase: 'completed',
       targetDeviceId,
       command: 'request-screenshot',
       success: false,
@@ -978,6 +1003,8 @@ function handleRequestScreenshot(senderWs: WebSocket, msg: any): void {
   if (!target || target.ws.readyState !== WebSocket.OPEN) {
     sendJson(senderWs, {
       type: 'command-ack',
+      requestId,
+      phase: 'completed',
       targetDeviceId,
       command: 'request-screenshot',
       success: false,
@@ -1068,6 +1095,8 @@ function buildDeviceList(): DeviceStatus[] {
         components: residentWindowsClients.has(c.deviceId)
           ? { ...residentWindowsClients.get(c.deviceId)!.components, ...c.components, resident: 'running' } : c.components,
         sources: c.sources,
+        maxSources: config.maxSourcesPerDetector,
+        sourceLimitExceeded: c.sourceLimitExceeded,
       });
     }
   }
@@ -1082,6 +1111,8 @@ function buildDeviceList(): DeviceStatus[] {
       hasPendingConfigChanges: false, clientType: 'windows',
       capabilities: ['app-lifecycle-control'], components: { ...r.components, resident: 'running' },
       sources: [],
+      maxSources: config.maxSourcesPerDetector,
+      sourceLimitExceeded: false,
     });
   }
   return devices;
@@ -1145,6 +1176,18 @@ const maintenanceTimer = setInterval(() => {
         _heartbeatCounter.delete(id);
         detectorCleaned = true;
       }
+    }
+  }
+
+  // 驻留程序幽灵清理：驻留条目会被合并进同设备检测端的 components，
+  // 不清理就会让接收端一直显示"驻留运行中"，并给出必然失败的开/关按钮。
+  for (const [id, client] of residentWindowsClients) {
+    if (client.lastSeen.getTime() <= detectorDeadline) {
+      const silentSec = Math.round((now - client.lastSeen.getTime()) / 1000);
+      console.log(`[ws][${ts}] 驻留程序幽灵清理: ${client.deviceName} (${id}) 静默 ${silentSec}s 阈值 ${config.deviceOfflineMs / 1000}s`);
+      client.ws.terminate();
+      residentWindowsClients.delete(id);
+      detectorCleaned = true;
     }
   }
 
