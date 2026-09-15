@@ -15,8 +15,14 @@
                         <ComboBoxItem>CPU · 兼容与诊断</ComboBoxItem>
                     </ComboBox>
                 </Grid>
-                <TextBlock Text="重启后生效 · CPU 仅支持一路" Foreground="{StaticResource WarningBrush}" FontSize="11" Margin="64,6,0,0"
-                           ToolTip="加速失败时，具体回退原因会显示在对应信号中。"/>
+                <Grid Margin="0,7,0,0">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="64"/><ColumnDefinition/><ColumnDefinition Width="10"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                    <TextBlock Text="容量" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="1"><TextBlock Text="DirectML 基线" Style="{StaticResource CaptionText}"/><TextBox Text="{Binding DirectMlCapacity, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"/></StackPanel>
+                    <StackPanel Grid.Column="3"><TextBlock Text="CPU 基线" Style="{StaticResource CaptionText}"/><TextBox Text="{Binding CpuCapacity, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}"/></StackPanel>
+                </Grid>
+                <TextBlock Text="容量仅用于性能提示，不阻止启动，也不会自动减路或降帧。" Foreground="{StaticResource WarningBrush}" FontSize="11" Margin="64,6,0,0"
+                           ToolTip="加速失败时，具体回退原因会显示在对应来源中。"/>
             </StackPanel>
 
             <!-- 模型：选择、状态与动作形成两行 -->

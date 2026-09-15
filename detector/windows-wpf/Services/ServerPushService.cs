@@ -34,6 +34,7 @@ namespace VisionGuard.Services
 
         /// <summary>set-config 命令：key=配置项名, value=新值</summary>
         public event EventHandler<RemoteSetConfigEventArgs> SetConfigReceived;
+        public event EventHandler<int> SourceLimitReceived;
 
         // ── 常量 ─────────────────────────────────────────────────────
         private const int HEARTBEAT_INTERVAL_MS = 3_000;
@@ -478,7 +479,7 @@ namespace VisionGuard.Services
             });
         }
 
-        private void OnAuthResult(Session s, bool success, string reason)
+        private void OnAuthResult(Session s, bool success, string reason, int maxSources)
         {
             if (s != _session) return;
             if (success)
@@ -486,6 +487,8 @@ namespace VisionGuard.Services
                 LogManager.StaticInfo("[Server] WS 认证成功");
                 _attempt = 0;
                 SetState(WsState.Connected);
+                // maxSources=0 表示服务端未声明上限，此时保持本地已放开的范围，不收窄。
+                if (maxSources > 0) SourceLimitReceived?.Invoke(this, Math.Clamp(maxSources, 1, 16));
                 s.StartHeartbeat();
                 FlushAlertOutbox();
             }
@@ -780,7 +783,9 @@ namespace VisionGuard.Services
                         {
                             bool success = d.TryGetValue("success", out object? sv) && sv is bool b && b;
                             string reason = SimpleJson.GetString(d, "reason", "");
-                            _parent.Post(() => _parent.OnAuthResult(this, success, reason));
+                            // 服务端没下发 maxSources（旧版本）时不能假装是默认上限，否则本地会被静默压回 4 路。
+                            int maxSources = d.TryGetValue("maxSources", out object? mv) ? Convert.ToInt32(mv) : 0;
+                            _parent.Post(() => _parent.OnAuthResult(this, success, reason, maxSources));
                             break;
                         }
                         case "kicked":
@@ -825,6 +830,11 @@ namespace VisionGuard.Services
                             break;
                         }
                         case "heartbeat-ack":
+                            if (d.TryGetValue("maxSources", out object? heartbeatMaxSources))
+                            {
+                                int limit = Convert.ToInt32(heartbeatMaxSources);
+                                _parent.Post(() => _parent.SourceLimitReceived?.Invoke(_parent, Math.Clamp(limit, 1, 16)));
+                            }
                             _parent.Post(_parent.FlushAlertOutbox);
                             break;
                     }

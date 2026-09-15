@@ -18,14 +18,17 @@ namespace VisionGuard.ViewModels
 {
     public sealed class MultiSourceViewModel : ViewModelBase, IDisposable
     {
-        private readonly MultiSourceMonitorCoordinator _coordinator = new();
+        private readonly MultiSourceMonitorCoordinator _coordinator;
         private readonly ServerPushService _server;
         private readonly SettingsViewModel _settings;
-        private SignalSourceViewModel? _selectedSource;
+        private SourceViewModel? _selectedSource;
+        private string _sourceLimitWarning = "";
+        // 收到服务端 maxSources 之前先放开到最大值（与 WinForms 端一致），否则本地会被默认上限卡住，用户加不了更多来源。
+        private int _sourceLimit = MultiSourceMonitorCoordinator.MaximumSourceLimit;
 
-        public ObservableCollection<SignalSourceViewModel> Sources { get; } = new();
+        public ObservableCollection<SourceViewModel> Sources { get; } = new();
         public IReadOnlyList<MonitorSourceStatus> Statuses => _coordinator.Statuses;
-        public SignalSourceViewModel? SelectedSource
+        public SourceViewModel? SelectedSource
         {
             get => _selectedSource;
             set
@@ -38,24 +41,32 @@ namespace VisionGuard.ViewModels
 
         public bool IsAnyMonitoring => Statuses.Any(s => s.IsMonitoring);
         public bool IsAnyReady => Statuses.Any(s => s.IsReady);
-        public string RunningSummary => $"运行 {Statuses.Count(s => s.IsMonitoring)} / {Sources.Count}";
-        public string ErrorSummary => Statuses.Count(s => !string.IsNullOrWhiteSpace(s.Error)) is var count && count > 0 ? $"{count} 路异常" : "无异常";
+        public string RunningSummary => $"检测中 {Statuses.Count(s => s.IsMonitoring)} / {Sources.Count}";
+        public string ErrorSummary => !string.IsNullOrWhiteSpace(_sourceLimitWarning) ? _sourceLimitWarning
+            : !IsAnyReady && !IsAnyMonitoring ? "未就绪：请先完整配置至少一个来源"
+            : Statuses.Count(s => !string.IsNullOrWhiteSpace(s.Error)) is var count && count > 0 ? $"{count} 路异常" : "无异常";
         public string ConnectionSummary => _server.IsConnected ? "服务器已连接" : "服务器未连接";
         public RelayCommand StartConfiguredCommand { get; }
         public RelayCommand StopAllCommand { get; }
+        public RelayCommand AddSourceCommand { get; }
+        public RelayCommand RemoveSourceCommand { get; }
+        public string SourceLimitText => $"服务端允许最多 {_sourceLimit} 路来源";
 
         public MultiSourceViewModel(ServerPushService server, SettingsViewModel settings)
         {
             _server = server;
             _settings = settings;
+            _coordinator = new MultiSourceMonitorCoordinator(capacityProvider: settings.GetCapacity);
             EnsureLegacyBackupAndMigration();
-            for (var i = 1; i <= MultiSourceMonitorCoordinator.MaxSources; i++)
+            EnsureSourceKeyMigration();
+            foreach (int index in ResolveInitialSourceIndexes())
             {
-                var slot = new SignalSourceViewModel(i, this);
+                var slot = new SourceViewModel(index, this);
                 Sources.Add(slot);
                 _coordinator.Add(slot.BuildSource());
             }
             SelectedSource = Sources[0];
+            _server.SourceLimitReceived += (_, limit) => Application.Current.Dispatcher.Invoke(() => ApplySourceLimit(limit));
 
             _coordinator.AlertTriggered += (_, alert) =>
             {
@@ -83,15 +94,52 @@ namespace VisionGuard.ViewModels
 
             StartConfiguredCommand = new RelayCommand(StartConfigured, () => Sources.Any(s => s.CanStart));
             StopAllCommand = new RelayCommand(StopAll, () => Sources.Any(s => s.IsMonitoring));
+            AddSourceCommand = new RelayCommand(AddSource, () => Sources.Count < _sourceLimit);
+            RemoveSourceCommand = new RelayCommand(RemoveSource, () => Sources.Count > 1 && SelectedSource != null && !SelectedSource.IsMonitoring);
+            RefreshSummary();
+        }
+
+        /// <summary>
+        /// 在服务端上限内新增一个来源，与 WinForms 端一致：新来源默认未配置，等待用户设定采集目标。
+        /// </summary>
+        private void AddSource()
+        {
+            if (Sources.Count >= _sourceLimit) return;
+            int index = 1;
+            while (Sources.Any(source => source.Index == index)) index++;
+            var slot = new SourceViewModel(index, this);
+            Sources.Add(slot);
+            _coordinator.Add(slot.BuildSource());
+            SelectedSource = slot;
+            PersistSourceIndexes();
+            RefreshSummary();
+        }
+
+        /// <summary>删除当前来源，保底保留一个；运行中的来源必须先停止。</summary>
+        private void RemoveSource()
+        {
+            var slot = SelectedSource;
+            if (slot == null || Sources.Count <= 1) return;
+            if (slot.IsMonitoring)
+            {
+                _sourceLimitWarning = "请先停止该来源再删除";
+                RefreshSummary();
+                return;
+            }
+            _sourceLimitWarning = "";
+            _coordinator.Remove(slot.SourceId);
+            Sources.Remove(slot);
+            SelectedSource = Sources[0];
+            PersistSourceIndexes();
             RefreshSummary();
         }
 
         internal InferenceBackend PreferredBackend => _settings.PreferredBackend;
-        internal void Select(SignalSourceViewModel slot) => SelectedSource = slot;
+        internal void Select(SourceViewModel slot) => SelectedSource = slot;
 
-        internal void Rename(SignalSourceViewModel slot) => _coordinator.Rename(slot.SourceId, slot.SourceName);
+        internal void Rename(SourceViewModel slot) => _coordinator.Rename(slot.SourceId, slot.SourceName);
 
-        internal void Reconfigure(SignalSourceViewModel slot)
+        internal void Reconfigure(SourceViewModel slot)
         {
             if (slot.IsMonitoring) throw new InvalidOperationException("请先停止该来源再修改配置。");
             _coordinator.Remove(slot.SourceId);
@@ -100,7 +148,7 @@ namespace VisionGuard.ViewModels
             RefreshSummary();
         }
 
-        internal void Start(SignalSourceViewModel slot)
+        internal void Start(SourceViewModel slot)
         {
             if (!slot.ResolveWindowForStart()) throw new InvalidOperationException(slot.StatusText);
             Reconfigure(slot);
@@ -111,12 +159,27 @@ namespace VisionGuard.ViewModels
             RefreshSummary();
         }
 
-        internal void Stop(SignalSourceViewModel slot) { _coordinator.Stop(slot.SourceId); RefreshSummary(); }
+        internal void Stop(SourceViewModel slot) { _coordinator.Stop(slot.SourceId); RefreshSummary(); }
 
         public bool HandleCommand(string sourceId, string command, string requestId)
         {
-            var targetId = string.IsNullOrWhiteSpace(sourceId) ? "default" : sourceId;
-            var ackSourceId = string.IsNullOrWhiteSpace(sourceId) ? string.Empty : targetId;
+            // 设备级命令（无 targetSourceId）统一作用于全部来源，等价于界面上的
+            // “启动已配置 / 全部停止”；不能静默只作用于第一路。
+            if (string.IsNullOrWhiteSpace(sourceId))
+            {
+                try
+                {
+                    if (command == "resume") StartConfigured();
+                    else if (command == "pause") StopAll();
+                    else { _server.SendCommandAck(command, false, "设备不支持该命令", requestId); return false; }
+                    _server.SendCommandAck(command, true, requestId: requestId);
+                    return true;
+                }
+                catch (Exception ex) { _server.SendCommandAck(command, false, ex.Message, requestId); return false; }
+            }
+
+            var targetId = sourceId;
+            var ackSourceId = targetId;
             var slot = Sources.FirstOrDefault(s => s.SourceId == targetId);
             if (slot == null) { _server.SendCommandAck(command, false, "来源不存在", requestId, ackSourceId); return false; }
             try
@@ -160,7 +223,37 @@ namespace VisionGuard.ViewModels
         {
             OnPropertyChanged(nameof(IsAnyMonitoring)); OnPropertyChanged(nameof(IsAnyReady));
             OnPropertyChanged(nameof(RunningSummary)); OnPropertyChanged(nameof(ErrorSummary)); OnPropertyChanged(nameof(ConnectionSummary));
+            OnPropertyChanged(nameof(SourceLimitText));
             StartConfiguredCommand?.RaiseCanExecuteChanged(); StopAllCommand?.RaiseCanExecuteChanged();
+            AddSourceCommand?.RaiseCanExecuteChanged(); RemoveSourceCommand?.RaiseCanExecuteChanged();
+        }
+
+        private void ApplySourceLimit(int limit)
+        {
+            // 上限只是上界：不超过上限时不动用户的来源数量，超出的部分才需要裁掉。
+            _sourceLimit = Math.Clamp(limit, 1, MultiSourceMonitorCoordinator.MaximumSourceLimit);
+            var overLimit = Sources.Where(source => source.Index > _sourceLimit).ToArray();
+            if (overLimit.Length == 0)
+            {
+                _sourceLimitWarning = "";
+                RefreshSummary();
+                return;
+            }
+            if (Sources.Any(source => source.IsMonitoring))
+            {
+                _sourceLimitWarning = $"Server 上限 {_sourceLimit} 路，停止后应用";
+                RefreshSummary();
+                return;
+            }
+            _sourceLimitWarning = "";
+            foreach (var slot in overLimit)
+            {
+                if (ReferenceEquals(SelectedSource, slot)) SelectedSource = Sources.First(source => source.Index <= _sourceLimit);
+                _coordinator.Remove(slot.SourceId);
+                Sources.Remove(slot);
+            }
+            PersistSourceIndexes();
+            RefreshSummary();
         }
 
         private void StartConfigured()
@@ -183,23 +276,81 @@ namespace VisionGuard.ViewModels
 
         private void EnsureLegacyBackupAndMigration()
         {
-            if (SettingsStore.GetBool("Signal.LegacyMigrationCompleted", false)) return;
+            // 早期版本已完成过这次迁移的用户不能再跑一遍，否则会用旧的单来源配置覆盖当前来源 1，
+            // 因此新旧两个标记名都要认。
+            if (SettingsStore.GetBool("Source.LegacyMigrationCompleted", false) ||
+                SettingsStore.GetBool("Signal.LegacyMigrationCompleted", false)) return;
             var keys = new[] { "CaptureMode", "TargetWindowTitle", "WindowSubRegion", "ScreenRegion", "MaskRegions", "ConfidenceThresholdPct", "TargetFps", "AlertCooldownSeconds", "SelectedModelIndex", "WatchedClasses" };
-            foreach (var key in keys) SettingsStore.Set($"Signal.LegacyBackup.{key}", SettingsStore.GetString(key, string.Empty));
-            SettingsStore.Set("Signal.LegacyBackupCreated", true);
-            SettingsStore.Set("Signal.1.Name", "信号 1");
-            SettingsStore.Set("Signal.1.CaptureMode", SettingsStore.GetString("CaptureMode", CaptureMode.ScreenRegion.ToString()));
-            SettingsStore.Set("Signal.1.TargetWindowTitle", SettingsStore.GetString("TargetWindowTitle", string.Empty));
-            SettingsStore.Set("Signal.1.WindowSubRegion", SettingsStore.GetString("WindowSubRegion", string.Empty));
-            SettingsStore.Set("Signal.1.ScreenRegion", SettingsStore.GetString("ScreenRegion", string.Empty));
-            SettingsStore.Set("Signal.1.Masks", LegacyMasksToCompact(SettingsStore.GetString("MaskRegions", string.Empty)));
-            SettingsStore.Set("Signal.1.ModelKey", ModelManager.ModelKeys[Math.Clamp(SettingsStore.GetInt("SelectedModelIndex", 0), 0, ModelManager.ModelKeys.Length - 1)]);
-            SettingsStore.Set("Signal.1.Targets", SettingsStore.GetString("WatchedClasses", "person"));
-            SettingsStore.Set("Signal.1.Threshold", SettingsStore.GetInt("ConfidenceThresholdPct", 45));
-            SettingsStore.Set("Signal.1.Fps", Math.Clamp(SettingsStore.GetInt("TargetFps", 3), 1, 5));
-            SettingsStore.Set("Signal.1.Cooldown", SettingsStore.GetInt("AlertCooldownSeconds", 5));
-            SettingsStore.Set("Signal.1.Initialized", true);
-            SettingsStore.Set("Signal.LegacyMigrationCompleted", true);
+            foreach (var key in keys) SettingsStore.Set($"Source.LegacyBackup.{key}", SettingsStore.GetString(key, string.Empty));
+            SettingsStore.Set("Source.LegacyBackupCreated", true);
+            SettingsStore.Set("Source.1.Name", "来源 1");
+            SettingsStore.Set("Source.1.CaptureMode", SettingsStore.GetString("CaptureMode", CaptureMode.ScreenRegion.ToString()));
+            SettingsStore.Set("Source.1.TargetWindowTitle", SettingsStore.GetString("TargetWindowTitle", string.Empty));
+            SettingsStore.Set("Source.1.WindowSubRegion", SettingsStore.GetString("WindowSubRegion", string.Empty));
+            SettingsStore.Set("Source.1.ScreenRegion", SettingsStore.GetString("ScreenRegion", string.Empty));
+            SettingsStore.Set("Source.1.Masks", LegacyMasksToCompact(SettingsStore.GetString("MaskRegions", string.Empty)));
+            SettingsStore.Set("Source.1.ModelKey", ModelManager.ModelKeys[Math.Clamp(SettingsStore.GetInt("SelectedModelIndex", 0), 0, ModelManager.ModelKeys.Length - 1)]);
+            SettingsStore.Set("Source.1.Targets", SettingsStore.GetString("WatchedClasses", "person"));
+            SettingsStore.Set("Source.1.Threshold", SettingsStore.GetInt("ConfidenceThresholdPct", 45));
+            SettingsStore.Set("Source.1.Fps", Math.Clamp(SettingsStore.GetInt("TargetFps", 3), 1, 5));
+            SettingsStore.Set("Source.1.Cooldown", SettingsStore.GetInt("AlertCooldownSeconds", 5));
+            SettingsStore.Set("Source.1.Initialized", true);
+            SettingsStore.Set("Source.LegacyMigrationCompleted", true);
+            SettingsStore.Save();
+        }
+
+        private static readonly string[] SourceKeySuffixes =
+        {
+            "Name", "ModelKey", "Targets", "Threshold", "Fps", "Cooldown", "CaptureMode",
+            "TargetWindowTitle", "TargetWindowClassName", "TargetWindowProcessName",
+            "ScreenRegion", "WindowSubRegion", "Masks", "Initialized",
+        };
+
+        /// <summary>
+        /// 早期设置键使用“信号”前缀，统一为“来源”后做一次性迁移；旧键保留作备份。
+        /// 必须在读取任何来源键之前执行，否则会把迁移前的配置当成空配置再写回去。
+        /// </summary>
+        private void EnsureSourceKeyMigration()
+        {
+            if (SettingsStore.GetBool("Source.KeyMigrationCompleted", false)) return;
+            SourceSettingsMigration.Migrate(SettingsStore.Raw, "Signal.", "Source.",
+                SourceKeySuffixes, MultiSourceMonitorCoordinator.MaximumSourceLimit);
+            SettingsStore.Set("Source.KeyMigrationCompleted", true);
+            SettingsStore.Save();
+        }
+
+        /// <summary>
+        /// 来源槽位用显式索引列表持久化：允许在服务端上限内手动增删，而不是固定等于上限。
+        /// </summary>
+        private IEnumerable<int> ResolveInitialSourceIndexes()
+        {
+            var indexes = new List<int>();
+            string saved = SettingsStore.GetString("Source.Indexes", null);
+            if (!string.IsNullOrWhiteSpace(saved))
+            {
+                foreach (string part in saved.Split(','))
+                {
+                    int value;
+                    if (!int.TryParse(part.Trim(), out value)) continue;
+                    if (value < 1 || value > MultiSourceMonitorCoordinator.MaximumSourceLimit) continue;
+                    if (!indexes.Contains(value)) indexes.Add(value);
+                }
+            }
+            if (indexes.Count == 0)
+            {
+                // 首次运行或从早期版本升级：按已有的来源键推断数量，一个都没有就是一个来源。
+                int highest = 0;
+                for (int i = 1; i <= MultiSourceMonitorCoordinator.MaximumSourceLimit; i++)
+                    if (SettingsStore.GetString($"Source.{i}.Name", null) != null) highest = i;
+                for (int i = 1; i <= Math.Max(1, highest); i++) indexes.Add(i);
+            }
+            indexes.Sort();
+            return indexes;
+        }
+
+        private void PersistSourceIndexes()
+        {
+            SettingsStore.Set("Source.Indexes", string.Join(",", Sources.Select(source => source.Index).OrderBy(index => index)));
             SettingsStore.Save();
         }
 
@@ -216,10 +367,13 @@ namespace VisionGuard.ViewModels
         public void Dispose() => _coordinator.Dispose();
     }
 
-    public sealed class SignalSourceViewModel : ViewModelBase
+    public sealed class SourceViewModel : ViewModelBase
     {
         private readonly MultiSourceViewModel _owner;
         private readonly int _index;
+
+        /// <summary>槽位索引，也是它持久化键与 SourceId 的依据；删除其它来源不改变它。</summary>
+        public int Index { get { return _index; } }
         private string _sourceName = "", _modelKey = "", _targets = "", _statusText = "未配置", _targetWindowTitle = "";
         private string _targetWindowClassName = "", _targetWindowProcessName = "", _windowResolutionError = "";
         private int _thresholdPercent, _targetFps, _cooldown;
@@ -233,7 +387,7 @@ namespace VisionGuard.ViewModels
         private string _lastFrameText = "尚无画面", _inferenceText = "推理 — ms", _lastAlertText = "最后报警 —", _backendText = "后端 —";
 
         public string SourceId { get; }
-        public string DisplayIndex => $"信号 {_index}";
+        public string DisplayIndex => $"来源 {_index}";
         public string[] ModelOptions => ModelManager.ModelKeys;
         public ObservableCollection<DetectionItem> Detections { get; } = new();
         public ObservableCollection<DetectionClassOption> TargetOptions { get; } = new();
@@ -297,7 +451,7 @@ namespace VisionGuard.ViewModels
         public RelayCommand StartCommand { get; }
         public RelayCommand StopCommand { get; }
 
-        internal SignalSourceViewModel(int index, MultiSourceViewModel owner)
+        internal SourceViewModel(int index, MultiSourceViewModel owner)
         {
             _owner = owner; _index = index; SourceId = index == 1 ? "default" : $"signal-{index}";
             Load();
@@ -315,11 +469,13 @@ namespace VisionGuard.ViewModels
             StatusText = IsReady ? "就绪" : (!string.IsNullOrWhiteSpace(_targetWindowTitle) ? (string.IsNullOrWhiteSpace(_windowResolutionError) ? "窗口未找到" : _windowResolutionError) : "未配置");
         }
 
-        private string Prefix => $"Signal.{_index}.";
+        private string Prefix => $"Source.{_index}.";
 
         private void Load()
         {
-            _sourceName = SettingsStore.GetString(Prefix + "Name", $"信号 {_index}");
+            _sourceName = SettingsStore.GetString(Prefix + "Name", $"来源 {_index}");
+            // 早期的默认名是“信号 N”，统一改成“来源 N”；用户自己起过的名字不动。
+            if (_sourceName != null && _sourceName.Trim() == $"信号 {_index}") _sourceName = $"来源 {_index}";
             _modelKey = SettingsStore.GetString(Prefix + "ModelKey", "yolo26n_320");
             if (!ModelManager.ModelKeys.Contains(_modelKey)) _modelKey = "yolo26n_320";
             _targets = NormalizeTargets(SettingsStore.GetString(Prefix + "Targets", "person"));
@@ -554,8 +710,10 @@ namespace VisionGuard.ViewModels
             BackendText = status.ActiveBackend == "Unavailable" ? "后端 —" : $"{status.ActiveBackend} · {status.ActualFps:0.0} FPS";
             StatusText = !string.IsNullOrWhiteSpace(status.Error)
                 ? $"异常：{status.Error}"
+                : !string.IsNullOrWhiteSpace(status.PerformanceWarning)
+                    ? status.PerformanceWarning
                 : status.IsMonitoring
-                    ? "运行中"
+                    ? "检测中"
                     : IsDirty
                         ? "配置待保存"
                         : (IsReady ? (PreviewImage == null ? "就绪" : "已停止 · 保留最后画面") : (!string.IsNullOrWhiteSpace(_targetWindowTitle) ? (string.IsNullOrWhiteSpace(_windowResolutionError) ? "窗口未找到" : _windowResolutionError) : "未配置"));

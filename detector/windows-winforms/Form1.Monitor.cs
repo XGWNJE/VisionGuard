@@ -2,6 +2,7 @@
 using System;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using VisionGuard.Capture;
@@ -99,7 +100,6 @@ namespace VisionGuard
             _maskRegions.Clear();
             _lblRegionInfo.Text = "未选择区域";
             _lblMaskInfo.Text = "当前遮罩：-";
-            SaveSettings();
         }
 
         // ── 编辑遮罩区域 ─────────────────────────────────────────────
@@ -151,12 +151,11 @@ namespace VisionGuard
                 if (editor.ShowDialog(this) == DialogResult.OK)
                 {
                     _maskRegions = new System.Collections.Generic.List<RectangleF>(editor.Masks);
-                    SaveSettings();
                     UpdateMaskInfoLabel();
 
                     // 监控运行中：热更新 MonitorService 配置（下个 Tick 即生效）
-                    if (_monitorService.IsStarted)
-                        _monitorService.UpdateConfig(BuildConfig());
+                    if (IsCurrentSourceStarted)
+                        UpdateCurrentSourceConfig();
 
                     _log.Info(_maskRegions.Count == 0
                         ? "已清空遮罩区域。"
@@ -172,17 +171,27 @@ namespace VisionGuard
         /// <summary>
         /// 启动监控推理。remote=true 时失败通过 command-ack 返回，不弹 MessageBox。
         /// </summary>
-        private async void StartMonitor(bool remote, string requestId = "")
+        private async void StartMonitor(bool remote, string requestId = "", string targetSourceId = "")
         {
-            if (_monitorService.IsStarted)
+            string sourceId = ResolveCommandSourceId(targetSourceId, defaultToFirst: remote);
+            SourceEditorState sourceState = FindSourceState(sourceId);
+            if (sourceState == null)
             {
-                if (remote) _serverPushService.SendCommandAck("resume", false, "监控已在运行", requestId);
+                if (remote) _serverPushService.SendCommandAck("resume", false, "目标来源不存在", requestId, targetSourceId);
+                return;
+            }
+            if (string.Equals(sourceId, _sourceId, StringComparison.Ordinal)) CaptureCurrentSourceState();
+            MonitorSourceStatus sourceStatus = _monitorCoordinator.Statuses.FirstOrDefault(value => value.SourceId == sourceId);
+            if (sourceStatus != null && sourceStatus.IsMonitoring)
+            {
+                if (remote) _serverPushService.SendCommandAck("resume", false, "监控已在运行", requestId, targetSourceId);
                 return;
             }
 
-            if (!File.Exists(ModelPath))
+            string modelPath = Utils.ModelManager.GetModelPath(sourceState.ModelKey);
+            if (!File.Exists(modelPath))
             {
-                _log.Warn($"[Monitor] 模型文件不存在: {ModelPath}，开始下载...");
+                _log.Warn($"[Monitor] 模型文件不存在: {modelPath}，开始下载...");
                 _tsStatus.Text = "正在下载模型...";
 
                 bool downloaded = false;
@@ -193,14 +202,14 @@ namespace VisionGuard
 
                 await Task.Run(async () =>
                 {
-                    downloaded = await Utils.ModelManager.DownloadModel(_selectedModel, progress);
+                    downloaded = await Utils.ModelManager.DownloadModel(sourceState.ModelKey, progress);
                 });
 
                 if (!downloaded)
                 {
                     _log.Error("[Monitor] 模型下载失败");
                     this.Invoke((Action)(() =>
-                        MessageBox.Show(this, $"模型 {_selectedModel} 下载失败，请检查网络后重试。",
+                        MessageBox.Show(this, $"模型 {sourceState.ModelKey} 下载失败，请检查网络后重试。",
                             "错误", MessageBoxButtons.OK, MessageBoxIcon.Error)));
                     _tsStatus.Text = "就绪";
                     return;
@@ -210,21 +219,21 @@ namespace VisionGuard
                 this.Invoke((Action)(() => _tsStatus.Text = "就绪"));
             }
 
-            MonitorConfig cfg = BuildConfig();
+            MonitorConfig cfg = sourceState.Config;
 
             // 验证有效捕获源
             if (cfg.CaptureMode == CaptureMode.ScreenRegion)
             {
-                if (cfg.CaptureRegion.Width < 32 || cfg.CaptureRegion.Height < 32)
+                if (!CaptureSizeConstraints.IsValid(cfg.CaptureRegion))
                 {
                     if (remote)
                     {
-                        _serverPushService.SendCommandAck("resume", false, "未选择捕获区域，请先在捕获页框选区域", requestId);
+                        _serverPushService.SendCommandAck("resume", false, "未选择捕获区域，请先在捕获页框选区域", requestId, targetSourceId);
                         _log.Warn("[Server] 收到 resume，但捕获区域未设置。");
                     }
                     else
                     {
-                        MessageBox.Show("捕获区域太小（最小 32×32），请重新选择。",
+                        MessageBox.Show("捕获区域宽度和高度都必须大于 100 像素，请重新选择。",
                             "区域无效", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     }
                     return;
@@ -236,7 +245,7 @@ namespace VisionGuard
                 {
                     if (remote)
                     {
-                        _serverPushService.SendCommandAck("resume", false, "目标窗口句柄无效，请重新选择", requestId);
+                        _serverPushService.SendCommandAck("resume", false, "目标窗口句柄无效，请重新选择", requestId, targetSourceId);
                         _log.Warn("[Server] 收到 resume，但目标窗口句柄无效。");
                     }
                     else
@@ -246,19 +255,37 @@ namespace VisionGuard
                     }
                     return;
                 }
+                if (cfg.WindowSubRegion != Rectangle.Empty && !CaptureSizeConstraints.IsValid(cfg.WindowSubRegion))
+                {
+                    if (remote)
+                        _serverPushService.SendCommandAck("resume", false, "窗口子区域宽高必须都大于 100 像素", requestId, targetSourceId);
+                    else
+                        MessageBox.Show("窗口子区域宽度和高度都必须大于 100 像素，请重新选择。",
+                            "区域无效", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
             }
 
             try
             {
-                _monitorService.Start(ModelPath, cfg);
-                UpdateControlState(started: true);
+                if (string.Equals(sourceId, _sourceId, StringComparison.Ordinal))
+                {
+                    _btnStart.Enabled = false;
+                    _tsStatus.Text = "正在启动监控...";
+                }
+                _actualFps = 0d;
+                _lastFrameAtUtc = DateTime.MinValue;
+                _sourceError = string.Empty;
+                _monitorCoordinator.UpdateConfig(sourceId, cfg);
+                await Task.Run(() => _monitorCoordinator.Start(sourceId, modelPath));
+                if (string.Equals(sourceId, _sourceId, StringComparison.Ordinal)) UpdateControlState(started: true);
                 string src = cfg.CaptureMode == CaptureMode.WindowHandle
                     ? $"窗口「{cfg.TargetWindowTitle}」"
                     : $"区域 {cfg.CaptureRegion}";
                 _log.Info($"监控已启动 | {src} | {cfg.TargetFps} FPS | 阈值 {cfg.ConfidenceThreshold:P0}");
                 if (remote)
                 {
-                    _serverPushService.SendCommandAck("resume", true, requestId: requestId);
+                    _serverPushService.SendCommandAck("resume", true, requestId: requestId, targetSourceId: targetSourceId);
                     _log.Info("[Server] 收到 resume，监控推理已启动。");
                 }
 
@@ -273,9 +300,10 @@ namespace VisionGuard
                 string fullMsg = BuildExceptionMessage(ex);
                 _log.Error("启动失败：" + fullMsg);
                 if (remote)
-                    _serverPushService.SendCommandAck("resume", false, "启动异常：" + ex.Message, requestId);
+                    _serverPushService.SendCommandAck("resume", false, "启动异常：" + ex.Message, requestId, targetSourceId);
                 else
                     MessageBox.Show(fullMsg, "启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (string.Equals(sourceId, _sourceId, StringComparison.Ordinal)) UpdateControlState(started: false);
             }
         }
 
@@ -286,40 +314,62 @@ namespace VisionGuard
         /// <summary>
         /// 停止监控推理。remote=true 时通过 command-ack 返回结果。
         /// </summary>
-        private void StopMonitor(bool remote, string requestId = "")
+        private void StopMonitor(bool remote, string requestId = "", string targetSourceId = "")
         {
-            if (!_monitorService.IsStarted)
+            string sourceId = ResolveCommandSourceId(targetSourceId, defaultToFirst: remote);
+            MonitorSourceStatus sourceStatus = _monitorCoordinator.Statuses.FirstOrDefault(value => value.SourceId == sourceId);
+            if (sourceStatus == null)
             {
-                if (remote) _serverPushService.SendCommandAck("pause", false, "监控未运行", requestId);
+                if (remote) _serverPushService.SendCommandAck("pause", false, "目标来源不存在", requestId, targetSourceId);
+                return;
+            }
+            if (!sourceStatus.IsMonitoring)
+            {
+                if (remote) _serverPushService.SendCommandAck("pause", false, "监控未运行", requestId, targetSourceId);
                 return;
             }
 
-            _monitorService.Stop();
+            _monitorCoordinator.Stop(sourceId);
+            _actualFps = 0d;
+            _lastFrameAtUtc = DateTime.MinValue;
             // 不停止心跳定时器：服务器依赖心跳判断在线状态，停止心跳会导致 Android 误报掉线
             // isMonitoring=false 通过下次 tick 自动传递，同时立即发一次最终状态
             UpdateServerHeartbeatParams();
             _serverPushService.SendHeartbeatNow();
-            UpdateControlState(started: false);
+            if (string.Equals(sourceId, _sourceId, StringComparison.Ordinal)) UpdateControlState(started: false);
             _log.Info(remote ? "[Server] 收到 pause，监控推理已停止。" : "监控已停止。");
-            if (remote) _serverPushService.SendCommandAck("pause", true, requestId: requestId);
+            if (remote) _serverPushService.SendCommandAck("pause", true, requestId: requestId, targetSourceId: targetSourceId);
         }
 
         // ════════════════════════════════════════════════════════════
         // MonitorService 回调（ThreadPool 线程）
         // ════════════════════════════════════════════════════════════
 
-        private void OnFrameProcessed(object sender, FrameResultEventArgs e)
+        private void OnFrameProcessed(object sender, SourceFrameEventArgs sourceFrame)
         {
+            FrameResultEventArgs e = sourceFrame.Frame;
             if (e.HasError)
             {
+                _sourceError = e.Error.Message;
                 _log.Error(e.Error.Message);
                 return;
             }
 
-            UpdatePreview(e.Frame, e.Detections);
+            var now = DateTime.UtcNow;
+            if (_lastFrameAtUtc != DateTime.MinValue)
+            {
+                double elapsed = (now - _lastFrameAtUtc).TotalSeconds;
+                if (elapsed > 0d)
+                {
+                    double instantFps = 1d / elapsed;
+                    _actualFps = _actualFps <= 0d ? instantFps : (_actualFps * 0.8d + instantFps * 0.2d);
+                }
+            }
+            _lastFrameAtUtc = now;
+            _sourceError = string.Empty;
 
-            string inferText = $"推理 {e.InferenceMs} ms";
-            BeginInvoke(new Action(() => _tsInferMs.Text = inferText));
+            UpdatePreview(sourceFrame.SourceId, e.Frame, e.Detections, e.InferenceMs);
+
         }
 
         private void OnAlertTriggered(object sender, AlertEvent e)
@@ -329,6 +379,19 @@ namespace VisionGuard
                 msg += $"[{d.Label} {d.Confidence:P0}] ";
 
             _log.Warn("报警：" + msg.Trim());
+
+            lock (_previewLock)
+            {
+                SourcePreviewState preview;
+                if (!_sourcePreviews.TryGetValue(e.SourceId, out preview))
+                {
+                    preview = new SourcePreviewState();
+                    _sourcePreviews[e.SourceId] = preview;
+                }
+                preview.LastAlertAt = e.Timestamp;
+            }
+            Panel sourcePanel = FindPreviewPanel(e.SourceId);
+            if (sourcePanel != null && !sourcePanel.IsDisposed) sourcePanel.BeginInvoke(new Action(sourcePanel.Invalidate));
 
             BeginInvoke(new Action(() =>
                 _tsLastAlert.Text = "最后报警：" + e.Timestamp.ToString("HH:mm:ss")));

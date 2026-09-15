@@ -36,6 +36,7 @@ namespace VisionGuard.Services
 
         /// <summary>set-config 命令：key=配置项名, value=新值</summary>
         public event EventHandler<RemoteSetConfigEventArgs> SetConfigReceived;
+        public event EventHandler<int> SourceLimitReceived;
 
         // ── 常量 ─────────────────────────────────────────────────────
         private const int HEARTBEAT_INTERVAL_MS = 3_000;
@@ -72,6 +73,7 @@ namespace VisionGuard.Services
         private string _hbModelKey = "";
         private string[] _hbModelOptions = new string[0];
         private bool _hbCanSwitchModelWhileMonitoring;
+        private object[] _hbSources = new object[0];
 
         private bool _disposed;
 
@@ -159,7 +161,8 @@ namespace VisionGuard.Services
         public void UpdateHeartbeatParams(bool isMonitoring, bool isReady,
             int cooldown, float confidence, string targets,
             int targetSamplingRate = 3, string modelKey = "",
-            string[] modelOptions = null, bool canSwitchModelWhileMonitoring = false)
+            string[] modelOptions = null, bool canSwitchModelWhileMonitoring = false,
+            object[] sources = null)
         {
             lock (_hbParamsLock)
             {
@@ -172,6 +175,7 @@ namespace VisionGuard.Services
                 _hbModelKey = modelKey ?? "";
                 _hbModelOptions = modelOptions == null ? new string[0] : (string[])modelOptions.Clone();
                 _hbCanSwitchModelWhileMonitoring = canSwitchModelWhileMonitoring;
+                _hbSources = sources == null ? new object[0] : (object[])sources.Clone();
             }
         }
 
@@ -184,6 +188,8 @@ namespace VisionGuard.Services
                 ["alertId"] = alert.AlertId,
                 ["deviceId"] = _deviceId,
                 ["deviceName"] = _deviceName,
+                ["sourceId"] = alert.SourceId,
+                ["sourceName"] = alert.SourceName,
                 ["timestamp"] = alert.Timestamp.ToString("o"),
                 ["detections"] = BuildDetectionsPayload(alert.Detections),
                 ["timings"] = alert.Timings,
@@ -275,7 +281,7 @@ namespace VisionGuard.Services
             }
         }
 
-        public void SendCommandAck(string command, bool success, string reason = "", string requestId = "")
+        public void SendCommandAck(string command, bool success, string reason = "", string requestId = "", string targetSourceId = "")
         {
             var message = new Dictionary<string, object>
             {
@@ -285,6 +291,7 @@ namespace VisionGuard.Services
                 ["reason"] = reason ?? "",
             };
             if (!string.IsNullOrWhiteSpace(requestId)) message["requestId"] = requestId;
+            if (!string.IsNullOrWhiteSpace(targetSourceId)) message["targetSourceId"] = targetSourceId;
             _session?.SendJson(message);
         }
 
@@ -300,6 +307,7 @@ namespace VisionGuard.Services
             string modelKey;
             string[] modelOptions;
             bool canSwitchModelWhileMonitoring;
+            object[] sources;
             lock (_hbParamsLock)
             {
                 isMonitoring = _hbIsMonitoring;
@@ -311,6 +319,7 @@ namespace VisionGuard.Services
                 modelKey = _hbModelKey;
                 modelOptions = (string[])_hbModelOptions.Clone();
                 canSwitchModelWhileMonitoring = _hbCanSwitchModelWhileMonitoring;
+                sources = (object[])_hbSources.Clone();
             }
             s.SendJson(new Dictionary<string, object>
             {
@@ -326,8 +335,9 @@ namespace VisionGuard.Services
                 ["modelKey"] = modelKey,
                 ["modelOptions"] = modelOptions,
                 ["canSwitchModelWhileMonitoring"] = canSwitchModelWhileMonitoring,
-                ["capabilities"] = new[] { "monitor-control", "config-control", "request-correlation", "screenshot-on-demand" },
+                ["capabilities"] = new[] { "monitor-control", "config-control", "request-correlation", "screenshot-on-demand", "source-control" },
                 ["components"] = new Dictionary<string, object> { ["detectorApp"] = "running" },
+                ["sources"] = sources,
             });
         }
 
@@ -712,6 +722,7 @@ namespace VisionGuard.Services
                     string modelKey;
                     string[] modelOptions;
                     bool canSwitchModelWhileMonitoring;
+                    object[] sources;
                     lock (_parent._hbParamsLock)
                     {
                         isMonitoring = _parent._hbIsMonitoring;
@@ -723,6 +734,7 @@ namespace VisionGuard.Services
                         modelKey = _parent._hbModelKey;
                         modelOptions = (string[])_parent._hbModelOptions.Clone();
                         canSwitchModelWhileMonitoring = _parent._hbCanSwitchModelWhileMonitoring;
+                        sources = (object[])_parent._hbSources.Clone();
                     }
 
                     SendJson(new Dictionary<string, object>
@@ -739,8 +751,9 @@ namespace VisionGuard.Services
                         ["modelKey"] = modelKey,
                         ["modelOptions"] = modelOptions,
                         ["canSwitchModelWhileMonitoring"] = canSwitchModelWhileMonitoring,
-                        ["capabilities"] = new[] { "monitor-control", "config-control", "request-correlation", "screenshot-on-demand" },
+                        ["capabilities"] = new[] { "monitor-control", "config-control", "request-correlation", "screenshot-on-demand", "source-control" },
                         ["components"] = new Dictionary<string, object> { ["detectorApp"] = "running" },
+                        ["sources"] = sources,
                     });
                     // 注意：发送心跳后绝不更新 _lastMessageAtTicks
                 }
@@ -759,6 +772,11 @@ namespace VisionGuard.Services
                             bool success = d.TryGetValue("success", out object sv) && sv is bool b && b;
                             string reason = SimpleJson.GetString(d, "reason", "");
                             _parent.Post(() => _parent.OnAuthResult(this, success, reason));
+                            if (success && d.TryGetValue("maxSources", out object authMaxSources))
+                            {
+                                int limit = Math.Max(1, Math.Min(16, Convert.ToInt32(authMaxSources)));
+                                _parent.Post(() => _parent.SourceLimitReceived?.Invoke(_parent, limit));
+                            }
                             break;
                         }
                         case "kicked":
@@ -771,8 +789,9 @@ namespace VisionGuard.Services
                         {
                             string cmd = SimpleJson.GetString(d, "command");
                             string requestId = SimpleJson.GetString(d, "requestId", "");
+                            string targetSourceId = SimpleJson.GetString(d, "targetSourceId", "");
                             if (!string.IsNullOrEmpty(cmd))
-                                try { _parent.CommandReceived?.Invoke(_parent, new RemoteCommandEventArgs(cmd, requestId)); } catch { }
+                                try { _parent.CommandReceived?.Invoke(_parent, new RemoteCommandEventArgs(cmd, requestId, targetSourceId)); } catch { }
                             break;
                         }
                         case "set-config":
@@ -780,8 +799,9 @@ namespace VisionGuard.Services
                             string key = SimpleJson.GetString(d, "key");
                             string val = SimpleJson.GetString(d, "value");
                             string requestId = SimpleJson.GetString(d, "requestId", "");
+                            string targetSourceId = SimpleJson.GetString(d, "targetSourceId", "");
                             if (!string.IsNullOrEmpty(key))
-                                try { _parent.SetConfigReceived?.Invoke(_parent, new RemoteSetConfigEventArgs(key, val, requestId)); } catch { }
+                                try { _parent.SetConfigReceived?.Invoke(_parent, new RemoteSetConfigEventArgs(key, val, requestId, targetSourceId)); } catch { }
                             break;
                         }
                         case "request-screenshot":
@@ -801,6 +821,11 @@ namespace VisionGuard.Services
                             break;
                         }
                         case "heartbeat-ack":
+                            if (d.TryGetValue("maxSources", out object maxSourcesValue))
+                            {
+                                int limit = Math.Max(1, Math.Min(16, Convert.ToInt32(maxSourcesValue)));
+                                _parent.Post(() => _parent.SourceLimitReceived?.Invoke(_parent, limit));
+                            }
                             _parent.Post(_parent.FlushAlertOutbox);
                             break;
                     }

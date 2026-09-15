@@ -17,7 +17,7 @@ namespace VisionGuard.Views
 
         private void SourceNameText_OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (SourceNameText.DataContext is not SignalSourceViewModel source) return;
+            if (SourceNameText.DataContext is not SourceViewModel source) return;
 
             _nameBeforeEdit = source.SourceName;
             SourceNameText.Visibility = Visibility.Collapsed;
@@ -42,7 +42,7 @@ namespace VisionGuard.Views
             }
             else if (e.Key == Key.Escape)
             {
-                if (SourceNameEditor.DataContext is SignalSourceViewModel source) source.CancelSourceNameEdit(_nameBeforeEdit);
+                if (SourceNameEditor.DataContext is SourceViewModel source) source.CancelSourceNameEdit(_nameBeforeEdit);
                 EndSourceNameEdit();
                 e.Handled = true;
             }
@@ -51,7 +51,7 @@ namespace VisionGuard.Views
         private void CommitSourceName()
         {
             if (SourceNameEditor.Visibility != Visibility.Visible) return;
-            if (SourceNameEditor.DataContext is SignalSourceViewModel source) source.CommitSourceNameEdit();
+            if (SourceNameEditor.DataContext is SourceViewModel source) source.CommitSourceNameEdit();
             EndSourceNameEdit();
         }
 

@@ -14,7 +14,7 @@
                            VerticalAlignment="Center"
                            TextTrimming="CharacterEllipsis"
                            Cursor="IBeam"
-                           ToolTip="点击修改信号名称"
+                           ToolTip="点击修改来源名称"
                            MouseLeftButtonDown="SourceNameText_OnMouseLeftButtonDown"/>
                 <TextBox x:Name="SourceNameEditor"
                          Text="{Binding SourceName, UpdateSourceTrigger=PropertyChanged}"

@@ -9,15 +9,20 @@ namespace VisionGuard.Services
 {
     public sealed class MultiSourceMonitorCoordinator : IDisposable
     {
-        public const int MaxSources = 4;
+        public const int DefaultSourceLimit = 4;
+        public const int MaximumSourceLimit = 16;
         private readonly object _sync = new();
         private readonly Dictionary<string, Runtime> _runtimes = new(StringComparer.Ordinal);
         private readonly Func<string, int, InferenceBackend, IInferenceEngine>? _engineFactory;
-        private int _gpuFailureStopScheduled;
+        private readonly Func<InferenceBackend, int> _capacityProvider;
 
         public MultiSourceMonitorCoordinator(
-            Func<string, int, InferenceBackend, IInferenceEngine>? engineFactory = null)
-            => _engineFactory = engineFactory;
+            Func<string, int, InferenceBackend, IInferenceEngine>? engineFactory = null,
+            Func<InferenceBackend, int>? capacityProvider = null)
+        {
+            _engineFactory = engineFactory;
+            _capacityProvider = capacityProvider ?? (_ => DefaultSourceLimit);
+        }
 
         public event EventHandler<AlertEvent>? AlertTriggered;
         public event EventHandler<MonitorSourceStatus>? StatusChanged;
@@ -32,7 +37,6 @@ namespace VisionGuard.Services
         {
             lock (_sync)
             {
-                if (_runtimes.Count >= MaxSources) throw new InvalidOperationException("最多只能配置四个检测来源。");
                 if (_runtimes.ContainsKey(source.SourceId)) throw new InvalidOperationException("来源 ID 已存在。");
                 var alerts = new AlertService(source.SourceId, source.SourceName);
                 var monitor = new MonitorService(alerts, _engineFactory);
@@ -72,31 +76,14 @@ namespace VisionGuard.Services
             Runtime runtime;
             lock (_sync)
             {
-                if (Volatile.Read(ref _gpuFailureStopScheduled) == 1)
-                    throw new InvalidOperationException("DirectML 故障停机尚未完成，请稍后重试。");
                 runtime = Get(sourceId);
                 if (runtime.Monitor.IsStarted) return;
-                var running = _runtimes.Values.Where(r => r.Monitor.IsStarted).ToArray();
-                if (running.Length > 0 && (runtime.Source.PreferredBackend == InferenceBackend.Cpu
-                    || running.Any(r => r.Monitor.ActiveBackend == nameof(InferenceBackend.Cpu))))
-                    throw new InvalidOperationException("CPU 模式只允许运行一个来源。");
             }
 
             try
             {
                 runtime.Error = "";
                 runtime.Monitor.Start(modelPath, runtime.Source.Config, runtime.Source.PreferredBackend);
-                if (runtime.Monitor.ActiveBackend == nameof(InferenceBackend.Cpu))
-                {
-                    lock (_sync)
-                    {
-                        if (_runtimes.Values.Any(r => !ReferenceEquals(r, runtime) && r.Monitor.IsStarted))
-                        {
-                            runtime.Monitor.Stop();
-                            throw new InvalidOperationException("DirectML 回退 CPU 后禁止多来源并行；请停止其他来源后重试。");
-                        }
-                    }
-                }
             }
             catch (Exception ex)
             {
@@ -118,44 +105,15 @@ namespace VisionGuard.Services
         private void OnFrame(Runtime runtime, FrameResultEventArgs frame)
         {
             var now = DateTime.UtcNow;
-            bool scheduleGlobalStop = false;
             lock (_sync)
             {
                 if (!frame.HasError) runtime.FrameTimes.Enqueue(now);
                 while (runtime.FrameTimes.Count > 0 && (now - runtime.FrameTimes.Peek()).TotalSeconds > 10) runtime.FrameTimes.Dequeue();
-                if (Volatile.Read(ref _gpuFailureStopScheduled) == 0)
-                    runtime.Error = frame.HasError ? frame.Error?.Message ?? "捕获或推理失败" : "";
-
-                if (frame.HasError
-                    && MonitorFailurePolicy.RequiresGlobalStop(frame.FailureKind, runtime.Monitor.ActiveBackend)
-                    && Interlocked.CompareExchange(ref _gpuFailureStopScheduled, 1, 0) == 0)
-                {
-                    string message = $"DirectML 运行失败，已停止全部来源以避免静默回退多路 CPU；故障来源：{runtime.Source.SourceName}。请切换为 CPU 后仅启动一路，或检查 GPU 后重试。";
-                    foreach (var item in _runtimes.Values.Where(item => item.Monitor.IsStarted))
-                        item.Error = message;
-                    scheduleGlobalStop = true;
-                }
+                runtime.Error = frame.HasError ? frame.Error?.Message ?? "捕获或推理失败" : "";
             }
             FrameProcessed?.Invoke(this, new SourceFrameEventArgs(runtime.Source.SourceId, frame));
             RaiseStatus(runtime);
 
-            // OnFrame 运行在发生故障的 Timer 回调内，不能在这里同步 Stop 自己。
-            if (scheduleGlobalStop) ThreadPool.QueueUserWorkItem(_ => StopAllAfterGpuFailure());
-        }
-
-        private void StopAllAfterGpuFailure()
-        {
-            Runtime[] running;
-            lock (_sync) running = _runtimes.Values.Where(runtime => runtime.Monitor.IsStarted).ToArray();
-
-            foreach (var runtime in running)
-            {
-                try { runtime.Monitor.Stop(); }
-                catch (Exception ex) { runtime.Error += $" 停止失败：{ex.Message}"; }
-            }
-
-            foreach (var runtime in running) RaiseStatus(runtime);
-            Interlocked.Exchange(ref _gpuFailureStopScheduled, 0);
         }
 
         private Runtime Get(string sourceId) => _runtimes.TryGetValue(sourceId, out var runtime)
@@ -168,12 +126,19 @@ namespace VisionGuard.Services
                 runtime.FrameTimes.Dequeue();
             var frames = runtime.FrameTimes.ToArray();
             var fps = frames.Length < 2 ? 0 : (frames.Length - 1) / Math.Max(0.001, (frames[^1] - frames[0]).TotalSeconds);
+            var activeBackend = runtime.Monitor.ActiveBackend;
+            var runningOnBackend = _runtimes.Values.Count(item => item.Monitor.IsStarted
+                && string.Equals(item.Monitor.ActiveBackend, activeBackend, StringComparison.OrdinalIgnoreCase));
+            var backend = string.Equals(activeBackend, nameof(InferenceBackend.Cpu), StringComparison.OrdinalIgnoreCase)
+                ? InferenceBackend.Cpu : InferenceBackend.DirectML;
+            var warning = runtime.Monitor.IsStarted
+                ? CapacityPolicy.GetWarning(activeBackend, runningOnBackend, _capacityProvider(backend)) : "";
             return new MonitorSourceStatus
             {
                 SourceId = runtime.Source.SourceId, SourceName = runtime.Source.SourceName,
                 ModelKey = runtime.Source.ModelKey, IsMonitoring = runtime.Monitor.IsStarted,
                 IsReady = IsConfigured(runtime.Source.Config), ActiveBackend = runtime.Monitor.ActiveBackend,
-                ActualFps = Math.Round(fps, 2), Error = runtime.Error,
+                ActualFps = Math.Round(fps, 2), Error = runtime.Error, PerformanceWarning = warning,
             };
         }
 

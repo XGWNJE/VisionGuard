@@ -12,6 +12,8 @@ namespace VisionGuard.Models
     public class AlertEvent : EventArgs
     {
         public string AlertId { get; }
+        public string SourceId { get; }
+        public string SourceName { get; }
         public DateTime Timestamp { get; }
         public IReadOnlyList<Detection> Detections { get; }
         // 调用方负责 Dispose，AlertService 不持有引用
@@ -19,9 +21,11 @@ namespace VisionGuard.Models
         public Dictionary<string, long> Timings { get; }
 
         public AlertEvent(string alertId, IReadOnlyList<Detection> detections, Bitmap snapshot,
-                          Dictionary<string, long> timings)
+                          Dictionary<string, long> timings, string sourceId = "default", string sourceName = "默认来源")
         {
             AlertId    = alertId;
+            SourceId   = string.IsNullOrWhiteSpace(sourceId) ? "default" : sourceId;
+            SourceName = string.IsNullOrWhiteSpace(sourceName) ? "默认来源" : sourceName;
             Timestamp  = DateTime.Now;
             Detections = detections;
             Snapshot   = snapshot;

@@ -51,6 +51,12 @@ namespace VisionGuard.ViewModels
             ? Inference.InferenceBackend.Cpu
             : Inference.InferenceBackend.DirectML;
 
+        private int _directMlCapacity = 4;
+        public int DirectMlCapacity { get => _directMlCapacity; set => SetProperty(ref _directMlCapacity, Math.Clamp(value, 1, 16)); }
+        private int _cpuCapacity = 1;
+        public int CpuCapacity { get => _cpuCapacity; set => SetProperty(ref _cpuCapacity, Math.Clamp(value, 1, 16)); }
+        public int GetCapacity(Inference.InferenceBackend backend) => backend == Inference.InferenceBackend.Cpu ? CpuCapacity : DirectMlCapacity;
+
         public RelayCommand DownloadModelCommand { get; }
 
         private string _modelDownloadProgress = "";
@@ -161,6 +167,8 @@ namespace VisionGuard.ViewModels
             Cooldown         = SettingsStore.GetInt("AlertCooldownSeconds", 5);
             SelectedModelIndex = SettingsStore.GetInt("SelectedModelIndex", 0);
             SelectedBackendIndex = SettingsStore.GetInt("SelectedBackendIndex", 0) == 1 ? 1 : 0;
+            DirectMlCapacity = Math.Clamp(SettingsStore.GetInt("Capacity.DirectML", 4), 1, 16);
+            CpuCapacity = Math.Clamp(SettingsStore.GetInt("Capacity.Cpu", 1), 1, 16);
 
             var watched = SettingsStore.GetStringList("WatchedClasses");
             WatchPerson     = watched.Contains("person");
@@ -182,6 +190,8 @@ namespace VisionGuard.ViewModels
             SettingsStore.Set("AlertCooldownSeconds", Cooldown);
             SettingsStore.Set("SelectedModelIndex", SelectedModelIndex);
             SettingsStore.Set("SelectedBackendIndex", SelectedBackendIndex);
+            SettingsStore.Set("Capacity.DirectML", DirectMlCapacity);
+            SettingsStore.Set("Capacity.Cpu", CpuCapacity);
 
             var watched = GetWatchedClasses();
             SettingsStore.Set("WatchedClasses", string.Join(",", watched));

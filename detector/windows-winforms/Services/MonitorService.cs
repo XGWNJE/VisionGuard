@@ -44,8 +44,9 @@ namespace VisionGuard.Services
             {
                 if (_config == null) return false;
                 if (_config.CaptureMode == CaptureMode.WindowHandle)
-                    return _config.TargetWindowHandle != IntPtr.Zero;
-                return _config.CaptureRegion.Width >= 32 && _config.CaptureRegion.Height >= 32;
+                    return _config.TargetWindowHandle != IntPtr.Zero &&
+                        (_config.WindowSubRegion == Rectangle.Empty || CaptureSizeConstraints.IsValid(_config.WindowSubRegion));
+                return CaptureSizeConstraints.IsValid(_config.CaptureRegion);
             }
         }
 
@@ -72,7 +73,6 @@ namespace VisionGuard.Services
         public void Stop()
         {
             // 阻止新 OnTick 进入，并等待正在执行的 Tick 完全结束
-            _tickCompleted.Reset();           // 未完成信号
             _timer?.Dispose();
             _timer = null;
             _tickCompleted.WaitOne(2000);     // 最多等2秒让 OnTick 退出

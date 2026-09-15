@@ -15,21 +15,21 @@ namespace VisionGuard
     public partial class Form1 : Form
     {
         // Services
-        private AlertService   _alertService;
-        private MonitorService _monitorService;
+        private MultiSourceMonitorCoordinator _monitorCoordinator;
         private LogManager     _log;
 
         // Preview
-        private Bitmap          _previewFrame;
-        private List<Detection> _previewDetections;
         private readonly object _previewLock = new object();
+        private readonly Dictionary<string, SourcePreviewState> _sourcePreviews = new Dictionary<string, SourcePreviewState>(StringComparer.Ordinal);
 
         // Preview panel
         private Panel   _previewPanel;
+        private TableLayoutPanel _previewGrid;
 
         // Tab control
         private TabControl _tabControl;
         private TabPage _tabCapture, _tabSettings, _tabServer;
+        private Panel _currentSourcePage;
 
         // Capture page
         private Label  _lblRegionInfo;
@@ -49,6 +49,7 @@ namespace VisionGuard
         private Label    _lblCooldown;
         private ComboBox _cmbModel;
         private Label    _lblModelStatus;
+        private NumericUpDown _numCpuCapacity;
 
         // Targets page
         private CheckedListBox   _targetListBox;
@@ -82,6 +83,13 @@ namespace VisionGuard
 
         // Model
         private string _selectedModel = "yolov5nu_320";
+        private string _sourceId = "default";
+        private string _sourceName = "来源 1";
+        private int _serverSourceLimit = 4;
+        private int _cpuCapacity = 4;
+        private double _actualFps;
+        private DateTime _lastFrameAtUtc = DateTime.MinValue;
+        private string _sourceError = string.Empty;
         private string ModelPath => Utils.ModelManager.GetModelPath(_selectedModel);
 
         private void UpdateModelStatusLabel()
@@ -99,14 +107,15 @@ namespace VisionGuard
             InitializeComponent();
             BuildUI();
 
-            _alertService   = new AlertService();
-            _monitorService = new MonitorService(_alertService);
+            _monitorCoordinator = new MultiSourceMonitorCoordinator(capacityProvider: () => _cpuCapacity);
+            _monitorCoordinator.UpdateSourceLimit(MultiSourceMonitorCoordinator.MaximumSourceLimit);
             _log            = new LogManager();
             _serverPushService = new ServerPushService();
             _legacyTlsTunnelService = new LegacyTlsTunnelService();
 
-            _alertService.AlertTriggered   += OnAlertTriggered;
-            _monitorService.FrameProcessed += OnFrameProcessed;
+            _monitorCoordinator.AlertTriggered += OnAlertTriggered;
+            _monitorCoordinator.FrameProcessed += OnFrameProcessed;
+            _monitorCoordinator.StatusChanged += OnSourceStatusChanged;
 
             SetupTrayIcon();
         }
@@ -189,9 +198,9 @@ namespace VisionGuard
             _sliderCooldown.Enabled     = !started;
             _trkThreshold.Enabled       = !started;
             _targetListBox.Enabled = !started;
+            UpdateSourceButtons();
 
-            _tsStatus.Text      = started ? "监控中" : "已停止";
-            _tsStatus.ForeColor = started ? Color.LimeGreen : Color.Gray;
+            UpdateAggregateSummary();
         }
 
         private void UpdateRegionLabel()
@@ -246,9 +255,13 @@ namespace VisionGuard
             _heartbeatTimer?.Dispose();
             _serverPushService?.Dispose();
             _legacyTlsTunnelService?.Dispose();
-            _alertService?.Dispose();
-            _monitorService?.Stop();
-            _monitorService?.Dispose();
+            _monitorCoordinator?.Dispose();
+            lock (_previewLock)
+            {
+                foreach (SourcePreviewState preview in _sourcePreviews.Values)
+                    if (preview.Frame != null) preview.Frame.Dispose();
+                _sourcePreviews.Clear();
+            }
             _notifyIcon?.Dispose();
             base.OnFormClosing(e);
         }
@@ -274,24 +287,71 @@ namespace VisionGuard
             get
             {
                 if (_targetWindow != null) return true;
-                return _screenRegion.Width >= 32 && _screenRegion.Height >= 32;
+                return CaptureSizeConstraints.IsValid(_screenRegion);
             }
         }
 
+        private MonitorSourceStatus CurrentSourceStatus
+        {
+            get
+            {
+                foreach (MonitorSourceStatus status in _monitorCoordinator.Statuses)
+                    if (string.Equals(status.SourceId, _sourceId, StringComparison.Ordinal)) return status;
+                return new MonitorSourceStatus { SourceId = _sourceId, SourceName = _sourceName };
+            }
+        }
+
+        private bool IsCurrentSourceStarted { get { return CurrentSourceStatus.IsMonitoring; } }
+        private bool IsCurrentSourceBusy { get { MonitorSourceStatus status = CurrentSourceStatus; return status.IsMonitoring || status.IsStarting; } }
+
+        private void UpdateCurrentSourceConfig()
+        {
+            _monitorCoordinator.UpdateConfig(_sourceId, BuildConfig());
+        }
+
         // Preview update (called from OnFrameProcessed)
-        private void UpdatePreview(Bitmap frame, List<Detection> detections)
+        private void UpdatePreview(Bitmap frame, List<Detection> detections, long inferenceMs = 0)
+        {
+            UpdatePreview(_sourceId, frame, detections, inferenceMs);
+        }
+
+        private void UpdatePreview(string sourceId, Bitmap frame, List<Detection> detections, long inferenceMs = 0)
         {
             lock (_previewLock)
             {
-                _previewFrame?.Dispose();
-                _previewFrame = frame;
-                _previewDetections = detections;
+                SourcePreviewState preview;
+                if (!_sourcePreviews.TryGetValue(sourceId, out preview))
+                {
+                    preview = new SourcePreviewState();
+                    _sourcePreviews[sourceId] = preview;
+                }
+                if (preview.Frame != null) preview.Frame.Dispose();
+                preview.Frame = frame;
+                preview.Detections = detections;
+                preview.UpdatedAt = DateTime.Now;
+                preview.InferenceMs = inferenceMs;
             }
-            if (_previewPanel.IsDisposed) return;
-            if (_previewPanel.InvokeRequired)
-                _previewPanel.BeginInvoke(new Action(() => _previewPanel.Invalidate()));
-            else
-                _previewPanel.Invalidate();
+            Panel panel = FindPreviewPanel(sourceId);
+            if (panel == null || panel.IsDisposed) return;
+            if (panel.InvokeRequired) panel.BeginInvoke(new Action(panel.Invalidate));
+            else panel.Invalidate();
+        }
+
+        private Panel FindPreviewPanel(string sourceId)
+        {
+            if (_previewGrid == null) return null;
+            foreach (Control control in _previewGrid.Controls)
+                if (control is Panel && string.Equals(control.Tag as string, sourceId, StringComparison.Ordinal)) return (Panel)control;
+            return null;
+        }
+
+        private sealed class SourcePreviewState
+        {
+            public Bitmap Frame;
+            public List<Detection> Detections;
+            public DateTime UpdatedAt;
+            public DateTime LastAlertAt;
+            public long InferenceMs;
         }
     }
 }

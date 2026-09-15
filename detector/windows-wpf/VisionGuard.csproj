@@ -80,6 +80,10 @@
 
   <ItemGroup>
     <Compile Include="..\windows-shared\Utils\ApiKeyProvider.cs" Link="Utils\ApiKeyProvider.cs" />
+    <Compile Include="..\windows-shared\Utils\SharedSettingsFile.cs" Link="Utils\SharedSettingsFile.cs" />
+    <Compile Include="..\windows-shared\Utils\SourceSettingsMigration.cs" Link="Utils\SourceSettingsMigration.cs" />
+    <Compile Include="..\windows-shared\Capture\CaptureSizeConstraints.cs" Link="Capture\CaptureSizeConstraints.cs" />
+    <Compile Include="..\windows-shared\Capture\CaptureBlackFrameException.cs" Link="Capture\CaptureBlackFrameException.cs" />
     <Compile Include="..\windows-shared\Utils\SingleInstanceGuard.cs" Link="Utils\SingleInstanceGuard.cs" />
     <Compile Include="..\windows-shared\Services\RemoteControlEventArgs.cs" Link="Services\RemoteControlEventArgs.cs" />
     <Compile Include="..\windows-shared\Services\ResidentBridge.cs" Link="Services\ResidentBridge.cs" />

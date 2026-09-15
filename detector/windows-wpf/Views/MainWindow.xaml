@@ -9,7 +9,7 @@
         Title="VisionGuard"
         Width="1420" Height="880" MinWidth="1100" MinHeight="700"
         Background="{StaticResource BackgroundDark}"
-        WindowStartupLocation="CenterScreen" Loaded="Window_Loaded">
+        WindowStartupLocation="CenterScreen">
     <Window.DataContext><vm:MainViewModel/></Window.DataContext>
 
     <Grid Background="{StaticResource BackgroundDark}">
@@ -36,6 +36,10 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="新增来源" Style="{StaticResource PrimaryButton}" Command="{Binding MultiSourceVm.AddSourceCommand}"
+                            ToolTip="{Binding MultiSourceVm.SourceLimitText}" Margin="0,0,8,0"/>
+                    <Button Content="删除来源" Style="{StaticResource DangerButton}" Command="{Binding MultiSourceVm.RemoveSourceCommand}"
+                            ToolTip="删除当前来源，至少保留一个；运行中的来源需先停止" Margin="0,0,8,0"/>
                     <Button Content="启动已配置" Style="{StaticResource PrimaryButton}" Command="{Binding MultiSourceVm.StartConfiguredCommand}" Margin="0,0,8,0"/>
                     <Button Content="全部停止" Style="{StaticResource DangerButton}" Command="{Binding MultiSourceVm.StopAllCommand}"/>
                 </StackPanel>
@@ -52,7 +56,7 @@
             <Grid Grid.Column="0" Margin="8,7,7,7">
                 <ItemsControl ItemsSource="{Binding MultiSourceVm.Sources}">
                     <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate><UniformGrid Rows="2" Columns="2"/></ItemsPanelTemplate>
+                        <ItemsPanelTemplate><UniformGrid Columns="2"/></ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
@@ -127,7 +131,7 @@
             <Border Grid.Column="1" Background="{StaticResource MutedSurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1,0,0,0">
                 <Grid Margin="12,8,10,8">
                     <TabControl Style="{StaticResource InspectorTabs}" Background="Transparent">
-                        <TabItem Header="当前信号" Style="{StaticResource InspectorTabItem}">
+                        <TabItem Header="当前来源" Style="{StaticResource InspectorTabItem}">
                             <local:MonitorPage DataContext="{Binding MultiSourceVm}"/>
                         </TabItem>
                         <TabItem Header="运行环境" Style="{StaticResource InspectorTabItem}">

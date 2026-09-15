@@ -132,7 +132,7 @@ namespace VisionGuard.ViewModels
                 using (e.Frame)
                 {
                     var bitmapSource = ConvertBitmapToSource(e.Frame);
-                    // 正式四槽路径不会实例化此 ViewModel；逐路耗时由 SignalSourceViewModel 维护。
+                    // 正式四槽路径不会实例化此 ViewModel；逐路耗时由 SourceViewModel 维护。
                 }
             });
         }
