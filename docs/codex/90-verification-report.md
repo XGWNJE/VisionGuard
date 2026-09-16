@@ -67,6 +67,6 @@
 4. WPF 生产传输服务 → Server → Android 接收端的报警、截图归属和 ACK 已在隔离通道自动贯通；仍需补推理自然触发到传输的单进程测试、真实断网恢复、接收端离线补发和真机通知验收。
 5. 生产 VPS、正式发行 ZIP/APK、发布回滚和公网更新接口：尚未执行。
 6. 首次连接 Server 的 Windows 检测端部署缺口：生产环境需要部署含 `wpf-legacy` 平台键与按档位分发逻辑的 Server 版本。
-7. 下次发行前的动作项：`server/src/index.ts` 的 `app.use('/models', express.static(.../data/models))` 是模型下载的唯一通路，`scripts/publish-release.ps1` 的 `Copy-Models` 只从 `detector\windows-wpf\Assets\` 收集 `*.onnx`（目录受 `.gitignore` 排除、不入版本控制）。旧的 YOLOv5 模型原先放在已删除的 `detector\windows-winforms\Assets\`，因此**发行前必须先把 YOLOv5 的 6 个模型放进 `detector\windows-wpf\Assets\`**（可用 `scripts/export-yolov5-models.py` 导出，或从 Server 的 `/models/<键>.onnx` 取回），否则 legacy 档会下载不到模型而无法推理。本报告不声称该步骤已完成。
+7. 发行前模型就位（**已完成**）：`server/src/index.ts` 的 `app.use('/models', express.static(.../data/models))` 是模型下载的唯一通路，`scripts/publish-release.ps1` 的 `Copy-Models` 只从 `detector\windows-wpf\Assets\` 收集 `*.onnx`（该目录受 `.gitignore` 排除、不入版本控制），旧的 YOLOv5 模型原先放在已删除的 `detector\windows-winforms\Assets\`。2026-09-17 已把两个档位的 12 个模型全部取回构建机的 `detector\windows-wpf\Assets\`（modern 档 YOLO26 六个 + legacy 档 YOLOv5 六个，共约 530 MB），并为发布脚本补上预检闸门 `Test-RequiredModels`：Windows/WPF 目标下逐项校验这 12 个模型是否存在且不小于 1 MB，缺任一项即中止发布，不再允许静默少带模型。已用「临时移走一个模型」做负向验证，预检确实以退出码 1 失败并列出缺失文件名。
 
 历史验证记录必须保留原始证据路径，并在重新运行后更新状态；不要仅因日期较新就把历史局部证据升级为完整验收。

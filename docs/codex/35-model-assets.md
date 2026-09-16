@@ -44,7 +44,13 @@ legacy 档的 ONNX Runtime 原生库是 1.1.0，算子覆盖不足以支撑 YOLO
 ### Server 端点
 
 - 路由：`/models/{filename}.onnx`，express.static，无需鉴权
-- 源文件：`server/data/models/`（由 `scripts/publish-release.ps1` 从各端模型源目录收集）
+- 源文件：`server/data/models/`（由 `scripts/publish-release.ps1` 从 `detector\windows-wpf\Assets\` 收集）
+
+### 构建机的模型就位
+
+模型 .onnx 不入版本控制，`detector\windows-wpf\Assets\` 在干净检出时是空的，而服务器上的模型完全由发布脚本从这个目录收集。因此**发布前必须让两个档位的 12 个模型都在该目录里**（约 530 MB）：导出可用 `scripts/export-yolov5-models.py`（YOLOv5）与 YOLO26 的导出流程，或直接从现网 `<server>/models/<键>.onnx` 取回。
+
+`scripts/publish-release.ps1` 的预检会逐项校验这 12 个模型存在且不小于 1 MB，缺任一项直接中止发布——缺模型不会让构建失败，只会让下发出去的机器下载不到模型。
 
 ### 客户端本地缓存
 

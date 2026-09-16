@@ -26,6 +26,7 @@ It performs preflight before version sync, builds selected targets, prepares sig
 - Resolve current VPS connection facts through the configured Server-infra `server.local.env`; never hardcode a developer machine path, print secrets, or treat a stale path as authoritative. The deployment runtime root is controlled by the publish script and current infrastructure configuration.
 - Android packages must be signed and pass `apksigner verify`; `app-release-unsigned.apk` is compile-only evidence and never a release artifact.
 - Windows ZIPs must include the Resident runtime and exclude `.pdb`, `.lib`, `.dll.config`, `.onnx`, `Assets/`, and `alerts/`.
+- The build machine must hold all 12 model files in `detector\windows-wpf\Assets\` before a Windows release. Models are not tracked in git, and the server's copy is produced only by collecting that directory, so a missing model is served to nobody and the affected inference profile cannot run. Preflight enforces this and aborts with the missing file names.
 - Release metadata size must match local assets and be replaced atomically.
 - Public `/health`, `/api/update`, package `HEAD 200`, and byte-range `206` checks must pass for the released scope.
 - If Server code was deployed, verify the VPS runtime version and active service before reporting success.

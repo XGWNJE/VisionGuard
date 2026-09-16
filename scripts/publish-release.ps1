@@ -338,6 +338,12 @@ function Invoke-ReleasePreflight {
         throw "Server deploy was requested with -SkipBuild, but server\dist\index.js does not exist."
     }
 
+    # 模型只在 Windows 目标下进入发行包；Android 的模型走 APK 自身的下载路径，
+    # 因此这里只对 Windows/WPF 目标做强制校验。
+    if (Test-TargetEnabled @('Windows', 'WPF')) {
+        Test-RequiredModels
+    }
+
     Write-Host "preflight: release prerequisites passed"
 }
 
@@ -471,6 +477,42 @@ function Assert-ZipIsClean {
     if ($badEntries) {
         throw "Forbidden files were found in $(Split-Path -Leaf $ZipPath): $($badEntries -join ', ')"
     }
+}
+
+function Test-RequiredModels {
+    # 发行包不含模型：客户端在运行期从 /models/<键>.onnx 下载，而服务器上的模型
+    # 完全由 Copy-Models 从 detector\windows-wpf\Assets\ 收集后上传。
+    # 该目录受 .gitignore 排除，干净检出的构建机上必然是空的——缺模型不会让构建失败，
+    # 只会让下发出去的机器下载不到模型、legacy 档（Win7）直接无法推理。
+    # 因此这里按两个档位的模型键逐项校验，缺任何一个都中止发布，而不是少带一个包。
+    $expectedModels = @(
+        # modern 档（Win10/11）：YOLO26
+        'yolo26n_320', 'yolo26n_640', 'yolo26s_320', 'yolo26s_640', 'yolo26m_320', 'yolo26m_640',
+        # legacy 档（Win7 SP1）：YOLOv5
+        'yolov5nu_320', 'yolov5nu_640', 'yolov5su_320', 'yolov5su_640', 'yolov5mu_320', 'yolov5mu_640'
+    )
+    $assetsDir = Join-Path $repoRoot 'detector\windows-wpf\Assets'
+    $missing = New-Object System.Collections.Generic.List[string]
+    foreach ($key in $expectedModels) {
+        $path = Join-Path $assetsDir "$key.onnx"
+        if (-not (Test-Path -LiteralPath $path)) {
+            $missing.Add("$key.onnx") | Out-Null
+            continue
+        }
+        # 0 字节或明显的半截下载必须当成缺失：它们会让客户端下载到损坏模型。
+        if ((Get-Item -LiteralPath $path).Length -lt 1MB) {
+            $missing.Add("$key.onnx (file is smaller than 1MB)") | Out-Null
+        }
+    }
+
+    if ($missing.Count -gt 0) {
+        throw ("Required ONNX models are missing from detector\windows-wpf\Assets: " +
+            ($missing -join ', ') +
+            ". Models are not tracked in git, so a fresh checkout has none. Put all $($expectedModels.Count) models there before releasing " +
+            "(export them with scripts/export-yolov5-models.py, or fetch them from <server>/models/<key>.onnx).")
+    }
+
+    Write-Host "preflight: all $($expectedModels.Count) required ONNX models are present in detector\windows-wpf\Assets"
 }
 
 function Copy-Models {

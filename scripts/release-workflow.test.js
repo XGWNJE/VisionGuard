@@ -250,3 +250,28 @@ test('Windows build script compiles both WPF inference profiles and drops the Wi
   assert.match(script, /detector\/windows-wpf\/bin\/x64\/modern\/VisionGuard\.exe/);
   assert.match(script, /detector\/windows-wpf\/bin\/x64\/legacy\/VisionGuard\.exe/);
 });
+
+test('release preflight refuses to package Windows without every model the detector can select', () => {
+  const script = read('scripts/publish-release.ps1');
+  const modelManager = read('detector/windows-wpf/Utils/ModelManager.cs');
+
+  // 模型不上版本控制，服务器上的模型全部来自 Copy-Models 对 Assets 目录的收集。
+  // 缺模型不会让构建失败，只会让下发出去的机器下载不到模型，所以预检必须逐项拦住。
+  assert.match(script, /function Test-RequiredModels/, 'missing the model gate');
+  assert.match(script, /Test-RequiredModels/, 'the model gate is never called');
+  assert.match(
+    script,
+    /if \(Test-TargetEnabled @\('Windows', 'WPF'\)\) \{\s*Test-RequiredModels\s*\}/,
+    'the model gate must run for the Windows/WPF targets'
+  );
+  assert.match(script, /Required ONNX models are missing from detector\\windows-wpf\\Assets/);
+
+  // 闸门里列出的模型键必须覆盖 ModelManager 里两个档位能选的全部键，
+  // 否则新增模型时会静默漏出发布包（客户端选得到、服务器没有）。
+  const declaredKeys = [...modelManager.matchAll(/"([a-z0-9]+_[0-9]{3})"/g)].map((match) => match[1]);
+  const uniqueKeys = [...new Set(declaredKeys)].sort();
+  assert.ok(uniqueKeys.length >= 12, `expected both profile model lists in ModelManager, found ${uniqueKeys.join(', ')}`);
+  for (const key of uniqueKeys) {
+    assert.match(script, new RegExp(`'${key}'`), `release preflight does not require ${key}`);
+  }
+});
