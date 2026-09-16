@@ -1,4 +1,4 @@
-﻿param(
+param(
     [Parameter(Mandatory = $true)]
     [string]$Version,
 
@@ -204,27 +204,6 @@ function Set-AndroidJavaHome {
     if (-not $java) {
         throw "JAVA_HOME is not set and java was not found on PATH."
     }
-}
-
-function Get-MSBuildPath {
-    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    if (Test-Path -LiteralPath $vswhere) {
-        $path = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' | Select-Object -First 1
-        if ($path -and (Test-Path -LiteralPath $path)) {
-            return $path
-        }
-    }
-
-    foreach ($candidate in @(
-        'C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe',
-        'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe'
-    )) {
-        if (Test-Path -LiteralPath $candidate) {
-            return $candidate
-        }
-    }
-
-    throw 'MSBuild.exe not found. Install Visual Studio Build Tools or Visual Studio with MSBuild.'
 }
 
 function Get-AndroidSecretMap {

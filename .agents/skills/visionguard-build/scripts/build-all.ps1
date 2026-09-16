@@ -57,30 +57,6 @@ function Invoke-Step {
     }
 }
 
-function Get-MSBuildPath {
-    $vswhereCommand = Get-Command vswhere.exe -ErrorAction SilentlyContinue
-    if (-not $vswhereCommand -and ${env:ProgramFiles(x86)}) {
-        $candidate = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-        if (Test-Path -LiteralPath $candidate) {
-            $vswhereCommand = Get-Item -LiteralPath $candidate
-        }
-    }
-    if ($vswhereCommand) {
-        $vswherePath = if ($vswhereCommand.PSObject.Properties.Name -contains 'Source') { $vswhereCommand.Source } else { $vswhereCommand.FullName }
-        $path = & $vswherePath -latest -products * -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
-        if ($path -and (Test-Path $path)) {
-            return $path
-        }
-    }
-
-    $msbuildCommand = Get-Command msbuild.exe -ErrorAction SilentlyContinue
-    if ($msbuildCommand) {
-        return $msbuildCommand.Source
-    }
-
-    throw "MSBuild.exe not found. Install Visual Studio Build Tools or Visual Studio with MSBuild."
-}
-
 function Set-CommandJavaHome {
     $candidates = @($env:JAVA_HOME)
     $javaCommand = Get-Command java.exe -ErrorAction SilentlyContinue
