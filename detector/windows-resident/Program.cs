@@ -4,10 +4,11 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Reflection;
+using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
 using Microsoft.Win32;
-using WebSocketSharp;
+using VisionGuard.Net;
 
 namespace VisionGuard.Resident
 {
@@ -17,8 +18,11 @@ namespace VisionGuard.Resident
         public string ApiKey { get; set; }
         public string DeviceId { get; set; }
         public string DeviceName { get; set; }
-        public string WpfPath { get; set; }
-        public string WinFormsPath { get; set; }
+        public string Channel { get; set; }
+        /// <summary>检测端可执行文件路径：收到 open-detector 时由驻留按此路径启动。</summary>
+        public string DetectorPath { get; set; }
+        /// <summary>检测端与驻留共用的应用标识，用于运行/退出事件名。</summary>
+        public string AppId { get; set; }
     }
 
     internal static class Program
@@ -48,11 +52,28 @@ namespace VisionGuard.Resident
                 using (var mutex = new Mutex(true, @"Local\VisionGuard.Resident.SingleInstance", out createdNew))
                 {
                     if (!createdNew) return 0;
+                    // 由检测端拉起时自行登记登录自启：检测端退出或崩溃后驻留要保持存活，
+                    // 机器重启后也要能自动恢复，否则远程重新打开能力会随之丢失。
+                    TryEnsureLoginStartup(args[1]);
                     Run(config, apiKey);
                 }
                 return 0;
             }
             catch (Exception ex) { Log("fatal: " + ex); return 1; }
+        }
+
+        /// <summary>确保登录自启已登记；失败只记录，不影响驻留本次运行。</summary>
+        private static void TryEnsureLoginStartup(string configPath)
+        {
+            try
+            {
+                SetStartup(configPath, true);
+                Log("login startup ensured: " + Path.GetFullPath(configPath));
+            }
+            catch (Exception ex)
+            {
+                Log("login startup registration failed: " + ex.GetType().Name + " - " + ex.Message);
+            }
         }
 
         private static int SetStartup(string configPath, bool enabled)
@@ -96,10 +117,11 @@ namespace VisionGuard.Resident
             using (var closed = new ManualResetEvent(false))
             using (var authenticated = new ManualResetEvent(false))
             using (var heartbeatStop = new ManualResetEvent(false))
-            using (var ws = new WebSocket(endpoint))
             {
+                var ws = new MinimalWebSocketClient(new Uri(endpoint));
                 object sendLock = new object();
                 bool authSucceeded = false;
+                bool authSettled = false;
                 string failure = "connection closed";
                 Thread heartbeat = null;
                 Action<Dictionary<string, object>> send = message =>
@@ -107,30 +129,24 @@ namespace VisionGuard.Resident
                     string payload = Json.Serialize(message);
                     lock (sendLock)
                     {
-                        if (!ws.IsAlive) throw new IOException("WebSocket is not connected.");
-                        ws.Send(payload);
+                        if (ws.State != System.Net.WebSockets.WebSocketState.Open)
+                            throw new IOException("WebSocket is not connected.");
+                        var bytes = Encoding.UTF8.GetBytes(payload);
+                        ws.SendAsync(new ArraySegment<byte>(bytes),
+                            System.Net.WebSockets.WebSocketMessageType.Text, true, CancellationToken.None).Wait(10000);
                     }
                 };
 
-                ws.OnOpen += delegate
-                {
-                    send(new Dictionary<string, object>
-                    {
-                        ["type"] = "auth", ["channel"] = Environment.GetEnvironmentVariable("VISIONGUARD_CHANNEL") ?? "vnext",
-                        ["role"] = "windows-resident", ["apiKey"] = apiKey,
-                        ["deviceId"] = config.DeviceId, ["deviceName"] = config.DeviceName
-                    });
-                };
-                ws.OnMessage += delegate(object sender, MessageEventArgs e)
+                Action<Dictionary<string, object>> handleMessage = message =>
                 {
                     try
                     {
-                        Dictionary<string, object> message = Json.Deserialize<Dictionary<string, object>>(e.Data);
                         string type = GetString(message, "type");
                         if (type == "auth-result")
                         {
                             authSucceeded = GetBool(message, "success");
                             failure = GetString(message, "reason", "authentication failed");
+                            authSettled = true;
                             SafeSet(authenticated);
                         }
                         else if (type == "command") ThreadPool.QueueUserWorkItem(delegate { HandleCommand(message, config, send); });
@@ -138,32 +154,74 @@ namespace VisionGuard.Resident
                     }
                     catch (Exception ex) { Log("message failed: " + ex.Message); }
                 };
-                ws.OnClose += delegate(object sender, CloseEventArgs e) { failure = "closed: " + e.Reason; SafeSet(closed); };
-                ws.OnError += delegate(object sender, WebSocketSharp.ErrorEventArgs e) { failure = "error: " + e.Message; SafeSet(closed); };
 
-                ws.Connect();
+                // 自研客户端是拉取式的：独立线程负责接收，事件语义由这里的循环还原。
+                Thread receiver = new Thread(delegate ()
+                {
+                    var buffer = new byte[64 * 1024];
+                    try
+                    {
+                        while (true)
+                        {
+                            var result = ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None)
+                                           .GetAwaiter().GetResult();
+                            if (result.MessageType == System.Net.WebSockets.WebSocketMessageType.Close)
+                            {
+                                failure = "closed: " + result.CloseStatusDescription;
+                                SafeSet(closed);
+                                return;
+                            }
+                            if (result.Count <= 0) continue;
+                            string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                            Dictionary<string, object> message;
+                            try { message = Json.Deserialize<Dictionary<string, object>>(json); }
+                            catch (Exception ex) { Log("deserialize failed: " + ex.GetType().Name + " - " + ex.Message); continue; }
+                            if (message != null) handleMessage(message);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        failure = "error: " + ex.GetType().Name + " - " + ex.Message;
+                        SafeSet(closed);
+                    }
+                })
+                { IsBackground = true, Name = "VG_ResidentReceive" };
+
+                ws.ConnectAsyncInternal(CancellationToken.None).Wait();
+                Log("connected, handshake: " + ws.HandshakeSummary);
+                receiver.Start();
+
+                send(new Dictionary<string, object>
+                {
+                    ["type"] = "auth",
+                    ["channel"] = Environment.GetEnvironmentVariable("VISIONGUARD_CHANNEL") ?? config.Channel ?? "vnext",
+                    ["role"] = "windows-resident", ["apiKey"] = apiKey,
+                    ["deviceId"] = config.DeviceId, ["deviceName"] = config.DeviceName
+                });
+
                 if (!authenticated.WaitOne(AuthTimeoutMs)) throw new TimeoutException("Resident authentication timed out.");
                 if (!authSucceeded) throw new InvalidOperationException(failure);
                 heartbeat = new Thread(new ThreadStart(delegate
                 {
                     while (!heartbeatStop.WaitOne(HeartbeatIntervalMs))
                     {
-                        try { SendHeartbeat(send); }
+                        try { SendHeartbeat(send, config); }
                         catch (Exception ex) { failure = "heartbeat failed: " + ex.Message; SafeSet(closed); return; }
                     }
                 })) { IsBackground = true, Name = "VG_ResidentHeartbeat" };
                 heartbeat.Start();
-                SendHeartbeat(send);
+                SendHeartbeat(send, config);
                 closed.WaitOne();
                 heartbeatStop.Set();
                 heartbeat.Join(2000);
+                try { ws.Abort(); } catch { }
                 throw new IOException(failure);
             }
         }
 
-        private static void SendHeartbeat(Action<Dictionary<string, object>> send)
+        private static void SendHeartbeat(Action<Dictionary<string, object>> send, ResidentConfig config)
         {
-            send(new Dictionary<string, object> { ["type"] = "resident-heartbeat", ["components"] = Components() });
+            send(new Dictionary<string, object> { ["type"] = "resident-heartbeat", ["components"] = Components(config) });
         }
 
         private static void SafeSet(EventWaitHandle handle)
@@ -190,12 +248,11 @@ namespace VisionGuard.Resident
 
         private static CommandResult Execute(string command, ResidentConfig config)
         {
+            string appId = string.IsNullOrWhiteSpace(config.AppId) ? "Detector" : config.AppId;
             switch (command)
             {
-                case "open-wpf": return Open("Wpf", config.WpfPath);
-                case "open-winforms": return Open("WinForms", config.WinFormsPath);
-                case "close-wpf": return Close("Wpf");
-                case "close-winforms": return Close("WinForms");
+                case "open-detector": return Open(appId, config.DetectorPath);
+                case "close-detector": return Close(appId);
                 default: return new CommandResult(false, "unsupported resident command");
             }
         }
@@ -219,12 +276,13 @@ namespace VisionGuard.Resident
             return new CommandResult(false, "application shutdown timeout");
         }
 
-        private static Dictionary<string, string> Components()
+        private static Dictionary<string, string> Components(ResidentConfig config)
         {
+            string appId = string.IsNullOrWhiteSpace(config.AppId) ? "Detector" : config.AppId;
             return new Dictionary<string, string>
             {
-                ["resident"] = "running", ["wpfApp"] = IsRunning("Wpf") ? "running" : "stopped",
-                ["winFormsApp"] = IsRunning("WinForms") ? "running" : "stopped"
+                ["resident"] = "running",
+                ["detectorApp"] = IsRunning(appId) ? "running" : "stopped"
             };
         }
 
@@ -249,6 +307,8 @@ namespace VisionGuard.Resident
             if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("VISIONGUARD_API_KEY")) && string.IsNullOrWhiteSpace(config.ApiKey)) throw new InvalidDataException("VISIONGUARD_API_KEY or config ApiKey is required.");
             if (string.IsNullOrWhiteSpace(config.DeviceId)) throw new InvalidDataException("DeviceId is required.");
             if (string.IsNullOrWhiteSpace(config.DeviceName)) config.DeviceName = Environment.MachineName;
+            if (string.IsNullOrWhiteSpace(config.DetectorPath)) throw new InvalidDataException("DetectorPath is required.");
+            if (string.IsNullOrWhiteSpace(config.AppId)) config.AppId = "Detector";
         }
 
         private static string GetString(Dictionary<string, object> message, string key, string fallback = "")

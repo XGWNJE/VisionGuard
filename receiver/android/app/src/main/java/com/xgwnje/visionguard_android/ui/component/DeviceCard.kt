@@ -349,26 +349,16 @@ private fun DeviceCardActions(
             modifier = Modifier.weight(1f)
         )
       }
-      if (model.wpfLifecycleCommand != null || model.winFormsLifecycleCommand != null) {
+      // Windows 只剩一个检测端（V10 决策 28），因此这里只有一个生命周期入口。
+      model.detectorLifecycleCommand?.let { command ->
         Row(horizontalArrangement = Arrangement.spacedBy(chrome.columnGapDp.dp)) {
-          model.wpfLifecycleCommand?.let { command ->
-            DeviceActionButton(
-              label = if (command.startsWith("open")) "打开 WPF" else "关闭 WPF",
-              icon = if (command.startsWith("open")) Icons.Default.PlayArrow else Icons.Default.Pause,
-              enabled = model.lifecycleControlsEnabled, emphasized = command.startsWith("open"), danger = false,
-              heightDp = chrome.actionButtonHeightDp, contentHorizontalPaddingDp = 8,
-              onClick = { onCommand(command) }, modifier = Modifier.weight(1f)
-            )
-          }
-          model.winFormsLifecycleCommand?.let { command ->
-            DeviceActionButton(
-              label = if (command.startsWith("open")) "打开 WinForms" else "关闭 WinForms",
-              icon = if (command.startsWith("open")) Icons.Default.PlayArrow else Icons.Default.Pause,
-              enabled = model.lifecycleControlsEnabled, emphasized = command.startsWith("open"), danger = false,
-              heightDp = chrome.actionButtonHeightDp, contentHorizontalPaddingDp = 8,
-              onClick = { onCommand(command) }, modifier = Modifier.weight(1f)
-            )
-          }
+          DeviceActionButton(
+            label = if (command.startsWith("open")) "打开检测端" else "关闭检测端",
+            icon = if (command.startsWith("open")) Icons.Default.PlayArrow else Icons.Default.Pause,
+            enabled = model.lifecycleControlsEnabled, emphasized = command.startsWith("open"), danger = false,
+            heightDp = chrome.actionButtonHeightDp, contentHorizontalPaddingDp = 8,
+            onClick = { onCommand(command) }, modifier = Modifier.weight(1f)
+          )
         }
       }
     }

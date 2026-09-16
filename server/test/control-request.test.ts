@@ -317,7 +317,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
     msg.type === 'command' && msg.requestId === lifecycleToDetectorRequestId);
   receiver.send(JSON.stringify({
     type: 'command', requestId: lifecycleToDetectorRequestId,
-    targetDeviceId: 'detector-control-test', command: 'open-wpf',
+    targetDeviceId: 'detector-control-test', command: 'open-detector',
   }));
   assert.equal((await lifecycleToDetectorAckPromise).reason, '驻留组件离线');
   await lifecycleNotRelayedPromise;
@@ -453,9 +453,9 @@ test('keeps resident identity separate and routes lifecycle commands only to it'
   assert.equal((await receiverAuth).success, true);
 
   const listPromise = waitForMessage(receiver, msg => msg.type === 'device-list' &&
-    msg.devices?.some((d: any) => d.deviceId === 'resident-control-test' && d.components?.wpfApp === 'running'));
+    msg.devices?.some((d: any) => d.deviceId === 'resident-control-test' && d.components?.detectorApp === 'running'));
   resident.send(JSON.stringify({
-    type: 'resident-heartbeat', components: { resident: 'running', wpfApp: 'running', winFormsApp: 'stopped' },
+    type: 'resident-heartbeat', components: { resident: 'running', detectorApp: 'running' },
   }));
   const listed = (await listPromise).devices.find((d: any) => d.deviceId === 'resident-control-test');
   assert.deepEqual(listed.capabilities, ['app-lifecycle-control']);
@@ -476,6 +476,6 @@ test('keeps resident identity separate and routes lifecycle commands only to it'
 
   const requestId = 'resident-request-12345678';
   const relayPromise = waitForMessage(resident, msg => msg.type === 'command' && msg.requestId === requestId);
-  receiver.send(JSON.stringify({ type: 'command', requestId, targetDeviceId: 'resident-control-test', command: 'close-wpf' }));
-  assert.equal((await relayPromise).command, 'close-wpf');
+  receiver.send(JSON.stringify({ type: 'command', requestId, targetDeviceId: 'resident-control-test', command: 'close-detector' }));
+  assert.equal((await relayPromise).command, 'close-detector');
 });

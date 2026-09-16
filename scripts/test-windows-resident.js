@@ -19,8 +19,10 @@ fs.writeFileSync(configPath, JSON.stringify({
   ApiKey: apiKey,
   DeviceId: 'resident-win7-smoke',
   DeviceName: 'Resident Win7 Smoke',
-  WpfPath: 'C:/missing/VisionGuard.exe',
-  WinFormsPath: 'C:/missing/VisionGuard.exe',
+  // V10 决策 28：Windows 只剩一个检测端，生命周期命令为 open-detector/close-detector。
+  // 这里给一个不存在的路径，用于断言失败原因，不干扰当前人工验收窗口。
+  DetectorPath: 'C:/missing/VisionGuard.exe',
+  AppId: 'Detector',
 }), 'utf8');
 
 const resident = spawn(exe, ['--config', configPath], {
@@ -58,14 +60,14 @@ receiver.on('message', data => {
       commandSent = true;
       receiver.send(JSON.stringify({
         type: 'command', requestId: `resident-smoke-${process.pid}`,
-        targetDeviceId: 'resident-win7-smoke', command: 'open-wpf',
+        targetDeviceId: 'resident-win7-smoke', command: 'open-detector',
       }));
     }
   }
   if (message.type === 'command-ack' && message.requestId === `resident-smoke-${process.pid}` && message.phase === 'completed') {
     try {
       assert.equal(message.targetDeviceId, 'resident-win7-smoke');
-      assert.equal(message.command, 'open-wpf');
+      assert.equal(message.command, 'open-detector');
       assert.equal(message.success, false);
       assert.equal(message.reason, 'configured executable not found');
       finish();

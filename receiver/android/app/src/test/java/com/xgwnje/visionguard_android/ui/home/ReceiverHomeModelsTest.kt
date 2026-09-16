@@ -211,18 +211,18 @@ class ReceiverHomeModelsTest {
     }
 
     @Test
-    fun residentCapabilityBuildsIndependentWpfAndWinFormsLifecycleActions() {
+    fun residentCapabilityBuildsSingleDetectorLifecycleAction() {
+        // Windows 只剩一个检测端：驻留能力只产生一个 detector 生命周期入口（V10 决策 28）。
         val device = DeviceInfo(
             deviceId = "win", deviceName = "Windows", online = true,
             isMonitoring = false, isReady = false, lastSeen = "",
             capabilities = listOf("app-lifecycle-control"),
-            components = mapOf("resident" to "running", "wpfApp" to "running", "winFormsApp" to "stopped")
+            components = mapOf("resident" to "running", "detectorApp" to "stopped")
         )
 
         val model = buildDeviceCardUiModel(device)
 
-        assertEquals("close-wpf", model.wpfLifecycleCommand)
-        assertEquals("open-winforms", model.winFormsLifecycleCommand)
+        assertEquals("open-detector", model.detectorLifecycleCommand)
         assertEquals("resume", model.controlCommand)
         assertEquals(false, model.controlsEnabled)
         assertEquals(true, model.lifecycleControlsEnabled)

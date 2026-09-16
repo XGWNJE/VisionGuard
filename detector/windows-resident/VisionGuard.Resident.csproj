@@ -14,6 +14,13 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System.Web.Extensions" />
-    <PackageReference Include="websocket-sharp" Version="1.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      共用检测端验证过的自研 WebSocket 客户端（显式 TLS 1.2）。
+      原先使用 websocket-sharp，但它以 SslProtocols.Default 协商 TLS，Windows 7 上退化为 TLS 1.0
+      会被服务端拒绝，且不暴露 TLS 版本配置入口——检测端在 Win7 实测过同一根因。
+    -->
+    <Compile Include="..\windows-wpf\Net\MinimalWebSocketClient.cs" Link="Net\MinimalWebSocketClient.cs" />
   </ItemGroup>
 </Project>

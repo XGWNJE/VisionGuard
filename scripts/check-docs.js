@@ -324,7 +324,8 @@ function checkComponentContract(root, readme, overview, operations, errors) {
   }
 
   const residentProgram = readUtf8(root, 'detector/windows-resident/Program.cs', errors, { checkBom: false });
-  for (const command of ['open-wpf', 'open-winforms', 'close-wpf', 'close-winforms']) {
+  // V10 决策 28：Windows 只剩一个检测端，生命周期命令统一为 detector。
+  for (const command of ['open-detector', 'close-detector']) {
     requireText(residentProgram, `"${command}"`, 'detector/windows-resident/Program.cs', `the resident command ${command}`, errors);
     requireText(operations, `\`${command}\``, 'docs/codex/60-operations.md', `the resident command ${command}`, errors);
   }

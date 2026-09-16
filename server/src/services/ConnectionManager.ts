@@ -111,7 +111,8 @@ const MAX_MODEL_OPTIONS = 16;
 const MAX_CAPABILITIES = 32;
 const MAX_COMPONENTS = 8;
 const DETECTOR_COMMANDS = new Set(['pause', 'resume', 'stop-alarm']);
-const RESIDENT_COMMANDS = new Set(['open-wpf', 'open-winforms', 'close-wpf', 'close-winforms']);
+// Windows 只剩一个检测端，生命周期命令统一为 detector（V10 决策 28）。
+const RESIDENT_COMMANDS = new Set(['open-detector', 'close-detector']);
 
 function validateDetection(d: any): boolean {
   if (!d || typeof d !== 'object') return false;
@@ -710,7 +711,7 @@ function handleAuth(
     }
     residentWindowsClients.set(msg.deviceId, {
       ws, deviceId: msg.deviceId, deviceName: msg.deviceName || msg.deviceId,
-      lastSeen: new Date(), components: { resident: 'running', wpfApp: 'stopped', winFormsApp: 'stopped' },
+      lastSeen: new Date(), components: { resident: 'running', detectorApp: 'stopped' },
     });
     console.log(`[ws][${ts}] Windows驻留 上线: ${msg.deviceName} (${msg.deviceId})`);
   } else {

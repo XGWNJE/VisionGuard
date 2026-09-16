@@ -79,8 +79,7 @@ data class DeviceCardUiModel(
     val firstRowLayout: DeviceCardFirstRowLayout,
     val illustration: DeviceCardIllustration,
     val typeLabel: String,
-    val wpfLifecycleCommand: String? = null,
-    val winFormsLifecycleCommand: String? = null
+    val detectorLifecycleCommand: String? = null
 )
 
 data class DeviceCardChrome(
@@ -235,8 +234,7 @@ fun buildDeviceCardUiModel(device: DeviceInfo): DeviceCardUiModel {
         firstRowLayout = DeviceCardFirstRowLayout.BALANCED_TWO_COLUMN,
         illustration = deviceCardIllustrationOf(device.clientType),
         typeLabel = deviceTypeLabelOf(device.clientType),
-        wpfLifecycleCommand = lifecycleCommand(device, "wpfApp", "wpf"),
-        winFormsLifecycleCommand = lifecycleCommand(device, "winFormsApp", "winforms")
+        detectorLifecycleCommand = lifecycleCommand(device, "detectorApp", "detector")
     )
 }
 

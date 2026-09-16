@@ -12,7 +12,7 @@ namespace VisionGuard
 
         protected override void OnStartup(StartupEventArgs e)
         {
-            _singleInstanceGuard = new Utils.SingleInstanceGuard("Wpf");
+            _singleInstanceGuard = new Utils.SingleInstanceGuard(Runtime.ResidentLauncher.ApplicationId);
             if (!_singleInstanceGuard.IsPrimaryInstance)
             {
                 _singleInstanceGuard.Dispose();
@@ -44,7 +44,7 @@ namespace VisionGuard
             });
 
             base.OnStartup(e);
-            _residentBridge = new Services.ResidentBridge("Wpf", () => Dispatcher.BeginInvoke(new Action(Shutdown)));
+            _residentBridge = new Services.ResidentBridge(Runtime.ResidentLauncher.ApplicationId, () => Dispatcher.BeginInvoke(new Action(Shutdown)));
         }
 
         protected override void OnExit(ExitEventArgs e)
