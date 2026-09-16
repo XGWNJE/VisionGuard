@@ -568,7 +568,6 @@ function auditRepository(root = DEFAULT_ROOT) {
   const codexFiles = listMarkdownFiles(root, 'docs/codex');
   const docsFiles = listMarkdownFiles(root, 'docs');
   const designFiles = listMarkdownFiles(root, 'docs/design');
-  const historicalSpec = 'docs/superpowers/specs/2026-07-12-v5-multi-user-p2p-architecture.md';
   const markdownFiles = [...new Set([
     'README.md',
     'AGENTS.md',
@@ -626,10 +625,6 @@ function auditRepository(root = DEFAULT_ROOT) {
       requireText(designIndex, `](./${fileName})`, 'docs/design/README.md', `navigation for ${fileName}`, errors);
     }
   }
-
-  const oldSpec = contents.get(historicalSpec) || '';
-  requirePattern(oldSpec.slice(0, 1000), /已取代/, historicalSpec, 'the superseded status', errors);
-  requireText(oldSpec.slice(0, 1000), '../../codex/15-product-roadmap.md', historicalSpec, 'the replacement roadmap link', errors);
 
   return errors;
 }

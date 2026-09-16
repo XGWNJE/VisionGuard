@@ -567,8 +567,7 @@ function Assert-GitHubReleaseNotes {
 function Assert-GitHubOnlyWorkingTree {
     $allowedPaths = @(
         'scripts/publish-release.ps1',
-        'scripts/release-workflow.test.js',
-        'docs/superpowers/specs/2026-07-12-v5-multi-user-p2p-architecture.md'
+        'scripts/release-workflow.test.js'
     )
     $status = Invoke-NativeCapture -FilePath 'git' -Arguments @('status', '--porcelain=v1', '--untracked-files=all')
     $unexpected = New-Object System.Collections.Generic.List[string]
