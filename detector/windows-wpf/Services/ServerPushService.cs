@@ -18,6 +18,7 @@ using System.Threading.Tasks;
 using System.Net.WebSockets;
 using VisionGuard.Models;
 using VisionGuard.Utils;
+using VisionGuard.Runtime;
 
 namespace VisionGuard.Services
 {
@@ -304,7 +305,7 @@ namespace VisionGuard.Services
                 ["modelKey"] = modelKey,
                 ["modelOptions"] = modelOptions,
                 ["canSwitchModelWhileMonitoring"] = canSwitchModelWhileMonitoring,
-                ["capabilities"] = new[] { "monitor-control", "config-control", "request-correlation", "screenshot-on-demand", "directml", "source-control" },
+                ["capabilities"] = Runtime.DetectorCapabilities.Build(),
                 ["components"] = new Dictionary<string, object> { ["detectorApp"] = "running" },
                 ["sources"] = sources,
             });
@@ -488,7 +489,7 @@ namespace VisionGuard.Services
                 _attempt = 0;
                 SetState(WsState.Connected);
                 // maxSources=0 表示服务端未声明上限，此时保持本地已放开的范围，不收窄。
-                if (maxSources > 0) SourceLimitReceived?.Invoke(this, Math.Clamp(maxSources, 1, 16));
+                if (maxSources > 0) SourceLimitReceived?.Invoke(this, Net472Compat.Clamp(maxSources, 1, 16));
                 s.StartHeartbeat();
                 FlushAlertOutbox();
             }
@@ -605,7 +606,8 @@ namespace VisionGuard.Services
         {
             private readonly ServerPushService _parent;
             private readonly string _wsUrl;
-            private ClientWebSocket? _ws;
+            // 自研最小客户端：显式 TLS 1.2，规避 .NET Framework 与 websocket-sharp 在 Windows 7 上的两条死路。
+            private Net.MinimalWebSocketClient? _ws;
             private readonly object _sendLock = new object();
             private Thread? _receiveThread;
             private Thread? _heartbeatThread;
@@ -623,7 +625,7 @@ namespace VisionGuard.Services
 
             public void Start()
             {
-                _ws = new ClientWebSocket();
+                _ws = new Net.MinimalWebSocketClient(new Uri(_wsUrl));
                 _receiveThread = new Thread(ReceiveLoop)
                 {
                     IsBackground = true,
@@ -656,9 +658,10 @@ namespace VisionGuard.Services
                 try
                 {
                     var uri = new Uri(_wsUrl);
-                    _ws!.ConnectAsync(uri, _cts.Token).Wait();
+                    _ws!.ConnectAsyncInternal(_cts.Token).Wait();
 
                     if (_shutdown) return;
+                    LogManager.StaticInfo("[Server] WS 握手完成: " + _ws.HandshakeSummary);
                     Interlocked.Exchange(ref _lastMessageAtTicks, DateTime.UtcNow.Ticks);
                     _parent.Post(() => _parent.OnWsOpened(this));
 
@@ -764,7 +767,7 @@ namespace VisionGuard.Services
                         ["modelKey"] = modelKey,
                         ["modelOptions"] = modelOptions,
                         ["canSwitchModelWhileMonitoring"] = canSwitchModelWhileMonitoring,
-                        ["capabilities"] = new[] { "monitor-control", "config-control", "request-correlation", "screenshot-on-demand", "directml", "source-control" },
+                        ["capabilities"] = Runtime.DetectorCapabilities.Build(),
                         ["components"] = new Dictionary<string, object> { ["detectorApp"] = "running" },
                     });
                     // 注意：发送心跳后绝不更新 _lastMessageAtTicks
@@ -833,7 +836,7 @@ namespace VisionGuard.Services
                             if (d.TryGetValue("maxSources", out object? heartbeatMaxSources))
                             {
                                 int limit = Convert.ToInt32(heartbeatMaxSources);
-                                _parent.Post(() => _parent.SourceLimitReceived?.Invoke(_parent, Math.Clamp(limit, 1, 16)));
+                                _parent.Post(() => _parent.SourceLimitReceived?.Invoke(_parent, Net472Compat.Clamp(limit, 1, 16)));
                             }
                             _parent.Post(_parent.FlushAlertOutbox);
                             break;
