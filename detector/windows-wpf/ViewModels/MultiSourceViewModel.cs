@@ -24,7 +24,7 @@ namespace VisionGuard.ViewModels
         private readonly SettingsViewModel _settings;
         private SourceViewModel? _selectedSource;
         private string _sourceLimitWarning = "";
-        // 收到服务端 maxSources 之前先放开到最大值（与 WinForms 端一致），否则本地会被默认上限卡住，用户加不了更多来源。
+        // 收到服务端 maxSources 之前先放开到最大值，否则本地会被默认上限卡住，用户加不了更多来源。
         private int _sourceLimit = MultiSourceMonitorCoordinator.MaximumSourceLimit;
 
         public ObservableCollection<SourceViewModel> Sources { get; } = new();
@@ -86,7 +86,7 @@ namespace VisionGuard.ViewModels
         }
 
         /// <summary>
-        /// 在服务端上限内新增一个来源，与 WinForms 端一致：新来源默认未配置，等待用户设定采集目标。
+        /// 在服务端上限内新增一个来源：新来源默认未配置，等待用户设定采集目标。
         /// </summary>
         internal bool CanAddSource => Sources.Count < _sourceLimit;
 

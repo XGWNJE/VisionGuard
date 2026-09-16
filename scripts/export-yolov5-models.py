@@ -61,13 +61,16 @@ def main():
                 print(f"  ERROR: {e}")
 
     print(f"\n{'='*60}")
-    print("Done. Copy .onnx files to:")
-    print("  detector\\windows-winforms\\Assets\\")
+    print("Done. Copy .onnx files to the Windows detector asset directory:")
+    print("  detector\\windows-wpf\\Assets\\")
+    print("\nThese are the legacy-profile (Windows 7 SP1) models; the modern profile uses YOLO26.")
+    print("On release, scripts/publish-release.ps1 copies Assets\\*.onnx into server\\data\\models\\,")
+    print("and the detector downloads them from <server>/models/<modelKey>.onnx at runtime.")
     print("\nExample:")
     for variant in VARIANTS:
         for size in SIZES:
             src = os.path.join(OUTPUT_BASE, variant, "onnx", f"{variant}_{size}.onnx")
-            print(f"  copy \"{src}\" \"detector\\windows-winforms\\Assets\\\"")
+            print(f"  copy \"{src}\" \"detector\\windows-wpf\\Assets\\\"")
 
 
 if __name__ == "__main__":

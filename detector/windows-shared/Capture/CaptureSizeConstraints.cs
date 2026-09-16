@@ -3,8 +3,8 @@ using System.Drawing;
 namespace VisionGuard.Capture
 {
     /// <summary>
-    /// 采集目标的统一像素尺寸边界。Windows 两个检测端共用同一份实现，
-    /// 避免两端各自维护出不同的下限或缺失 DPI 映射。
+    /// 采集目标的统一像素尺寸边界。Windows 检测端与驻留共用同一份实现，
+    /// 避免各自维护出不同的下限或缺失 DPI 映射。
     /// </summary>
     public static class CaptureSizeConstraints
     {
@@ -19,7 +19,6 @@ namespace VisionGuard.Capture
         /// <summary>
         /// 将 WPF 画布中的 DIP 选区映射为实际采集像素。
         /// 拖拽提示和提交校验必须共用此方法，避免高 DPI 下显示尺寸与校验尺寸不一致。
-        /// WinForms 端不使用该方法（它不做多 DPI 适配）。
         /// </summary>
         public static Rectangle MapToCapturePixels(
             double left,

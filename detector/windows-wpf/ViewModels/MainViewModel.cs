@@ -86,7 +86,7 @@ namespace VisionGuard.ViewModels
                 AppConfig.DeviceId,
                 ServerVm.DeviceName);
 
-            // 心跳参数定时刷新(3s,与 WinForms 对齐): 确保 isMonitoring/cooldown/confidence/targets 实时同步到接收端
+            // 心跳参数每 3 秒刷新：确保 isMonitoring/cooldown/confidence/targets 实时同步到接收端
             _heartbeatTimer = new System.Windows.Threading.DispatcherTimer
             {
                 Interval = System.TimeSpan.FromSeconds(3)

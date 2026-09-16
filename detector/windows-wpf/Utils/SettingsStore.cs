@@ -9,7 +9,7 @@ namespace VisionGuard.Utils
         private static readonly SharedSettingsFile Store = new SharedSettingsFile(ResolveSettingsPath());
 
         /// <summary>
-        /// 与 WinForms 端一致：允许用 VISIONGUARD_SETTINGS_PATH 指向隔离配置，便于自动化验证互不干扰。
+        /// 允许用 VISIONGUARD_SETTINGS_PATH 指向隔离配置，便于自动化验证互不干扰。
         /// </summary>
         private static string ResolveSettingsPath()
         {

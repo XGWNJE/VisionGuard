@@ -23,7 +23,7 @@ $env:VISIONGUARD_DATA_DIR = $dataRoot
 
 Write-Host "Starting isolated VisionGuard channel '$Channel' on port $Port"
 Write-Host "Data directory: $dataRoot"
-Write-Host "WPF/WinForms: VISIONGUARD_SERVER_URL=http://127.0.0.1:$Port; VISIONGUARD_CHANNEL=$Channel"
+Write-Host "Windows detector: VISIONGUARD_SERVER_URL=http://127.0.0.1:$Port; VISIONGUARD_CHANNEL=$Channel"
 Write-Host "Android emulator build: VISIONGUARD_SERVER_URL=http://10.0.2.2:$Port; VISIONGUARD_CHANNEL=$Channel"
 
 & npm.cmd --prefix $serverRoot run build

@@ -113,7 +113,7 @@ def main():
     icon_dir.mkdir(exist_ok=True)
     windows.save(icon_dir / "visionguard-windows.png", "PNG", optimize=True)
     windows.save(icon_dir / "favicon.ico", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-    for target in [ROOT / "detector/windows-winforms/favico3n.ico", ROOT / "detector/windows-wpf/favico3n.ico", ROOT / "detector/windows-wpf/favicon.ico"]:
+    for target in [ROOT / "detector/windows-wpf/favico3n.ico", ROOT / "detector/windows-wpf/favicon.ico"]:
         windows.save(target, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
     save_android("android_detector", ROOT / "detector/android/app/src/main/res")
     save_android("android_receiver", ROOT / "receiver/android/app/src/main/res")

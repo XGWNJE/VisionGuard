@@ -65,12 +65,22 @@
     <PackageReference Include="$(OrtManagedPackage)" Version="$(OrtManagedVersion)" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
     <PackageReference Include="System.Net.Http" Version="4.3.4" />
+    <!--
+      legacy 档原生 1.1.0 的唯一来源。只登记包、不引用其中任何资产（ExcludeAssets=all），
+      真正需要的是 native\win-x64\onnxruntime.dll，由 ArrangeNativeLibraries 复制到 native\legacy\ 后预加载。
+      GeneratePathProperty 生成 PkgMicrosoft_ML_OnnxRuntime_1_1_0 指向包目录，避免依赖包目录布局写死路径。
+
+      必须只在 legacy 档登记：该包的托管程序集是 ONNX Runtime 1.2.0，
+      modern 档一旦同时解析到它，DirectML 相关的 AppendExecutionProvider_DML 就会消失（编译失败）。
+     -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.1.0" GeneratePathProperty="true" ExcludeAssets="all" PrivateAssets="all" Condition="'$(OrtProfile)' == 'legacy'" />
   </ItemGroup>
 
   <!-- 原生库布置：modern 的原生库来自 DirectML 包（自动复制到根目录，这里移到 native\modern），
-       legacy 的原生 1.1.0 从 WinForms 已验证据包取用，两者都不留在应用根目录。 -->
+       legacy 的原生 1.1.0 取自 NuGet 缓存里的 Microsoft.ML.OnnxRuntime 包，两者都不留在应用根目录。 -->
   <PropertyGroup>
-    <LegacyNativeSource>$(MSBuildProjectDirectory)\..\windows-winforms\packages\Microsoft.ML.OnnxRuntime.1.1.0\runtimes\win-x64\native\onnxruntime.dll</LegacyNativeSource>
+    <LegacyNativeSource Condition="'$(PkgMicrosoft_ML_OnnxRuntime_1_1_0)' != ''">$(PkgMicrosoft_ML_OnnxRuntime_1_1_0)\runtimes\win-x64\native\onnxruntime.dll</LegacyNativeSource>
+    <LegacyNativeSource Condition="'$(LegacyNativeSource)' == ''">$(NuGetPackageRoot)microsoft.ml.onnxruntime\1.1.0\runtimes\win-x64\native\onnxruntime.dll</LegacyNativeSource>
   </PropertyGroup>
 
   <Target Name="ArrangeNativeLibraries" AfterTargets="Build">
