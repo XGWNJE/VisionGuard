@@ -10,10 +10,8 @@
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="64"/><ColumnDefinition/></Grid.ColumnDefinitions>
                     <TextBlock Text="后端" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
-                    <ComboBox Grid.Column="1" Style="{StaticResource DarkComboBox}" SelectedIndex="{Binding SelectedBackendIndex}">
-                        <ComboBoxItem>DirectML · GPU 加速</ComboBoxItem>
-                        <ComboBoxItem>CPU · 兼容与诊断</ComboBoxItem>
-                    </ComboBox>
+                    <!-- 后端清单按档位变化：legacy 档（Windows 7）没有 DirectML 提供程序，只提供 CPU。 -->
+                    <ComboBox Grid.Column="1" Style="{StaticResource DarkComboBox}" ItemsSource="{Binding BackendOptions}" SelectedIndex="{Binding SelectedBackendIndex}" />
                 </Grid>
                 <Grid Margin="0,7,0,0">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="64"/><ColumnDefinition/><ColumnDefinition Width="10"/><ColumnDefinition/></Grid.ColumnDefinitions>
@@ -31,14 +29,8 @@
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="64"/><ColumnDefinition/></Grid.ColumnDefinitions>
                     <TextBlock Text="模型" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
-                    <ComboBox Grid.Column="1" Style="{StaticResource DarkComboBox}" SelectedIndex="{Binding SelectedModelIndex}">
-                        <ComboBoxItem>YOLO26n 320 · 9 MB</ComboBoxItem>
-                        <ComboBoxItem>YOLO26n 640 · 10 MB</ComboBoxItem>
-                        <ComboBoxItem>YOLO26s 320 · 36 MB</ComboBoxItem>
-                        <ComboBoxItem>YOLO26s 640 · 37 MB</ComboBoxItem>
-                        <ComboBoxItem>YOLO26m 320 · 78 MB</ComboBoxItem>
-                        <ComboBoxItem>YOLO26m 640 · 78 MB</ComboBoxItem>
-                    </ComboBox>
+                    <!-- 模型清单按运行环境决定（Win7 → YOLOv5，Win10+ → YOLO26），与后端 ModelManager.ModelKeys 同源。 -->
+                    <ComboBox Grid.Column="1" Style="{StaticResource DarkComboBox}" ItemsSource="{Binding ModelDisplayNames}" SelectedIndex="{Binding SelectedModelIndex}" />
                 </Grid>
                 <Grid Margin="64,7,0,0">
                     <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>

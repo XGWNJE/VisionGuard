@@ -236,7 +236,8 @@ namespace VisionGuard.Services
         public Bitmap          Frame       { get; }   // 调用方负责 Dispose
         public long            InferenceMs { get; }
         public long            ProcessingMs { get; }
-        public Exception       Error       { get; }
+        // 两个构造分支各自只设置其中一组字段：正常帧只设 Detections/Frame，故障帧只设 Error。
+        public Exception       Error       { get; } = null!;
         public bool            HasError    => Error != null;
         public MonitorFailureKind FailureKind { get; }
 

@@ -1,15 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0-windows</TargetFramework>
+    <!-- Windows 检测端统一为单一 net472 构建：Windows 7 SP1 x64 与 Windows 10/11 共用同一份
+         WPF 源码。两平台的差异只在推理档位（原生 ONNX Runtime 版本、是否启用 DirectML）
+         与模型清单，由 Runtime/NativeLibrarySelector.cs 在启动时按运行环境选择。 -->
+    <TargetFramework>net472</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <LangVersion>12.0</LangVersion>
     <PlatformTarget>x64</PlatformTarget>
-    <OutputPath>bin\x64\</OutputPath>
+    <!-- 实际输出目录在下方按 OrtProfile 指定为 bin\x64\<档位>\。 -->
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <ApplicationIcon>favico3n.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -19,34 +23,84 @@
     <Version>4.4.4</Version>
     <FileVersion>4.4.4</FileVersion>
     <AssemblyVersion>4.4.4</AssemblyVersion>
+    <!-- net472 下必须显式生成绑定重定向，否则 System.Text.Json 的依赖无法解析。 -->
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <EnableDefaultPageItems>false</EnableDefaultPageItems>
+    <!--
+      net472 无法在程序集元数据里携带 nullable 注解，因此迁移前在 net9.0-windows 下不出现的
+      NRT 警告（CS8600/8602/8603/8604/8618/8625 等）会在每次构建时成批出现。这些警告对 net472
+      是结构性噪音，不能作为真实缺陷信号；真实缺陷仍由编译错误与运行期验证覆盖。
+    -->
+    <NoWarn>$(NoWarn);CS8600;CS8602;CS8603;CS8604;CS8618;CS8625</NoWarn>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <DebugType>none</DebugType>
   </PropertyGroup>
 
-  <!-- 发布时清理冗余文件，将原生 DLL 提到根目录 -->
-  <Target Name="StripUnusedOutput" AfterTargets="Build">
-    <!-- 将 runtimes/win-x64/native/* 移到根目录 -->
-    <Exec Command="powershell -Command &quot;$src='$(OutputPath)runtimes\win-x64\native'; if (Test-Path $src) { Get-ChildItem $src | Move-Item -Destination '$(OutputPath)' -Force }&quot;" ContinueOnError="true" />
-    <!-- 删除整个 runtimes 目录 -->
-    <Exec Command="powershell -Command &quot;Remove-Item '$(OutputPath)runtimes' -Recurse -Force -ErrorAction SilentlyContinue&quot;" ContinueOnError="true" />
-    <!-- 删除非 win-x64 的残留（兜底） -->
-    <Exec Command="powershell -Command &quot;if (Test-Path '$(OutputPath)runtimes') { Get-ChildItem '$(OutputPath)runtimes' -Directory | Where-Object { $_.Name -ne 'win-x64' } | Remove-Item -Recurse -Force }&quot;" ContinueOnError="true" />
-    <!-- 删除 .lib 导入库 -->
-    <Exec Command="powershell -Command &quot;Get-ChildItem '$(OutputPath)' -Recurse -Filter '*.lib' -ErrorAction SilentlyContinue | Remove-Item -Force&quot;" ContinueOnError="true" />
-    <!-- 删除 .pdb 调试符号 -->
-    <Exec Command="powershell -Command &quot;Get-ChildItem '$(OutputPath)' -Recurse -Filter '*.pdb' -ErrorAction SilentlyContinue | Remove-Item -Force&quot;" ContinueOnError="true" />
-    <!-- 删除 .NET 9 无用的 binding redirects config -->
-    <Exec Command="powershell -Command &quot;Get-ChildItem '$(OutputPath)' -Filter '*.dll.config' -ErrorAction SilentlyContinue | Remove-Item -Force&quot;" ContinueOnError="true" />
-    <!-- DirectML NuGet 同时携带调试层，Release 运行不需要。 -->
-    <Delete Files="$(OutputPath)DirectML.Debug.dll" Condition="'$(Configuration)' == 'Release' And Exists('$(OutputPath)DirectML.Debug.dll')" />
-    <Message Importance="high" Text="✓ 已清理冗余输出文件" />
+  <!--
+    推理档位（V10，见路线图 8.13）：
+      modern（默认）= Windows 10 及以上：托管 ONNX Runtime 1.19.0 + 原生 1.19.0 + DirectML，模型 YOLO26。
+      legacy        = Windows 7 SP1 x64：托管 ONNX Runtime 1.2.0 + 原生 1.1.0，固定 CPU，模型 YOLOv5。
+    托管层与原生层必须同代配对，否则类型初始化失败，所以两档各自锁定一套托管包。
+    原生库不留在应用根目录（会被 DllImport 抢先命中），统一放到 native\<档位>\ 由启动时预加载。
+    legacy 档原生 1.1.0 与 modern 档原生 1.19.0 都随构建布置到输出目录，两种档位可在同一台机器上验证。
+  -->
+  <PropertyGroup>
+    <OrtProfile Condition="'$(OrtProfile)' == ''">modern</OrtProfile>
+    <OrtManagedPackage Condition="'$(OrtProfile)' == 'legacy'">Microsoft.ML.OnnxRuntime.Managed</OrtManagedPackage>
+    <OrtManagedPackage Condition="'$(OrtProfile)' != 'legacy'">Microsoft.ML.OnnxRuntime.DirectML</OrtManagedPackage>
+    <OrtManagedVersion Condition="'$(OrtProfile)' == 'legacy'">1.2.0</OrtManagedVersion>
+    <OrtManagedVersion Condition="'$(OrtProfile)' != 'legacy'">1.19.0</OrtManagedVersion>
+    <DefineConstants Condition="'$(OrtProfile)' == 'legacy'">$(DefineConstants);ORT_LEGACY</DefineConstants>
+    <DefineConstants Condition="'$(OrtProfile)' != 'legacy'">$(DefineConstants);ORT_DIRECTML</DefineConstants>
+    <!-- 两档输出到不同目录，避免互相覆盖。 -->
+    <OutputPath>bin\x64\$(OrtProfile)\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="$(OrtManagedPackage)" Version="$(OrtManagedVersion)" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <PackageReference Include="System.Net.Http" Version="4.3.4" />
+  </ItemGroup>
+
+  <!-- 原生库布置：modern 的原生库来自 DirectML 包（自动复制到根目录，这里移到 native\modern），
+       legacy 的原生 1.1.0 从 WinForms 已验证据包取用，两者都不留在应用根目录。 -->
+  <PropertyGroup>
+    <LegacyNativeSource>$(MSBuildProjectDirectory)\..\windows-winforms\packages\Microsoft.ML.OnnxRuntime.1.1.0\runtimes\win-x64\native\onnxruntime.dll</LegacyNativeSource>
+  </PropertyGroup>
+
+  <Target Name="ArrangeNativeLibraries" AfterTargets="Build">
+    <!-- 不为另一档位建空目录：只让 Copy 按需创建本档位需要的目录。 -->
+    <Copy SourceFiles="$(OutputPath)onnxruntime.dll" DestinationFolder="$(OutputPath)native\modern" Condition="Exists('$(OutputPath)onnxruntime.dll')" />
+    <Copy SourceFiles="$(OutputPath)onnxruntime_providers_shared.dll" DestinationFolder="$(OutputPath)native\modern" Condition="Exists('$(OutputPath)onnxruntime_providers_shared.dll')" />
+    <Copy SourceFiles="$(OutputPath)DirectML.dll" DestinationFolder="$(OutputPath)native\modern" Condition="Exists('$(OutputPath)DirectML.dll')" />
+    <Copy SourceFiles="$(OutputPath)DirectML.Debug.dll" DestinationFolder="$(OutputPath)native\modern" Condition="Exists('$(OutputPath)DirectML.Debug.dll')" />
+    <Copy SourceFiles="$(LegacyNativeSource)" DestinationFolder="$(OutputPath)native\legacy" Condition="Exists('$(LegacyNativeSource)')" />
+    <!-- 根目录不得留下任何 ONNX Runtime / DirectML 原生库（含 .lib/.pdb 等伴随文件）：
+         DllImport("onnxruntime") 会先命中根目录，导致按档位选择失效。 -->
+    <ItemGroup>
+      <RootNativeLeftover Include="$(OutputPath)onnxruntime*.*;$(OutputPath)DirectML*.*" />
+    </ItemGroup>
+    <Delete Files="@(RootNativeLeftover)" />
+    <RemoveDir Directories="$(OutputPath)runtimes" />
+    <Message Importance="high" Text="✓ 档位=$(OrtProfile) 原生库已布置到 $(OutputPath)native" />
   </Target>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML" Version="1.19.0" />
-    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
+    <!-- WPF 项在 net472 下不能依赖 SDK 的隐式推导，必须显式声明。 -->
+    <Page Include="App.xaml" SubType="Designer" Generator="MSBuild:Compile" />
+    <Page Include="Themes\DarkTheme.xaml" SubType="Designer" Generator="MSBuild:Compile" />
+    <Page Include="Views\MainWindow.xaml" SubType="Designer" Generator="MSBuild:Compile" />
+    <Page Include="Views\MonitorPage.xaml" SubType="Designer" Generator="MSBuild:Compile" />
+    <Page Include="Views\ServerPage.xaml" SubType="Designer" Generator="MSBuild:Compile" />
+    <Page Include="Views\SettingsPage.xaml" SubType="Designer" Generator="MSBuild:Compile" />
+    <Page Include="Views\MaskEditorWindow.xaml" SubType="Designer" Generator="MSBuild:Compile" />
+    <Page Include="Views\RegionSelectorWindow.xaml" SubType="Designer" Generator="MSBuild:Compile" />
+    <Page Include="Views\WindowPickerWindow.xaml" SubType="Designer" Generator="MSBuild:Compile" />
   </ItemGroup>
 
   <ItemGroup>

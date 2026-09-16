@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using VisionGuard.Inference;
 using VisionGuard.Models;
+using VisionGuard.Runtime;
 
 namespace VisionGuard.Services
 {
@@ -125,7 +126,8 @@ namespace VisionGuard.Services
             while (runtime.FrameTimes.Count > 0 && (now - runtime.FrameTimes.Peek()).TotalSeconds > 10)
                 runtime.FrameTimes.Dequeue();
             var frames = runtime.FrameTimes.ToArray();
-            var fps = frames.Length < 2 ? 0 : (frames.Length - 1) / Math.Max(0.001, (frames[^1] - frames[0]).TotalSeconds);
+            // net472 的 Index/Range 不可用，用显式下标取代 ^1。
+            var fps = frames.Length < 2 ? 0 : (frames.Length - 1) / Math.Max(0.001, (frames[frames.Length - 1] - frames[0]).TotalSeconds);
             var activeBackend = runtime.Monitor.ActiveBackend;
             var runningOnBackend = _runtimes.Values.Count(item => item.Monitor.IsStarted
                 && string.Equals(item.Monitor.ActiveBackend, activeBackend, StringComparison.OrdinalIgnoreCase));

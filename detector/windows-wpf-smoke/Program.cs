@@ -1,3 +1,4 @@
+using VisionGuard.Runtime;
 using System.Collections.Concurrent;
 using System.Drawing;
 using System.Runtime.InteropServices;
@@ -90,53 +91,54 @@ var running = coordinator.Statuses.OrderBy(s => Array.IndexOf(sourceIds, s.Sourc
 var beforeWindowChange = counts.ToDictionary(x => x.Key, x => x.Value);
 NativeWindowTest.MoveAndResize(windows[0].Handle, 120, 120, 640, 360);
 await Task.Delay(1500);
-var moveResizePassed = sourceIds.All(id => counts.GetValueOrDefault(id) > beforeWindowChange.GetValueOrDefault(id));
+var moveResizePassed = sourceIds.All(id => Net472Compat.DictOrDefault(counts, id) > Net472Compat.DictOrDefault(beforeWindowChange, id));
 
 var beforeMinimize = counts.ToDictionary(x => x.Key, x => x.Value);
 var errorsBeforeMinimize = errors.Count;
 NativeWindowTest.Minimize(windows[0].Handle);
 await Task.Delay(1500);
 var minimizeFaultIsolated = errors.Count > errorsBeforeMinimize
-    && sourceIds.Skip(1).All(id => counts.GetValueOrDefault(id) > beforeMinimize.GetValueOrDefault(id));
+    && sourceIds.Skip(1).All(id => Net472Compat.DictOrDefault(counts, id) > Net472Compat.DictOrDefault(beforeMinimize, id));
 NativeWindowTest.Restore(windows[0].Handle);
-var beforeRestore = counts.GetValueOrDefault("default");
+var beforeRestore = Net472Compat.DictOrDefault(counts, "default");
 await Task.Delay(1500);
-var restoreRecoveryPassed = counts.GetValueOrDefault("default") > beforeRestore;
+var restoreRecoveryPassed = Net472Compat.DictOrDefault(counts, "default") > beforeRestore;
 
-var beforeOcclusion = counts.GetValueOrDefault("default");
+var beforeOcclusion = Net472Compat.DictOrDefault(counts, "default");
 NativeWindowTest.MoveAndResize(windows[1].Handle, 120, 120, 640, 360);
 await Task.Delay(1500);
-var occlusionCapturePassed = counts.GetValueOrDefault("default") > beforeOcclusion;
+var occlusionCapturePassed = Net472Compat.DictOrDefault(counts, "default") > beforeOcclusion;
 
 coordinator.Stop("default");
 var afterStop = counts.ToDictionary(x => x.Key, x => x.Value);
 await Task.Delay(1500);
-var stopIsolation = counts.GetValueOrDefault("default") == afterStop.GetValueOrDefault("default")
-    && sourceIds.Skip(1).All(id => counts.GetValueOrDefault(id) > afterStop.GetValueOrDefault(id));
+var stopIsolation = Net472Compat.DictOrDefault(counts, "default") == Net472Compat.DictOrDefault(afterStop, "default")
+    && sourceIds.Skip(1).All(id => Net472Compat.DictOrDefault(counts, id) > Net472Compat.DictOrDefault(afterStop, id));
 
 var beforeReconfigure = counts.ToDictionary(x => x.Key, x => x.Value);
 coordinator.Remove("default");
 coordinator.Add(CreateSource(0, "reconfigured-default"));
 coordinator.Start("default", modelPath);
 await Task.Delay(1500);
-var configIsolation = sourceIds.All(id => counts.GetValueOrDefault(id) > beforeReconfigure.GetValueOrDefault(id))
+var configIsolation = sourceIds.All(id => Net472Compat.DictOrDefault(counts, id) > Net472Compat.DictOrDefault(beforeReconfigure, id))
     && coordinator.Statuses.Single(s => s.SourceId == "default").SourceName == "reconfigured-default";
 
 var errorsBeforeClose = errors.Count;
 var beforeClose = counts.ToDictionary(x => x.Key, x => x.Value);
-var lastSourceId = sourceIds[^1];
-NativeWindowTest.Close(windows[^1].Handle);
+// net472 的 Index/Range 不可用，使用显式下标。
+var lastSourceId = sourceIds[sourceIds.Length - 1];
+NativeWindowTest.Close(windows[windows.Length - 1].Handle);
 var closeDeadline = DateTime.UtcNow.AddSeconds(5);
 while (DateTime.UtcNow < closeDeadline && errors.Count == errorsBeforeClose) await Task.Delay(50);
 await Task.Delay(500);
 var closeIsolationPassed = errors.Count > errorsBeforeClose
-    && sourceIds.Take(sourceIds.Length - 1).All(id => counts.GetValueOrDefault(id) > beforeClose.GetValueOrDefault(id));
+    && sourceIds.Take(sourceIds.Length - 1).All(id => Net472Compat.DictOrDefault(counts, id) > Net472Compat.DictOrDefault(beforeClose, id));
 coordinator.Stop(lastSourceId);
 foreach (var status in coordinator.Statuses.Where(s => s.IsMonitoring)) coordinator.Stop(status.SourceId);
 var expectedRuntimeErrors = errors.ToArray();
 var unexpectedRuntimeErrors = expectedRuntimeErrors.Where(error =>
     !error.StartsWith("default:", StringComparison.Ordinal)
-    && !(error.StartsWith(lastSourceId + ":", StringComparison.Ordinal) && error.Contains("已关闭", StringComparison.Ordinal))).ToArray();
+    && !(error.StartsWith(lastSourceId + ":", StringComparison.Ordinal) && error.IndexOf("已关闭", StringComparison.Ordinal) >= 0)).ToArray();
 var stopped = coordinator.Statuses;
 
 var cpuMultiSourceAllowedWithWarning = false;
@@ -147,7 +149,7 @@ using (var cpu = new MultiSourceMonitorCoordinator(capacityProvider: _ => 1))
     cpu.FrameProcessed += (_, e) => e.Frame.Frame?.Dispose();
     cpu.Start("default", modelPath);
     cpu.Start("signal-2", modelPath);
-    cpuMultiSourceAllowedWithWarning = cpu.Statuses.All(status => status.IsMonitoring && status.PerformanceWarning.Contains("允许继续运行", StringComparison.Ordinal));
+    cpuMultiSourceAllowedWithWarning = cpu.Statuses.All(status => status.IsMonitoring && status.PerformanceWarning.IndexOf("允许继续运行", StringComparison.Ordinal) >= 0);
     cpu.Stop("default"); cpu.Stop("signal-2");
 }
 
@@ -170,7 +172,7 @@ using (var faulting = new MultiSourceMonitorCoordinator((_, _, _) => new Faultin
     var faulted = faulting.Statuses;
     directMlRuntimeFailureIsolated = faulted.Count == 2
         && faulted.All(status => status.IsMonitoring)
-        && faulted.All(status => status.Error.Contains("injected DirectML runtime failure", StringComparison.Ordinal));
+        && faulted.All(status => status.Error.IndexOf("injected DirectML runtime failure", StringComparison.Ordinal) >= 0);
 }
 
 var passed = completed && unexpectedRuntimeErrors.Length == 0 && stopIsolation && configIsolation && moveResizePassed
@@ -178,7 +180,7 @@ var passed = completed && unexpectedRuntimeErrors.Length == 0 && stopIsolation &
     && cpuMultiSourceAllowedWithWarning && fallbackToCpu
     && directMlRuntimeFailureIsolated
     && subRegionCapturePassed
-    && sourceIds.All(id => personHits.GetValueOrDefault(id) > 0)
+    && sourceIds.All(id => Net472Compat.DictOrDefault(personHits, id) > 0)
     && running.Length == sourceIds.Length && running.All(s => s.IsMonitoring && s.IsReady && s.ActiveBackend == nameof(InferenceBackend.DirectML) && s.ActualFps >= 2.5)
     && stopped.All(s => !s.IsMonitoring);
 
@@ -193,10 +195,10 @@ var report = new
     elapsedMs = Math.Round((DateTime.UtcNow - startedAt).TotalMilliseconds, 2),
     sources = running.Select((s, i) =>
     {
-        var values = samples.GetValueOrDefault(s.SourceId)?.Order().ToArray() ?? Array.Empty<long>();
+        var values = Net472Compat.DictOrDefault(samples, s.SourceId)?.ToArray() ?? Array.Empty<long>();
         long Percentile(double p) => values.Length == 0 ? 0 : values[Math.Min(values.Length - 1, (int)Math.Ceiling(values.Length * p) - 1)];
-        return new { s.SourceId, s.SourceName, hwnd = windows[i].Handle.ToInt64(), frames = counts.GetValueOrDefault(s.SourceId),
-            personHitFrames = personHits.GetValueOrDefault(s.SourceId), maxPersonConfidence = Math.Round(maxConfidence.GetValueOrDefault(s.SourceId), 4),
+        return new { s.SourceId, s.SourceName, hwnd = windows[i].Handle.ToInt64(), frames = Net472Compat.DictOrDefault(counts, s.SourceId),
+            personHitFrames = Net472Compat.DictOrDefault(personHits, s.SourceId), maxPersonConfidence = Math.Round(Net472Compat.DictOrDefault(maxConfidence, s.SourceId), 4),
             s.IsReady, s.IsMonitoring, s.ActiveBackend, s.ActualFps, meanProcessingMs = values.Length == 0 ? 0 : Math.Round(values.Average(), 2),
             p95ProcessingMs = Percentile(0.95), p99ProcessingMs = Percentile(0.99), s.Error };
     }),
@@ -204,7 +206,7 @@ var report = new
 };
 var reportPath = Path.GetFullPath(args[2]);
 Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
-await File.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+await Net472Compat.WriteAllTextAsync(reportPath, JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
 Console.WriteLine(JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
 return passed ? 0 : 1;
 

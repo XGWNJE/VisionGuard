@@ -134,11 +134,20 @@ try {
     }
 
     if (Should-Run @("Windows", "WPF")) {
+        # V10：Windows 检测端有两套推理档位，都从同一份源码构建，输出到 bin\x64\<档位>\。
+        #   modern（默认）= Windows 10 及以上：托管 ORT 1.19.0 + 原生 1.19.0 + DirectML，模型 YOLO26。
+        #   legacy        = Windows 7 SP1 x64：托管 ORT 1.2.0 + 原生 1.1.0，固定 CPU，模型 YOLOv5。
         Invoke-Step `
-            -Name "WPF" `
+            -Name "WPF (modern)" `
             -CommandText "dotnet build detector\windows-wpf\VisionGuard.sln -c Release" `
-            -Artifact "detector/windows-wpf/bin/x64/VisionGuard.exe" `
+            -Artifact "detector/windows-wpf/bin/x64/modern/VisionGuard.exe" `
             -Script { dotnet build "detector\windows-wpf\VisionGuard.sln" -c Release }
+
+        Invoke-Step `
+            -Name "WPF (legacy / Win7)" `
+            -CommandText "dotnet build detector\windows-wpf\VisionGuard.csproj -c Release -p:OrtProfile=legacy" `
+            -Artifact "detector/windows-wpf/bin/x64/legacy/VisionGuard.exe" `
+            -Script { dotnet build "detector\windows-wpf\VisionGuard.csproj" -c Release -p:OrtProfile=legacy }
     }
 
     if (Should-Run @("Windows", "WindowsResident", "WinForms", "WPF")) {

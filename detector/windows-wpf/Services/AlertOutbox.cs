@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using VisionGuard.Runtime;
 
 namespace VisionGuard.Services
 {
@@ -72,7 +73,8 @@ namespace VisionGuard.Services
                 var corruptPath = $"{_path}.corrupt-{DateTime.UtcNow:yyyyMMddHHmmssfff}";
                 try
                 {
-                    File.Move(_path, corruptPath, false);
+                    // net472 的 File.Move 没有 overwrite 重载，隔离目标名带时间戳本就不会冲突。
+                    File.Move(_path, corruptPath);
                     RecoveryWarning = $"报警重试队列损坏，已隔离到 {corruptPath}：{ex.Message}";
                 }
                 catch (Exception moveError)
@@ -89,7 +91,9 @@ namespace VisionGuard.Services
             Directory.CreateDirectory(directory);
             var temp = _path + ".tmp";
             File.WriteAllText(temp, JsonSerializer.Serialize(_entries));
-            File.Move(temp, _path, true);
+            // net472 无 File.Move(string, string, bool)；显式删除目标以保留原子替换语义。
+            if (File.Exists(_path)) File.Delete(_path);
+            File.Move(temp, _path);
         }
     }
 

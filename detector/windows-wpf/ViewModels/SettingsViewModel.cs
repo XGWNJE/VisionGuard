@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using VisionGuard.Utils;
+using VisionGuard.Runtime;
 
 namespace VisionGuard.ViewModels
 {
@@ -47,14 +48,27 @@ namespace VisionGuard.ViewModels
             set => SetProperty(ref _selectedBackendIndex, value);
         }
 
-        public Inference.InferenceBackend PreferredBackend => SelectedBackendIndex == 1
-            ? Inference.InferenceBackend.Cpu
-            : Inference.InferenceBackend.DirectML;
+        /// <summary>
+        /// 可选后端清单。legacy 档（Windows 7）只有 CPU：该档的托管 ONNX Runtime 版本不含
+        /// DirectML 提供程序，且 Windows 7 本身不具备 DirectML，因此不提供该选项。
+        /// </summary>
+        public string[] BackendOptions => Runtime.NativeLibrarySelector.SupportsDirectMl
+            ? new[] { "DirectML · GPU 加速", "CPU · 兼容与诊断" }
+            : new[] { "CPU · Windows 7 固定后端" };
+
+        public Inference.InferenceBackend PreferredBackend
+        {
+            get
+            {
+                if (!Runtime.NativeLibrarySelector.SupportsDirectMl) return Inference.InferenceBackend.Cpu;
+                return SelectedBackendIndex >= 1 ? Inference.InferenceBackend.Cpu : Inference.InferenceBackend.DirectML;
+            }
+        }
 
         private int _directMlCapacity = 4;
-        public int DirectMlCapacity { get => _directMlCapacity; set => SetProperty(ref _directMlCapacity, Math.Clamp(value, 1, 16)); }
+        public int DirectMlCapacity { get => _directMlCapacity; set => SetProperty(ref _directMlCapacity, Net472Compat.Clamp(value, 1, 16)); }
         private int _cpuCapacity = 1;
-        public int CpuCapacity { get => _cpuCapacity; set => SetProperty(ref _cpuCapacity, Math.Clamp(value, 1, 16)); }
+        public int CpuCapacity { get => _cpuCapacity; set => SetProperty(ref _cpuCapacity, Net472Compat.Clamp(value, 1, 16)); }
         public int GetCapacity(Inference.InferenceBackend backend) => backend == Inference.InferenceBackend.Cpu ? CpuCapacity : DirectMlCapacity;
 
         public RelayCommand DownloadModelCommand { get; }
@@ -142,17 +156,19 @@ namespace VisionGuard.ViewModels
             WatchTruck      = all || set.Contains("truck");
         }
 
-        /// <summary>模型文件名（yolo26n_320 到 yolo26m_640，6 档）。</summary>
-        public string SelectedModelName => SelectedModelIndex switch
+        /// <summary>本档位可选的模型显示名（与 ModelManager.ModelKeys 一一对应）。</summary>
+        public string[] ModelDisplayNames => Utils.ModelManager.ModelDisplayNames;
+
+        /// <summary>当前选中的模型文件名；档位清单按运行环境决定（Win7 → yolov5，Win10+ → yolo26）。</summary>
+        public string SelectedModelName
         {
-            0 => "yolo26n_320",
-            1 => "yolo26n_640",
-            2 => "yolo26s_320",
-            3 => "yolo26s_640",
-            4 => "yolo26m_320",
-            5 => "yolo26m_640",
-            _ => "yolo26n_320"
-        };
+            get
+            {
+                var keys = Utils.ModelManager.ModelKeys;
+                int index = Net472Compat.Clamp(SelectedModelIndex, 0, keys.Length - 1);
+                return keys[index];
+            }
+        }
 
         public string ThresholdText => $"{Threshold}%";
         public string SamplingRateText => $"{SamplingRate} 次/秒";
@@ -165,10 +181,12 @@ namespace VisionGuard.ViewModels
             Threshold        = SettingsStore.GetInt("ConfidenceThresholdPct", 45);
             SamplingRate     = SettingsStore.GetInt("TargetFps", 3);
             Cooldown         = SettingsStore.GetInt("AlertCooldownSeconds", 5);
-            SelectedModelIndex = SettingsStore.GetInt("SelectedModelIndex", 0);
-            SelectedBackendIndex = SettingsStore.GetInt("SelectedBackendIndex", 0) == 1 ? 1 : 0;
-            DirectMlCapacity = Math.Clamp(SettingsStore.GetInt("Capacity.DirectML", 4), 1, 16);
-            CpuCapacity = Math.Clamp(SettingsStore.GetInt("Capacity.Cpu", 1), 1, 16);
+            // 索引必须落在本档位清单范围内：模型清单与后端清单都随档位变化。
+            SelectedModelIndex = Net472Compat.Clamp(SettingsStore.GetInt("SelectedModelIndex", 0), 0, Utils.ModelManager.ModelKeys.Length - 1);
+            bool savedCpu = SettingsStore.GetInt("SelectedBackendIndex", 0) == 1;
+            SelectedBackendIndex = Runtime.NativeLibrarySelector.SupportsDirectMl ? (savedCpu ? 1 : 0) : 0;
+            DirectMlCapacity = Net472Compat.Clamp(SettingsStore.GetInt("Capacity.DirectML", 4), 1, 16);
+            CpuCapacity = Net472Compat.Clamp(SettingsStore.GetInt("Capacity.Cpu", 1), 1, 16);
 
             var watched = SettingsStore.GetStringList("WatchedClasses");
             WatchPerson     = watched.Contains("person");

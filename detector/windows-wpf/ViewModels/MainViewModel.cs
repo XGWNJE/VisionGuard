@@ -1,8 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using VisionGuard.Models;
 using VisionGuard.Services;
 using VisionGuard.Utils;
+using VisionGuard.Runtime;
 
 namespace VisionGuard.ViewModels
 {
@@ -124,7 +126,7 @@ namespace VisionGuard.ViewModels
                         ["modelKey"] = x.ModelKey, ["actualFps"] = x.ActualFps,
                         ["error"] = x.Error, ["cooldown"] = slot.Cooldown,
                         ["confidence"] = slot.ThresholdPercent / 100d, ["targets"] = slot.Targets,
-                        ["targetSamplingRate"] = System.Math.Clamp(slot.TargetFps, 1, 5),
+                        ["targetSamplingRate"] = Net472Compat.Clamp(slot.TargetFps, 1, 5),
                     };
                 }).ToArray();
             sps.UpdateHeartbeatParams(

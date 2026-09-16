@@ -8,6 +8,7 @@ using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Windows;
+using VisionGuard.Runtime;
 
 namespace VisionGuard.Utils
 {
@@ -69,15 +70,17 @@ namespace VisionGuard.Utils
                 using (var client = new HttpClient())
                 {
                     var bytes = await client.GetByteArrayAsync(url);
-                    await File.WriteAllBytesAsync(zipPath, bytes);
+                    // net472 无 File.WriteAllBytesAsync；用 Task.Run 保持异步语义。
+                    await Task.Run(() => File.WriteAllBytes(zipPath, bytes));
                 }
                 sw.Stop();
                 LogManager.StaticInfo($"[AutoUpdater] 下载完成 ({new FileInfo(zipPath).Length / 1048576.0:F1} MB, 耗时 {sw.Elapsed.TotalSeconds:F1}s)");
 
-                // 解压
+                // 解压（net472 无 overwrite 重载，目录已在上方清理过残留）
                 var extractDir = Path.Combine(tempDir, "extracted");
+                if (Directory.Exists(extractDir)) Directory.Delete(extractDir, true);
                 Directory.CreateDirectory(extractDir);
-                System.IO.Compression.ZipFile.ExtractToDirectory(zipPath, extractDir, true);
+                System.IO.Compression.ZipFile.ExtractToDirectory(zipPath, extractDir);
                 LogManager.StaticInfo("[AutoUpdater] 解压完成");
 
                 // 写 PowerShell updater 脚本
@@ -120,9 +123,10 @@ Start-Process -FilePath '{esc(appExe)}' -WorkingDirectory '{esc(appDir)}'
 
 Write-Host 'Done.' | Out-File -LiteralPath '{esc(Path.Combine(tempDir, "done.txt"))}'
 ";
-                await File.WriteAllTextAsync(psPath, psScript);
+                // net472 无 File.WriteAllTextAsync / Environment.ProcessId；updater 脚本必须为 UTF-8 无 BOM。
+                await Task.Run(() => File.WriteAllText(psPath, psScript, new System.Text.UTF8Encoding(false)));
 
-                var pid = Environment.ProcessId;
+                var pid = Process.GetCurrentProcess().Id;
                 LogManager.StaticInfo($"[AutoUpdater] 启动 updater，主进程 PID={pid} 即将退出");
 
                 var startInfo = new ProcessStartInfo
@@ -133,8 +137,8 @@ Write-Host 'Done.' | Out-File -LiteralPath '{esc(Path.Combine(tempDir, "done.txt
                 };
                 Process.Start(startInfo);
 
-                // 强制退出：先尝试正常关闭，再强制杀进程
-                Task.Delay(500).ContinueWith(_ => Environment.Exit(0));
+                // 强制退出：先尝试正常关闭，再强制杀进程。此处刻意不等待（fire-and-forget）。
+                _ = Task.Delay(500).ContinueWith(_ => Environment.Exit(0));
                 Application.Current?.Dispatcher.Invoke(() => Application.Current.Shutdown());
             }
             catch (Exception ex)

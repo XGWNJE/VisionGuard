@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Text.Json;
 using VisionGuard.Inference;
+using VisionGuard.Runtime;
 
 if (args.Length < 1)
 {
@@ -14,13 +15,13 @@ var requestedBackend = args.Length >= 2 && args[1].Equals("cpu", StringCompariso
     ? InferenceBackend.Cpu
     : InferenceBackend.DirectML;
 var iterations = args.Length >= 3 && int.TryParse(args[2], out var parsedIterations)
-    ? Math.Clamp(parsedIterations, 10, 1000)
+    ? Net472Compat.Clamp(parsedIterations, 10, 1000)
     : 100;
 var hasImageInputs = args.Length >= 4 && !int.TryParse(args[3], out _);
 var imagePaths = hasImageInputs ? args.Skip(3).Select(Path.GetFullPath).Take(3).ToArray() : Array.Empty<string>();
 var streamCount = hasImageInputs
     ? imagePaths.Length
-    : args.Length >= 4 && int.TryParse(args[3], out var parsedStreams) ? Math.Clamp(parsedStreams, 1, 3) : 1;
+    : args.Length >= 4 && int.TryParse(args[3], out var parsedStreams) ? Net472Compat.Clamp(parsedStreams, 1, 3) : 1;
 
 if (hasImageInputs && imagePaths.Any(path => !File.Exists(path)))
 {
@@ -119,7 +120,7 @@ var streamTasks = engines.Select((engine, streamIndex) => Task.Run(() =>
         samples[i] = stopwatch.Elapsed.TotalMilliseconds;
     }
     Array.Sort(samples);
-    double Percentile(double percentile) => samples[Math.Clamp((int)Math.Ceiling(percentile * samples.Length) - 1, 0, samples.Length - 1)];
+    double Percentile(double percentile) => samples[Net472Compat.Clamp((int)Math.Ceiling(percentile * samples.Length) - 1, 0, samples.Length - 1)];
     return new
     {
         stream = streamIndex + 1,
@@ -128,7 +129,7 @@ var streamTasks = engines.Select((engine, streamIndex) => Task.Run(() =>
         p95Ms = Percentile(0.95),
         p99Ms = Percentile(0.99),
         minMs = samples[0],
-        maxMs = samples[^1]
+        maxMs = samples[samples.Length - 1]
     };
 })).ToArray();
 var streams = await Task.WhenAll(streamTasks);
