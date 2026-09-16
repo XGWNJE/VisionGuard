@@ -25,16 +25,6 @@ server/data/releases/
 server/data/models/
 
 # ===== Windows 检测端 =====
-detector/windows-winforms/.vs/
-detector/windows-winforms/bin/
-detector/windows-winforms/obj/
-detector/windows-winforms/packages/
-detector/windows-winforms/*.user
-detector/windows-winforms/*.suo
-detector/windows-winforms/*.pfx
-detector/windows-winforms/dist/
-detector/windows-winforms/Assets/*.onnx
-
 detector/windows-wpf/**/.vs/
 detector/windows-wpf/**/bin/
 detector/windows-wpf/**/obj/
@@ -45,8 +35,6 @@ detector/windows-resident/bin/
 detector/windows-resident/obj/
 detector/windows-wpf-smoke/bin/
 detector/windows-wpf-smoke/obj/
-detector/windows-winforms-smoke/bin/
-detector/windows-winforms-smoke/obj/
 tests/**/bin/
 tests/**/obj/
 
@@ -82,7 +70,10 @@ receiver/android/keystore.properties
 receiver/android/app/*.jks
 
 # ===== 模型与发行产物 =====
-models/
+# 只忽略仓库根的 models/。不要写成无前导斜杠的 models/：
+# Windows 文件系统大小写不敏感，会连 detector/windows-wpf/Models/ 一起忽略，
+# 导致 MonitorSource.cs 这类源码永远提交不上去（干净克隆直接编译失败）。
+/models/
 *.apk
 *.psd
 
