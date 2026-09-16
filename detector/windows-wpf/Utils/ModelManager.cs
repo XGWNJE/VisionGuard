@@ -3,6 +3,7 @@ using System.IO;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using VisionGuard.Runtime;
 
 namespace VisionGuard.Utils
 {
@@ -11,17 +12,25 @@ namespace VisionGuard.Utils
         private const string ServerBase = "https://visionguard.xgwnje.cn";
         public const int ModelCount = 6;
 
-        public static readonly string[] ModelKeys = {
-            "yolo26n_320", "yolo26n_640",
-            "yolo26s_320", "yolo26s_640",
-            "yolo26m_320", "yolo26m_640"
-        };
+        /// <summary>
+        /// 本档位的模型清单。
+        /// legacy 档（Windows 7）的 ONNX Runtime 原生库是 1.1.0，算子覆盖不足以支撑 YOLO26，
+        /// 因此固定 YOLOv5 系列；modern 档使用 YOLO26。服务端 `/models` 是静态目录，
+        /// 六个 yolov5 模型均已实测可下载（HTTP 200）。
+        /// </summary>
+        public static readonly string[] ModelKeys = NativeLibrarySelector.IsLegacy
+            ? new[] { "yolov5nu_320", "yolov5nu_640", "yolov5su_320", "yolov5su_640", "yolov5mu_320", "yolov5mu_640" }
+            : new[] { "yolo26n_320", "yolo26n_640", "yolo26s_320", "yolo26s_640", "yolo26m_320", "yolo26m_640" };
 
-        public static readonly string[] ModelDisplayNames = {
-            "YOLO26n 320 (~9MB)", "YOLO26n 640 (~10MB)",
-            "YOLO26s 320 (~36MB)", "YOLO26s 640 (~37MB)",
-            "YOLO26m 320 (~78MB)", "YOLO26m 640 (~78MB)"
-        };
+        public static readonly string[] ModelDisplayNames = NativeLibrarySelector.IsLegacy
+            ? new[] { "YOLOv5nu 320 (~10MB)", "YOLOv5nu 640 (~10MB)", "YOLOv5su 320 (~35MB)", "YOLOv5su 640 (~35MB)", "YOLOv5mu 320 (~96MB)", "YOLOv5mu 640 (~96MB)" }
+            : new[] { "YOLO26n 320 (~9MB)", "YOLO26n 640 (~10MB)", "YOLO26s 320 (~36MB)", "YOLO26s 640 (~37MB)", "YOLO26m 320 (~78MB)", "YOLO26m 640 (~78MB)" };
+
+        /// <summary>本档位的默认模型键（旧配置里的模型键不适用于本档位时使用）。</summary>
+        public static string DefaultModelKey => ModelKeys[0];
+
+        /// <summary>指定模型键是否属于本档位清单。</summary>
+        public static bool IsSupported(string modelKey) => Array.IndexOf(ModelKeys, modelKey) >= 0;
 
         private static string ModelsDir => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),

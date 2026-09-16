@@ -26,6 +26,20 @@ namespace VisionGuard.Inference
     /// </summary>
     public sealed class OnnxInferenceEngine : IInferenceEngine
     {
+        /// <summary>
+        /// 本档位是否提供 DirectML 提供程序。
+        /// legacy 档（Windows 7）使用托管 ORT 1.2.0，该版本没有 AppendExecutionProvider_DML；
+        /// Windows 7 本身也不具备 DirectML，因此按档位在编译期关闭。
+        /// </summary>
+        public static bool SupportsDirectMl
+        {
+#if ORT_DIRECTML
+            get => true;
+#else
+            get => false;
+#endif
+        }
+
         private InferenceSession _session;
         private readonly string  _inputName;
         private readonly string  _outputName;
@@ -46,7 +60,7 @@ namespace VisionGuard.Inference
             InferenceBackend preferredBackend = InferenceBackend.DirectML,
             int directMlDeviceId = 0)
         {
-            if (preferredBackend == InferenceBackend.DirectML)
+            if (SupportsDirectMl && preferredBackend == InferenceBackend.DirectML)
             {
                 try
                 {
@@ -92,7 +106,14 @@ namespace VisionGuard.Inference
             };
 
             if (directMl)
+            {
+#if ORT_DIRECTML
                 options.AppendExecutionProvider_DML(directMlDeviceId);
+#else
+                // legacy 档不应走到这里：调用方需先检查 SupportsDirectMl。
+                throw new NotSupportedException("本档位的 ONNX Runtime 托管版本不提供 DirectML 提供程序。");
+#endif
+            }
 
             return options;
         }
