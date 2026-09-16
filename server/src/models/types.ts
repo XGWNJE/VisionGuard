@@ -164,7 +164,7 @@ export interface WsCommand {
   requestId?: string;
   targetDeviceId: string;
   targetSourceId?: string;
-  command: 'pause' | 'resume' | 'stop-alarm' | 'open-wpf' | 'open-winforms' | 'close-wpf' | 'close-winforms';
+  command: 'pause' | 'resume' | 'stop-alarm' | 'open-detector' | 'close-detector';
 }
 
 /** 接收端 → 服务器：参数调整 */
@@ -181,7 +181,7 @@ export interface WsSetConfig {
 export interface WsCommandRelay {
   type: 'command';
   requestId?: string;
-  command: 'pause' | 'resume' | 'stop-alarm' | 'open-wpf' | 'open-winforms' | 'close-wpf' | 'close-winforms';
+  command: 'pause' | 'resume' | 'stop-alarm' | 'open-detector' | 'close-detector';
   targetDeviceId: string;
   targetSourceId?: string;
 }

@@ -23,7 +23,7 @@ namespace VisionGuard.Utils
                 using var client = new HttpClient();
                 client.DefaultRequestHeaders.Add("X-API-Key", AppConfig.ApiKey);
                 var json = await client.GetStringAsync(
-                    $"{ServerBase}/api/update?platform=wpf&version={AppConfig.Version}");
+                    $"{ServerBase}/api/update?platform=wpf&profile={UpdatePlatform.Profile}&version={AppConfig.Version}");
 
                 using var doc = System.Text.Json.JsonDocument.Parse(json);
                 var root = doc.RootElement;
