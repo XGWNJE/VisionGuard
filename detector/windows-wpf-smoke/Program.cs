@@ -73,8 +73,8 @@ coordinator.FrameProcessed += (_, e) =>
     finally { e.Frame.Frame?.Dispose(); }
 };
 
-MonitorSource CreateSource(int index, string? name = null, int fps = 3, InferenceBackend backend = InferenceBackend.DirectML) =>
-    new(sourceIds[index], name ?? windows[index].Title, "yolo26n_320", new MonitorConfig
+MonitorSource CreateSource(int index, string? name = null, int fps = 3, InferenceBackend backend = InferenceBackend.DirectML, int identityIndex = -1) =>
+    new(sourceIds[identityIndex < 0 ? index : identityIndex], name ?? windows[index].Title, "yolo26n_320", new MonitorConfig
     {
         CaptureMode = CaptureMode.WindowHandle, TargetWindowHandle = windows[index].Handle,
         TargetWindowTitle = windows[index].Title, WindowSubRegion = Rectangle.Empty,
@@ -157,11 +157,18 @@ using var fallback = new OnnxInferenceEngine(modelPath, preferredBackend: Infere
 var fallbackToCpu = fallback.ActiveBackend == InferenceBackend.Cpu && !string.IsNullOrWhiteSpace(fallback.BackendFallbackReason);
 
 var directMlRuntimeFailureIsolated = false;
+// closeIsolation 关掉的是 windows[windows.Length - 1]，必须避开它：
+// 指向已关闭窗口的来源会报「无法获取目标窗口尺寸」并停止监控，把注入的 DirectML 故障盖住。
+//   3 路及以上：用前两个仍然打开的窗口（windows[0]、windows[1]）。
+//   2 路时 windows[1] 已被关闭，只剩 windows[0] 可用，两个来源都指向它。
+var directMlFailureIndexA = 0;
+var directMlFailureIndexB = windows.Length >= 3 ? 1 : 0;
 using (var failureGate = new ManualResetEventSlim(false))
 using (var faulting = new MultiSourceMonitorCoordinator((_, _, _) => new FaultingDirectMlEngine(failureGate)))
 {
-    faulting.Add(CreateSource(0));
-    faulting.Add(CreateSource(1));
+    // 2 路时两个来源指向同一个窗口，必须显式给出不同身份，否则协调器按 sourceId 判重直接拒绝。
+    faulting.Add(CreateSource(directMlFailureIndexA, identityIndex: 0));
+    faulting.Add(CreateSource(directMlFailureIndexB, identityIndex: 1));
     faulting.FrameProcessed += (_, e) => e.Frame.Frame?.Dispose();
     faulting.Start("default", modelPath);
     faulting.Start("signal-2", modelPath);
