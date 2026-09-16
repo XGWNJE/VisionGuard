@@ -14,6 +14,15 @@ namespace VisionGuard
 {
     public partial class Form1
     {
+        // 原生 WinForms 的统一度量：不依赖第三方控件库，Win7 与高 DPI 下仍保持可预测的排版。
+        private const int UiPagePadding = 16;
+        private const int UiGap = 8;
+        private const int UiFieldHeight = 32;
+        private const int UiButtonHeight = 36;
+        private const int UiPrimaryButtonHeight = 40;
+        private const int UiSectionTitleHeight = 26;
+        private const int UiCaptionHeight = 20;
+
         // ════════════════════════════════════════════════════════════
         // BuildUI — 主布局：960x640，左预览（2/3）+ 右 TabControl（1/3）+ 状态栏
         // ════════════════════════════════════════════════════════════
@@ -22,17 +31,18 @@ namespace VisionGuard
         {
             Text            = "VisionGuard — 人员检测监控";
             Size            = new Size(1420, 880);
-            MinimumSize     = new Size(960, 640);
+            MinimumSize     = new Size(1100, 700);
             FormBorderStyle = FormBorderStyle.Sizable;
             MaximizeBox     = true;
             StartPosition   = FormStartPosition.CenterScreen;
+            Font            = new Font("Segoe UI", 9F, FontStyle.Regular, GraphicsUnit.Point);
 
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
             SuspendLayout();
 
             // StatusBar
-            var strip = new StatusStrip { SizingGrip = false, Dock = DockStyle.Top };
+            var strip = new StatusStrip { SizingGrip = false, Dock = DockStyle.Top, Height = 36, Padding = new Padding(10, 5, 10, 5) };
             _tsStatus    = new ToolStripStatusLabel("未就绪") { ForeColor = Color.Gray };
             _tsLastAlert = new ToolStripStatusLabel("最后报警：-") { Spring = true };
             _tsInferMs   = new ToolStripStatusLabel("服务器：连接中") { Alignment = ToolStripItemAlignment.Right };
@@ -44,7 +54,7 @@ namespace VisionGuard
             previewContainer.Controls.Add(_previewGrid);
 
             // TabControl: 3 tabs for right side (Win7 native style)
-            _tabControl = new TabControl { Dock = DockStyle.Fill };
+            _tabControl = new TabControl { Dock = DockStyle.Fill, Padding = new Point(14, 6) };
             _tabCapture  = new TabPage("当前来源");
             _tabSettings = new TabPage("运行环境");
             _tabServer   = new TabPage("连接");
@@ -57,8 +67,8 @@ namespace VisionGuard
                 ColumnCount = 2,
                 RowCount    = 1
             };
-            contentLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 66.67F));
-            contentLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33F));
+            contentLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 70F));
+            contentLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30F));
             contentLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             contentLayout.Controls.Add(previewContainer, 0, 0);
             contentLayout.Controls.Add(_tabControl,      1, 0);
@@ -108,21 +118,29 @@ namespace VisionGuard
                     : status != null && status.IsMonitoring
                         ? string.Format("检测中  {0:0.##} FPS", status.ActualFps)
                         : status != null && status.IsReady ? "就绪" : "未配置";
-            const int headerHeight = 66;
-            using (var header = new SolidBrush(Color.FromArgb(40, 40, 40))) g.FillRectangle(header, 0, 0, panel.Width, headerHeight);
-            using (var font = new Font(Font, FontStyle.Bold))
-            using (var brush = new SolidBrush(Color.White)) g.DrawString(title + "  ·  " + statusText, font, brush, 8, 5);
+            const int headerHeight = 62;
+            using (var header = new SolidBrush(Color.FromArgb(42, 42, 42))) g.FillRectangle(header, 0, 0, panel.Width, headerHeight);
+            using (var titleFont = new Font("Segoe UI", 9F, FontStyle.Bold))
+            {
+                TextRenderer.DrawText(g, title + "  ·  " + statusText, titleFont,
+                    new Rectangle(9, 6, Math.Max(1, panel.Width - 100), 20), Color.White,
+                    TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            }
             string details = string.Format("更新 {0}  推理 {1} ms  报警 {2}  {3}",
                 updatedAt == DateTime.MinValue ? "-" : updatedAt.ToString("HH:mm:ss"), inferenceMs,
                 lastAlertAt == DateTime.MinValue ? "-" : lastAlertAt.ToString("HH:mm:ss"),
                 status == null ? "CPU" : status.ActiveBackend);
-            using (var detailFont = new Font(Font.FontFamily, Math.Max(7f, Font.Size - 1f)))
-            using (var detailBrush = new SolidBrush(Color.Gainsboro)) g.DrawString(details, detailFont, detailBrush, 8, 27);
+            using (var detailFont = new Font("Segoe UI", 8F, FontStyle.Regular))
+            {
+                TextRenderer.DrawText(g, details, detailFont,
+                    new Rectangle(9, 29, Math.Max(1, panel.Width - 18), 17), Color.Gainsboro,
+                    TextFormatFlags.EndEllipsis | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            }
             string notice = status == null ? string.Empty
                 : !string.IsNullOrWhiteSpace(status.Error) ? status.Error : status.PerformanceWarning;
             if (!string.IsNullOrWhiteSpace(notice))
             {
-                using (var noticeFont = new Font(Font.FontFamily, Math.Max(7f, Font.Size - 1f)))
+                using (var noticeFont = new Font("Segoe UI", 8F, FontStyle.Regular))
                 using (var noticeBrush = new SolidBrush(string.IsNullOrWhiteSpace(status.Error) ? Color.Goldenrod : Color.OrangeRed))
                     g.DrawString(notice, noticeFont, noticeBrush, new RectangleF(8, 45, Math.Max(1, panel.Width - 16), 18));
             }
@@ -199,45 +217,83 @@ namespace VisionGuard
 
         private void BuildCapturePage()
         {
-            var page = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12), AutoScroll = true };
+            var page = new Panel { Dock = DockStyle.Fill, Padding = new Padding(UiPagePadding), AutoScroll = true };
             _currentSourcePage = page;
-            int fh = Font.Height;
-            int gap = fh / 3;
 
-            // DockStyle.Top controls retain their visual order by being created top-to-bottom.
+            // 新增的顶部控件会排在 Dock=Top 的前面；按从底到顶构造，得到来源→采集→参数→控制的阅读顺序。
+            BuildMonitoringControls(page);
+            BuildDetectionControls(page);
+            BuildCaptureTargetControls(page);
             BuildSourceManagementControls(page);
 
-            var title1 = new Label { Text = "捕获区域", Dock = DockStyle.Top, Height = fh + 4, Font = new Font(Font, FontStyle.Bold) };
-            page.Controls.Add(title1);
-            page.Controls.SetChildIndex(title1, 0);
-            AddGap(page, gap);
-
-            _lblRegionInfo = new Label { Text = "未选择区域", Dock = DockStyle.Top, Height = fh + 4 };
-            page.Controls.Add(_lblRegionInfo);
-            page.Controls.SetChildIndex(_lblRegionInfo, 0);
-            AddGap(page, gap);
-
-            _btnPickWindow   = AddBtn(page, "选择窗口...", fh + 12); AddGap(page, gap);
-            _btnSelectRegion = AddBtn(page, "拖拽选区...", fh + 12); AddGap(page, gap);
-            _btnEditMasks    = AddBtn(page, "遮罩区域...", fh + 12); AddGap(page, gap / 2);
-
-            _lblMaskInfo = new Label { Text = "当前遮罩：-", Dock = DockStyle.Top, Height = fh + 4 };
-            page.Controls.Add(_lblMaskInfo);
-            page.Controls.SetChildIndex(_lblMaskInfo, 0);
-            AddGap(page, gap);
-
-            _btnResetCapture = AddBtn(page, "重置", fh + 12); AddGap(page, gap * 2);
-
-            var title2 = new Label { Text = "监控控制", Dock = DockStyle.Top, Height = fh + 4, Font = new Font(Font, FontStyle.Bold) };
-            page.Controls.Add(title2);
-            page.Controls.SetChildIndex(title2, 0);
-            AddGap(page, gap);
-
-            _btnStart = AddBtn(page, "开始监控", fh + 16); AddGap(page, gap);
-            _btnStop  = AddBtn(page, "停止监控", fh + 16);
-            _btnStop.Enabled = false;
-
             _tabCapture.Controls.Add(page);
+        }
+
+        private void BuildCaptureTargetControls(Control page)
+        {
+            Panel content;
+            AddTop(page, CreateSection("采集目标", 128, out content));
+            var layout = CreateTwoColumnLayout(4, new[] { 28, 28, UiButtonHeight, UiButtonHeight });
+            _lblRegionInfo = new Label { Text = "当前目标：未选择区域", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true };
+            _lblMaskInfo = new Label { Text = "当前遮罩：-", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
+            _btnPickWindow = CreateActionButton("选择窗口", true);
+            _btnSelectRegion = CreateActionButton("屏幕选区", false);
+            _btnEditMasks = CreateActionButton("编辑遮罩", false);
+            _btnResetCapture = CreateActionButton("重置", false);
+            PlaceInTwoColumnLayout(layout, _lblRegionInfo, 0, 0, 2);
+            PlaceInTwoColumnLayout(layout, _lblMaskInfo, 0, 1, 2);
+            PlaceInTwoColumnLayout(layout, _btnPickWindow, 0, 2);
+            PlaceInTwoColumnLayout(layout, _btnSelectRegion, 1, 2);
+            PlaceInTwoColumnLayout(layout, _btnEditMasks, 0, 3);
+            PlaceInTwoColumnLayout(layout, _btnResetCapture, 1, 3);
+            content.Controls.Add(layout);
+        }
+
+        private void BuildMonitoringControls(Control page)
+        {
+            Panel content;
+            AddTop(page, CreateSection("监控控制", UiPrimaryButtonHeight, out content));
+            var layout = CreateTwoColumnLayout(1, new[] { UiPrimaryButtonHeight });
+            _btnStart = CreateActionButton("开始监控", true, UiPrimaryButtonHeight);
+            _btnStop = CreateActionButton("停止监控", false, UiPrimaryButtonHeight);
+            _btnStop.Enabled = false;
+            PlaceInTwoColumnLayout(layout, _btnStart, 0, 0);
+            PlaceInTwoColumnLayout(layout, _btnStop, 1, 0);
+            content.Controls.Add(layout);
+        }
+
+        private void BuildDetectionControls(Control page)
+        {
+            Panel content;
+            AddTop(page, CreateSection("识别设置", 366, out content));
+            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 9, Margin = Padding.Empty };
+            for (int i = 0; i < 9; i++) layout.RowStyles.Add(new RowStyle(SizeType.Absolute, i == 7 ? 96 : (i == 8 ? UiButtonHeight + 4 : 30)));
+
+            _trkThreshold = AddSlider(layout, 10, 95, 45, 10, 30);
+            _lblThreshold = new Label { Text = "45%", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleRight };
+            _sliderSamplingRate = AddSlider(layout, 1, 5, 3, 1, 30);
+            _lblSamplingRate = new Label { Text = "3 次/秒", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleRight };
+            _sliderCooldown = AddSlider(layout, 1, 300, 5, 30, 30);
+            _lblCooldown = new Label { Text = "5 秒", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleRight };
+            _targetListBox = new CheckedListBox { Dock = DockStyle.Fill, CheckOnClick = true, IntegralHeight = false, BorderStyle = BorderStyle.FixedSingle };
+            foreach (string key in _targetClassKeys) _targetListBox.Items.Add(CocoClassMap.EnZh[key], key == "person");
+
+            layout.Controls.Add(CreateInlineTitle("置信度阈值", _lblThreshold), 0, 0);
+            layout.Controls.Add(_trkThreshold, 0, 1);
+            layout.Controls.Add(CreateInlineTitle("目标采样率", _lblSamplingRate), 0, 2);
+            layout.Controls.Add(_sliderSamplingRate, 0, 3);
+            layout.Controls.Add(CreateInlineTitle("报警冷却时间", _lblCooldown), 0, 4);
+            layout.Controls.Add(_sliderCooldown, 0, 5);
+            layout.Controls.Add(CreateInlineTitle("监控目标", null), 0, 6);
+            layout.Controls.Add(_targetListBox, 0, 7);
+            var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Padding = new Padding(0, 4, 0, 0) };
+            var save = CreateActionButton("保存此路", true); save.Width = 112;
+            var cancel = CreateActionButton("撤销修改", false); cancel.Width = 112;
+            save.Click += (s, e) => SaveCurrentSourceFromUi();
+            cancel.Click += (s, e) => CancelCurrentSourceEdits();
+            actions.Controls.Add(save); actions.Controls.Add(cancel);
+            layout.Controls.Add(actions, 0, 8);
+            content.Controls.Add(layout);
         }
 
         // ════════════════════════════════════════════════════════════
@@ -246,20 +302,15 @@ namespace VisionGuard
 
         private void BuildSettingsPage()
         {
-            var page = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12), AutoScroll = true };
-            Control sourcePage = _currentSourcePage ?? throw new InvalidOperationException("当前来源页面尚未创建。");
-            int fh = Font.Height;
-            int gap = fh / 3;
-            int sliderH = fh * 2 + 8;
-
-            AddTitle(page, "CPU 建议容量", fh); AddGap(page, gap);
+            var page = new Panel { Dock = DockStyle.Fill, Padding = new Padding(UiPagePadding), AutoScroll = true };
+            Panel capacityContent;
+            AddTop(page, CreateSection("CPU 建议容量", UiFieldHeight, out capacityContent));
             _numCpuCapacity = new NumericUpDown
             {
-                Dock = DockStyle.Top,
+                Dock = DockStyle.Fill,
                 Minimum = 1,
                 Maximum = MultiSourceMonitorCoordinator.MaximumSourceLimit,
                 Value = MultiSourceMonitorCoordinator.DefaultSourceLimit,
-                Height = fh + 12,
             };
             _numCpuCapacity.ValueChanged += (s, e) =>
             {
@@ -268,28 +319,11 @@ namespace VisionGuard
                 RefreshAllPreviewPanels();
                 if (_sourceStates.Count > 0) SaveSettings();
             };
-            page.Controls.Add(_numCpuCapacity);
-            page.Controls.SetChildIndex(_numCpuCapacity, 0);
-            AddGap(page, gap * 2);
+            capacityContent.Controls.Add(_numCpuCapacity);
 
-            // 1. 置信度阈值
-            AddTitle(sourcePage, "置信度阈值", fh); AddGap(sourcePage, gap);
-            _trkThreshold = AddSlider(sourcePage, 10, 95, 45, 10, sliderH); AddGap(sourcePage, gap);
-            _lblThreshold = AddVal(sourcePage, "45%", fh); AddGap(sourcePage, gap * 2);
-
-            // 2. 目标采样率
-            AddTitle(sourcePage, "目标采样率", fh); AddGap(sourcePage, gap);
-            _sliderSamplingRate = AddSlider(sourcePage, 1, 5, 3, 1, sliderH); AddGap(sourcePage, gap);
-            _lblSamplingRate = AddVal(sourcePage, "3 次/秒", fh); AddGap(sourcePage, gap * 2);
-
-            // 3. 警报推送冷却时间
-            AddTitle(sourcePage, "警报推送冷却时间", fh); AddGap(sourcePage, gap);
-            _sliderCooldown = AddSlider(sourcePage, 1, 300, 5, 30, sliderH); AddGap(sourcePage, gap);
-            _lblCooldown = AddVal(sourcePage, "5 秒", fh); AddGap(sourcePage, gap * 2);
-
-            // 4. 模型选择
-            AddTitle(page, "模型选择", fh); AddGap(page, gap);
-            _cmbModel = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Top };
+            Panel modelContent;
+            AddTop(page, CreateSection("模型选择", 80, out modelContent));
+            _cmbModel = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Top, Height = UiFieldHeight };
             _cmbModel.Items.AddRange(new object[] {
                 "YOLOv5nu 320 (极速 ~10MB)",
                 "YOLOv5nu 640 (极速高精 ~10MB)",
@@ -306,19 +340,17 @@ namespace VisionGuard
                     _selectedModel = keys[_cmbModel.SelectedIndex];
                 UpdateModelStatusLabel();
             };
-            page.Controls.Add(_cmbModel);
-            page.Controls.SetChildIndex(_cmbModel, 0);
-            AddGap(page, gap);
-
             // Model status + download button
-            var modelStatusRow = new Panel { Dock = DockStyle.Top, Height = fh + 10 };
+            var modelStatusRow = new Panel { Dock = DockStyle.Bottom, Height = UiButtonHeight, Padding = new Padding(0, UiGap, 0, 0) };
             _lblModelStatus = new Label
             {
                 Text = "○ 未下载",
                 Dock = DockStyle.Left, AutoSize = true,
                 TextAlign = ContentAlignment.MiddleLeft
             };
-            var btnDownloadModel = new Button { Text = "下载模型", Dock = DockStyle.Right, Width = 96 };
+            var btnDownloadModel = CreateActionButton("下载模型", true);
+            btnDownloadModel.Dock = DockStyle.Right;
+            btnDownloadModel.Width = 112;
             btnDownloadModel.Click += async (s, e2) =>
             {
                 btnDownloadModel.Enabled = false;
@@ -338,44 +370,11 @@ namespace VisionGuard
             };
             modelStatusRow.Controls.Add(btnDownloadModel);
             modelStatusRow.Controls.Add(_lblModelStatus);
-            page.Controls.Add(modelStatusRow);
-            page.Controls.SetChildIndex(modelStatusRow, 0);
-            AddGap(page, gap * 2);
+            modelContent.Controls.Add(modelStatusRow);
+            modelContent.Controls.Add(_cmbModel);
 
             // Init status
             UpdateModelStatusLabel();
-
-            // 5. 监控目标
-            AddTitle(sourcePage, "监控目标", fh); AddGap(sourcePage, gap);
-            _targetListBox = new CheckedListBox
-            {
-                Dock = DockStyle.Top,
-                Height = fh * 8,
-                CheckOnClick = true,
-                IntegralHeight = false,
-                BorderStyle = BorderStyle.FixedSingle
-            };
-            foreach (string key in _targetClassKeys)
-                _targetListBox.Items.Add(CocoClassMap.EnZh[key], key == "person");
-            sourcePage.Controls.Add(_targetListBox);
-            sourcePage.Controls.SetChildIndex(_targetListBox, 0);
-
-            AddGap(sourcePage, gap * 2);
-            var saveRow = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Top,
-                Height = fh + 16,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-            };
-            var btnSaveSource = new Button { Text = "保存", Width = 96, Height = fh + 12 };
-            var btnCancelSource = new Button { Text = "取消", Width = 96, Height = fh + 12 };
-            btnSaveSource.Click += (s, e) => SaveCurrentSourceFromUi();
-            btnCancelSource.Click += (s, e) => CancelCurrentSourceEdits();
-            saveRow.Controls.Add(btnSaveSource);
-            saveRow.Controls.Add(btnCancelSource);
-            sourcePage.Controls.Add(saveRow);
-            sourcePage.Controls.SetChildIndex(saveRow, 0);
 
             _tabSettings.Controls.Add(page);
         }
@@ -386,64 +385,54 @@ namespace VisionGuard
 
         private void BuildServerPage()
         {
-            var page = new Panel { Dock = DockStyle.Fill, Padding = new Padding(12) };
-            int fh = Font.Height;
-            int gap = fh / 3;
-
-            AddTitle(page, "服务器连接", fh); AddGap(page, gap);
+            var page = new Panel { Dock = DockStyle.Fill, Padding = new Padding(UiPagePadding), AutoScroll = true };
+            Panel connectionContent;
+            var connectionSection = CreateSection("服务器连接", UiButtonHeight, out connectionContent);
+            AddTop(page, connectionSection);
 
             // Row: connection state + retry button
-            var connRow = new Panel { Dock = DockStyle.Top, Height = fh + 14 };
+            var connRow = new Panel { Dock = DockStyle.Fill };
             _lblConnState = new Label
             {
                 Text = "未连接", Dock = DockStyle.Left, AutoSize = true,
                 Font = new Font(Font, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft
             };
-            _btnRetry = new Button
-            {
-                Text = "重试连接", Dock = DockStyle.Right, Width = 96
-            };
+            _btnRetry = CreateActionButton("重试连接", true);
+            _btnRetry.Dock = DockStyle.Right;
+            _btnRetry.Width = 112;
             connRow.Controls.Add(_btnRetry);
             connRow.Controls.Add(_lblConnState);
-            page.Controls.Add(connRow);
-            page.Controls.SetChildIndex(connRow, 0);
-            AddGap(page, gap * 3);
+            connectionContent.Controls.Add(connRow);
 
-            // Separator
-            var sep = new Label { Dock = DockStyle.Top, Height = 1, BorderStyle = BorderStyle.Fixed3D };
-            page.Controls.Add(sep);
-            page.Controls.SetChildIndex(sep, 0);
-            AddGap(page, gap * 3);
-
-            AddTitle(page, "设备名称", fh); AddGap(page, gap);
+            Panel deviceContent;
+            var deviceSection = CreateSection("设备名称", UiFieldHeight, out deviceContent);
+            AddTop(page, deviceSection);
 
             // Row: device name + apply button
-            var nameRow = new Panel { Dock = DockStyle.Top, Height = fh + 12 };
-            var btnApplyName = new Button { Text = "应用", Dock = DockStyle.Right, Width = 70 };
+            var nameRow = new Panel { Dock = DockStyle.Fill };
+            var btnApplyName = CreateActionButton("应用", true);
+            btnApplyName.Dock = DockStyle.Right;
+            btnApplyName.Width = 80;
             _txtDeviceName = new TextBox { Dock = DockStyle.Fill, Text = Environment.MachineName };
             nameRow.Controls.Add(btnApplyName);
             nameRow.Controls.Add(_txtDeviceName);
-            page.Controls.Add(nameRow);
-            page.Controls.SetChildIndex(nameRow, 0);
-            AddGap(page, gap * 3);
+            deviceContent.Controls.Add(nameRow);
 
-            // Separator
-            var sep2 = new Label { Dock = DockStyle.Top, Height = 1, BorderStyle = BorderStyle.Fixed3D };
-            page.Controls.Add(sep2);
-            page.Controls.SetChildIndex(sep2, 0);
-            AddGap(page, gap * 3);
-
-            AddTitle(page, "版本更新", fh); AddGap(page, gap);
+            Panel updateContent;
+            var updateSection = CreateSection("版本更新", UiButtonHeight, out updateContent);
+            AddTop(page, updateSection);
 
             // Row: version label + check update button
-            var updateRow = new Panel { Dock = DockStyle.Top, Height = fh + 12 };
+            var updateRow = new Panel { Dock = DockStyle.Fill };
             var lblVersion = new Label
             {
                 Text = $"当前版本 {Utils.AutoUpdater.CurrentVersion}",
                 Dock = DockStyle.Left, AutoSize = true,
                 TextAlign = ContentAlignment.MiddleLeft
             };
-            var btnCheckUpdate = new Button { Text = "检查更新", Dock = DockStyle.Right, Width = 96 };
+            var btnCheckUpdate = CreateActionButton("检查更新", false);
+            btnCheckUpdate.Dock = DockStyle.Right;
+            btnCheckUpdate.Width = 112;
             btnCheckUpdate.Click += (s, e) =>
             {
                 btnCheckUpdate.Enabled = false;
@@ -460,12 +449,15 @@ namespace VisionGuard
             };
             updateRow.Controls.Add(btnCheckUpdate);
             updateRow.Controls.Add(lblVersion);
-            page.Controls.Add(updateRow);
-            page.Controls.SetChildIndex(updateRow, 0);
+            updateContent.Controls.Add(updateRow);
 
             // Hidden detail label (still assigned by WireServerPushEvents)
             _lblConnDetail = new Label { Visible = false };
             page.Controls.Add(_lblConnDetail);
+            // Dock=Top 的最后一个可见子控件最靠上；显式保持连接→设备→更新的阅读顺序。
+            page.Controls.SetChildIndex(connectionSection, page.Controls.Count - 1);
+            page.Controls.SetChildIndex(deviceSection, page.Controls.Count - 2);
+            page.Controls.SetChildIndex(updateSection, page.Controls.Count - 3);
 
             _tabServer.Controls.Add(page);
 
@@ -532,7 +524,8 @@ namespace VisionGuard
 
         private static Button AddBtn(Control parent, string text, int h)
         {
-            var btn = new Button { Text = text, Dock = DockStyle.Top, Height = h };
+            var btn = CreateActionButton(text, false, h);
+            btn.Dock = DockStyle.Top;
             parent.Controls.Add(btn);
             parent.Controls.SetChildIndex(btn, 0);
             return btn;
@@ -555,10 +548,108 @@ namespace VisionGuard
 
         private static TrackBar AddSlider(Control parent, int min, int max, int val, int tick, int h)
         {
-            var tb = new TrackBar { Minimum = min, Maximum = max, Value = val, TickFrequency = tick, Dock = DockStyle.Top, Height = h };
-            parent.Controls.Add(tb);
-            parent.Controls.SetChildIndex(tb, 0);
+            var tb = new TrackBar { Minimum = min, Maximum = max, Value = val, TickFrequency = tick, Dock = DockStyle.Fill, Height = h, Margin = new Padding(0) };
+            if (!(parent is TableLayoutPanel))
+            {
+                parent.Controls.Add(tb);
+                parent.Controls.SetChildIndex(tb, 0);
+            }
             return tb;
+        }
+
+        private static void AddTop(Control parent, Control control)
+        {
+            parent.Controls.Add(control);
+        }
+
+        private static Panel CreateSection(string title, int contentHeight, out Panel content)
+        {
+            var section = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = UiSectionTitleHeight + contentHeight + UiGap * 2,
+                Padding = new Padding(0, 0, 0, UiGap * 2)
+            };
+            var heading = new Label
+            {
+                Text = title,
+                Dock = DockStyle.Top,
+                Height = UiSectionTitleHeight,
+                Font = new Font(SystemFonts.MessageBoxFont, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            content = new Panel { Dock = DockStyle.Fill };
+            section.Controls.Add(content);
+            section.Controls.Add(heading);
+            return section;
+        }
+
+        private static TableLayoutPanel CreateTwoColumnLayout(int rows, int[] heights)
+        {
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = rows,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            for (int i = 0; i < rows; i++) layout.RowStyles.Add(new RowStyle(SizeType.Absolute, heights[i]));
+            return layout;
+        }
+
+        private static void PlaceInTwoColumnLayout(TableLayoutPanel layout, Control control, int column, int row, int columnSpan = 1)
+        {
+            control.Dock = DockStyle.Fill;
+            control.Margin = columnSpan == 2
+                ? Padding.Empty
+                : column == 0 ? new Padding(0, 0, 4, 0) : new Padding(4, 0, 0, 0);
+            layout.Controls.Add(control, column, row);
+            if (columnSpan > 1) layout.SetColumnSpan(control, columnSpan);
+        }
+
+        private static Panel CreateInlineTitle(string title, Label value)
+        {
+            var row = new Panel { Dock = DockStyle.Fill };
+            var label = new Label
+            {
+                Text = title,
+                Dock = DockStyle.Left,
+                AutoSize = true,
+                Font = new Font(SystemFonts.MessageBoxFont, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            if (value != null) row.Controls.Add(value);
+            row.Controls.Add(label);
+            return row;
+        }
+
+        private static Label CreateFieldCaption(string text)
+        {
+            return new Label
+            {
+                Text = text,
+                Dock = DockStyle.Fill,
+                ForeColor = SystemColors.GrayText,
+                TextAlign = ContentAlignment.BottomLeft
+            };
+        }
+
+        private static Button CreateActionButton(string text, bool primary, int height = UiButtonHeight)
+        {
+            var button = new Button
+            {
+                Text = text,
+                Dock = DockStyle.Fill,
+                Height = height,
+                Margin = new Padding(0),
+                TextAlign = ContentAlignment.MiddleCenter,
+                UseVisualStyleBackColor = true
+            };
+            if (primary) button.Font = new Font(SystemFonts.MessageBoxFont, FontStyle.Bold);
+            return button;
         }
 
         private static void EnableDoubleBuffering(Control c)

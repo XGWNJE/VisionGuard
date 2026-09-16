@@ -210,13 +210,13 @@ namespace VisionGuard
                 string sub = _windowSubRegion != Rectangle.Empty
                     ? $"  子区域 {_windowSubRegion.Width}x{_windowSubRegion.Height}"
                     : "  全窗口";
-                _lblRegionInfo.Text = $"[{_targetWindow.Title}]{sub}";
+                _lblRegionInfo.Text = $"当前目标：[{_targetWindow.Title}]{sub}";
             }
             else
             {
                 _lblRegionInfo.Text = _screenRegion == Rectangle.Empty
-                    ? "未选择区域"
-                    : $"X:{_screenRegion.X}  Y:{_screenRegion.Y}  {_screenRegion.Width}x{_screenRegion.Height}";
+                    ? "当前目标：未选择区域"
+                    : $"当前目标：屏幕 X:{_screenRegion.X}  Y:{_screenRegion.Y}  {_screenRegion.Width}x{_screenRegion.Height}";
             }
         }
 

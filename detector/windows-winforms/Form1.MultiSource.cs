@@ -25,51 +25,37 @@ namespace VisionGuard
 
         private void BuildSourceManagementControls(Control page)
         {
-            int h = Font.Height + 12;
-            var buttons = new FlowLayoutPanel
+            Panel content;
+            AddTop(page, CreateSection("当前来源", UiCaptionHeight * 2 + UiFieldHeight * 2 + UiButtonHeight * 2, out content));
+            var layout = CreateTwoColumnLayout(6, new[]
             {
-                Dock = DockStyle.Top,
-                Height = h + 2,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-            };
-            _btnAddSource = new Button { Text = "新增来源", Width = 92, Height = h };
-            _btnRemoveSource = new Button { Text = "删除来源", Width = 92, Height = h };
-            buttons.Controls.Add(_btnAddSource);
-            buttons.Controls.Add(_btnRemoveSource);
-
-            var allButtons = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Top,
-                Height = h + 2,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-            };
-            _btnStartConfigured = new Button { Text = "启动已配置", Width = 110, Height = h };
-            _btnStopAll = new Button { Text = "全部停止", Width = 92, Height = h };
-            allButtons.Controls.Add(_btnStartConfigured);
-            allButtons.Controls.Add(_btnStopAll);
-
-            var nameRow = new Panel { Dock = DockStyle.Top, Height = h };
-            var apply = new Button { Text = "改名", Dock = DockStyle.Right, Width = 62 };
+                UiCaptionHeight, UiFieldHeight, UiCaptionHeight, UiFieldHeight, UiButtonHeight, UiButtonHeight
+            });
+            var apply = CreateActionButton("改名", false);
             _txtSourceName = new TextBox { Dock = DockStyle.Fill };
-            nameRow.Controls.Add(_txtSourceName);
-            nameRow.Controls.Add(apply);
 
             _cmbSource = new ComboBox
             {
-                Dock = DockStyle.Top,
+                Dock = DockStyle.Fill,
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 DisplayMember = "DisplayName",
-                Height = h,
             };
-
-            AddGap(page, Font.Height / 2);
-            page.Controls.Add(allButtons); page.Controls.SetChildIndex(allButtons, 0);
-            page.Controls.Add(buttons); page.Controls.SetChildIndex(buttons, 0);
-            page.Controls.Add(nameRow); page.Controls.SetChildIndex(nameRow, 0);
-            page.Controls.Add(_cmbSource); page.Controls.SetChildIndex(_cmbSource, 0);
-            AddTitle(page, "当前来源", Font.Height);
+            _btnAddSource = CreateActionButton("新增来源", true);
+            _btnRemoveSource = CreateActionButton("删除来源", false);
+            _btnStartConfigured = CreateActionButton("启动已配置", true);
+            _btnStopAll = CreateActionButton("全部停止", false);
+            var sourceCaption = CreateFieldCaption("选择要编辑的来源");
+            var nameCaption = CreateFieldCaption("来源名称");
+            PlaceInTwoColumnLayout(layout, sourceCaption, 0, 0, 2);
+            PlaceInTwoColumnLayout(layout, _cmbSource, 0, 1, 2);
+            PlaceInTwoColumnLayout(layout, nameCaption, 0, 2, 2);
+            PlaceInTwoColumnLayout(layout, _txtSourceName, 0, 3);
+            PlaceInTwoColumnLayout(layout, apply, 1, 3);
+            PlaceInTwoColumnLayout(layout, _btnAddSource, 0, 4);
+            PlaceInTwoColumnLayout(layout, _btnRemoveSource, 1, 4);
+            PlaceInTwoColumnLayout(layout, _btnStartConfigured, 0, 5);
+            PlaceInTwoColumnLayout(layout, _btnStopAll, 1, 5);
+            content.Controls.Add(layout);
 
             _cmbSource.SelectedIndexChanged += (s, e) => SelectSourceFromUi();
             _btnAddSource.Click += (s, e) => AddSourceFromUi();
@@ -482,12 +468,17 @@ namespace VisionGuard
                 panel.Click += (s, e) => SelectSourceById((string)((Panel)s).Tag);
                 var toggle = new Button
                 {
-                    Text = "启动",
-                    Width = 58,
-                    Height = 24,
+                    Text = "启动此路",
+                    Width = 80,
+                    Height = 28,
                     Anchor = AnchorStyles.Top | AnchorStyles.Right,
                     Tag = "toggle:" + state.SourceId,
+                    BackColor = Color.FromArgb(45, 45, 45),
+                    ForeColor = Color.White,
+                    FlatStyle = FlatStyle.Flat,
+                    Font = new Font("Segoe UI", 8F, FontStyle.Bold),
                 };
+                toggle.FlatAppearance.BorderColor = Color.Gainsboro;
                 Action positionToggle = () => toggle.Location = new Point(Math.Max(0, panel.ClientSize.Width - toggle.Width - 2), 1);
                 panel.Resize += (s, e) => positionToggle();
                 toggle.Click += (s, e) =>
