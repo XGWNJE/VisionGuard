@@ -29,6 +29,10 @@ jobs:
           set -euo pipefail
           test "$(tr -d '\r\n' < VERSION)" = "$VERSION"
           mkdir release-assets
+          # 这个列表必须与 scripts/publish-release.ps1 的 profilePackages 一致：
+          # Windows 检测端按推理档位分成 wpf（modern）与 wpf-legacy（legacy）两个包。
+          # 服务端的 resolveReleaseKey 在档位包缺失时会回落到 wpf，因此这里额外校验文件名前缀，
+          # 避免把 modern 包当成 legacy 包发出去。
           for platform in wpf wpf-legacy android-detector android-receiver; do
             metadata="$(curl --fail --silent --show-error "$BASE_URL/api/update?platform=$platform&version=0.0.0")"
             actual_version="$(jq -r '.latestVersion' <<<"$metadata")"
@@ -36,6 +40,12 @@ jobs:
             relative_url="$(jq -r '.downloadUrl' <<<"$metadata")"
             expected_size="$(jq -r '.size' <<<"$metadata")"
             filename="$(basename "$relative_url")"
+            if [ "$platform" = "wpf-legacy" ]; then
+              case "$filename" in
+                VisionGuard-WPF-Legacy-*) ;;
+                *) echo "::error::$platform resolved to $filename; the legacy package is missing on the server (the API fell back to the modern one)." >&2; exit 1 ;;
+              esac
+            fi
             echo "$platform version=$actual_version file=$filename size=$expected_size"
             curl --fail --location --silent --show-error "$BASE_URL$relative_url" --output "release-assets/$filename"
             test "$(stat -c%s "release-assets/$filename")" = "$expected_size"
