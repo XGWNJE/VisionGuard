@@ -1,8 +1,8 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)]
     [string]$Version,
 
-    [ValidateSet('All','Windows','Android','Server','WinForms','WPF','AndroidDetector','AndroidReceiver')]
+    [ValidateSet('All','Windows','Android','Server','WPF','AndroidDetector','AndroidReceiver')]
     [string]$Target = 'All',
 
     [switch]$UploadVps,
@@ -321,18 +321,6 @@ print("paramiko ok")
     }
 }
 
-function Restore-WinFormsPackages {
-    $msbuild = Get-MSBuildPath
-    $solutionDir = (Resolve-Path -LiteralPath (Join-Path $repoRoot 'detector\windows-winforms')).Path + [System.IO.Path]::DirectorySeparatorChar
-    Invoke-Native -FilePath $msbuild -Arguments @(
-        'detector\windows-winforms\VisionGuard.csproj',
-        '/t:Restore',
-        '/p:RestorePackagesConfig=true',
-        "/p:SolutionDir=$solutionDir",
-        '/v:minimal'
-    )
-}
-
 function Invoke-ReleasePreflight {
     param([bool]$ServerDeployPlanned)
 
@@ -349,11 +337,6 @@ function Invoke-ReleasePreflight {
 
     if ($UploadVps -or $ServerDeployPlanned) {
         Test-PythonParamiko
-    }
-
-    if (Test-TargetEnabled @('Windows', 'WinForms')) {
-        Write-Host "preflight: restoring WinForms packages.config dependencies"
-        Restore-WinFormsPackages
     }
 
     if (Test-TargetEnabled @('Android', 'AndroidDetector', 'AndroidReceiver')) {
@@ -514,7 +497,6 @@ function Assert-ZipIsClean {
 function Copy-Models {
     New-Item -ItemType Directory -Force -Path $modelsDir | Out-Null
     $modelSources = @(
-        (Join-Path $repoRoot 'detector\windows-winforms\Assets'),
         (Join-Path $repoRoot 'detector\windows-wpf\Assets')
     )
 
@@ -644,8 +626,8 @@ function Get-GitHubOnlyArtifacts {
 
     $metadata = Get-Content -LiteralPath $releasesJsonPath -Encoding UTF8 -Raw | ConvertFrom-Json
     $definitions = @(
-        [pscustomobject]@{ Platform = 'winforms'; Targets = @('Windows', 'WinForms'); FileName = "VisionGuard-v$Version.zip"; Kind = 'zip' },
         [pscustomobject]@{ Platform = 'wpf'; Targets = @('Windows', 'WPF'); FileName = "VisionGuard-WPF-v$Version.zip"; Kind = 'zip' },
+        [pscustomobject]@{ Platform = 'wpf-legacy'; Targets = @('Windows', 'WPF'); FileName = "VisionGuard-WPF-Legacy-v$Version.zip"; Kind = 'zip' },
         [pscustomobject]@{ Platform = 'android-detector'; Targets = @('Android', 'AndroidDetector'); FileName = "VisionGuard-Detector-v$Version.apk"; Kind = 'apk' },
         [pscustomobject]@{ Platform = 'android-receiver'; Targets = @('Android', 'AndroidReceiver'); FileName = "VisionGuard-Receiver-v$Version.apk"; Kind = 'apk' }
     )
@@ -1215,26 +1197,23 @@ Copy-Models
 
 $metadata = Get-Content -Encoding UTF8 -LiteralPath $releasesJsonPath -Raw | ConvertFrom-Json
 
-if (Test-TargetEnabled @('Windows', 'WinForms')) {
-    $fileName = "VisionGuard-v$Version.zip"
-    $zipPath = Join-Path $releaseDir $fileName
-    New-ZipPackage -SourceDir (Join-Path $repoRoot 'detector\windows-winforms\bin\Release') -Destination $zipPath `
-        -AdditionalSourceDirs @((Join-Path $repoRoot 'detector\windows-resident\bin\Release\net472'))
-    Assert-ZipIsClean -ZipPath $zipPath
-    Add-ReleaseEntry -Metadata $metadata -Key 'winforms' -FileName $fileName -FilePath $zipPath
-    $artifacts.Add([pscustomobject]@{ Platform = 'winforms'; Path = $zipPath; FileName = $fileName }) | Out-Null
-    $platforms.Add('winforms') | Out-Null
-}
-
 if (Test-TargetEnabled @('Windows', 'WPF')) {
-    $fileName = "VisionGuard-WPF-v$Version.zip"
-    $zipPath = Join-Path $releaseDir $fileName
-    New-ZipPackage -SourceDir (Join-Path $repoRoot 'detector\windows-wpf\bin\x64') -Destination $zipPath `
-        -AdditionalSourceDirs @((Join-Path $repoRoot 'detector\windows-resident\bin\Release\net472'))
-    Assert-ZipIsClean -ZipPath $zipPath
-    Add-ReleaseEntry -Metadata $metadata -Key 'wpf' -FileName $fileName -FilePath $zipPath
-    $artifacts.Add([pscustomobject]@{ Platform = 'wpf'; Path = $zipPath; FileName = $fileName }) | Out-Null
-    $platforms.Add('wpf') | Out-Null
+    # Windows 检测端是同一份源码的两个推理档位，两档的原生 ONNX Runtime 不兼容，
+    # 因此按档位分别打包：wpf = modern（Win10+，DirectML），wpf-legacy = legacy（Win7 SP1，CPU）。
+    # 客户端带 profile 查询 /api/update：legacy 端取 wpf-legacy，其余回落到 wpf。
+    $profilePackages = @(
+        [pscustomobject]@{ Key = 'wpf'; Profile = 'modern'; FileName = "VisionGuard-WPF-v$Version.zip" },
+        [pscustomobject]@{ Key = 'wpf-legacy'; Profile = 'legacy'; FileName = "VisionGuard-WPF-Legacy-v$Version.zip" }
+    )
+    foreach ($package in $profilePackages) {
+        $zipPath = Join-Path $releaseDir $package.FileName
+        New-ZipPackage -SourceDir (Join-Path $repoRoot "detector\windows-wpf\bin\x64\$($package.Profile)") -Destination $zipPath `
+            -AdditionalSourceDirs @((Join-Path $repoRoot 'detector\windows-resident\bin\Release\net472'))
+        Assert-ZipIsClean -ZipPath $zipPath
+        Add-ReleaseEntry -Metadata $metadata -Key $package.Key -FileName $package.FileName -FilePath $zipPath
+        $artifacts.Add([pscustomobject]@{ Platform = $package.Key; Path = $zipPath; FileName = $package.FileName }) | Out-Null
+        $platforms.Add($package.Key) | Out-Null
+    }
 }
 
 if (Test-TargetEnabled @('Android', 'AndroidDetector')) {

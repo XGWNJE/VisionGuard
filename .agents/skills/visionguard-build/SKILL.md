@@ -5,7 +5,7 @@ description: Build and verify one or more VisionGuard targets without packaging,
 
 # VisionGuard Build
 
-Compile the requested targets through the maintained project script and verify the expected artifacts exist. The six targets are Server, WinForms, WPF, Windows Resident, Android Detector, and Android Receiver.
+Compile the requested targets through the maintained project script and verify the expected artifacts exist. The five targets are Server, WPF, Windows Resident, Android Detector, and Android Receiver.
 
 ## Boundaries
 
@@ -33,13 +33,13 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scri
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scripts\build-all.ps1 -Target WindowsResident
 ```
 
-The script currently accepts `All`, `Server`, `Windows`, `WinForms`, `WPF`, `WindowsResident`, `Android`, `AndroidDetector`, and `AndroidReceiver`.
+The script currently accepts `All`, `Server`, `Windows`, `WPF`, `WindowsResident`, `Android`, `AndroidDetector`, and `AndroidReceiver`.
 
 ## Expected Artifacts
 
 - Server: `server/dist/index.js`
-- WinForms: `detector/windows-winforms/bin/Release/VisionGuard.exe`
-- WPF: `detector/windows-wpf/bin/x64/VisionGuard.exe`
+- WPF (modern / Windows 10+): `detector/windows-wpf/bin/x64/modern/VisionGuard.exe`
+- WPF (legacy / Windows 7 SP1): `detector/windows-wpf/bin/x64/legacy/VisionGuard.exe`
 - Windows Resident: `detector/windows-resident/bin/Release/net472/VisionGuard.Resident.exe`
 - Android Detector: `detector/android/app/build/outputs/apk/release/app-release.apk`
 - Android Receiver: `receiver/android/app/build/outputs/apk/release/app-release.apk`

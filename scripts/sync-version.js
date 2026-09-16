@@ -11,6 +11,21 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 
+/**
+ * releases.json 里各平台条目应指向的产物文件名。
+ *
+ * 必须与 scripts/publish-release.ps1 实际生成的包名逐字一致，否则更新接口会指向不存在的文件。
+ * Windows 检测端是同一份源码的两个推理档位，包必须区分：
+ * `wpf` = modern（Windows 10/11，DirectML），`wpf-legacy` = legacy（Windows 7 SP1，纯 CPU）。
+ */
+function releaseFileName(key, version) {
+  if (key === 'android-detector') return `VisionGuard-Detector-v${version}.apk`;
+  if (key === 'android-receiver') return `VisionGuard-Receiver-v${version}.apk`;
+  if (key === 'wpf-legacy') return `VisionGuard-WPF-Legacy-v${version}.zip`;
+  if (key === 'wpf') return `VisionGuard-WPF-v${version}.zip`;
+  return `VisionGuard-${key}-v${version}.zip`;
+}
+
 function main() {
   const newVersion = process.argv[2] || readRootVersion();
   if (!/^\d+\.\d+\.\d+$/.test(newVersion)) {
@@ -25,26 +40,14 @@ function main() {
   // 1. 根目录 VERSION
   writeFile(path.join(ROOT, 'VERSION'), newVersion + '\n');
 
-  // 2. WinForms AssemblyInfo.cs
-  replaceInFile(
-    path.join(ROOT, 'detector', 'windows-winforms', 'Properties', 'AssemblyInfo.cs'),
-    /AssemblyVersion\("[\d.]+"\)/,
-    `AssemblyVersion("${newVersion}.0")`
-  );
-  replaceInFile(
-    path.join(ROOT, 'detector', 'windows-winforms', 'Properties', 'AssemblyInfo.cs'),
-    /AssemblyFileVersion\("[\d.]+"\)/,
-    `AssemblyFileVersion("${newVersion}.0")`
-  );
-
-  // 3. WPF AppConfig.cs
+  // 2. Windows 检测端 AppConfig.cs
   replaceInFile(
     path.join(ROOT, 'detector', 'windows-wpf', 'Utils', 'AppConfig.cs'),
     /Version\s*=\s*"[\d.]+"/,
     `Version = "${newVersion}"`
   );
 
-  // 4. Android 检测端 build.gradle.kts
+  // 3. Android 检测端 build.gradle.kts
   replaceInFile(
     path.join(ROOT, 'detector', 'android', 'app', 'build.gradle.kts'),
     /versionName = "[\d.]+"/,
@@ -56,21 +59,21 @@ function main() {
     `versionCode = ${versionCode}`
   );
 
-  // 5. Android 检测端 AppConstants.kt
+  // 4. Android 检测端 AppConstants.kt
   replaceInFile(
     path.join(ROOT, 'detector', 'android', 'app', 'src', 'main', 'java', 'com', 'xgwnje', 'visionguard', 'AppConstants.kt'),
     /VERSION = "[\d.]+"/,
     `VERSION = "${newVersion}"`
   );
 
-  // 6. Android 检测端 AutoUpdater.kt
+  // 5. Android 检测端 AutoUpdater.kt
   replaceInFile(
     path.join(ROOT, 'detector', 'android', 'app', 'src', 'main', 'java', 'com', 'xgwnje', 'visionguard', 'util', 'AutoUpdater.kt'),
     /CURRENT_VERSION = "[\d.]+"/,
     `CURRENT_VERSION = "${newVersion}"`
   );
 
-  // 7. Android 接收端 build.gradle.kts
+  // 6. Android 接收端 build.gradle.kts
   replaceInFile(
     path.join(ROOT, 'receiver', 'android', 'app', 'build.gradle.kts'),
     /versionName = "[\d.]+"/,
@@ -82,20 +85,20 @@ function main() {
     `versionCode = ${versionCode}`
   );
 
-  // 8. Android 接收端 AppConstants.kt (VERSION)
+  // 7. Android 接收端 AppConstants.kt (VERSION)
   replaceInFile(
     path.join(ROOT, 'receiver', 'android', 'app', 'src', 'main', 'java', 'com', 'xgwnje', 'visionguard_android', 'AppConstants.kt'),
     /VERSION = "[\d.]+"/,
     `VERSION = "${newVersion}"`
   );
 
-  // 9. Server package.json
+  // 8. Server package.json
   const pkgPath = path.join(ROOT, 'server', 'package.json');
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
   pkg.version = newVersion;
   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 
-  // 9.1 Server package-lock.json
+  // 8.1 Server package-lock.json
   const lockPath = path.join(ROOT, 'server', 'package-lock.json');
   if (fs.existsSync(lockPath)) {
     const lock = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
@@ -107,14 +110,14 @@ function main() {
     console.log(`  ✓ ${path.relative(ROOT, lockPath)}`);
   }
 
-  // 10. Server index.ts 硬编码版本
+  // 9. Server index.ts 硬编码版本
   replaceInFile(
     path.join(ROOT, 'server', 'src', 'index.ts'),
     /v[\d.]+/g,
     `v${newVersion}`
   );
 
-  // 11. WPF .csproj (Version/FileVersion/AssemblyVersion) — 同旧标识 10
+  // 10. Windows 检测端 .csproj (Version/FileVersion/AssemblyVersion)
   replaceInFile(
     path.join(ROOT, 'detector', 'windows-wpf', 'VisionGuard.csproj'),
     /<Version>[\d.]+<\/Version>/,
@@ -137,30 +140,12 @@ function main() {
     const releases = JSON.parse(fs.readFileSync(releasesPath, 'utf-8'));
     for (const key of Object.keys(releases)) {
       releases[key].version = newVersion;
-      const ext = key === 'android-detector' || key === 'android-receiver' ? 'apk' : 'zip';
-      const prefix = key === 'android-detector' ? 'VisionGuard-Detector' :
-                     key === 'android-receiver' ? 'VisionGuard-Receiver' :
-                     key === 'wpf' ? 'VisionGuard-WPF' : 'VisionGuard';
-      releases[key].url = `/releases/${prefix}-v${newVersion}.${ext}`;
+      releases[key].url = `/releases/${releaseFileName(key, newVersion)}`;
     }
     fs.writeFileSync(releasesPath, JSON.stringify(releases, null, 2) + '\n');
   }
 
-  // 11. WinForms ServerPushService.cs 硬编码版本
-  replaceInFile(
-    path.join(ROOT, 'detector', 'windows-winforms', 'Services', 'ServerPushService.cs'),
-    /\["version"\] = "[\d.]+"/,
-    `["version"] = "${newVersion}"`
-  );
-
-  // 11.1 WinForms ClickOnce ApplicationVersion
-  replaceInFile(
-    path.join(ROOT, 'detector', 'windows-winforms', 'VisionGuard.csproj'),
-    /<ApplicationVersion>[\d.]+%2a<\/ApplicationVersion>/,
-    `<ApplicationVersion>${newVersion}.%2a</ApplicationVersion>`
-  );
-
-  // 12. WPF ServerPushService.cs 硬编码版本
+  // 12. Windows 检测端 ServerPushService.cs 硬编码版本
   replaceInFile(
     path.join(ROOT, 'detector', 'windows-wpf', 'Services', 'ServerPushService.cs'),
     /\["version"\] = "[\d.]+"/,
@@ -188,4 +173,9 @@ function replaceInFile(filePath, pattern, replacement) {
   }
 }
 
-main();
+// 只在直接执行时同步；被 require 引入（例如契约测试）时不得改写任何文件。
+if (require.main === module) {
+  main();
+}
+
+module.exports = { releaseFileName };

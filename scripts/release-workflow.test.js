@@ -83,7 +83,7 @@ test('publish-release.ps1 keeps GitHub optional and release deployment reproduci
 
   assert.match(script, /param\s*\(/);
   assert.match(script, /\$Version/);
-  assert.match(script, /ValidateSet\('All','Windows','Android','Server','WinForms','WPF','AndroidDetector','AndroidReceiver'\)/);
+  assert.match(script, /ValidateSet\('All','Windows','Android','Server','WPF','AndroidDetector','AndroidReceiver'\)/);
   assert.match(script, /\$PushGitHub/);
   assert.match(script, /\$CreateTag/);
   assert.match(script, /\$CreateGitHubRelease/);
@@ -95,7 +95,7 @@ test('publish-release.ps1 keeps GitHub optional and release deployment reproduci
   assert.match(script, /Invoke-ReleasePreflight/);
   assert.match(script, /scripts\\check-docs\.js/);
   assert.match(script, /Preflight only complete/);
-  assert.match(script, /Restore-WinFormsPackages/);
+  assert.match(script, /VisionGuard-WPF-Legacy-v\$Version\.zip/);
   assert.match(script, /windows-resident\\bin\\Release\\net472/);
   assert.doesNotMatch(script, /windows-resident\\bin\\Release\\net9\.0-windows/);
   assert.match(script, /Test-PythonParamiko/);
@@ -211,13 +211,42 @@ test('server deployment script targets the current dedicated runtime layout', ()
   assert.doesNotMatch(script, /VPS_ALIAS="xgwnje"/);
 });
 
-test('build script restores WinForms packages before compiling', () => {
+test('publish-release.ps1 ships one Windows package per WPF inference profile', () => {
+  const script = read('scripts/publish-release.ps1');
+  const windowsBlock = script.slice(
+    script.indexOf("if (Test-TargetEnabled @('Windows', 'WPF')) {"),
+    script.indexOf('$fileName = "VisionGuard-Detector-v$Version.apk"')
+  );
+
+  assert.doesNotMatch(script, /WinForms/);
+  assert.doesNotMatch(script, /windows-winforms/);
+  assert.ok(windowsBlock.length > 0, 'the Windows packaging block should exist');
+  assert.match(
+    windowsBlock,
+    /Key = 'wpf'; Profile = 'modern'; FileName = "VisionGuard-WPF-v\$Version\.zip"/
+  );
+  assert.match(
+    windowsBlock,
+    /Key = 'wpf-legacy'; Profile = 'legacy'; FileName = "VisionGuard-WPF-Legacy-v\$Version\.zip"/
+  );
+  assert.match(windowsBlock, /bin\\x64\\\$\(\$package\.Profile\)/);
+  assert.match(
+    script,
+    /Platform = 'wpf-legacy'; Targets = @\('Windows', 'WPF'\); FileName = "VisionGuard-WPF-Legacy-v\$Version\.zip"/
+  );
+});
+
+test('Windows build script compiles both WPF inference profiles and drops the WinForms target', () => {
   const script = read('.agents/skills/visionguard-build/scripts/build-all.ps1');
 
-  assert.match(script, /Restore-WinFormsPackages/);
-  assert.match(script, /RestorePackagesConfig=true/);
-  assert.ok(
-    script.indexOf('Restore-WinFormsPackages -MSBuild $msbuild') < script.indexOf('-Name "WinForms"'),
-    'WinForms NuGet restore should run before the WinForms build step'
+  assert.doesNotMatch(script, /WinForms/);
+  assert.doesNotMatch(script, /windows-winforms/);
+  assert.match(
+    script,
+    /ValidateSet\("All", "Server", "Windows", "WPF", "WindowsResident", "Android", "AndroidDetector", "AndroidReceiver"\)/
   );
+  assert.match(script, /dotnet build detector\\windows-wpf\\VisionGuard\.sln -c Release/);
+  assert.match(script, /-p:OrtProfile=legacy/);
+  assert.match(script, /detector\/windows-wpf\/bin\/x64\/modern\/VisionGuard\.exe/);
+  assert.match(script, /detector\/windows-wpf\/bin\/x64\/legacy\/VisionGuard\.exe/);
 });

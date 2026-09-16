@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("All", "Server", "Windows", "WinForms", "WPF", "WindowsResident", "Android", "AndroidDetector", "AndroidReceiver")]
+    [ValidateSet("All", "Server", "Windows", "WPF", "WindowsResident", "Android", "AndroidDetector", "AndroidReceiver")]
     [string]$Target = "All"
 )
 
@@ -99,16 +99,6 @@ function Set-CommandJavaHome {
     Write-Host "JAVA_HOME=$env:JAVA_HOME"
 }
 
-function Restore-WinFormsPackages {
-    param([string]$MSBuild)
-
-    $solutionDir = (Resolve-Path "detector\windows-winforms").Path + [System.IO.Path]::DirectorySeparatorChar
-    Invoke-Step `
-        -Name "WinForms NuGet Restore" `
-        -CommandText "`"$MSBuild`" detector\windows-winforms\VisionGuard.csproj /t:Restore /p:RestorePackagesConfig=true /p:SolutionDir=$solutionDir /v:minimal" `
-        -Script { & $MSBuild "detector\windows-winforms\VisionGuard.csproj" /t:Restore /p:RestorePackagesConfig=true "/p:SolutionDir=$solutionDir" /v:minimal }
-}
-
 function Should-Run {
     param([string[]]$Names)
     return ($Target -eq "All" -or $Names -contains $Target)
@@ -121,16 +111,6 @@ try {
             -CommandText "npm --prefix server run build" `
             -Artifact "server/dist/index.js" `
             -Script { npm --prefix server run build }
-    }
-
-    if (Should-Run @("Windows", "WinForms")) {
-        $msbuild = Get-MSBuildPath
-        Restore-WinFormsPackages -MSBuild $msbuild
-        Invoke-Step `
-            -Name "WinForms" `
-            -CommandText "`"$msbuild`" detector\windows-winforms\VisionGuard.csproj /p:Configuration=Release /p:Platform=x64 /m" `
-            -Artifact "detector/windows-winforms/bin/Release/VisionGuard.exe" `
-            -Script { & $msbuild "detector\windows-winforms\VisionGuard.csproj" /p:Configuration=Release /p:Platform=x64 /m }
     }
 
     if (Should-Run @("Windows", "WPF")) {
@@ -150,7 +130,7 @@ try {
             -Script { dotnet build "detector\windows-wpf\VisionGuard.csproj" -c Release -p:OrtProfile=legacy }
     }
 
-    if (Should-Run @("Windows", "WindowsResident", "WinForms", "WPF")) {
+    if (Should-Run @("Windows", "WindowsResident", "WPF")) {
         Invoke-Step `
             -Name "Windows Resident" `
             -CommandText "dotnet build detector\windows-resident\VisionGuard.Resident.csproj -c Release" `

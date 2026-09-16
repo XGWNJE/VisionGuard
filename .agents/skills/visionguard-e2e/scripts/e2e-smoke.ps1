@@ -1,5 +1,5 @@
-param(
-    [ValidateSet('Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WindowsTests', 'WpfPersonDetection', 'WinFormsPersonDetection')]
+﻿param(
+    [ValidateSet('Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WpfPersonDetection')]
     [string]$Mode = 'Discover',
 
     [ValidateSet('Auto', 'Physical', 'Emulator', 'None')]
@@ -14,10 +14,10 @@ param(
     [switch]$NoLaunchEmulator,
     [int]$BootTimeoutSeconds = 180,
     [ValidateRange(2,16)][int]$WpfSourceCount = 4,
-    [string]$WpfFixtureDirectory = '',
-    [ValidateRange(2,16)][int]$WinFormsSourceCount = 4,
-    [ValidateRange(0,3600)][int]$WinFormsDurationSeconds = 0,
-    [string]$WinFormsModelPath = ''
+    [string]$WpfFixtureDirectory = 'artifacts\v5\fixtures',
+    [string]$WpfModelPath = 'artifacts\v0\yolo26n_320.onnx',
+    [string]$WpfReportPath = 'artifacts\e2e\wpf-window-person-detection.json',
+    [ValidateRange(0.0,1.0)][float]$WpfConfidenceThreshold = 0.25
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,7 +26,7 @@ $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $artifactRoot = Join-Path $repoRoot "artifacts\e2e\$timestamp"
 New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
 
-$effectiveBuildType = if ($Mode -in @('WindowsTests', 'WpfPersonDetection', 'WinFormsPersonDetection')) { 'Release' } else { $BuildType }
+$effectiveBuildType = if ($Mode -eq 'WpfPersonDetection') { 'Release' } else { $BuildType }
 $summary = [ordered]@{
     mode = $Mode
     buildType = $effectiveBuildType
@@ -332,52 +332,172 @@ function Run-AndroidAppSmoke {
     Add-Result -Name "$Name runtime" -Status 'PASS' -Evidence $artifactRoot
 }
 
-function Run-WindowsTests {
-    # 宿主机上的机器可判定约束测试，不依赖设备、模拟器或 Server。
-    $configProject = Join-Path $repoRoot 'tests\WindowsConfig.Tests\WindowsConfig.Tests.csproj'
-    $multiProject = Join-Path $repoRoot 'tests\WinFormsMultiSource.Tests\WinFormsMultiSource.Tests.csproj'
-    $multiExe = Join-Path $repoRoot 'tests\WinFormsMultiSource.Tests\bin\Release\net472\WinFormsMultiSource.Tests.exe'
-    if (-not (Test-Path -LiteralPath $configProject)) { throw "Windows config test project missing: $configProject" }
-    if (-not (Test-Path -LiteralPath $multiProject)) { throw "WinForms multi-source test project missing: $multiProject" }
+function Resolve-RepoPath {
+    param([string]$Path)
+    if ([System.IO.Path]::IsPathRooted($Path)) { return $Path }
+    return Join-Path $repoRoot $Path
+}
 
-    $configLog = Join-Path $artifactRoot 'windows-config-tests.txt'
-    Invoke-NativeLogged -FilePath 'dotnet' -Arguments @('run', '--project', $configProject, '-c', 'Release') -WorkingDirectory $repoRoot -LogPath $configLog
-    Add-Result -Name 'Windows config and protocol constraints' -Status 'PASS' -Evidence $configLog
+function Start-WpfFixtureWindows {
+    # 夹具窗口在本脚本所在的 PowerShell 宿主进程内创建：每个来源一个 System.Windows.Forms 顶层窗口，
+    # 用 GDI 渲染人像图，句柄可被 WindowEnumerator 枚举、被 PrintWindow 稳定捕获。
+    # 宿主进程是 DPI 不感知的，与已退役的 net472 夹具窗口工具保持同样的 DPI 语义。
+    param(
+        [string[]]$ImagePaths,
+        [string]$HandleFile
+    )
 
-    $multiBuildLog = Join-Path $artifactRoot 'winforms-multi-source-tests-build.txt'
-    Invoke-NativeLogged -FilePath 'dotnet' -Arguments @('build', $multiProject, '-c', 'Release') -WorkingDirectory $repoRoot -LogPath $multiBuildLog
-    if (-not (Test-Path -LiteralPath $multiExe)) { throw "WinForms multi-source test executable missing: $multiExe" }
-    $multiLog = Join-Path $artifactRoot 'winforms-multi-source-tests.txt'
-    Invoke-NativeLogged -FilePath $multiExe -Arguments @() -WorkingDirectory $repoRoot -LogPath $multiLog
-    Add-Result -Name 'WinForms multi-source coordinator isolation' -Status 'PASS' -Evidence $multiLog
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+
+    $forms = New-Object System.Collections.Generic.List[object]
+    $images = New-Object System.Collections.Generic.List[object]
+    $total = $ImagePaths.Count
+    for ($index = 0; $index -lt $total; $index++) {
+        $imagePath = $ImagePaths[$index]
+
+        # 四路以内保持 2 列 640×360 的回归基线；更多来源改用 3 列小窗口，避免窗口落到屏幕外。
+        $columns = if ($total -le 4) { 2 } else { 3 }
+        $clientWidth = if ($total -le 4) { 640 } else { 480 }
+        $clientHeight = if ($total -le 4) { 360 } else { 270 }
+        $x = 60 + ($index % $columns) * ($clientWidth + 60)
+        $y = 60 + [int][math]::Floor($index / $columns) * ($clientHeight + 70)
+
+        $stream = New-Object System.IO.FileStream($imagePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        try { $loaded = [System.Drawing.Image]::FromStream($stream) } finally { $stream.Dispose() }
+        $image = New-Object System.Drawing.Bitmap $loaded
+        $loaded.Dispose()
+
+        $form = New-Object System.Windows.Forms.Form
+        $form.Text = "VisionGuard WPF Smoke Fixture $($index + 1) - $([System.IO.Path]::GetFileName($imagePath))"
+        $form.StartPosition = 'Manual'
+        $form.Location = New-Object System.Drawing.Point($x, $y)
+        $form.ClientSize = New-Object System.Drawing.Size($clientWidth, $clientHeight)
+        $form.MinimumSize = New-Object System.Drawing.Size(320, 240)
+
+        $picture = New-Object System.Windows.Forms.PictureBox
+        $picture.Dock = [System.Windows.Forms.DockStyle]::Fill
+        $picture.SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Zoom
+        $picture.BackColor = [System.Drawing.Color]::Black
+        $picture.Image = $image
+        $form.Controls.Add($picture)
+
+        # 窗口必须先可见再取句柄，否则拿不到 WindowEnumerator 认得的顶层窗口。
+        # 宿主进程若以最小化方式启动，窗体可能继承最小化状态并被枚举过滤掉，
+        # 因此显式恢复为普通状态并校验客户区，让这种失败变成明确报错。
+        $form.Show()
+        $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+        $form.Activate()
+        [void]$form.Handle
+        [System.Windows.Forms.Application]::DoEvents()
+        if ($form.ClientSize.Width -le 0 -or $form.ClientSize.Height -le 0) {
+            throw "Fixture window $($index + 1) has an empty client area ($($form.ClientSize.Width)x$($form.ClientSize.Height)); it cannot be captured."
+        }
+
+        $forms.Add($form)
+        $images.Add($image)
+    }
+
+    $handles = @($forms | ForEach-Object { $_.Handle.ToInt64().ToString([System.Globalization.CultureInfo]::InvariantCulture) })
+    [System.IO.File]::WriteAllLines($HandleFile, $handles, (New-Object System.Text.UTF8Encoding($false)))
+
+    return [pscustomobject]@{ Forms = $forms; Images = $images }
 }
 
 function Run-WpfPersonDetection {
-    $script = Join-Path $repoRoot 'scripts\test-wpf-person-detection.ps1'
-    $report = Join-Path $artifactRoot 'wpf-person-detection.json'
+    $fixtureDirectory = Resolve-RepoPath $WpfFixtureDirectory
+    $modelPath = Resolve-RepoPath $WpfModelPath
+    $reportPath = Resolve-RepoPath $WpfReportPath
+    $smokeProject = Join-Path $repoRoot 'detector\windows-wpf-smoke\VisionGuard.WpfSmoke.csproj'
     $log = Join-Path $artifactRoot 'wpf-person-detection.txt'
-    if (-not (Test-Path -LiteralPath $script)) { throw "WPF person test script missing: $script" }
-    $arguments = @('-ExecutionPolicy', 'Bypass', '-File', $script, '-ReportPath', $report, '-SourceCount', $WpfSourceCount.ToString())
-    # 夹具目录必须至少包含与来源数量相同的人像图，脚本会直接报错而不是降低来源数量。
-    if (-not [string]::IsNullOrWhiteSpace($WpfFixtureDirectory)) { $arguments += @('-FixtureDirectory', $WpfFixtureDirectory) }
-    Invoke-NativeLogged -FilePath 'powershell' -Arguments $arguments -WorkingDirectory $repoRoot -LogPath $log
-    Add-Result -Name "WPF $WpfSourceCount-window person detection" -Status 'PASS' -Evidence $report
-}
+    $errorLog = Join-Path $artifactRoot 'wpf-person-detection-error.txt'
+    $runRoot = Join-Path $repoRoot ('.local\wpf-window-smoke-' + [Guid]::NewGuid().ToString('N'))
+    $handleFile = Join-Path $runRoot 'window-handles.txt'
+    if (-not (Test-Path -LiteralPath $smokeProject)) { throw "WPF smoke project missing: $smokeProject" }
+    if (-not (Test-Path -LiteralPath $modelPath)) { throw "ONNX model missing: $modelPath" }
+    if (-not (Test-Path -LiteralPath $fixtureDirectory)) { throw "Fixture directory missing: $fixtureDirectory" }
 
-function Run-WinFormsPersonDetection {
-    $script = Join-Path $repoRoot 'scripts\test-winforms-person-detection.ps1'
-    $windowProject = Join-Path $repoRoot 'detector\windows-winforms-smoke\VisionGuard.WinFormsSmoke.csproj'
-    $inferenceProject = Join-Path $repoRoot 'detector\windows-winforms-smoke\VisionGuard.WinFormsInferenceSmoke.csproj'
-    $report = Join-Path $artifactRoot 'winforms-person-detection.json'
-    $log = Join-Path $artifactRoot 'winforms-person-detection.txt'
-    if (-not (Test-Path -LiteralPath $script)) { throw "WinForms person test script missing: $script" }
-    Invoke-NativeLogged -FilePath 'dotnet' -Arguments @('build', $windowProject, '-c', 'Release') -WorkingDirectory $repoRoot -LogPath (Join-Path $artifactRoot 'winforms-window-tool-build.txt')
-    Invoke-NativeLogged -FilePath 'dotnet' -Arguments @('build', $inferenceProject, '-c', 'Release') -WorkingDirectory $repoRoot -LogPath (Join-Path $artifactRoot 'winforms-inference-tool-build.txt')
-    $arguments = @('-ExecutionPolicy', 'Bypass', '-File', $script, '-RepoRoot', $repoRoot, '-ReportPath', $report, '-SourceCount', $WinFormsSourceCount.ToString())
-    if (-not [string]::IsNullOrWhiteSpace($WinFormsModelPath)) { $arguments += @('-ModelPath', $WinFormsModelPath) }
-    if ($WinFormsDurationSeconds -gt 0) { $arguments += @('-DurationSeconds', $WinFormsDurationSeconds.ToString()) }
-    Invoke-NativeLogged -FilePath 'powershell' -Arguments $arguments -WorkingDirectory $repoRoot -LogPath $log
-    Add-Result -Name "WinForms $WinFormsSourceCount-window person detection" -Status 'PASS' -Evidence $report
+    $images = @(Get-ChildItem -LiteralPath $fixtureDirectory -File |
+        Where-Object { $_.Extension -in '.jpg', '.jpeg', '.png', '.bmp' } |
+        Sort-Object Name)
+    # 夹具人像图数量不得少于来源数量：直接报出实际张数，不自动降低来源数量。
+    if ($images.Count -lt $WpfSourceCount) {
+        throw "Fixture directory $fixtureDirectory holds $($images.Count) person images, fewer than the requested $WpfSourceCount sources."
+    }
+    $images = @($images | Select-Object -First $WpfSourceCount)
+
+    New-Item -ItemType Directory -Force -Path $runRoot | Out-Null
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent ([System.IO.Path]::GetFullPath($reportPath))) | Out-Null
+
+    $fixtures = $null
+    $smoke = $null
+    try {
+        $fixtures = Start-WpfFixtureWindows -ImagePaths @($images | ForEach-Object { $_.FullName }) -HandleFile $handleFile
+
+        $arguments = @('run', '--project', $smokeProject, '-c', 'Release', '--', $handleFile, $modelPath, $reportPath, $WpfConfidenceThreshold.ToString([System.Globalization.CultureInfo]::InvariantCulture))
+        $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $startInfo.FileName = 'dotnet'
+        $startInfo.WorkingDirectory = $repoRoot
+        $startInfo.UseShellExecute = $false
+        $startInfo.RedirectStandardOutput = $true
+        $startInfo.RedirectStandardError = $true
+        $startInfo.Arguments = (@($arguments | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' }) -join ' ')
+        $smoke = [System.Diagnostics.Process]::Start($startInfo)
+
+        # 日志按子进程原始字节落盘，避免控制台代码页与 UTF-8 之间的二次转码。
+        $stdoutStream = [System.IO.File]::Create($log)
+        $stderrStream = [System.IO.File]::Create($errorLog)
+        $timedOut = $false
+        try {
+            $copyStdout = $smoke.StandardOutput.BaseStream.CopyToAsync($stdoutStream)
+            $copyStderr = $smoke.StandardError.BaseStream.CopyToAsync($stderrStream)
+            # 夹具窗口必须持续处理消息：smoke 会移动、最小化并关闭其中一路。
+            $deadline = (Get-Date).AddMinutes(15)
+            while (-not $smoke.HasExited) {
+                [System.Windows.Forms.Application]::DoEvents()
+                if ((Get-Date) -gt $deadline) {
+                    $timedOut = $true
+                    $smoke.Kill()
+                    break
+                }
+                Start-Sleep -Milliseconds 100
+            }
+            $smoke.WaitForExit()
+            [void]$copyStdout.Wait(30000)
+            [void]$copyStderr.Wait(30000)
+        }
+        finally {
+            $stdoutStream.Dispose()
+            $stderrStream.Dispose()
+        }
+        if ($timedOut) { throw "WPF person-detection smoke did not finish within 15 minutes. Log: $log" }
+        if ($smoke.ExitCode -ne 0) {
+            throw "WPF $WpfSourceCount-window person-detection smoke exited with code $($smoke.ExitCode). Report: $reportPath; log: $log"
+        }
+        if (-not (Test-Path -LiteralPath $reportPath)) { throw "WPF person-detection report missing: $reportPath" }
+
+        $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $missing = @($report.sources | Where-Object { $_.personHitFrames -lt 1 })
+        if (-not $report.passed -or $missing.Count -gt 0) {
+            $missingIds = @($missing | ForEach-Object { $_.SourceId }) -join ', '
+            throw "WPF $WpfSourceCount-window person-detection smoke did not pass (sources without a person hit: $missingIds). Report: $reportPath"
+        }
+        Add-Result -Name "WPF $WpfSourceCount-window person detection" -Status 'PASS' -Note "$WpfSourceCount visible fixture windows" -Evidence $reportPath
+    }
+    finally {
+        if ($smoke -and -not $smoke.HasExited) {
+            $smoke.Kill()
+            $smoke.WaitForExit()
+        }
+        if ($fixtures) {
+            foreach ($form in $fixtures.Forms) {
+                if (-not $form.IsDisposed) { $form.Close(); $form.Dispose() }
+            }
+            foreach ($image in $fixtures.Images) { $image.Dispose() }
+            [System.Windows.Forms.Application]::DoEvents()
+        }
+        if (Test-Path -LiteralPath $runRoot) { Remove-Item -LiteralPath $runRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    }
 }
 
 try {
@@ -402,9 +522,7 @@ try {
                 -PackageName 'com.xgwnje.visionguard_android' `
                 -RuntimePermissions @('android.permission.POST_NOTIFICATIONS')
         }
-        'WindowsTests' { Run-WindowsTests }
         'WpfPersonDetection' { Run-WpfPersonDetection }
-        'WinFormsPersonDetection' { Run-WinFormsPersonDetection }
     }
 }
 catch {

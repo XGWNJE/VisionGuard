@@ -28,18 +28,18 @@ VisionGuard 将从“多端视觉检测与告警应用”演进为“边缘智�
 
 ### 1.1 产品对象
 
-产品不再把 WinForms、WPF 和 Android 检测端仅称为泛化“客户端”，而是统一纳入探测器体系：
+产品把检测端统一纳入探测器体系；WinForms 曾是与 WPF 并列的 Windows 检测端，现已退役（见 8.13 节）：
 
 | 对象 | 定义 |
 |---|---|
 | Detector | 能够产生标准 Observation / AlertEvent 的探测器总称 |
-| Visual Detector | 现有 WinForms、WPF、Android 检测端；以屏幕、窗口或摄像头视觉推理为核心 |
+| Visual Detector | 现有 Windows 检测端（单一 WPF 构建，含 Win7 的 legacy 档）与 Android 检测端；以屏幕、窗口或摄像头视觉推理为核心。原文并列的 WinForms 检测端已随 V10 退役（8.13 节） |
 | Edge Detector | 未来 Linux ARM64 开发板探测器；可组合视觉、毫米波、PIR、门磁和环境传感器 |
 | Sensor | 被探测器采集和管理的单一感知来源，本身不一定具备完整联网与事件判断能力 |
 | Receiver | 接收、解密、展示和处置报警的终端 |
 | Web Management Console | 管理场地、探测器、传感器、配置、模型、OTA 和审计的 Server Web 控制台 |
 
-三类现有 Visual Detector 是长期正式产品对象，后续应逐步接入统一设备身份、能力声明、Event Protocol、Management Agent 和 Web 控制台；不能因为开发板成为未来重点而将现有视觉探测器降级为临时兼容实现。
+三类现有 Visual Detector 是长期正式产品对象，后续应逐步接入统一设备身份、能力声明、Event Protocol、Management Agent 和 Web 控制台；不能因为开发板成为未来重点而将现有视觉探测器降级为临时兼容实现。（原文写于 WinForms 与 WPF 并存的时期，现 Windows 侧已合并为一个检测端，见 8.13 节。）
 
 ## 2. 产品原则
 
@@ -48,7 +48,7 @@ VisionGuard 将从“多端视觉检测与告警应用”演进为“边缘智�
 3. **协议先于客户端**：所有检测端共享设备身份、能力声明、事件、ACK 和错误语义；界面和运行时可以不同。
 4. **视觉是证据，不是全部事实**：使用低功耗触发传感器发现异常，使用视觉、毫米波或其他确认传感器提高可信度。
 5. **漏报优先于误报**：允许在可管理范围内误报，不接受已知、可避免或静默发生的漏报；通过高召回目标、冗余传感器、故障报警和真实样本验证降低漏报风险，但不做无法证明的“绝对零漏报”承诺。
-6. **Win7 当前实现与计划边界**：Windows WinForms / Visual Detector 与 Windows 驻留程序均以 .NET Framework 4.7.2 x64 作为 Win7 SP1 x64 技术基线；驻留程序的 Win7 SP1 x64 兼容仍以目标系统上的启动、WSS、握手和远控实测为发布硬门槛；WPF、Android、Server、Web 控制台和未来硬件不承担 Win7 兼容义务。WinForms 检测端定位为 Windows 7 专属兼容端，Windows 10 及以上的 Windows 检测由 WPF 承担，两端部署的系统不重叠；因此 WinForms 的能力只需按 Win7 设计，不需要为更高版本系统分派实现。Win7 兼容是运行环境的下限要求，不是功能上限，也不得为了保住 Win7 而限制其他端的技术栈。
+6. **Win7 当前实现与计划边界**：Windows 检测端（单一 WPF 构建的 legacy 档，见 8.13 节）与 Windows 驻留程序均以 .NET Framework 4.7.2 x64 作为 Win7 SP1 x64 技术基线；驻留程序的 Win7 SP1 x64 兼容仍以目标系统上的启动、WSS、握手和远控实测为发布硬门槛；Android、Server、Web 控制台和未来硬件不承担 Win7 兼容义务。Windows 10 及以上的 Windows 检测由同一份构建的 modern 档承担，Win7 与 Win10+ 的差异只落在推理档位与模型清单，不再表现为两个检测端。**原文并列的 WinForms 检测端已随 V10 退役**（8.13 节），Windows 只剩这一份构建。Win7 兼容是运行环境的下限要求，不是功能上限，也不得为了保住 Win7 而限制其他端的技术栈。
 7. **失败必须可诊断并报警**：每个阶段都要能区分感知失败、融合失败、认证失败、Server 连接失败、设备离线和接收端离线；会造成探测盲区的故障本身也是报警事件。
 8. **先证明场景价值**：开发板是验证载体，不是产品定义；首个商业版本必须聚焦一个明确场景和可量化效果。
 9. **检测端功能基线跨端统一**：WinForms、WPF 和 Android 检测端共享同一份功能基线与布局范式，差异只允许出现在硬件加速后端和宿主平台相关的实现方式上。Win7 兼容约束的是运行时、依赖与可用 API，不构成降低功能要求的理由；平台差异不是长期功能缺口的免责理由，也不允许反向要求其他端退回低功能形态。
@@ -57,7 +57,7 @@ VisionGuard 将从“多端视觉检测与告警应用”演进为“边缘智�
 
 | 产品层 | 组成 | 商业定位 |
 |---|---|---|
-| 免费版：纯软件视觉方案 | 当前已实现的 WinForms、WPF、Android Visual Detector，以及维持现有纯软件报警闭环所需的 Server 与 Receiver 能力 | 不接入检测硬件探测器时长期免费；云端存储、Server 转发和历史数据仍需合理配额，避免产生无限持续成本 |
+| 免费版：纯软件视觉方案 | 当前已实现的 Windows Visual Detector（单一 WPF 构建，含 Win7 legacy 档）与 Android Visual Detector，以及维持现有纯软件报警闭环所需的 Server 与 Receiver 能力；WinForms 检测端已随 V10 退役（8.13 节） | 不接入检测硬件探测器时长期免费；云端存储、Server 转发和历史数据仍需合理配额，避免产生无限持续成本 |
 | 付费版：硬件探测器方案 | 免费版全部能力 + Edge Detector、集成传感器检测单元或其他检测硬件探测器 | 系统一旦注册并启用检测硬件探测器即进入付费版；提供硬件设备管理、传感器拓扑、融合检测、独立运行、OTA 和诊断能力 |
 
 免费版以目前已经实现的纯软件视觉方案为边界；系统一旦接入检测硬件探测器，即进入付费版。判定依据是系统中是否激活硬件探测器，不取决于硬件由 VisionGuard 自研、合作厂商提供还是兼容第三方设备。免费与付费共享 Detector Protocol、Event Protocol、账号、Server、Receiver 和 Web 控制台底座，不建立两套互不兼容的系统。具体免费配额、硬件售价或授权方式、服务期限和增值服务在试点成本数据形成后确定。
@@ -690,9 +690,9 @@ owner 自备 VMware Workstation Pro 与 Win7 系统安装，实施侧只需把�
 | 虚拟机 | VMware Workstation Pro，2–4 核 / 4GB / 动态磁盘 | owner 自行安装软件与系统 |
 | 系统前置 | 六步补丁顺序：KB4490628 → KB4474419 → KB3140245 → TLS 注册表 → KB4019990 → .NET 4.7.2 | 前四步决定 WSS/TLS 链路，后两步是程序运行前提 |
 | 前置核验 | `scripts/check-win7-prerequisites.ps1` 与双击入口 `scripts/run-win7-prerequisites.cmd`，一次性检查补丁、.NET 版本与 TLS 注册表项并输出 JSON | 2026-09-14 已在 Win7 SP1 x64 虚拟机实测，全部检查通过；证据见 `artifacts/e2e/win7-prerequisites.json` |
-| 被测产物 | `visionguard-build` 产出的 WinForms 与驻留 Release 目录 | 不在虚拟机内编译 |
+| 被测产物 | `visionguard-build` 产出的 Windows 检测端 legacy 档目录与驻留 Release 目录 | 不在虚拟机内编译；WinForms 检测端已随 V10 退役，其 Release 目录不再有产物 |
 | Server | 跑在宿主机上，走隔离通道 | 不与虚拟机争抢 CPU，避免污染帧率数据 |
-| 测试窗口源 | 新增 net472 工具 `detector/windows-winforms-smoke/`，打开 N 个窗口各显示一张本地含人图片 | 不在 Win7 上用浏览器：Win7 可用的浏览器版本过旧、行为不可控；WPF 用浏览器是因为宿主机是 Win11 |
+| 测试窗口源 | 需要能在 Win7 上运行的 net472 窗口夹具（原 `detector/windows-winforms-smoke/`，打开 N 个窗口各显示一张本地含人图片）；它已随 WinForms 退役删除，当前没有等价入口，legacy 档实机验证须先补夹具 | 不在 Win7 上用浏览器：Win7 可用的浏览器版本过旧、行为不可控；WPF 用浏览器是因为宿主机是 Win11 |
 | 驱动与断言 | 同一个 smoke 工具驱动逐路启停，从 Server 侧读回每路报警与帧率，断言每路至少一次 `person` | 观察点放在 Server，避免为测试改被测端 |
 | 证据 | JSON 报告与 WPF 报告同结构，便于横向比对 | 沿用现有 e2e 产物目录约定 |
 | 人工项 | Win7 桌面 UI 目检、WSS/TLS 证书链确认、登录重启与断网恢复 | 脚本不能替代，必须单独报告 |
@@ -797,11 +797,11 @@ owner 自备 VMware Workstation Pro 与 Win7 系统安装，实施侧只需把�
 | ① | net472 迁移与 36 处 API 差异 | Release 构建 0 错误；真实窗口启动 |
 | ② | 双档位、原生库布局、模型清单 | Win11 强制 legacy 档跑通一路推理；心跳 `modelOptions` 与本机清单一致 |
 | ③ | 自研 WS 客户端接入 | 两平台 `WS 认证成功`；长连接 ≥ 60 秒无失败无重连 |
-| ④ | 驻留单次启动、统一命名、WinForms 启动源退役 | 只启动统一端即拉起驻留；检测端退出/崩溃后驻留存活；`open-detector` 远程重新打开成功 |
+| ④ | 驻留单次启动、统一命名、WinForms 启动源退役 | 只启动统一端即拉起驻留；检测端退出/崩溃后驻留存活；`open-detector` 远程重新打开成功；两档位 Release 构建 0 警告 0 错误 |
 
 **验收边界（并入 8.9 节）**：Win7 上 CPU + `yolov5nu` 至少一路命中 `person`；Win10/11 上 DirectML 可用、四路回归通过；命名在四个组件与文档中一致；`check-docs.js` 通过。动态视频源持续推理、完整报警链、24 小时稳定性、真实显卡驱动故障与 Win7 多路 CPU 帧率仍单独列为人工/真机/生产验证。
 
-**WinForms 退役**：开发期冻结、停止新增功能并保留为回退路径；统一端通过 V10 验收后一次性删除工程、`WinFormsPersonDetection` smoke、`tests/WinFormsMultiSource.Tests`，并清理 `scripts/test-winforms-server-push.js`、`scripts/test-device-level-command.js`、`scripts/run-win7-winforms-smoke.cmd`、发布脚本的 `winforms` 平台键与 `check-docs.js` 的 WinForms 断言。**注意**：`scripts/test-wpf-person-detection.ps1` 与发布脚本当前依赖 `windows-winforms-smoke` 承载夹具窗口，退役前须先把它改为独立工具。
+**WinForms 退役（已完成）**：WinForms 检测端已退役，Windows 只剩本节的单一 WPF 构建。已删除 `detector/windows-winforms/`、`detector/windows-winforms-smoke/`、`tests/WinFormsMultiSource.Tests/`、`tests/WindowsConfig.Tests/`、`WinFormsPersonDetection` smoke 入口与 `scripts/test-winforms-server-push.js`、`scripts/test-device-level-command.js`、`scripts/run-win7-winforms-smoke.cmd`、`scripts/test-wpf-person-detection.ps1`（最后一个依赖反复出故障的静态图片 fixture 窗口，按 owner 要求一并删除）；`winforms` 平台键、发布脚本条目与 `check-docs.js` 的 WinForms 断言同步清理，构建脚本的 `WinForms` 目标与 e2e 的 `WinFormsPersonDetection`、`WindowsTests` 两个模式也已移除。**必须如实记录的覆盖净减损**：`WindowsConfig.Tests` 的采集几何、共享 settings 合并/迁移与窗口重绑断言，以及只依赖静态图片 fixture 的人员检测覆盖，都随本次退役一并消失，当前没有等价入口；各条历史证据及其失效入口见[验证报告](90-verification-report.md)。
 
 ## 9. 平台与硬件演进路线
 

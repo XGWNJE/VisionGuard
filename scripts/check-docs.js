@@ -8,8 +8,7 @@ const DEFAULT_ROOT = path.resolve(__dirname, '..');
 const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 
 const COMPONENTS = [
-  { label: 'Windows WinForms 检测端', relativePath: 'detector/windows-winforms', source: 'detector/windows-winforms/Form1.cs' },
-  { label: 'Windows WPF 检测端', relativePath: 'detector/windows-wpf', source: 'detector/windows-wpf/App.xaml.cs' },
+  { label: 'Windows 检测端', relativePath: 'detector/windows-wpf', source: 'detector/windows-wpf/App.xaml.cs' },
   { label: 'Windows 驻留程序', relativePath: 'detector/windows-resident', source: 'detector/windows-resident/Program.cs' },
   { label: 'Android 检测端', relativePath: 'detector/android', source: 'detector/android/app/build.gradle.kts' },
   { label: 'Android 接收端', relativePath: 'receiver/android', source: 'receiver/android/app/build.gradle.kts' },
@@ -19,8 +18,8 @@ const COMPONENTS = [
 const WS_ROLES = ['windows', 'android', 'android-detector', 'windows-resident'];
 
 const RETAINED_SKILLS = [
-  { name: 'visionguard-build', script: '.agents/skills/visionguard-build/scripts/build-all.ps1', modes: ['All', 'Server', 'Windows', 'WinForms', 'WPF', 'WindowsResident', 'Android', 'AndroidDetector', 'AndroidReceiver'] },
-  { name: 'visionguard-e2e', script: '.agents/skills/visionguard-e2e/scripts/e2e-smoke.ps1', modes: ['Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WindowsTests', 'WpfPersonDetection', 'WinFormsPersonDetection'] },
+  { name: 'visionguard-build', script: '.agents/skills/visionguard-build/scripts/build-all.ps1', modes: ['All', 'Server', 'Windows', 'WPF', 'WindowsResident', 'Android', 'AndroidDetector', 'AndroidReceiver'] },
+  { name: 'visionguard-e2e', script: '.agents/skills/visionguard-e2e/scripts/e2e-smoke.ps1', modes: ['Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WpfPersonDetection'] },
   { name: 'visionguard-release', script: 'scripts/publish-release.ps1', modes: ['-PreflightOnly', '-SkipServerDeploy', '-UploadVps'] }
 ];
 
@@ -96,10 +95,6 @@ function checkVersionSources(root, version, errors) {
   const [major, minor, patch] = version.split('.').map(Number);
   const versionCode = major * 1000 + minor * 100 + patch;
   const exactChecks = [
-    ['detector/windows-winforms/Properties/AssemblyInfo.cs', `AssemblyVersion("${version}.0")`],
-    ['detector/windows-winforms/Properties/AssemblyInfo.cs', `AssemblyFileVersion("${version}.0")`],
-    ['detector/windows-winforms/VisionGuard.csproj', `<ApplicationVersion>${version}.%2a</ApplicationVersion>`],
-    ['detector/windows-winforms/Services/ServerPushService.cs', `["version"] = "${version}"`],
     ['detector/windows-wpf/Utils/AppConfig.cs', `Version = "${version}"`],
     ['detector/windows-wpf/VisionGuard.csproj', `<Version>${version}</Version>`],
     ['detector/windows-wpf/VisionGuard.csproj', `<FileVersion>${version}</FileVersion>`],
@@ -373,7 +368,21 @@ function checkSkillContract(root, errors) {
   requireText(buildScript, 'Windows Resident', RETAINED_SKILLS[0].script, 'the Windows Resident build target', errors);
 
   const e2eScript = readUtf8(root, RETAINED_SKILLS[1].script, errors, { checkBom: false });
-  requirePattern(e2eScript, /ValidateSet\('Discover'.*'WpfPersonDetection'.*'WinFormsPersonDetection'\)/s, RETAINED_SKILLS[1].script, 'the complete e2e mode contract', errors);
+  const modes = RETAINED_SKILLS[1].modes;
+  // 逐项校验实际 ValidateSet 内容，避免只靠「首尾能匹配」而漏掉中间被删/被加的模式。
+  requirePattern(
+    e2eScript,
+    new RegExp(`ValidateSet\\(${modes.map((mode) => `'${mode}'`).join(',\\s*')}\\)`),
+    RETAINED_SKILLS[1].script,
+    'the complete e2e mode contract',
+    errors
+  );
+  // 已随 WinForms 退役移除的模式不得再出现。
+  for (const retired of ['WinFormsPersonDetection', 'WindowsTests']) {
+    if (e2eScript.includes(retired)) {
+      errors.push(`[contract] ${RETAINED_SKILLS[1].script} still declares the retired mode ${retired}`);
+    }
+  }
   requirePattern(e2eScript, /ServerSmoke compatibility alias[\s\S]*compile\/artifact smoke only/, RETAINED_SKILLS[1].script, 'the non-E2E ServerSmoke alias boundary', errors);
   requireText(e2eScript, 'WpfPersonDetection', RETAINED_SKILLS[1].script, 'the WPF person semantic mode', errors);
 
@@ -384,20 +393,10 @@ function checkSkillContract(root, errors) {
 }
 
 function checkValidationContract(root, readme, operations, verificationReport, errors) {
-  const wpfScript = readUtf8(root, 'scripts/test-wpf-person-detection.ps1', errors, { checkBom: false });
   const wpfSmokeProgram = readUtf8(root, 'detector/windows-wpf-smoke/Program.cs', errors, { checkBom: false });
-  requireText(wpfScript, '$images.Count -lt $SourceCount', 'scripts/test-wpf-person-detection.ps1', 'the configured source-count fixture contract', errors);
-  requireText(wpfScript, 'personHitFrames', 'scripts/test-wpf-person-detection.ps1', 'the person detection assertion', errors);
-  requireText(wpfScript, '$report.passed', 'scripts/test-wpf-person-detection.ps1', 'the explicit passing report', errors);
   requireText(wpfSmokeProgram, 'WatchedClasses', 'detector/windows-wpf-smoke/Program.cs', 'the watched person class configuration', errors);
   requireText(wpfSmokeProgram, 'string.Equals(d.Label, "person"', 'detector/windows-wpf-smoke/Program.cs', 'the exact person-label assertion', errors);
   requireText(wpfSmokeProgram, 'expectedLabel = "person"', 'detector/windows-wpf-smoke/Program.cs', 'the person evidence label', errors);
-  const winformsScript = readUtf8(root, 'scripts/test-winforms-person-detection.ps1', errors, { checkBom: false });
-  const winformsSmokeProgram = readUtf8(root, 'detector/windows-winforms-smoke/InferenceSmokeProgram.cs', errors, { checkBom: false });
-  requireText(winformsScript, '$handles.Length -ne $SourceCount', 'scripts/test-winforms-person-detection.ps1', 'the configured source-count fixture contract', errors);
-  requireText(winformsScript, "$result['passed']", 'scripts/test-winforms-person-detection.ps1', 'the explicit passing report', errors);
-  requireText(winformsSmokeProgram, 'personHits', 'detector/windows-winforms-smoke/InferenceSmokeProgram.cs', 'the person detection assertion', errors);
-  requireText(winformsSmokeProgram, 'UpdateSourceLimit', 'detector/windows-winforms-smoke/InferenceSmokeProgram.cs', 'the negotiated source limit usage', errors);
   requireText(readme, 'person', 'README.md', 'the WPF person semantic assertion', errors);
   requireText(operations, '真实窗口采集', 'docs/codex/60-operations.md', 'the real-window boundary', errors);
   requirePattern(operations, /完整(?:报警|告警)链/, 'docs/codex/60-operations.md', 'the full-alert-chain boundary', errors);
@@ -463,7 +462,7 @@ function checkProductContract(readme, overview, roadmap, agents, errors) {
   requireText(roadmap, '系统一旦接入检测硬件探测器，即进入付费版', 'docs/codex/15-product-roadmap.md', 'the paid hardware-detector edition boundary', errors);
   requireText(roadmap, '首个销售市场暂定中国大陆', 'docs/codex/15-product-roadmap.md', 'the initial sales market', errors);
   requireText(roadmap, '以控制台为最高权限管理入口', 'docs/codex/15-product-roadmap.md', 'the Web console authority boundary', errors);
-  requirePattern(roadmap, /Win7[^\n]*(?:WinForms|Visual Detector)/, 'docs/codex/15-product-roadmap.md', 'the implemented Win7 compatibility boundary', errors);
+  requirePattern(roadmap, /Win7[^\n]*(?:WPF|Visual Detector)/, 'docs/codex/15-product-roadmap.md', 'the implemented Win7 compatibility boundary', errors);
   requirePattern(roadmap, /驻留程序[^\n]*Win7 SP1 x64 兼容[^\n]*硬门槛/, 'docs/codex/15-product-roadmap.md', 'the resident Win7 delivery gate', errors);
   requireText(roadmap, '不再规划 P2P、ICE、STUN 或 TURN', 'docs/codex/15-product-roadmap.md', 'the Server-only network boundary', errors);
   requireText(roadmap, '允许在可管理范围内误报', 'docs/codex/15-product-roadmap.md', 'the missed-detection priority', errors);
@@ -477,7 +476,7 @@ function checkProductContract(readme, overview, roadmap, agents, errors) {
     requirePattern(content, /Visual Detector/, relativePath, 'the Visual Detector product term', errors);
     requirePattern(content, /(?:目前|当前)已(?:经)?实现的纯软件视觉方案[^\n]*免费版/, relativePath, 'the free software-visual edition summary', errors);
     requirePattern(content, /接入检测硬件探测器[^\n]*付费版/, relativePath, 'the paid hardware-detector edition summary', errors);
-    requirePattern(content, /Win7[^\n]*(?:WinForms|Visual Detector)|(?:WinForms|Visual Detector)[^\n]*Win7/, relativePath, 'the Win7-only compatibility summary', errors);
+    requirePattern(content, /Win7[^\n]*(?:WPF|Visual Detector)|(?:WPF|Visual Detector)[^\n]*Win7/, relativePath, 'the Win7-only compatibility summary', errors);
     requireText(content, '所有公网业务数据统一通过 Server', relativePath, 'the Server-only transport summary', errors);
     requirePattern(content, /不再规划 P2P/, relativePath, 'the no-P2P boundary', errors);
     requirePattern(content, /漏报风险[^\n]*最高优先级/, relativePath, 'the missed-detection priority summary', errors);
@@ -556,7 +555,6 @@ function checkDomainAlignment(root, operations, readme, overview, errors) {
   for (const [relativePath, content] of [
     ['README.md', readme],
     ['docs/codex/10-project-overview.md', overview],
-    ['detector/windows-winforms/Form1.cs', readUtf8(root, 'detector/windows-winforms/Form1.cs', errors, { checkBom: false })],
     ['detector/windows-wpf/Utils/AppConfig.cs', readUtf8(root, 'detector/windows-wpf/Utils/AppConfig.cs', errors, { checkBom: false })],
     ['detector/android/app/src/main/java/com/xgwnje/visionguard/AppConstants.kt', readUtf8(root, 'detector/android/app/src/main/java/com/xgwnje/visionguard/AppConstants.kt', errors, { checkBom: false })],
     ['receiver/android/app/src/main/java/com/xgwnje/visionguard_android/AppConstants.kt', readUtf8(root, 'receiver/android/app/src/main/java/com/xgwnje/visionguard_android/AppConstants.kt', errors, { checkBom: false })]
