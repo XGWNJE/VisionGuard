@@ -13,41 +13,8 @@
     <Window.DataContext><vm:MainViewModel/></Window.DataContext>
 
     <Grid Background="{StaticResource BackgroundDark}">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="54"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
-
-        <!-- 单一顶栏：品牌、运行状态与整机操作 -->
-        <Border Grid.Row="0" Background="{StaticResource SurfaceDark}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
-            <Grid Margin="16,0">
-                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
-                    <Border Style="{StaticResource StatusPill}" Margin="0,0,8,0">
-                        <TextBlock Text="{Binding MultiSourceVm.RunningSummary}" Style="{StaticResource BodyText}" FontWeight="SemiBold"/>
-                    </Border>
-                    <Border Style="{StaticResource StatusPill}" Margin="0,0,8,0">
-                        <TextBlock Text="{Binding MultiSourceVm.ConnectionSummary}" Style="{StaticResource CaptionText}"/>
-                    </Border>
-                    <Border Style="{StaticResource StatusPill}">
-                        <TextBlock Text="{Binding MultiSourceVm.ErrorSummary}" Style="{StaticResource CaptionText}"/>
-                    </Border>
-                </StackPanel>
-
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="新增来源" Style="{StaticResource PrimaryButton}" Command="{Binding MultiSourceVm.AddSourceCommand}"
-                            ToolTip="{Binding MultiSourceVm.SourceLimitText}" Margin="0,0,8,0"/>
-                    <Button Content="删除来源" Style="{StaticResource DangerButton}" Command="{Binding MultiSourceVm.RemoveSourceCommand}"
-                            ToolTip="删除当前来源，至少保留一个；运行中的来源需先停止" Margin="0,0,8,0"/>
-                    <Button Content="启动已配置" Style="{StaticResource PrimaryButton}" Command="{Binding MultiSourceVm.StartConfiguredCommand}" Margin="0,0,8,0"/>
-                    <Button Content="全部停止" Style="{StaticResource DangerButton}" Command="{Binding MultiSourceVm.StopAllCommand}"/>
-                </StackPanel>
-            </Grid>
-        </Border>
-
-        <!-- 中央只承担监控；右侧是唯一配置入口 -->
-        <Grid Grid.Row="1">
+        <!-- 运行状态、服务器状态与全局操作均收敛到来源卡片和连接页，避免顶栏重复表达。 -->
+        <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" MinWidth="620"/>
                 <ColumnDefinition Width="376"/>
@@ -74,16 +41,31 @@
                                     </Style>
                                 </Border.Style>
                                 <Grid>
-                                    <Grid.RowDefinitions><RowDefinition Height="36"/><RowDefinition Height="*"/><RowDefinition Height="38"/></Grid.RowDefinitions>
+                                    <!-- 行高必须容得下操作行的完整几何：按钮 MinHeight=36 + 上边距 4 = 40，
+                                         留 38 会把按钮底边与圆角裁掉 2px（曾出现的“按钮被切”现象）。 -->
+                                    <Grid.RowDefinitions><RowDefinition Height="36"/><RowDefinition Height="*"/><RowDefinition Height="40"/></Grid.RowDefinitions>
 
-                                    <Button Grid.Row="0" Style="{StaticResource GhostButton}" Command="{Binding SelectCommand}" HorizontalContentAlignment="Stretch" Padding="7,2" MinHeight="34" Margin="0,0,0,3">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <Grid Grid.Row="0" Margin="0,0,0,3">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="30"/><ColumnDefinition Width="30"/></Grid.ColumnDefinitions>
+                                        <Button Grid.ColumnSpan="3" Style="{StaticResource GhostButton}" Command="{Binding SelectCommand}" HorizontalContentAlignment="Stretch" Padding="7,2" MinHeight="34">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                             <Ellipse Width="7" Height="7" Fill="{StaticResource Primary}" VerticalAlignment="Center" Margin="6,0,1,0"/>
                                             <TextBlock Grid.Column="1" Text="{Binding SourceName}" Style="{StaticResource TitleText}" VerticalAlignment="Center" Margin="8,0" TextTrimming="CharacterEllipsis"/>
-                                            <TextBlock Grid.Column="2" Text="{Binding StatusText}" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
-                                        </Grid>
-                                    </Button>
+                                            <TextBlock Grid.Column="2" Text="{Binding StatusText}" Style="{StaticResource CaptionText}" VerticalAlignment="Center"
+                                                       MaxWidth="132" TextTrimming="CharacterEllipsis" ToolTip="{Binding StatusText}"/>
+                                            </Grid>
+                                        </Button>
+                                        <Button Grid.Column="3" Style="{StaticResource CardIconButton}" Command="{Binding AddSourceCommand}"
+                                                ToolTip="新增来源">
+                                            <Path Data="M 6 2 L 6 10 M 2 6 L 10 6" Stroke="{StaticResource TextSecondary}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                        </Button>
+                                        <Button Grid.Column="4" Style="{StaticResource CardIconButton}" Command="{Binding RemoveSourceCommand}"
+                                                ToolTip="删除当前来源；至少保留一个，运行中请先停止">
+                                            <Path Data="M 3 4 L 11 4 M 5 4 L 5 11 M 7 4 L 7 11 M 9 4 L 9 11 M 4 4 L 4 12 L 10 12 L 10 4 M 5 2 L 9 2"
+                                                  Stroke="{StaticResource TextSecondary}" StrokeThickness="1.3" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
+                                        </Button>
+                                    </Grid>
 
                                     <Border Grid.Row="1" Background="{StaticResource CanvasBrush}" BorderBrush="#FF1C2731" BorderThickness="1" CornerRadius="9" ClipToBounds="True" MinHeight="210">
                                         <Grid>

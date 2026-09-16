@@ -13,6 +13,7 @@ using VisionGuard.Models;
 using VisionGuard.Services;
 using VisionGuard.Utils;
 using VisionGuard.Views;
+using VisionGuard.Runtime;
 
 namespace VisionGuard.ViewModels
 {
@@ -39,17 +40,6 @@ namespace VisionGuard.ViewModels
             }
         }
 
-        public bool IsAnyMonitoring => Statuses.Any(s => s.IsMonitoring);
-        public bool IsAnyReady => Statuses.Any(s => s.IsReady);
-        public string RunningSummary => $"检测中 {Statuses.Count(s => s.IsMonitoring)} / {Sources.Count}";
-        public string ErrorSummary => !string.IsNullOrWhiteSpace(_sourceLimitWarning) ? _sourceLimitWarning
-            : !IsAnyReady && !IsAnyMonitoring ? "未就绪：请先完整配置至少一个来源"
-            : Statuses.Count(s => !string.IsNullOrWhiteSpace(s.Error)) is var count && count > 0 ? $"{count} 路异常" : "无异常";
-        public string ConnectionSummary => _server.IsConnected ? "服务器已连接" : "服务器未连接";
-        public RelayCommand StartConfiguredCommand { get; }
-        public RelayCommand StopAllCommand { get; }
-        public RelayCommand AddSourceCommand { get; }
-        public RelayCommand RemoveSourceCommand { get; }
         public string SourceLimitText => $"服务端允许最多 {_sourceLimit} 路来源";
 
         public MultiSourceViewModel(ServerPushService server, SettingsViewModel settings)
@@ -92,17 +82,18 @@ namespace VisionGuard.ViewModels
                 });
             };
 
-            StartConfiguredCommand = new RelayCommand(StartConfigured, () => Sources.Any(s => s.CanStart));
-            StopAllCommand = new RelayCommand(StopAll, () => Sources.Any(s => s.IsMonitoring));
-            AddSourceCommand = new RelayCommand(AddSource, () => Sources.Count < _sourceLimit);
-            RemoveSourceCommand = new RelayCommand(RemoveSource, () => Sources.Count > 1 && SelectedSource != null && !SelectedSource.IsMonitoring);
             RefreshSummary();
         }
 
         /// <summary>
         /// 在服务端上限内新增一个来源，与 WinForms 端一致：新来源默认未配置，等待用户设定采集目标。
         /// </summary>
-        private void AddSource()
+        internal bool CanAddSource => Sources.Count < _sourceLimit;
+
+        internal bool CanRemoveSource(SourceViewModel slot)
+            => Sources.Count > 1 && !slot.IsMonitoring;
+
+        internal void AddSource()
         {
             if (Sources.Count >= _sourceLimit) return;
             int index = 1;
@@ -116,9 +107,8 @@ namespace VisionGuard.ViewModels
         }
 
         /// <summary>删除当前来源，保底保留一个；运行中的来源必须先停止。</summary>
-        private void RemoveSource()
+        internal void RemoveSource(SourceViewModel slot)
         {
-            var slot = SelectedSource;
             if (slot == null || Sources.Count <= 1) return;
             if (slot.IsMonitoring)
             {
@@ -150,10 +140,14 @@ namespace VisionGuard.ViewModels
 
         internal void Start(SourceViewModel slot)
         {
+            // 先做不会改变运行时状态的前置检查。若模型不存在，不能先重建来源：
+            // 重建时排队的“就绪”状态会在异常提示之后送达，从而把实际错误伪装成“无响应”。
+            var modelPath = ModelManager.GetModelPath(slot.ModelKey);
+            if (!File.Exists(modelPath))
+                throw new FileNotFoundException($"模型 {slot.ModelKey} 未下载，请在“运行环境”中下载后重试。", modelPath);
+
             if (!slot.ResolveWindowForStart()) throw new InvalidOperationException(slot.StatusText);
             Reconfigure(slot);
-            var modelPath = ModelManager.GetModelPath(slot.ModelKey);
-            if (!File.Exists(modelPath)) throw new FileNotFoundException("模型未下载，请先在设置页下载。", modelPath);
             slot.MarkStarting();
             _coordinator.Start(slot.SourceId, modelPath);
             RefreshSummary();
@@ -221,17 +215,14 @@ namespace VisionGuard.ViewModels
 
         public void RefreshSummary()
         {
-            OnPropertyChanged(nameof(IsAnyMonitoring)); OnPropertyChanged(nameof(IsAnyReady));
-            OnPropertyChanged(nameof(RunningSummary)); OnPropertyChanged(nameof(ErrorSummary)); OnPropertyChanged(nameof(ConnectionSummary));
             OnPropertyChanged(nameof(SourceLimitText));
-            StartConfiguredCommand?.RaiseCanExecuteChanged(); StopAllCommand?.RaiseCanExecuteChanged();
-            AddSourceCommand?.RaiseCanExecuteChanged(); RemoveSourceCommand?.RaiseCanExecuteChanged();
+            foreach (var source in Sources) source.RaiseSourceActionStates();
         }
 
         private void ApplySourceLimit(int limit)
         {
             // 上限只是上界：不超过上限时不动用户的来源数量，超出的部分才需要裁掉。
-            _sourceLimit = Math.Clamp(limit, 1, MultiSourceMonitorCoordinator.MaximumSourceLimit);
+            _sourceLimit = Net472Compat.Clamp(limit, 1, MultiSourceMonitorCoordinator.MaximumSourceLimit);
             var overLimit = Sources.Where(source => source.Index > _sourceLimit).ToArray();
             if (overLimit.Length == 0)
             {
@@ -289,10 +280,10 @@ namespace VisionGuard.ViewModels
             SettingsStore.Set("Source.1.WindowSubRegion", SettingsStore.GetString("WindowSubRegion", string.Empty));
             SettingsStore.Set("Source.1.ScreenRegion", SettingsStore.GetString("ScreenRegion", string.Empty));
             SettingsStore.Set("Source.1.Masks", LegacyMasksToCompact(SettingsStore.GetString("MaskRegions", string.Empty)));
-            SettingsStore.Set("Source.1.ModelKey", ModelManager.ModelKeys[Math.Clamp(SettingsStore.GetInt("SelectedModelIndex", 0), 0, ModelManager.ModelKeys.Length - 1)]);
+            SettingsStore.Set("Source.1.ModelKey", ModelManager.ModelKeys[Net472Compat.Clamp(SettingsStore.GetInt("SelectedModelIndex", 0), 0, ModelManager.ModelKeys.Length - 1)]);
             SettingsStore.Set("Source.1.Targets", SettingsStore.GetString("WatchedClasses", "person"));
             SettingsStore.Set("Source.1.Threshold", SettingsStore.GetInt("ConfidenceThresholdPct", 45));
-            SettingsStore.Set("Source.1.Fps", Math.Clamp(SettingsStore.GetInt("TargetFps", 3), 1, 5));
+            SettingsStore.Set("Source.1.Fps", Net472Compat.Clamp(SettingsStore.GetInt("TargetFps", 3), 1, 5));
             SettingsStore.Set("Source.1.Cooldown", SettingsStore.GetInt("AlertCooldownSeconds", 5));
             SettingsStore.Set("Source.1.Initialized", true);
             SettingsStore.Set("Source.LegacyMigrationCompleted", true);
@@ -417,9 +408,9 @@ namespace VisionGuard.ViewModels
                 return $"{string.Join("、", selected.Take(2).Select(option => option.ChineseName))}等 {selected.Count} 类";
             }
         }
-        public int ThresholdPercent { get => _thresholdPercent; set { if (SetProperty(ref _thresholdPercent, Math.Clamp(value, 10, 95))) MarkDirty(); } }
-        public int TargetFps { get => _targetFps; set { if (SetProperty(ref _targetFps, Math.Clamp(value, 1, 5))) MarkDirty(); } }
-        public int Cooldown { get => _cooldown; set { if (SetProperty(ref _cooldown, Math.Clamp(value, 1, 300))) MarkDirty(); } }
+        public int ThresholdPercent { get => _thresholdPercent; set { if (SetProperty(ref _thresholdPercent, Net472Compat.Clamp(value, 10, 95))) MarkDirty(); } }
+        public int TargetFps { get => _targetFps; set { if (SetProperty(ref _targetFps, Net472Compat.Clamp(value, 1, 5))) MarkDirty(); } }
+        public int Cooldown { get => _cooldown; set { if (SetProperty(ref _cooldown, Net472Compat.Clamp(value, 1, 300))) MarkDirty(); } }
         public bool IsMonitoring { get => _isMonitoring; private set { if (SetProperty(ref _isMonitoring, value)) RaiseCommandStates(); } }
         public bool IsSelected { get => _isSelected; internal set => SetProperty(ref _isSelected, value); }
         public bool IsDirty { get => _isDirty; private set { if (SetProperty(ref _isDirty, value)) { OnPropertyChanged(nameof(CanStart)); RaiseCommandStates(); } } }
@@ -450,6 +441,8 @@ namespace VisionGuard.ViewModels
         public RelayCommand CancelCommand { get; }
         public RelayCommand StartCommand { get; }
         public RelayCommand StopCommand { get; }
+        public RelayCommand AddSourceCommand { get; }
+        public RelayCommand RemoveSourceCommand { get; }
 
         internal SourceViewModel(int index, MultiSourceViewModel owner)
         {
@@ -466,7 +459,15 @@ namespace VisionGuard.ViewModels
             CancelCommand = new RelayCommand(CancelDraft, () => CanEdit);
             StartCommand = new RelayCommand(Start, () => CanStart);
             StopCommand = new RelayCommand(() => _owner.Stop(this), () => IsMonitoring);
+            AddSourceCommand = new RelayCommand(_owner.AddSource, () => _owner.CanAddSource);
+            RemoveSourceCommand = new RelayCommand(() => _owner.RemoveSource(this), () => _owner.CanRemoveSource(this));
             StatusText = IsReady ? "就绪" : (!string.IsNullOrWhiteSpace(_targetWindowTitle) ? (string.IsNullOrWhiteSpace(_windowResolutionError) ? "窗口未找到" : _windowResolutionError) : "未配置");
+        }
+
+        internal void RaiseSourceActionStates()
+        {
+            AddSourceCommand.RaiseCanExecuteChanged();
+            RemoveSourceCommand.RaiseCanExecuteChanged();
         }
 
         private string Prefix => $"Source.{_index}.";
@@ -476,12 +477,13 @@ namespace VisionGuard.ViewModels
             _sourceName = SettingsStore.GetString(Prefix + "Name", $"来源 {_index}");
             // 早期的默认名是“信号 N”，统一改成“来源 N”；用户自己起过的名字不动。
             if (_sourceName != null && _sourceName.Trim() == $"信号 {_index}") _sourceName = $"来源 {_index}";
-            _modelKey = SettingsStore.GetString(Prefix + "ModelKey", "yolo26n_320");
-            if (!ModelManager.ModelKeys.Contains(_modelKey)) _modelKey = "yolo26n_320";
+            _modelKey = SettingsStore.GetString(Prefix + "ModelKey", ModelManager.DefaultModelKey);
+            // 旧配置里的模型键可能属于另一档位（例如 Win7 上残留的 yolo26*），回落到本档位默认值。
+            if (!ModelManager.IsSupported(_modelKey)) _modelKey = ModelManager.DefaultModelKey;
             _targets = NormalizeTargets(SettingsStore.GetString(Prefix + "Targets", "person"));
-            _thresholdPercent = Math.Clamp(SettingsStore.GetInt(Prefix + "Threshold", 45), 10, 95);
-            _targetFps = Math.Clamp(SettingsStore.GetInt(Prefix + "Fps", 3), 1, 5);
-            _cooldown = Math.Clamp(SettingsStore.GetInt(Prefix + "Cooldown", 5), 1, 300);
+            _thresholdPercent = Net472Compat.Clamp(SettingsStore.GetInt(Prefix + "Threshold", 45), 10, 95);
+            _targetFps = Net472Compat.Clamp(SettingsStore.GetInt(Prefix + "Fps", 3), 1, 5);
+            _cooldown = Net472Compat.Clamp(SettingsStore.GetInt(Prefix + "Cooldown", 5), 1, 300);
             _captureMode = Enum.TryParse<CaptureMode>(SettingsStore.GetString(Prefix + "CaptureMode", CaptureMode.ScreenRegion.ToString()), out var mode) && mode == CaptureMode.WindowHandle ? CaptureMode.WindowHandle : CaptureMode.ScreenRegion;
             _targetWindowTitle = SettingsStore.GetString(Prefix + "TargetWindowTitle", string.Empty);
             _targetWindowClassName = SettingsStore.GetString(Prefix + "TargetWindowClassName", string.Empty);
@@ -504,7 +506,9 @@ namespace VisionGuard.ViewModels
         private void SyncTargetOptions()
         {
             if (TargetOptions.Count == 0) return;
-            var selectedNames = _targets.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            // net472 无 StringSplitOptions.TrimEntries，显式 Trim。
+            var selectedNames = _targets.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(item => item.Trim())
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             _syncingTargetOptions = true;
             try
@@ -526,14 +530,15 @@ namespace VisionGuard.ViewModels
                 _syncingTargetOptions = false;
                 return;
             }
-            Targets = string.Join(',', selected.Select(option => option.EnglishName));
+            Targets = string.Join(",", selected.Select(option => option.EnglishName));
         }
 
         private static string NormalizeTargets(string? value)
         {
-            var targets = (value ?? string.Empty).Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            var targets = (value ?? string.Empty).Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(item => item.Trim())
                 .Distinct(StringComparer.OrdinalIgnoreCase);
-            var normalized = string.Join(',', targets);
+            var normalized = string.Join(",", targets);
             return string.IsNullOrWhiteSpace(normalized) ? "person" : normalized;
         }
 
@@ -545,7 +550,7 @@ namespace VisionGuard.ViewModels
                 TargetWindowClassName = _targetWindowClassName, TargetWindowProcessName = _targetWindowProcessName,
                 TargetWindowHandle = _targetWindow?.Handle ?? IntPtr.Zero, WindowSubRegion = _windowSubRegion,
                 ConfidenceThreshold = ThresholdPercent / 100f, AlertCooldownSeconds = Cooldown, TargetFps = TargetFps,
-                WatchedClasses = Targets.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.OrdinalIgnoreCase),
+                WatchedClasses = Targets.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(item => item.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase),
                 MaskRegions = new List<RectangleF>(MaskRegions), SaveAlertSnapshot = true,
             };
             if (config.WatchedClasses.Count == 0) config.WatchedClasses.Add("person");
@@ -758,7 +763,7 @@ namespace VisionGuard.ViewModels
         private static List<RectangleF> ParseMasks(string value)
         {
             var result = new List<RectangleF>();
-            foreach (var item in value.Split(';', StringSplitOptions.RemoveEmptyEntries))
+            foreach (var item in value.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
             {
                 var p = item.Split(',');
                 if (p.Length == 4 && float.TryParse(p[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var x) && float.TryParse(p[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var y)
