@@ -121,7 +121,6 @@ namespace VisionGuard.Resident
                 var ws = new MinimalWebSocketClient(new Uri(endpoint));
                 object sendLock = new object();
                 bool authSucceeded = false;
-                bool authSettled = false;
                 string failure = "connection closed";
                 Thread heartbeat = null;
                 Action<Dictionary<string, object>> send = message =>
@@ -146,7 +145,6 @@ namespace VisionGuard.Resident
                         {
                             authSucceeded = GetBool(message, "success");
                             failure = GetString(message, "reason", "authentication failed");
-                            authSettled = true;
                             SafeSet(authenticated);
                         }
                         else if (type == "command") ThreadPool.QueueUserWorkItem(delegate { HandleCommand(message, config, send); });
