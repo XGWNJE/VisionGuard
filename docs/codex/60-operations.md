@@ -12,7 +12,7 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scri
 
 可用目标为 `Server`、`WinForms`、`WPF`、`WindowsResident`、`AndroidDetector`、`AndroidReceiver`，也可使用组合目标 `Windows`、`Android`。脚本只编译并检查产物，不打包、不上传、不部署、不改版本。
 
-Windows 驻留程序的生命周期命令以源码为准：`open-wpf`、`open-winforms`、`close-wpf`、`close-winforms`。
+Windows 驻留程序的生命周期命令以源码为准：`open-detector`、`close-detector`（V10 决策 28：Windows 只剩一个检测端，命令不再按 WPF/WinForms 区分；驻留由检测端拉起并自行存活）。
 
 构建结果必须按组件分别报告，并在完成后检查：
 

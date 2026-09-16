@@ -29,7 +29,7 @@ VisionGuard 当前是由视觉检测端、Server、Android 接收端和 Windows 
 | 规范名称 | 路径 | 当前状态 | 自动验证边界 |
 |---|---|---|---|
 | Windows WinForms 检测端（WinForms Visual Detector） | `detector/windows-winforms/` | 主体实现；Win7 兼容线；多来源与逐来源配置已对齐功能基线 | Release 编译与多来源窗口推理可单独验证；完整告警链、长时稳定性和 Win7 真实环境待补 |
-| Windows WPF 检测端（WPF Visual Detector） | `detector/windows-wpf/` | 多来源主体实现；来源数量按 Server 协商上限生成 | 按配置来源数量取证的窗口人员推理自动验证（四路为回归基线）；动态视频、完整报警链和 UI 视觉待验收 |
+| Windows WPF 检测端（WPF Visual Detector） | `detector/windows-wpf/` | 多来源主体实现；来源数量按 Server 协商上限生成；**2026-09-16 起目标框架为 net472（V10 批次①完成，双档位与驻留单次启动待实施）** | 按配置来源数量取证的窗口人员推理自动验证（四路为回归基线）；net472 Release 编译与真实窗口启动已取证；动态视频、完整报警链和 UI 视觉待验收 |
 | Windows 驻留程序（Windows Resident） | `detector/windows-resident/` | .NET Framework 4.7.2 x64 后台进程；独立 WS 身份、单实例和进程握手已接入 | 框架/API 已对齐 Win7 SP1 x64；Win7 实机、重启、崩溃、完整远控链路待验收 |
 | Android 检测端（Android Visual Detector） | `detector/android/` | 主体实现；**当前暂缓**（[路线图决策 19](15-product-roadmap.md)） | 单测、构建和历史启动证据可分别报告；当前协议下缺少 `channel` 无法认证、且没有来源维度；恢复实施时先统一三端语义 |
 | Android 接收端（Android Receiver） | `receiver/android/` | 主体实现；设备/来源 UI 已接入 | JVM 单测、构建和历史启动证据可分别报告；完整报警链待补 |
@@ -74,7 +74,7 @@ Server 当前实现连接认证、心跳、告警广播、截图/更新路由和
 - `VERSION` 是唯一权威版本源，构建、修复和提交不得自动 bump。
 - `server/` 与 Android 端协议强耦合；协议变化必须联动源码、测试和专题文档。
 - 当前心跳实现为检测端 3 秒、接收端 30 秒、Server 幽灵阈值 45 秒；这只代表在线状态判定，不代表离线报警已经实现。
-- 当前 Win7 兼容实现只属于 Windows WinForms 检测端；Windows 驻留程序当前尚未兼容 Win7，但路线图已将 Win7 SP1 x64 兼容列为后续交付硬门槛；WPF、Android、Server 和未来硬件不承担 Win7 兼容义务。
+- 当前 Win7 兼容实现属于 Windows WPF 检测端的 legacy 档位（V10，见[路线图 8.13](15-product-roadmap.md)）：同一份 WPF 源码在 net472 上构建，按运行环境选择推理档位——Win7 用 CPU + ONNX Runtime 原生 1.1.0 + YOLOv5，Windows 10 及以上用 DirectML + 1.19 + YOLO26。WinForms 检测端在 V10 验收通过后退役；Windows 驻留程序的目标框架同为 .NET Framework 4.7.2 x64；Android、Server 和未来硬件不承担 Win7 兼容义务。
 - 所有公网业务数据统一通过 Server 中继；路线图不再规划 P2P、ICE、STUN 或 TURN。
 - 允许可管理的误报，漏报风险是检测效果与故障处置的最高优先级。
 

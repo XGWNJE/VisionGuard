@@ -31,7 +31,7 @@ Windows 两个检测端使用 WS 角色 `windows`；驻留程序使用独立的 
 - 设备级命令（无 `targetSourceId`）作用于全部来源，等价于界面上的“启动已配置 / 全部停止”；不会静默只操作第一路。运行中的来源拒绝改配置，必须先停止该来源。
 - 推理后端固定 CPU，不规划硬件加速；本机容量档位由 `WinForms.CpuCapacity` 配置，只用于性能提示，不阻止启动、不自动减路或降帧。
 - WPF 界面由 .NET 9/WPF 的 PerMonitorV2 支持跟随当前显示器缩放；屏幕区域在选择时把 WPF DIP 坐标换算为物理像素。窗口捕获固定使用目标窗口自身的客户区重绘平面：先按 `GetClientRect` 建候选位图并铺哨兵色，`PrintWindow` 使用 `PW_CLIENTONLY | PW_RENDERFULLCONTENT`，随后按实际被目标窗口覆盖的范围规范化；窗口子区域持久化为规范化帧内像素。该几何不切换调用方或目标进程的 DPI 感知，避免把系统虚拟化后的候选尺寸与未拉伸的窗口自绘内容混用。
-- 预览区为按来源数量自适应的网格，每格显示来源名、状态、实际 FPS、推理耗时、最后报警、实际后端以及错误/提示行；右侧标签页为“当前来源 / 运行环境 / 连接”，逐来源检测参数与监控目标在“当前来源”，容量与模型在“运行环境”。
+- 预览区为按来源数量自适应的网格，每格显示来源名、状态、实际 FPS、推理耗时、最后报警、实际后端以及错误/提示行，并在卡片标题栏提供“新增来源 / 删除当前来源”图标以及逐路启动、停止；WPF 不再重复展示顶部整机摘要或本机全局启停，服务器连接状态只在“连接”页表达。右侧标签页为“当前来源 / 运行环境 / 连接”，逐来源检测参数与监控目标在“当前来源”，容量与模型在“运行环境”。WinForms 保持原生控件和 Win7 兼容，但采用与 WPF 相同的左侧监控矩阵、右侧检查器信息架构；右侧使用分区标题和等宽双列操作，字段高 32px、普通按钮高 36px、主要启动按钮高 40px，避免各页控件规格漂移。
 - 采集目标沿用窗口与屏幕区域；窗口、屏幕选区与窗口子区域的宽高必须分别严格大于 100 像素，窗口枚举阶段直接过滤不达标候选，确认、启动与实际截图层继续做防御式校验。窗口帧只包含客户区，不含标题栏和边框；旧版按外框帧保存的子区域需要重新选择，越界值明确失败。`PrintWindow` 返回全黑画面时仍抛出 `CaptureBlackFrameException`，作为对应来源的可见故障上报。
 - 兼容边界为 Win7 SP1 x64；入口强制显式 TLS 1.2。`LegacyTlsTunnelService` 只在用户显式启用时使用，stunnel 不随发行输出。
 - 本地设置兼容 `settings.ini`；模型从 Server 按需下载到 `%APPDATA%\VisionGuard\models\`，启动时迁移旧 `Assets/` 模型。
@@ -54,15 +54,16 @@ Windows 两个检测端使用 WS 角色 `windows`；驻留程序使用独立的 
 
 ## Windows 驻留程序当前实现
 
-- 使用独立 `windows-resident` WS 身份与 Server 通信；只接受 `open-wpf`、`open-winforms`、`close-wpf`、`close-winforms` 四个固定生命周期命令。
-- 驻留程序目标框架为 .NET Framework 4.7.2 x64，使用 `websocket-sharp` 与 `JavaScriptSerializer`，不要求安装 .NET 9；Release 目录必须同时包含主 EXE、配置文件和 `websocket-sharp.dll`。
+- 使用独立 `windows-resident` WS 身份与 Server 通信；只接受 `open-detector`、`close-detector` 两个固定生命周期命令（V10 决策 28：Windows 只剩一个检测端）。
+- **启动方向已被 V10 反转**：驻留不再负责打开检测端，而是由检测端在启动时用 `UseShellExecute = true` 拉起（传入自身写出的 `%LOCALAPPDATA%\VisionGuard\resident-config.json`），使驻留脱离父进程生命周期；驻留自行登记登录自启。检测端正常退出或崩溃后驻留继续运行，因此仍能接受 `open-detector` 远程重新打开。
+- 驻留程序目标框架为 .NET Framework 4.7.2 x64，JSON 使用 `JavaScriptSerializer`，WebSocket 使用与检测端同一份自研 `Net/MinimalWebSocketClient.cs`（源码链接复用，显式 TLS 1.2）；Release 目录必须同时包含主 EXE 与配置文件。**不再依赖 `websocket-sharp`**——该库以 `SslProtocols.Default` 协商 TLS，在 Windows 7 上退化为 TLS 1.0 会被服务端拒绝（检测端已在 Win7 实测确认该根因）。
 - 驻留自身使用当前用户会话命名互斥体防止重复启动；连接认证成功后才发送组件心跳，远控完成回执携带 `requestId`、`phase=completed` 与目标设备，供 Server 严格关联请求。
 - Win7 支持基线为 Windows 7 SP1 x64 + .NET Framework 4.7.2 + TLS 1.2 系统更新；代码与产物满足该基线不替代 Win7 实机/WSS 证书链验收。
-- 与两个主程序通过当前用户会话事件完成启动握手和正常退出请求；远程打开只启动主程序，不自动开始监控。
-- 共用当前用户会话命名互斥体，阻止手动启动和远程启动产生第二实例。
-- 登录启动仅由 `--enable-startup <config>` / `--disable-startup` 显式切换；进程级握手可自动验证，登录重启、崩溃恢复、网络中断和完整远控 WSS 链路仍待补。
+- 与检测端通过当前用户会话事件完成启动握手和正常退出请求（`Local\VisionGuard.Detector.Running` / `.Shutdown`）；远程打开只启动检测端，不自动开始监控。
+- 检测端与驻留共用同一应用标识 `Detector`，阻止手动启动和远程启动产生第二实例。
+- 登录启动默认由驻留在被检测端拉起时自动登记（`--enable-startup <config>` / `--disable-startup` 仍可显式切换）；进程级握手可自动验证，登录重启、崩溃恢复、网络中断和完整远控 WSS 链路仍待补。
 
-驻留程序已在框架层迁移到 .NET Framework 4.7.2 x64，Release 产物不再依赖 .NET 9，达到 Win7 SP1 x64 的技术兼容条件；WPF 检测端仍基于 .NET 9，不承担 Win7 兼容义务。Win7 实机上的安装/启动、WSS/TLS 证书链、进程握手、远程开关、休眠/网络恢复和退出清理仍须单独验收，框架与产物满足基线不替代实机结论。
+驻留与检测端均已迁移到 .NET Framework 4.7.2 x64，Release 产物不再依赖 .NET 9，达到 Win7 SP1 x64 的技术兼容条件。Win7 实机上的安装/启动、WSS/TLS 证书链、进程握手、远程开关、休眠/网络恢复和退出清理仍须单独验收，框架与产物满足基线不替代实机结论。
 
 ## 不应夸大的结论
 
