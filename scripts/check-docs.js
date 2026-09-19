@@ -434,6 +434,19 @@ function checkDocumentResponsibilities(readme, index, codexGuide, agents, roadma
 }
 
 function checkEvidencePaths(root, documents, errors) {
+  // artifacts/ 是本地取证产物，被 .gitignore 忽略，因此干净 checkout（CI）里根本不存在。
+  // 在没有它的环境里逐条校验「证据文件存在」只会得到一屏假失败（2026-09-20 实测 59 条，
+  // 从 09-16 起每个 push 的 Documentation audit 都是红的），而且无法通过补文件来修——
+  // 把取证产物入库既不合适也没有意义。
+  //
+  // 所以：取证机器（存在 artifacts/）仍然全量校验；干净 checkout 明确整类跳过并打印原因，
+  // 不静默放行，也不伪造占位文件。真正的证据审查仍在取证机器与发布 preflight 上执行。
+  const artifactsRoot = path.join(root, 'artifacts');
+  if (!fs.existsSync(artifactsRoot)) {
+    console.log('[evidence] artifacts/ 不在本次 checkout 中，跳过证据文件存在性校验；请在取证机器上运行以校验这些路径。');
+    return;
+  }
+
   for (const [relativePath, content] of documents) {
     for (const match of content.matchAll(/`(artifacts\/[^`]+)`/g)) {
       const evidencePath = match[1];
