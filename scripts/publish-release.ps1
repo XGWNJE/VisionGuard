@@ -454,7 +454,33 @@ function New-ZipPackage {
         throw "Package source is empty after excludes: $SourceDir"
     }
 
-    Compress-Archive -Path $items.FullName -DestinationPath $Destination -Force
+    # 用 ZipArchive 手工写条目，而不是 Compress-Archive：Windows PowerShell 5.1 的
+    # Compress-Archive 会把条目名写成反斜杠（native\modern\...），不符合 ZIP 规范
+    # （APPNOTE 4.4.17.1 要求用正斜杠），发布校验与第三方解压工具就各按各的理解处理。
+    # 客户端（net472 ZipFile.ExtractToDirectory）实测能解出正确结构，但产物本身必须规范化：
+    # 否则 Assert-ZipIsClean 的 native/modern 校验会把一个完好的包判成「缺少原生库」而中止发布。
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [System.IO.Compression.ZipFile]::Open($Destination, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($item in $items) {
+            $root = Split-Path -Parent $item.FullName
+            if ([System.IO.Directory]::Exists($item.FullName)) {
+                foreach ($file in [System.IO.Directory]::EnumerateFiles($item.FullName, '*', [System.IO.SearchOption]::AllDirectories)) {
+                    $relative = $file.Substring($root.Length + 1).Replace('\', '/')
+                    [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                        $archive, $file, $relative, [System.IO.Compression.CompressionLevel]::Optimal)
+                }
+            }
+            else {
+                [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                    $archive, $item.FullName, $item.Name, [System.IO.Compression.CompressionLevel]::Optimal)
+            }
+        }
+    }
+    finally {
+        $archive.Dispose()
+    }
 }
 
 function Assert-ZipIsClean {
@@ -682,6 +708,12 @@ function Get-GitHubOnlyArtifacts {
         }
 
         $entry = $metadata.PSObject.Properties[$definition.Platform].Value
+        # 分端上线：owner 显式标记 heldBack 的平台本次没有产出新版本，跳过而不是报错。
+        # 它必须继续指向上一个真实存在的文件，否则客户端会收到 404 的更新提示。
+        if (($entry.PSObject.Properties.Name -contains 'heldBack') -and ($entry.heldBack -eq $true)) {
+            Write-Host "skip $($definition.Platform): held back in this release (stays at $($entry.version))"
+            continue
+        }
         if ($entry.version -ne $Version) {
             throw "$($definition.Platform) metadata version mismatch: $($entry.version) != $Version"
         }

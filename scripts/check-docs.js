@@ -133,6 +133,15 @@ function checkVersionSources(root, version, errors) {
       }
       if (relativePath.endsWith('releases.json')) {
         for (const [platform, release] of Object.entries(data)) {
+          // 分端上线：显式标记 heldBack 的平台本次不发布，允许它停留在上一个已发布版本
+          // （必须继续指向真实存在的文件，否则客户端会拿到 404 的更新提示）。
+          // 标记只能写在该平台条目**内部**：顶层加键会被当成一个新平台，从而破坏下面的对齐检查与 server 的解析。
+          if (release.heldBack === true) {
+            if (!release.version || !release.url) {
+              errors.push(`[version] ${relativePath} entry ${platform} is held back but incomplete`);
+            }
+            continue;
+          }
           if (release.version !== version || !String(release.url).includes(`-v${version}.`)) {
             errors.push(`[version] ${relativePath} entry ${platform} is not aligned with ${version}`);
           }
