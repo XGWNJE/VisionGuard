@@ -9,7 +9,7 @@ package com.xgwnje.visionguard_android
 object AppConstants {
     private const val DEFAULT_SERVER_URL = "https://visionguard.xgwnje.cn"
     /** 应用版本号（与根目录 VERSION 文件保持一致） */
-    const val VERSION = "4.4.4"
+    const val VERSION = "4.5.0"
 
     /** 服务器地址（不含末尾斜杠） */
     val SERVER_URL: String = BuildConfig.SERVER_URL.ifBlank { DEFAULT_SERVER_URL }

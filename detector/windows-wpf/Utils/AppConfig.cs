@@ -3,7 +3,7 @@ namespace VisionGuard.Utils
     /// <summary>应用级常量配置。</summary>
     internal static class AppConfig
     {
-        public const string Version = "4.4.4";
+        public const string Version = "4.5.0";
         public static readonly string ServerUrl =
             System.Environment.GetEnvironmentVariable("VISIONGUARD_SERVER_URL") ?? "https://visionguard.xgwnje.cn";
         public static readonly string Channel =
