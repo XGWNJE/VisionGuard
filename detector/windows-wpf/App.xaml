@@ -1,7 +1,12 @@
 <Application x:Class="VisionGuard.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             StartupUri="Views/MainWindow.xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!--
+        这里刻意不写 StartupUri：StartupUri 的主窗口创建发生在 OnStartup 返回之后，
+        “已有实例在运行”这条分支没法取消它，结果应用已经进入关闭状态却仍去显示窗口，
+        WPF 会抛 “Cannot set Visibility to Visible ... while a Window is closing”。
+        主窗口改在 App.OnStartup 里显式创建（也顺便让启动顺序可控）。
+    -->
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
