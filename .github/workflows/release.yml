@@ -29,17 +29,27 @@ jobs:
           set -euo pipefail
           test "$(tr -d '\r\n' < VERSION)" = "$VERSION"
           mkdir release-assets
+          published=""
+          skipped=""
           # 这个列表必须与 scripts/publish-release.ps1 的 profilePackages 一致：
           # Windows 检测端按推理档位分成 wpf（modern）与 wpf-legacy（legacy）两个包。
-          # 服务端的 resolveReleaseKey 在档位包缺失时会回落到 wpf，因此这里额外校验文件名前缀，
-          # 避免把 modern 包当成 legacy 包发出去。
+          #
+          # 分端上线：某个平台可能没有随本版发布（releases.json 里标了 heldBack、版本停留在上一版）。
+          # 这时只跳过并给出 warning，不再整轮失败——否则「只发部分端」的发布永远走不了这个入口。
+          # 判据用服务端下发的 actualVersion 是否等于输入版本：heldBack 平台必然不相等。
           for platform in wpf wpf-legacy android-detector android-receiver; do
             metadata="$(curl --fail --silent --show-error "$BASE_URL/api/update?platform=$platform&version=0.0.0")"
             actual_version="$(jq -r '.latestVersion' <<<"$metadata")"
-            test "$actual_version" = "$VERSION"
+            if [ "$actual_version" != "$VERSION" ]; then
+              echo "::warning::$platform is still at $actual_version while releasing $VERSION; treating it as held back and skipping it."
+              skipped="$skipped $platform($actual_version)"
+              continue
+            fi
             relative_url="$(jq -r '.downloadUrl' <<<"$metadata")"
             expected_size="$(jq -r '.size' <<<"$metadata")"
             filename="$(basename "$relative_url")"
+            # 服务端的 resolveReleaseKey 在档位包缺失时会回落到 wpf，因此这里额外校验文件名前缀，
+            # 避免把 modern 包当成 legacy 包发出去。
             if [ "$platform" = "wpf-legacy" ]; then
               case "$filename" in
                 VisionGuard-WPF-Legacy-*) ;;
@@ -50,7 +60,25 @@ jobs:
             curl --fail --location --silent --show-error "$BASE_URL$relative_url" --output "release-assets/$filename"
             test "$(stat -c%s "release-assets/$filename")" = "$expected_size"
             sha256sum "release-assets/$filename" | tee -a release-assets/SHA256SUMS.txt
+            published="$published $platform"
           done
+          # 一个平台都没对齐，说明输入的版本在服务端不存在（版本号打错或服务端上传还没完成），必须失败。
+          if [ -z "$published" ]; then
+            echo "::error::no platform is aligned with $VERSION; check the version and whether the server upload finished." >&2
+            exit 1
+          fi
+          {
+            echo "### Release v$VERSION"
+            echo ""
+            echo "- published:$published"
+            if [ -n "$skipped" ]; then
+              echo "- held back:$skipped"
+            else
+              echo "- held back: none"
+            fi
+          } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+          echo "published:$published"
+          echo "held back:${skipped:- none}"
 
       - name: Create GitHub Release
         env:

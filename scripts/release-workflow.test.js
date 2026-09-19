@@ -278,3 +278,29 @@ test('release preflight refuses to package Windows without every model the detec
     assert.match(script, new RegExp(`'${key}'`), `release preflight does not require ${key}`);
   }
 });
+
+test('release workflow skips held-back platforms but still fails an all-mismatch run', () => {
+  const workflow = read('.github/workflows/release.yml');
+
+  // 分端上线：服务端版本与输入版本不一致的平台跳过并给 warning，不再因为「少一个平台」整轮失败
+  // （releases.json 里标了 heldBack 的平台就属于这种）。
+  assert.match(workflow, /if \[ "\$actual_version" != "\$VERSION" \]/, 'the held-back branch is missing');
+  assert.match(workflow, /::warning::\$platform is still at \$actual_version/, 'the held-back warning is missing');
+
+  // 但一个平台都没对齐时必须失败：版本号打错或服务端上传未完成时，不能静默发一个空 Release。
+  assert.match(workflow, /if \[ -z "\$published" \]/, 'the all-mismatch guard is missing');
+  assert.match(workflow, /no platform is aligned with \$VERSION/, 'the all-mismatch error text is missing');
+
+  // legacy 文件名前缀校验不能因为跳过逻辑被删掉：服务端档位包缺失时 API 会回落到 modern 包。
+  assert.match(workflow, /VisionGuard-WPF-Legacy-\*/, 'the legacy filename guard is missing');
+});
+
+test('publish-release.ps1 skips held-back platforms when collecting GitHub assets', () => {
+  const script = read('scripts/publish-release.ps1');
+  assert.match(script, /heldBack/, 'the heldBack marker is not honoured');
+  assert.match(
+    script,
+    /skip \$\(\$definition\.Platform\): held back in this release/,
+    'the held-back skip message is missing'
+  );
+});
