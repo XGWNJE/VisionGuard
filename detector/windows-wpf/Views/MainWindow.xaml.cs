@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Drawing;
 using System.Windows;
+using System.Windows.Controls.Primitives;
 using System.Windows.Forms;
 using VisionGuard.Utils;
 
@@ -63,6 +64,16 @@ namespace VisionGuard.Views
         private void ExitApp()
         {
             Close();
+        }
+
+        /// <summary>
+        /// 分隔条拖完立即落盘，并把卡片列恢复成自适应：只让「检查区宽度」成为持久化的事实，
+        /// 卡片区永远占满剩余空间（否则拖动会把卡片列也变成固定像素，窗口放大时它不跟着变）。
+        /// </summary>
+        private void CardsSplitter_OnDragCompleted(object sender, DragCompletedEventArgs e)
+        {
+            CardsColumn.Width = new GridLength(1, GridUnitType.Star);
+            VisionGuard.Utils.SettingsStore.Save();
         }
 
         private void DisposeResourcesOnce()

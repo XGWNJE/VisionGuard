@@ -14,6 +14,10 @@ if (args.Length is < 3 or > 4)
     return 2;
 }
 
+// 与生产程序同一路径：先按档位预加载原生 ONNX Runtime（绝对路径），再建任何推理会话。
+// 不做这一步时 DllImport 会按默认搜索顺序命中别处的同名库，与托管程序集不同代时直接进程终止。
+NativeLibrarySelector.Initialize();
+
 var handleValues = File.ReadAllLines(Path.GetFullPath(args[0]))
     .Where(x => !string.IsNullOrWhiteSpace(x))
     .Select(x => long.TryParse(x.Trim(), out var value) && value != 0

@@ -34,8 +34,10 @@
 
 ```powershell
 node scripts/check-docs.js
-node --test scripts/check-docs.test.js scripts/release-workflow.test.js
+node --test scripts/check-docs.test.js scripts/release-workflow.test.js scripts/check-powershell-encoding.test.js
 ```
+
+PowerShell 脚本含非 ASCII 时必须保存为 UTF-8 with BOM：Windows PowerShell 5.1 对无 BOM 文件按系统 ANSI 解码，中文多字节序列里的 `0x5C` 会被当成续行/转义，整份脚本解析失败（实测发布脚本 20 处语法错误）。已有测试固化该约束。
 
 项目级 Skill 只保留三个有明确脚本或授权边界的流程；操作细节见[运维文档](docs/codex/60-operations.md)：
 

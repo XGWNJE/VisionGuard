@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet("All", "Server", "Windows", "WPF", "WindowsResident", "Android", "AndroidDetector", "AndroidReceiver")]
     [string]$Target = "All"
 )
@@ -89,6 +89,16 @@ try {
             -Script { npm --prefix server run build }
     }
 
+    if (Should-Run @("Windows", "WindowsResident", "WPF")) {
+        # 驻留必须先于检测端构建：检测端构建会把驻留可执行文件复制进自己的输出目录，
+        # 两者是配套软件，缺驻留的检测端产物无法提供「远程重新打开检测端」。
+        Invoke-Step `
+            -Name "Windows Resident" `
+            -CommandText "dotnet build detector\windows-resident\VisionGuard.Resident.csproj -c Release" `
+            -Artifact "detector/windows-resident/bin/Release/net472/VisionGuard.Resident.exe" `
+            -Script { dotnet build "detector\windows-resident\VisionGuard.Resident.csproj" -c Release }
+    }
+
     if (Should-Run @("Windows", "WPF")) {
         # V10：Windows 检测端有两套推理档位，都从同一份源码构建，输出到 bin\x64\<档位>\。
         #   modern（默认）= Windows 10 及以上：托管 ORT 1.19.0 + 原生 1.19.0 + DirectML，模型 YOLO26。
@@ -104,14 +114,6 @@ try {
             -CommandText "dotnet build detector\windows-wpf\VisionGuard.csproj -c Release -p:OrtProfile=legacy" `
             -Artifact "detector/windows-wpf/bin/x64/legacy/VisionGuard.exe" `
             -Script { dotnet build "detector\windows-wpf\VisionGuard.csproj" -c Release -p:OrtProfile=legacy }
-    }
-
-    if (Should-Run @("Windows", "WindowsResident", "WPF")) {
-        Invoke-Step `
-            -Name "Windows Resident" `
-            -CommandText "dotnet build detector\windows-resident\VisionGuard.Resident.csproj -c Release" `
-            -Artifact "detector/windows-resident/bin/Release/net472/VisionGuard.Resident.exe" `
-            -Script { dotnet build "detector\windows-resident\VisionGuard.Resident.csproj" -c Release }
     }
 
     if (Should-Run @("Android", "AndroidDetector")) {

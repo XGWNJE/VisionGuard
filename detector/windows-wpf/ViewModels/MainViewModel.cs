@@ -12,10 +12,13 @@ namespace VisionGuard.ViewModels
     {
         // 子 ViewModel（共享服务）
         public MultiSourceViewModel MultiSourceVm { get; }
-        public SettingsViewModel SettingsVm { get; }
-        public ServerViewModel ServerVm { get; }
+
+        /// <summary>「全局设定」页（原「运行环境」+「连接」两页合一）。</summary>
+        public GlobalSettingsViewModel GlobalSettingsVm { get; }
 
         private readonly ServerPushService _serverPushService;
+        private readonly SettingsViewModel _settingsVm;
+        private readonly ServerViewModel _serverVm;
         private readonly System.Windows.Threading.DispatcherTimer _heartbeatTimer;
 
         public MainViewModel()
@@ -27,10 +30,11 @@ namespace VisionGuard.ViewModels
             _serverPushService = new ServerPushService();
 
             // 子 ViewModel（注入共享服务）
-            SettingsVm = new SettingsViewModel();
-            SettingsVm.Load();
-            MultiSourceVm = new MultiSourceViewModel(_serverPushService, SettingsVm);
-            ServerVm = new ServerViewModel(_serverPushService);
+            _settingsVm = new SettingsViewModel(null, null, () => MultiSourceVm.RefreshModelAvailability());
+            _settingsVm.Load();
+            MultiSourceVm = new MultiSourceViewModel(_serverPushService, _settingsVm);
+            _serverVm = new ServerViewModel(_serverPushService);
+            GlobalSettingsVm = new GlobalSettingsViewModel(_settingsVm, _serverVm);
 
             // ── 远控命令路由 ──────────────────────────────────────────
             _serverPushService.CommandReceived += (s, cmd) =>
@@ -55,7 +59,10 @@ namespace VisionGuard.ViewModels
             };
 
             // 从磁盘恢复设置
-            ServerVm.Load();
+            _serverVm.Load();
+            // 驻留状态只在界面上可见：这里只做只读刷新，拉起仍由 Program.Main 的 EnsureStarted 负责，
+            // 避免第二实例或测试进程重复操控驻留进程。
+            _serverVm.RefreshResidentStatus(allowLaunch: false);
 
             // 属性变更自动保存（防抖 500ms，避免 Slider 拖动频繁写盘）
             var saveTimer = new System.Windows.Threading.DispatcherTimer
@@ -65,9 +72,9 @@ namespace VisionGuard.ViewModels
             saveTimer.Tick += (s, e) =>
             {
                 saveTimer.Stop();
-                SettingsVm.Save();
+                _settingsVm.Save();
                 MultiSourceVm.Save();
-                ServerVm.Save();
+                _serverVm.Save();
             };
 
             void QueueSave()
@@ -76,15 +83,15 @@ namespace VisionGuard.ViewModels
                 saveTimer.Start();
             }
 
-            SettingsVm.PropertyChanged += (s, e) => QueueSave();
-            ServerVm.PropertyChanged += (s, e) => QueueSave();
+            _settingsVm.PropertyChanged += (s, e) => QueueSave();
+            _serverVm.PropertyChanged += (s, e) => QueueSave();
 
             // 初始配置服务器连接
             _serverPushService.Configure(
                 AppConfig.ServerUrl,
                 AppConfig.ApiKey,
                 AppConfig.DeviceId,
-                ServerVm.DeviceName);
+                _serverVm.DeviceName);
 
             // 心跳参数每 3 秒刷新：确保 isMonitoring/cooldown/confidence/targets 实时同步到接收端
             _heartbeatTimer = new System.Windows.Threading.DispatcherTimer
@@ -102,9 +109,9 @@ namespace VisionGuard.ViewModels
             _heartbeatTimer?.Stop();
 
             // 强制保存一次当前设置
-            SettingsVm.Save();
+            _settingsVm.Save();
             MultiSourceVm.Save();
-            ServerVm.Save();
+            _serverVm.Save();
 
             // 停止监控（会释放 ONNX 引擎）
             MultiSourceVm.Dispose();

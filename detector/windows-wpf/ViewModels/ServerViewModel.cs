@@ -50,6 +50,28 @@ namespace VisionGuard.ViewModels
 
         public string UpdateButtonText => _isCheckingUpdate ? "检查中…" : "检查更新";
 
+        // ── 驻留程序状态 ─────────────────────────────────────────────
+        // 驻留是独立进程，检测端无法从自身推断它是否活着；Win7 实测过“驻留没起来但界面毫无提示”。
+        // 这里只表达状态：运行中一律不显示技术细节；未运行时把失败原因作为状态本身显示出来，
+        // 不额外附加角色说明或路径文案。
+
+        private string _residentStatusText = "检测中…";
+        public string ResidentStatusText
+        {
+            get => _residentStatusText;
+            private set => SetProperty(ref _residentStatusText, value);
+        }
+
+        public RelayCommand RefreshResidentCommand { get; }
+
+        /// <summary>刷新驻留状态。仅在未运行时尝试拉起，运行中只做只读刷新。</summary>
+        public void RefreshResidentStatus(bool allowLaunch)
+        {
+            var status = Runtime.ResidentLauncher.RefreshStatus();
+            ResidentStatusText = status.Describe();
+            if (allowLaunch && !status.IsRunning) Runtime.ResidentLauncher.EnsureStarted();
+        }
+
         public RelayCommand RetryCommand { get; }
         public RelayCommand ApplyNameCommand { get; }
         public RelayCommand CheckUpdateCommand { get; }
@@ -76,6 +98,13 @@ namespace VisionGuard.ViewModels
             RetryCommand = new RelayCommand(() =>
             {
                 _serverPushService.Reconnect();
+            });
+
+            RefreshResidentCommand = new RelayCommand(() =>
+            {
+                // 手动刷新时允许重试拉起：用户在这里按按钮，说明他知道驻留应该起来。
+                RefreshResidentStatus(allowLaunch: true);
+                RefreshResidentStatus(allowLaunch: false);
             });
 
             ApplyNameCommand = new RelayCommand(() =>

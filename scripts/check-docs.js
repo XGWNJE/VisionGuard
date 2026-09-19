@@ -19,7 +19,7 @@ const WS_ROLES = ['windows', 'android', 'android-detector', 'windows-resident'];
 
 const RETAINED_SKILLS = [
   { name: 'visionguard-build', script: '.agents/skills/visionguard-build/scripts/build-all.ps1', modes: ['All', 'Server', 'Windows', 'WPF', 'WindowsResident', 'Android', 'AndroidDetector', 'AndroidReceiver'] },
-  { name: 'visionguard-e2e', script: '.agents/skills/visionguard-e2e/scripts/e2e-smoke.ps1', modes: ['Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WpfPersonDetection'] },
+  { name: 'visionguard-e2e', script: '.agents/skills/visionguard-e2e/scripts/e2e-smoke.ps1', modes: ['Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WpfPersonDetection', 'WpfParserContract', 'ResidentLaunch', 'ModelDownload', 'SourceAutoSave', 'CardLayoutPlan'] },
   { name: 'visionguard-release', script: 'scripts/publish-release.ps1', modes: ['-PreflightOnly', '-SkipServerDeploy', '-UploadVps'] }
 ];
 
@@ -385,6 +385,11 @@ function checkSkillContract(root, errors) {
   }
   requirePattern(e2eScript, /ServerSmoke compatibility alias[\s\S]*compile\/artifact smoke only/, RETAINED_SKILLS[1].script, 'the non-E2E ServerSmoke alias boundary', errors);
   requireText(e2eScript, 'WpfPersonDetection', RETAINED_SKILLS[1].script, 'the WPF person semantic mode', errors);
+  requireText(e2eScript, 'WpfParserContract', RETAINED_SKILLS[1].script, 'the inference-profile output contract mode', errors);
+  requireText(e2eScript, 'ResidentLaunch', RETAINED_SKILLS[1].script, 'the resident launch and server-visibility mode', errors);
+  requireText(e2eScript, 'ModelDownload', RETAINED_SKILLS[1].script, 'the model download contract mode', errors);
+  requireText(e2eScript, 'SourceAutoSave', RETAINED_SKILLS[1].script, 'the per-source auto-save contract mode', errors);
+  requireText(e2eScript, 'assert-resident-visible.js', RETAINED_SKILLS[1].script, 'the server-side resident visibility assertion', errors);
 
   const releaseScript = readUtf8(root, RETAINED_SKILLS[2].script, errors, { checkBom: false });
   requireText(releaseScript, 'Invoke-ReleasePreflight', RETAINED_SKILLS[2].script, 'the release preflight gate', errors);

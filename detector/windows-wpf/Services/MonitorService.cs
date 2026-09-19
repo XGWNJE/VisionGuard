@@ -14,6 +14,8 @@ using System.Threading;
 using VisionGuard.Capture;
 using VisionGuard.Inference;
 using VisionGuard.Models;
+using VisionGuard.Runtime;
+using VisionGuard.Utils;
 
 namespace VisionGuard.Services
 {
@@ -33,6 +35,8 @@ namespace VisionGuard.Services
         private int  _isRunning;   // 0=idle, 1=processing（Interlocked 防重入）
         private int  _isPaused;    // 0=running, 1=paused（Interlocked 远控暂停）
         private bool _disposed;
+        // 输出形态日志：只在形态变化时写一次，避免每帧刷屏；形态与档位不匹配是漏检头号根因，必须可诊断。
+        private string _loggedOutputLayout;
         // 停止同步：确保 OnTick 完全结束（包括 finally）后才能安全 Dispose _engine
         private readonly ManualResetEvent _tickCompleted = new ManualResetEvent(true);
 
@@ -80,6 +84,17 @@ namespace VisionGuard.Services
 
             _config  = config;
             _engine  = _engineFactory(modelPath, 2, preferredBackend);
+
+            // 建会话后再校验一次原生库来源：系统级同名 onnxruntime.dll 会抢占档位目录，
+            // 与托管程序集不同代时是一推理就无诊断信息的进程终止，必须在启动来源时就报成可读故障。
+            string nativeMismatch = NativeLibrarySelector.DescribeUnexpectedLoadedLibrary();
+            if (!string.IsNullOrEmpty(nativeMismatch))
+            {
+                var broken = _engine;
+                _engine = null;
+                broken?.Dispose();
+                throw new InvalidOperationException(nativeMismatch);
+            }
 
             int intervalMs = 1000 / Math.Max(1, config.TargetFps);
             _timer = new Timer(OnTick, null, 0, intervalMs);
@@ -173,6 +188,7 @@ namespace VisionGuard.Services
                 sw.Restart();
                 float[] rawOutput = _engine.Run(tensor, ImagePreprocessor.InputShape(modelSize));
                 long inferMs = sw.ElapsedMilliseconds;
+                LogOutputLayoutOnce(rawOutput != null ? rawOutput.Length : 0, modelSize);
 
                 // 4. 解析（使用实际帧尺寸，避免窗口缩放导致坐标偏移）
                 failureKind = MonitorFailureKind.Processing;
@@ -217,6 +233,29 @@ namespace VisionGuard.Services
                 _tickCompleted.Set();
                 frame?.Dispose();
                 Interlocked.Exchange(ref _isRunning, 0);
+            }
+        }
+
+        /// <summary>
+        /// 记录模型输出张量形态与实际解析分支（仅在变化时记录一次）。
+        /// 档位与模型不匹配会让每一帧都解析不出目标却无任何报错，形态日志是这种静默漏检的唯一现场证据。
+        /// </summary>
+        private void LogOutputLayoutOnce(int rawLength, int modelSize)
+        {
+            try
+            {
+                string layout = YoloOutputParser.Describe(rawLength);
+                if (string.Equals(layout, _loggedOutputLayout, StringComparison.Ordinal)) return;
+
+                _loggedOutputLayout = layout;
+                LogManager.StaticInfo(string.Format(
+                    "[Inference] 模型输出={0} 输入尺寸={1} 解析分支={2}",
+                    layout, modelSize, YoloOutputParser.DescribeBranch(rawLength)));
+            }
+            catch (InvalidOperationException)
+            {
+                // 形态本身无法识别：这是纯诊断日志，不能抢在解析层的报错前面把本帧变成日志异常。
+                // 真正的原因由紧接其后的 YoloOutputParser.Parse 抛出，并显示在对应来源上。
             }
         }
 

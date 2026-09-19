@@ -9,8 +9,23 @@
     <LangVersion>12.0</LangVersion>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
   </PropertyGroup>
+  <!--
+    推理档位与 detector/windows-wpf 用同一份共享定义：托管包版本、编译期开关、原生库布置
+    全部来自该 props。OrtProfile 是全局属性，命令行 -p:OrtProfile=legacy 会同时作用于
+    本工程与被引用的 VisionGuard 工程，避免「探针按 legacy 编译、生产程序集按 modern 编译」。
+  -->
+  <Import Project="..\..\detector\windows-shared\NativeLibraries.props" />
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="$(OrtManagedPackage)" Version="$(OrtManagedVersion)" />
+    <!-- legacy 档原生 1.1.0 的来源，与检测端同一份声明（只登记包、不引用资产）。 -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.1.0" GeneratePathProperty="true" ExcludeAssets="all" PrivateAssets="all" Condition="'$(OrtProfile)' == 'legacy'" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="WindowsBase" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="System.Xaml" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\detector\windows-wpf\VisionGuard.csproj" />

@@ -46,6 +46,12 @@ namespace VisionGuard.Utils
             return File.Exists(GetModelPath(modelKey));
         }
 
+        /// <summary>
+        /// 最近一次下载失败的具体原因（HTTP 状态码或异常类型与消息）。
+        /// 只写 Debug 输出的话，用户机器上没有落点，界面只能报“下载失败”，无法判断是网络、证书还是服务端缺文件。
+        /// </summary>
+        public static string LastFailureReason { get; private set; } = string.Empty;
+
         public static async Task<bool> DownloadModel(string modelKey, IProgress<int> progress = null, CancellationToken ct = default)
         {
             var url = $"{ServerBase}/models/{modelKey}.onnx";
@@ -62,7 +68,12 @@ namespace VisionGuard.Utils
                 using (var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) })
                 using (var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct))
                 {
-                    response.EnsureSuccessStatusCode();
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        LastFailureReason = string.Format("HTTP {0}（{1}）", (int)response.StatusCode, url);
+                        LogManager.StaticWarn("[ModelManager] Download rejected: " + LastFailureReason);
+                        return false;
+                    }
                     totalBytes = response.Content.Headers.ContentLength ?? -1L;
                     using (var contentStream = await response.Content.ReadAsStreamAsync())
                     using (var fileStream = new FileStream(tmpPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true))
@@ -79,17 +90,28 @@ namespace VisionGuard.Utils
                     }
                 }
 
+                // 半截文件不能当成下载成功：服务端断流时必须重下，否则会拿一个损坏模型去建会话。
+                if (totalBytes > 0 && totalRead != totalBytes)
+                {
+                    LastFailureReason = string.Format("下载不完整（{0}/{1} 字节）", totalRead, totalBytes);
+                    LogManager.StaticWarn("[ModelManager] " + LastFailureReason);
+                    try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { }
+                    return false;
+                }
+
                 if (File.Exists(destPath)) File.Delete(destPath);
                 File.Move(tmpPath, destPath);
 
+                LastFailureReason = string.Empty;
                 LogManager.StaticInfo($"[ModelManager] Downloaded {modelKey} ({totalRead / 1048576} MB)");
                 return true;
             }
             catch (Exception ex)
             {
-                LogManager.StaticWarn($"[ModelManager] Download failed for {modelKey}: {ex.GetType().Name} - {ex.Message}");
+                LastFailureReason = string.Format("{0}: {1}", ex.GetType().Name, ex.Message);
                 if (ex.InnerException != null)
-                    LogManager.StaticWarn($"[ModelManager]   Inner: {ex.InnerException.GetType().Name} - {ex.InnerException.Message}");
+                    LastFailureReason += string.Format(" / {0}: {1}", ex.InnerException.GetType().Name, ex.InnerException.Message);
+                LogManager.StaticWarn($"[ModelManager] Download failed for {modelKey}: {LastFailureReason}");
                 try { if (File.Exists(tmpPath)) File.Delete(tmpPath); } catch { }
                 return false;
             }

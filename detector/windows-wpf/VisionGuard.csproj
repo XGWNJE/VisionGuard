@@ -41,29 +41,14 @@
   </PropertyGroup>
 
   <!--
-    推理档位（V10，见路线图 8.13）：
-      modern（默认）= Windows 10 及以上：托管 ONNX Runtime 1.19.0 + 原生 1.19.0 + DirectML，模型 YOLO26。
-      legacy        = Windows 7 SP1 x64：托管 ONNX Runtime 1.2.0 + 原生 1.1.0，固定 CPU，模型 YOLOv5。
-    托管层与原生层必须同代配对，否则类型初始化失败，所以两档各自锁定一套托管包。
-    原生库不留在应用根目录（会被 DllImport 抢先命中），统一放到 native\<档位>\ 由启动时预加载。
-    legacy 档原生 1.1.0 与 modern 档原生 1.19.0 都随构建布置到输出目录，两种档位可在同一台机器上验证。
+    推理档位（V10，见路线图 8.13）：档位、托管包与版本、编译期开关、输出目录和原生库布置
+    全部由共享定义推导，检测端与其验证工程必须用同一份，否则会出现假验证。
   -->
-  <PropertyGroup>
-    <OrtProfile Condition="'$(OrtProfile)' == ''">modern</OrtProfile>
-    <OrtManagedPackage Condition="'$(OrtProfile)' == 'legacy'">Microsoft.ML.OnnxRuntime.Managed</OrtManagedPackage>
-    <OrtManagedPackage Condition="'$(OrtProfile)' != 'legacy'">Microsoft.ML.OnnxRuntime.DirectML</OrtManagedPackage>
-    <OrtManagedVersion Condition="'$(OrtProfile)' == 'legacy'">1.2.0</OrtManagedVersion>
-    <OrtManagedVersion Condition="'$(OrtProfile)' != 'legacy'">1.19.0</OrtManagedVersion>
-    <DefineConstants Condition="'$(OrtProfile)' == 'legacy'">$(DefineConstants);ORT_LEGACY</DefineConstants>
-    <DefineConstants Condition="'$(OrtProfile)' != 'legacy'">$(DefineConstants);ORT_DIRECTML</DefineConstants>
-    <!-- 两档输出到不同目录，避免互相覆盖。 -->
-    <OutputPath>bin\x64\$(OrtProfile)\</OutputPath>
-  </PropertyGroup>
+  <Import Project="..\windows-shared\NativeLibraries.props" />
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
-    <PackageReference Include="$(OrtManagedPackage)" Version="$(OrtManagedVersion)" />
-    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <PackageReference Include="$(OrtManagedPackage)" Version="$(OrtManagedVersion)" />    <PackageReference Include="System.Text.Json" Version="8.0.5" />
     <PackageReference Include="System.Net.Http" Version="4.3.4" />
     <!--
       legacy 档原生 1.1.0 的唯一来源。只登记包、不引用其中任何资产（ExcludeAssets=all），
@@ -76,38 +61,33 @@
     <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.1.0" GeneratePathProperty="true" ExcludeAssets="all" PrivateAssets="all" Condition="'$(OrtProfile)' == 'legacy'" />
   </ItemGroup>
 
-  <!-- 原生库布置：modern 的原生库来自 DirectML 包（自动复制到根目录，这里移到 native\modern），
-       legacy 的原生 1.1.0 取自 NuGet 缓存里的 Microsoft.ML.OnnxRuntime 包，两者都不留在应用根目录。 -->
+  <!--
+    驻留程序与检测端是配套软件，必须一起出现在每个档位的产物里：
+      - 检测端启动时会拉起同目录的 VisionGuard.Resident.exe，缺它就没有「远程重新打开检测端」的能力；
+      - 本地/离线分发时用户是整体拷贝 bin\x64\<档位>\ 的，驻留不在这里就等于没有配套。
+    发布脚本（publish-release.ps1）同样把驻留并入档位 ZIP 的根目录，两处都不得只放一半。
+    构建顺序上驻留先于检测端（build-all.ps1 先 WPF 后 WindowsResident），所以这里通常能直接取到；
+    取不到时给出明确警告，而不是让产物静默缺少驻留。
+  -->
   <PropertyGroup>
-    <LegacyNativeSource Condition="'$(PkgMicrosoft_ML_OnnxRuntime_1_1_0)' != ''">$(PkgMicrosoft_ML_OnnxRuntime_1_1_0)\runtimes\win-x64\native\onnxruntime.dll</LegacyNativeSource>
-    <LegacyNativeSource Condition="'$(LegacyNativeSource)' == ''">$(NuGetPackageRoot)microsoft.ml.onnxruntime\1.1.0\runtimes\win-x64\native\onnxruntime.dll</LegacyNativeSource>
+    <ResidentOutputDir>$(MSBuildThisFileDirectory)..\windows-resident\bin\Release\net472\</ResidentOutputDir>
   </PropertyGroup>
 
-  <Target Name="ArrangeNativeLibraries" AfterTargets="Build">
-    <!-- 不为另一档位建空目录：只让 Copy 按需创建本档位需要的目录。 -->
-    <Copy SourceFiles="$(OutputPath)onnxruntime.dll" DestinationFolder="$(OutputPath)native\modern" Condition="Exists('$(OutputPath)onnxruntime.dll')" />
-    <Copy SourceFiles="$(OutputPath)onnxruntime_providers_shared.dll" DestinationFolder="$(OutputPath)native\modern" Condition="Exists('$(OutputPath)onnxruntime_providers_shared.dll')" />
-    <Copy SourceFiles="$(OutputPath)DirectML.dll" DestinationFolder="$(OutputPath)native\modern" Condition="Exists('$(OutputPath)DirectML.dll')" />
-    <Copy SourceFiles="$(OutputPath)DirectML.Debug.dll" DestinationFolder="$(OutputPath)native\modern" Condition="Exists('$(OutputPath)DirectML.Debug.dll')" />
-    <Copy SourceFiles="$(LegacyNativeSource)" DestinationFolder="$(OutputPath)native\legacy" Condition="Exists('$(LegacyNativeSource)')" />
-    <!-- 根目录不得留下任何 ONNX Runtime / DirectML 原生库（含 .lib/.pdb 等伴随文件）：
-         DllImport("onnxruntime") 会先命中根目录，导致按档位选择失效。 -->
+  <Target Name="IncludeResidentInOutput" AfterTargets="Build">
     <ItemGroup>
-      <RootNativeLeftover Include="$(OutputPath)onnxruntime*.*;$(OutputPath)DirectML*.*" />
+      <ResidentPayload Include="$(ResidentOutputDir)VisionGuard.Resident.exe;$(ResidentOutputDir)VisionGuard.Resident.exe.config" />
     </ItemGroup>
-    <Delete Files="@(RootNativeLeftover)" />
-    <RemoveDir Directories="$(OutputPath)runtimes" />
-    <Message Importance="high" Text="✓ 档位=$(OrtProfile) 原生库已布置到 $(OutputPath)native" />
+    <Copy SourceFiles="@(ResidentPayload)" DestinationFolder="$(OutputPath)" Condition="Exists('$(ResidentOutputDir)VisionGuard.Resident.exe')" />
+    <Warning Text="检测端输出目录未包含驻留程序：$(ResidentOutputDir)VisionGuard.Resident.exe 不存在。请先构建 Windows Resident，或使用 visionguard-build -Target Windows。"
+             Condition="!Exists('$(ResidentOutputDir)VisionGuard.Resident.exe')" />
   </Target>
 
   <ItemGroup>
-    <!-- WPF 项在 net472 下不能依赖 SDK 的隐式推导，必须显式声明。 -->
-    <Page Include="App.xaml" SubType="Designer" Generator="MSBuild:Compile" />
+    <!-- WPF 项在 net472 下不能依赖 SDK 的隐式推导，必须显式声明。 -->    <Page Include="App.xaml" SubType="Designer" Generator="MSBuild:Compile" />
     <Page Include="Themes\DarkTheme.xaml" SubType="Designer" Generator="MSBuild:Compile" />
     <Page Include="Views\MainWindow.xaml" SubType="Designer" Generator="MSBuild:Compile" />
     <Page Include="Views\MonitorPage.xaml" SubType="Designer" Generator="MSBuild:Compile" />
-    <Page Include="Views\ServerPage.xaml" SubType="Designer" Generator="MSBuild:Compile" />
-    <Page Include="Views\SettingsPage.xaml" SubType="Designer" Generator="MSBuild:Compile" />
+    <Page Include="Views\GlobalSettingsPage.xaml" SubType="Designer" Generator="MSBuild:Compile" />
     <Page Include="Views\MaskEditorWindow.xaml" SubType="Designer" Generator="MSBuild:Compile" />
     <Page Include="Views\RegionSelectorWindow.xaml" SubType="Designer" Generator="MSBuild:Compile" />
     <Page Include="Views\WindowPickerWindow.xaml" SubType="Designer" Generator="MSBuild:Compile" />

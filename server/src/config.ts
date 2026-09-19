@@ -58,8 +58,13 @@ export const config = {
   /** WS 最大并发连接数 (所有角色合计)，防止连接洪水 */
   maxWsConnections: parsePositiveIntEnv('MAX_WS_CONNECTIONS', 100, 1, 10000),
 
-  /** 每台探测器允许声明的来源数量上限；由 Server 统一下发。 */
-  maxSourcesPerDetector: parsePositiveIntEnv('MAX_SOURCES_PER_DETECTOR', 4, 1, 16),
+  /**
+   * 每台探测器允许声明的来源数量上限；由 Server 统一下发。
+   * 默认 16 与检测端 `MultiSourceMonitorCoordinator.MaximumSourceLimit` 对齐：
+   * 默认值曾是 4，导致检测端在收到 `maxSources=4` 后新增按钮直接变灰，
+   * 界面上看起来像「加到 4 路就不能再加」，且 4 路恰好一页装下、分页页脚从不出现。
+   */
+  maxSourcesPerDetector: parsePositiveIntEnv('MAX_SOURCES_PER_DETECTOR', 16, 1, 16),
 
   /** 接收端幽灵清理阈值 (毫秒)。心跳 30s，取 45s 为安全阈值。 */
   receiverGhostThresholdMs: 45_000,

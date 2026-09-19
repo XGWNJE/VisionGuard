@@ -20,9 +20,25 @@ namespace VisionGuard.Runtime
     ///
     /// 因此：应用根目录**不得**出现 `onnxruntime.dll` / `DirectML.dll`，它们分别位于
     /// `native\legacy\` 与 `native\modern\`，由本类在启动时按档位预加载。
+    ///
+    /// 验证工程（tests\WpfInference.Benchmark、detector\windows-wpf-smoke）也必须调用本类，
+    /// 否则它们的推理会走默认 DLL 搜索并失败。
     /// </summary>
-    internal static class NativeLibrarySelector
+    public static class NativeLibrarySelector
     {
+        /// <summary>
+        /// 档位在**类型初始化时**就确定，而不是等 Initialize()。
+        ///
+        /// 为什么必须这样：ModelManager.ModelKeys 这类静态清单在类型初始化时就要按档位取值，
+        /// 而静态构造顺序由“谁先被访问”决定。若档位只在 Initialize() 里赋值，任何先碰到
+        /// ModelManager 的代码路径都会读到默认的 modern 清单——legacy 档会因此在界面上列出
+        /// yolo26* 模型，并去下载本档位根本跑不了的模型（实测于 legacy 探针）。
+        /// </summary>
+        static NativeLibrarySelector()
+        {
+            ApplyEnvironmentProfile();
+        }
+
         /// <summary>是否使用 legacy 档（Windows 7：CPU + 原生 1.1.0）。</summary>
         public static bool IsLegacy { get; private set; }
 
@@ -38,7 +54,8 @@ namespace VisionGuard.Runtime
         /// <summary>失败原因（仅在选择或加载失败时有值）。</summary>
         public static string FailureReason { get; private set; } = string.Empty;
 
-        public static void Initialize()
+        /// <summary>按运行环境与编译期开关确定档位（类型初始化与 Initialize 共用同一份判定）。</summary>
+        private static void ApplyEnvironmentProfile()
         {
             var os = Environment.OSVersion.Version;
             bool legacyByOs = os.Major == 6 && os.Minor == 1;
@@ -49,14 +66,29 @@ namespace VisionGuard.Runtime
             else if (string.Equals(forced, "modern", StringComparison.OrdinalIgnoreCase)) IsLegacy = false;
             else IsLegacy = legacyByOs;
 
+#if !ORT_DIRECTML
+            // 本程序集只编译了 CPU 档（legacy）：托管包是 ONNX Runtime 1.2.0，与 modern 的原生 1.19
+            // 不同代，配错就是一推理就无诊断信息的进程终止。因此在 Win10/11 上验证 legacy 档时
+            // 必须强制 legacy，不能因为操作系统是 Win10 就去加载 modern 档原生库。
+            if (string.IsNullOrEmpty(forced)) IsLegacy = true;
+#endif
+
 #if ORT_DIRECTML
             SupportsDirectMl = !IsLegacy;
 #else
             SupportsDirectMl = false;
 #endif
 
+            SelectedDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "native", IsLegacy ? "legacy" : "modern");
+        }
+
+        public static void Initialize()
+        {
+            // 幂等：类型初始化已定过档位，这里只做原生库预加载。
+            ApplyEnvironmentProfile();
+            if (IsReady) return;
+
             string appDir = AppDomain.CurrentDomain.BaseDirectory;
-            SelectedDirectory = Path.Combine(appDir, "native", IsLegacy ? "legacy" : "modern");
 
             string onnxPath = Path.Combine(SelectedDirectory, "onnxruntime.dll");
             string rootOnnx = Path.Combine(appDir, "onnxruntime.dll");
@@ -121,6 +153,29 @@ namespace VisionGuard.Runtime
                 // 模块枚举失败不影响主流程。
             }
             return "(尚未加载)";
+        }
+
+        /// <summary>
+        /// 校验进程实际加载的原生库确实来自本档位目录。
+        ///
+        /// 为什么必须在建会话后立刻校验：预加载之后 Windows 按模块名复用已映射模块，
+        /// 但机器上若存在系统级同名库（例如随其它软件安装到 SYSTEM32 的 `onnxruntime.dll`），
+        /// 它会在预加载之前或抢占时胜出，与托管程序集不同代时表现为
+        /// **一推理就无诊断信息的进程终止**（实测：探针加载到 SYSTEM32 的库时进程直接退出，
+        /// 连异常文本都打不出来）。这种情况必须变成可读的启动失败，而不是运行期崩溃。
+        /// </summary>
+        public static string DescribeUnexpectedLoadedLibrary()
+        {
+            if (!IsReady) return string.Empty;
+
+            string loaded = LoadedOnnxRuntimePath();
+            if (string.Equals(loaded, "(尚未加载)", StringComparison.Ordinal)) return string.Empty;
+            if (loaded.StartsWith(SelectedDirectory, StringComparison.OrdinalIgnoreCase)) return string.Empty;
+
+            return string.Format(
+                "实际加载的原生 ONNX Runtime 不是本档位的库：已加载 {0}，本档位应为 {1}\\onnxruntime.dll。" +
+                "机器上存在同名系统级库时会按模块名抢占，必须先移除或改名该库再启动检测端。",
+                loaded, SelectedDirectory);
         }
     }
 }

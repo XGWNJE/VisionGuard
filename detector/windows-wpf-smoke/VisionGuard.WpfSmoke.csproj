@@ -11,7 +11,11 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="$(OrtManagedPackage)" Version="$(OrtManagedVersion)" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.1.0" GeneratePathProperty="true" ExcludeAssets="all" PrivateAssets="all" Condition="'$(OrtProfile)' == 'legacy'" />
   </ItemGroup>
+  <!-- 档位（托管包版本、编译期开关、原生库布置）与 detector/windows-wpf 共用同一份定义。 -->
+  <Import Project="..\windows-shared\NativeLibraries.props" />
   <ItemGroup>
     <ProjectReference Include="..\windows-wpf\VisionGuard.csproj" />
   </ItemGroup>

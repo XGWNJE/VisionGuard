@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)]
     [string]$Version,
 
@@ -458,7 +458,12 @@ function New-ZipPackage {
 }
 
 function Assert-ZipIsClean {
-    param([string]$ZipPath)
+    param(
+        [string]$ZipPath,
+        # 档位必需的原生 ONNX Runtime 压缩包内条目。原生库缺失时客户端能启动、能建会话之外的一切，
+        # 但一推理就崩（legacy 档在 Win7 实测为无诊断信息的进程终止），必须在发布前拦住。
+        [string]$RequiredNativeEntry = ""
+    )
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
@@ -469,6 +474,13 @@ function Assert-ZipIsClean {
                 $_.FullName -match '\.(pdb|lib|dll\.config|onnx)$'
             } |
             Select-Object -ExpandProperty FullName
+
+        $nativePresent = $true
+        if ($RequiredNativeEntry) {
+            $nativePresent = [bool]($zip.Entries | Where-Object { $_.FullName -eq $RequiredNativeEntry })
+        }
+        # 驻留程序与检测端是配套软件：缺它就没有「远程重新打开检测端」的能力。
+        $residentEntries = @($zip.Entries | Where-Object { $_.FullName -eq 'VisionGuard.Resident.exe' -or $_.FullName -eq 'VisionGuard.Resident.exe.config' })
     }
     finally {
         $zip.Dispose()
@@ -476,6 +488,14 @@ function Assert-ZipIsClean {
 
     if ($badEntries) {
         throw "Forbidden files were found in $(Split-Path -Leaf $ZipPath): $($badEntries -join ', ')"
+    }
+
+    if (-not $nativePresent) {
+        throw "$(Split-Path -Leaf $ZipPath) 缺少本档位原生 ONNX Runtime：$RequiredNativeEntry"
+    }
+
+    if ($residentEntries.Count -ne 2) {
+        throw "$(Split-Path -Leaf $ZipPath) 未同时包含驻留程序与配置（找到 $($residentEntries.Count) 项）：VisionGuard.Resident.exe 与 VisionGuard.Resident.exe.config 必须都在包根目录。"
     }
 }
 
@@ -1222,14 +1242,15 @@ if (Test-TargetEnabled @('Windows', 'WPF')) {
     # 因此按档位分别打包：wpf = modern（Win10+，DirectML），wpf-legacy = legacy（Win7 SP1，CPU）。
     # 客户端带 profile 查询 /api/update：legacy 端取 wpf-legacy，其余回落到 wpf。
     $profilePackages = @(
-        [pscustomobject]@{ Key = 'wpf'; Profile = 'modern'; FileName = "VisionGuard-WPF-v$Version.zip" },
-        [pscustomobject]@{ Key = 'wpf-legacy'; Profile = 'legacy'; FileName = "VisionGuard-WPF-Legacy-v$Version.zip" }
+        [pscustomobject]@{ Key = 'wpf'; Profile = 'modern'; FileName = "VisionGuard-WPF-v$Version.zip"; NativeEntry = 'native/modern/onnxruntime.dll' },
+        [pscustomobject]@{ Key = 'wpf-legacy'; Profile = 'legacy'; FileName = "VisionGuard-WPF-Legacy-v$Version.zip"; NativeEntry = 'native/legacy/onnxruntime.dll' }
     )
     foreach ($package in $profilePackages) {
         $zipPath = Join-Path $releaseDir $package.FileName
-        New-ZipPackage -SourceDir (Join-Path $repoRoot "detector\windows-wpf\bin\x64\$($package.Profile)") -Destination $zipPath `
-            -AdditionalSourceDirs @((Join-Path $repoRoot 'detector\windows-resident\bin\Release\net472'))
-        Assert-ZipIsClean -ZipPath $zipPath
+        # 驻留程序已由检测端构建复制进 bin\x64\<档位>\（与检测端配套分发），
+        # 因此这里只打包档位目录；再额外合并驻留目录会触发重复根名检查并中止发布。
+        New-ZipPackage -SourceDir (Join-Path $repoRoot "detector\windows-wpf\bin\x64\$($package.Profile)") -Destination $zipPath
+        Assert-ZipIsClean -ZipPath $zipPath -RequiredNativeEntry $package.NativeEntry
         Add-ReleaseEntry -Metadata $metadata -Key $package.Key -FileName $package.FileName -FilePath $zipPath
         $artifacts.Add([pscustomobject]@{ Platform = $package.Key; Path = $zipPath; FileName = $package.FileName }) | Out-Null
         $platforms.Add($package.Key) | Out-Null

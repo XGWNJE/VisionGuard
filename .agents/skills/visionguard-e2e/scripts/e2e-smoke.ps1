@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet('Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WpfPersonDetection')]
+    [ValidateSet('Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WpfPersonDetection', 'WpfParserContract', 'ResidentLaunch', 'ModelDownload', 'SourceAutoSave', 'CardLayoutPlan')]
     [string]$Mode = 'Discover',
 
     [ValidateSet('Auto', 'Physical', 'Emulator', 'None')]
@@ -17,7 +17,18 @@
     [string]$WpfFixtureDirectory = 'artifacts\v5\fixtures',
     [string]$WpfModelPath = 'artifacts\v0\yolo26n_320.onnx',
     [string]$WpfReportPath = 'artifacts\e2e\wpf-window-person-detection.json',
-    [ValidateRange(0.0,1.0)][float]$WpfConfidenceThreshold = 0.25
+    [ValidateRange(0.0,1.0)][float]$WpfConfidenceThreshold = 0.25,
+    # WpfParserContract：两档模型 + 真实图片，断言解析出的业务目标。
+    [string]$WpfLegacyModelPath = 'detector\windows-wpf\Assets\yolov5nu_320.onnx',
+    [string]$WpfModernModelPath = 'artifacts\v0\yolo26n_320.onnx',
+    [string]$WpfContractImagePath = 'artifacts\v5\fixtures\vg-v5-person-zidane.jpg',
+    [string]$WpfContractExpectedLabel = 'person',
+    # ResidentLaunch：拉起探针 + 隔离 Server，断言驻留在服务端可见。
+    [ValidateRange(1024,65535)][int]$ResidentPort = 3123,
+    [string]$ResidentChannel = 'vnext-resident-e2e',
+    # ModelDownload：打真实生产服务器验证模型下载与装配（界面下载按钮背后的同一条路径）。
+    [string]$ModelDownloadKey = 'yolo26n_320',
+    [switch]$ModelDownloadLegacyProfile
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,7 +37,7 @@ $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $artifactRoot = Join-Path $repoRoot "artifacts\e2e\$timestamp"
 New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
 
-$effectiveBuildType = if ($Mode -eq 'WpfPersonDetection') { 'Release' } else { $BuildType }
+$effectiveBuildType = if ($Mode -in @('WpfPersonDetection', 'WpfParserContract')) { 'Release' } else { $BuildType }
 $summary = [ordered]@{
     mode = $Mode
     buildType = $effectiveBuildType
@@ -404,6 +415,384 @@ function Start-WpfFixtureWindows {
     return [pscustomobject]@{ Forms = $forms; Images = $images }
 }
 
+function Run-WpfParserContract {
+    # 两档各自的模型输出契约检查：legacy（Win7）= YOLOv5 [1,84,N] 需解析侧 NMS，
+    # modern（Win10+）= YOLO26 [1,300,6] 模型内置 NMS。两者都必须从真实图片里解析出业务目标。
+    # 这条检查不打开窗口、不依赖 GPU，因此可以在任意机器上对两个档位执行；
+    # 它只证明「模型→解析→检测框」这一段，不证明窗口捕获、报警推送或 UI 显示。
+    $contractImage = Resolve-RepoPath $WpfContractImagePath
+    if (-not (Test-Path -LiteralPath $contractImage)) { throw "解析契约图片不存在：$contractImage" }
+
+    $profiles = @(
+        [pscustomobject]@{ Name = 'legacy'; ModelPath = Resolve-RepoPath $WpfLegacyModelPath },
+        [pscustomobject]@{ Name = 'modern'; ModelPath = Resolve-RepoPath $WpfModernModelPath }
+    )
+    foreach ($profile in $profiles) {
+        if (-not (Test-Path -LiteralPath $profile.ModelPath)) {
+            throw "解析契约缺少 $($profile.Name) 档模型：$($profile.ModelPath)"
+        }
+    }
+
+    $benchmarkProject = Join-Path $repoRoot 'tests\WpfInference.Benchmark\WpfInference.Benchmark.csproj'
+    if (-not (Test-Path -LiteralPath $benchmarkProject)) { throw "解析契约探针工程不存在：$benchmarkProject" }
+
+    foreach ($profile in $profiles) {
+        $reportPath = Join-Path $artifactRoot "parser-contract-$($profile.Name).json"
+        $stageLogPath = Join-Path $artifactRoot "parser-contract-$($profile.Name)-stages.log"
+        $logPath = Join-Path $artifactRoot "parser-contract-$($profile.Name).txt"
+
+        # 档位必须以全局属性传给探针：否则被引用的 VisionGuard 工程会按默认 modern 编译，
+        # 变成「探针按 legacy、生产程序集按 modern」的假验证。
+        $buildArguments = @('build', $benchmarkProject, '-c', 'Release', '--nologo')
+        if ($profile.Name -eq 'legacy') { $buildArguments += '-p:OrtProfile=legacy' }
+        Invoke-NativeLogged -FilePath 'dotnet' -Arguments $buildArguments -WorkingDirectory $repoRoot `
+            -LogPath (Join-Path $artifactRoot "parser-contract-$($profile.Name)-build.txt")
+
+        $exePath = Join-Path $repoRoot "tests\WpfInference.Benchmark\bin\x64\$($profile.Name)\net472\WpfInference.Benchmark.exe"
+        if (-not (Test-Path -LiteralPath $exePath)) { throw "解析契约探针未生成：$exePath" }
+
+        $previousReport = $env:VISIONGUARD_PARSER_CONTRACT_REPORT
+        $previousStageLog = $env:VISIONGUARD_PARSER_CONTRACT_STAGE_LOG
+        $env:VISIONGUARD_PARSER_CONTRACT_REPORT = $reportPath
+        $env:VISIONGUARD_PARSER_CONTRACT_STAGE_LOG = $stageLogPath
+        try {
+            $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+            $startInfo.FileName = $exePath
+            $startInfo.WorkingDirectory = $repoRoot
+            $startInfo.UseShellExecute = $false
+            $startInfo.RedirectStandardOutput = $true
+            $startInfo.RedirectStandardError = $true
+            $arguments = @($profile.ModelPath, '--parser-contract', $contractImage, $WpfContractExpectedLabel, '0.5')
+            $startInfo.Arguments = (@($arguments | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' }) -join ' ')
+            $process = [System.Diagnostics.Process]::Start($startInfo)
+            $stdoutStream = [System.IO.File]::Create($logPath)
+            $errorLogPath = Join-Path $artifactRoot "parser-contract-$($profile.Name)-error.txt"
+            $stderrStream = [System.IO.File]::Create($errorLogPath)
+            try {
+                $copyStdout = $process.StandardOutput.BaseStream.CopyToAsync($stdoutStream)
+                $copyStderr = $process.StandardError.BaseStream.CopyToAsync($stderrStream)
+                if (-not $process.WaitForExit(600000)) {
+                    $process.Kill()
+                    throw "解析契约探针（$($profile.Name)）超过 10 分钟未结束。阶段日志：$stageLogPath"
+                }
+                [void]$copyStdout.Wait(30000)
+                [void]$copyStderr.Wait(30000)
+            }
+            finally {
+                $stdoutStream.Dispose()
+                $stderrStream.Dispose()
+            }
+            $exitCode = $process.ExitCode
+        }
+        finally {
+            $env:VISIONGUARD_PARSER_CONTRACT_REPORT = $previousReport
+            $env:VISIONGUARD_PARSER_CONTRACT_STAGE_LOG = $previousStageLog
+        }
+
+        if ($exitCode -ne 0) {
+            throw "解析契约探针（$($profile.Name)）退出码 $exitCode。报告：$reportPath；阶段日志：$stageLogPath"
+        }
+        if (-not (Test-Path -LiteralPath $reportPath)) {
+            throw "解析契约探针（$($profile.Name)）未写出报告：$reportPath；阶段日志：$stageLogPath"
+        }
+
+        $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $failedChecks = @($report.checks | Where-Object { -not $_.passed } | ForEach-Object { $_.name })
+        if (-not $report.passed -or $failedChecks.Count -gt 0) {
+            throw "解析契约（$($profile.Name)）未通过：$($failedChecks -join ', ')。报告：$reportPath"
+        }
+        Add-Result -Name "WPF parser contract ($($profile.Name))" -Status 'PASS' `
+            -Note "model=$($report.model) layout=$($report.rawOutputLayout) label=$($report.detectedLabel)" `
+            -Evidence $reportPath
+    }
+}
+
+function Run-ResidentLaunch {
+    # 「检测端拉起同目录驻留 → 驻留认证 → 服务端 device-list 出现 resident=running」这一段。
+    # 为什么需要它：驻留是独立进程，检测端本地只能证明互斥体出现了，无法证明它真的连上了服务端；
+    # 而 Win7 上的历史事实是「驻留没起来，界面上与接收端都毫无提示」，必须从服务端视角取证。
+    # 两档产物都要跑：legacy 档是 Win7 包，是这条链路真正要服务的环境。
+    $apiKey = if ($env:VISIONGUARD_API_KEY) { $env:VISIONGUARD_API_KEY } else { 'vg-e2e-resident-launch' }
+    $serverScript = Join-Path $repoRoot 'scripts\start-isolated-test-server.ps1'
+    $assertScript = Join-Path $repoRoot 'scripts\assert-resident-visible.js'
+    if (-not (Test-Path -LiteralPath $serverScript)) { throw "隔离 Server 脚本不存在：$serverScript" }
+    if (-not (Test-Path -LiteralPath $assertScript)) { throw "驻留可见性断言脚本不存在：$assertScript" }
+
+    $serverLog = Join-Path $artifactRoot 'isolated-server.log'
+    $serverErrorLog = Join-Path $artifactRoot 'isolated-server-error.log'
+    $server = $null
+    $residentProcesses = @()
+    # 端口必须空闲：残留的隔离 Server（例如上次手工验证留下的 node 进程）会先占住端口，
+    # 新实例只会在 stderr 里写 EADDRINUSE，而探针会去连旧实例，结论就被污染。
+    $occupied = @(Get-NetTCPConnection -LocalPort $ResidentPort -State Listen -ErrorAction SilentlyContinue)
+    if ($occupied.Count -gt 0) {
+        $owners = @($occupied | ForEach-Object { $_.OwningProcess } | Select-Object -Unique) -join ', '
+        throw "端口 $ResidentPort 已被占用（PID: $owners）。请先结束该监听进程再运行本模式。"
+    }
+    try {
+        $previousApiKey = $env:VISIONGUARD_API_KEY
+        $env:VISIONGUARD_API_KEY = $apiKey
+        $server = Start-Process -FilePath 'powershell' `
+            -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $serverScript, '-Port', $ResidentPort.ToString(), '-Channel', $ResidentChannel) `
+            -RedirectStandardOutput $serverLog -RedirectStandardError $serverErrorLog -WindowStyle Hidden -PassThru
+
+        $ready = $false
+        $deadline = (Get-Date).AddSeconds(60)
+        while ((Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+            try {
+                $health = Invoke-WebRequest -Uri "http://127.0.0.1:$ResidentPort/health" -UseBasicParsing -TimeoutSec 2
+                if ($health.StatusCode -eq 200) { $ready = $true; break }
+            }
+            catch { }
+            if ($server.HasExited) { throw "隔离 Server 提前退出（退出码 $($server.ExitCode)），日志：$serverLog" }
+        }
+        if (-not $ready) { throw "隔离 Server 未在 60 秒内就绪，日志：$serverLog" }
+
+        $profiles = @('modern', 'legacy')
+        $paths = @{ modern = 'detector\windows-wpf\bin\x64\modern\VisionGuard.exe'; legacy = 'detector\windows-wpf\bin\x64\legacy\VisionGuard.exe' }
+        foreach ($profile in $profiles) {
+            $detectorExe = Resolve-RepoPath $paths[$profile]
+            if (-not (Test-Path -LiteralPath $detectorExe)) { throw "$profile 档检测端不存在：$detectorExe（先运行 visionguard-build -Target Windows）" }
+            $residentExe = Join-Path (Split-Path -Parent $detectorExe) 'VisionGuard.Resident.exe'
+            if (-not (Test-Path -LiteralPath $residentExe)) { throw "$profile 档产物缺少配套驻留程序：$residentExe" }
+
+            $reportPath = Join-Path $artifactRoot "resident-launch-$profile.json"
+            $stdoutLog = Join-Path $artifactRoot "resident-launch-$profile.txt"
+            $stderrLog = Join-Path $artifactRoot "resident-launch-$profile-error.txt"
+            $settingsPath = Join-Path $artifactRoot "resident-launch-$profile-settings.ini"
+
+            # 每次用独立 settings 文件，避免干扰本机真实配置。
+            # 必须预置测试专属 DeviceId：探针驻留与探针检测端共用同一设备身份，
+            # 否则服务端会把驻留当成另一台设备，而清理时又可能误杀用户真实运行的驻留。
+            # 探针启动时会读取（不覆盖）这个文件，因此这里写入的 DeviceId 就是两端共同身份。
+            [System.IO.File]::WriteAllText($settingsPath,
+                "# VisionGuard 用户设置（E2E 隔离文件）`r`nDeviceId=$('e2e-resident-' + [Guid]::NewGuid().ToString('N').Substring(0, 12))`r`n",
+                (New-Object System.Text.UTF8Encoding($false)))
+
+            $env:VISIONGUARD_CHANNEL = $ResidentChannel
+            $env:VISIONGUARD_SERVER_URL = "http://127.0.0.1:$ResidentPort"
+            $env:VISIONGUARD_SETTINGS_PATH = $settingsPath
+
+            $probe = Start-Process -FilePath $detectorExe `
+                -ArgumentList @('--resident-launch', $reportPath, '6000') `
+                -WorkingDirectory (Split-Path -Parent $detectorExe) -NoNewWindow -PassThru `
+                -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
+            if (-not $probe.WaitForExit(60000)) { try { $probe.Kill() } catch { }; throw "$profile 档拉起探针超过 60 秒未结束" }
+            # 探针是 WinExe：AttachConsole/FreeConsole 之后 Start-Process 的 ExitCode 可能为空，
+            # 因此以 JSON 报告作为权威依据，退出码只作为附加诊断信息。
+            $probe.Refresh()
+            $probeExit = $probe.ExitCode
+            if (-not (Test-Path -LiteralPath $reportPath)) {
+                throw "$profile 档拉起探针未写出报告（退出码 $probeExit）：$reportPath"
+            }
+            $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if (-not $report.isRunning -or -not $report.handshakeSucceeded) {
+                throw "$profile 档驻留未进入运行状态（退出码 $probeExit）：$($report.failureReason)"
+            }
+
+            # 以隔离 settings 里实际生效的设备身份去服务端核对（探针与驻留共用该身份）。
+            $deviceId = ((Get-Content -LiteralPath $settingsPath -Encoding UTF8 |
+                Select-String -Pattern '^DeviceId=(.+)$').Matches[0].Groups[1].Value).Trim()
+            if (-not $deviceId) { throw "$profile 档隔离 settings 中没有 DeviceId：$settingsPath" }
+
+            $visibleOutput = & node $assertScript "ws://127.0.0.1:$ResidentPort" $ResidentChannel $apiKey $deviceId 2>&1
+            $visibleExit = $LASTEXITCODE
+            $visiblePath = Join-Path $artifactRoot "resident-visibility-$profile.json"
+            ($visibleOutput | Out-String).Trim() | Set-Content -Encoding UTF8 $visiblePath
+            if ($visibleExit -ne 0) { throw "$profile 档驻留在服务端不可见：$($visibleOutput | Out-String)" }
+
+            Add-Result -Name "Resident launch ($profile)" -Status 'PASS' `
+                -Note "detector launched resident, server reports components.resident=running" -Evidence $visiblePath
+
+            # 收尾：只结束由本轮隔离配置拉起的驻留（按驻留自身配置路径匹配），不碰用户真实运行的驻留。
+            $residentConfigPath = Join-Path $env:LOCALAPPDATA 'VisionGuard\resident-config.json'
+            $ours = @()
+            try {
+                $ours = @(Get-CimInstance Win32_Process -Filter "Name = 'VisionGuard.Resident.exe'" -ErrorAction SilentlyContinue |
+                    Where-Object { $_.CommandLine -and $_.CommandLine -like "*$residentConfigPath*" })
+            }
+            catch { }
+            foreach ($process in $ours) { try { Stop-Process -Id $process.ProcessId -Force } catch { } }
+        }
+
+        $env:VISIONGUARD_API_KEY = $previousApiKey
+    }
+    finally {
+        # 本模式只清理自己拉起的驻留：按驻留自身配置路径匹配，绝不按进程名清空，
+        # 以免杀掉用户真实运行中的驻留（那会让接收端的「打开/关闭检测端」静默失效）。
+        try {
+            $residentConfigPath = Join-Path $env:LOCALAPPDATA 'VisionGuard\resident-config.json'
+            foreach ($process in @(Get-CimInstance Win32_Process -Filter "Name = 'VisionGuard.Resident.exe'" -ErrorAction SilentlyContinue |
+                Where-Object { $_.CommandLine -and $_.CommandLine -like "*$residentConfigPath*" })) {
+                try { Stop-Process -Id $process.ProcessId -Force } catch { }
+            }
+        }
+        catch { }
+        if ($server -and -not $server.HasExited) {
+            # npm/node 子进程不随 powershell 一起退出，按端口结束监听进程。
+            try {
+                foreach ($connection in @(Get-NetTCPConnection -LocalPort $ResidentPort -State Listen -ErrorAction SilentlyContinue)) {
+                    $owner = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
+                    if ($owner) { $owner.Kill() }
+                }
+            }
+            catch { }
+            try { $server.Kill() } catch { }
+        }
+    }
+}
+
+function Run-ModelDownload {
+    # 模型下载与装配：驱动「全局设定」页模型清单里那个下载按钮背后的同一条 ViewModel 路径。
+    # 走真实生产服务器（模型下载本来就是线上行为，不在本模式里模拟服务端）。
+    # 这会在真实缓存 %APPDATA%\VisionGuard\models\ 里落一个模型文件（约 10-100 MB），并清掉同名临时文件。
+    $profile = if ($ModelDownloadLegacyProfile) { 'legacy' } else { 'modern' }
+    $benchmarkProject = Join-Path $repoRoot 'tests\WpfInference.Benchmark\WpfInference.Benchmark.csproj'
+    if (-not (Test-Path -LiteralPath $benchmarkProject)) { throw "下载契约探针工程不存在：$benchmarkProject" }
+    if ($profile -eq 'legacy' -and -not ($ModelDownloadKey -like 'yolov5*')) {
+        throw "legacy 档只能下载 yolov5* 模型，收到：$ModelDownloadKey"
+    }
+    if ($profile -eq 'modern' -and -not ($ModelDownloadKey -like 'yolo26*')) {
+        throw "modern 档只能下载 yolo26* 模型，收到：$ModelDownloadKey"
+    }
+
+    $buildArguments = @('build', $benchmarkProject, '-c', 'Release', '--nologo')
+    if ($profile -eq 'legacy') { $buildArguments += '-p:OrtProfile=legacy' }
+    Invoke-NativeLogged -FilePath 'dotnet' -Arguments $buildArguments -WorkingDirectory $repoRoot `
+        -LogPath (Join-Path $artifactRoot "model-download-$profile-build.txt")
+
+    $exePath = Join-Path $repoRoot "tests\WpfInference.Benchmark\bin\x64\$profile\net472\WpfInference.Benchmark.exe"
+    if (-not (Test-Path -LiteralPath $exePath)) { throw "下载契约探针未生成：$exePath" }
+
+    $reportPath = Join-Path $artifactRoot "model-download-$profile.json"
+    $logPath = Join-Path $artifactRoot "model-download-$profile.log"
+    $previousReport = $env:VISIONGUARD_MODEL_DOWNLOAD_REPORT
+    $env:VISIONGUARD_MODEL_DOWNLOAD_REPORT = $reportPath
+    try {
+        Invoke-NativeLogged -FilePath $exePath -Arguments @('unused', '--model-download', $ModelDownloadKey) `
+            -WorkingDirectory $repoRoot -LogPath $logPath
+    }
+    finally {
+        $env:VISIONGUARD_MODEL_DOWNLOAD_REPORT = $previousReport
+    }
+
+    if (-not (Test-Path -LiteralPath $reportPath)) { throw "下载契约探针未写出报告：$reportPath" }
+    $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $failedChecks = @($report.checks | Where-Object { -not $_.passed } | ForEach-Object { $_.name })
+    if (-not $report.passed -or $failedChecks.Count -gt 0) {
+        throw "模型下载（$profile / $ModelDownloadKey）未通过：$($failedChecks -join ', ')。报告：$reportPath"
+    }
+    Add-Result -Name "Model download ($profile / $($report.modelKey))" -Status 'PASS' `
+        -Note ("size={0:N1} MB in {1} ms, progress samples={2}" -f ($report.sizeBytes / 1MB), $report.elapsedMs, $report.progressSamples) `
+        -Evidence $reportPath
+}
+
+function Run-SourceAutoSave {
+    # 来源页参数自动保存与采集目标重置：驱动真实的 SourceViewModel（界面那条路径），
+    # 断言「改动即已保存」「防抖前不落盘」「重置把窗口/选区/遮罩一起清掉并立即落盘」「保存按钮确实不存在」。
+    # 用隔离 settings 文件，不碰真实配置。
+    $benchmarkProject = Join-Path $repoRoot 'tests\WpfInference.Benchmark\WpfInference.Benchmark.csproj'
+    if (-not (Test-Path -LiteralPath $benchmarkProject)) { throw "契约探针工程不存在：$benchmarkProject" }
+
+    Invoke-NativeLogged -FilePath 'dotnet' -Arguments @('build', $benchmarkProject, '-c', 'Release', '--nologo') `
+        -WorkingDirectory $repoRoot -LogPath (Join-Path $artifactRoot 'source-autosave-build.txt')
+
+    $exePath = Join-Path $repoRoot 'tests\WpfInference.Benchmark\bin\x64\modern\net472\WpfInference.Benchmark.exe'
+    if (-not (Test-Path -LiteralPath $exePath)) { throw "契约探针未生成：$exePath" }
+
+    $settingsPath = Join-Path $artifactRoot 'source-autosave-settings.ini'
+    $reportPath = Join-Path $artifactRoot 'source-autosave.json'
+    $logPath = Join-Path $artifactRoot 'source-autosave.log'
+    $previousReport = $env:VISIONGUARD_AUTOSAVE_REPORT
+    $env:VISIONGUARD_AUTOSAVE_REPORT = $reportPath
+    try {
+        $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $startInfo.FileName = $exePath
+        $startInfo.WorkingDirectory = $repoRoot
+        $startInfo.UseShellExecute = $false
+        $startInfo.RedirectStandardOutput = $true
+        $startInfo.RedirectStandardError = $true
+        $startInfo.Arguments = (@('unused', '--source-autosave', $settingsPath) | ForEach-Object { '"' + $_ + '"' }) -join ' '
+        $process = [System.Diagnostics.Process]::Start($startInfo)
+        $stdoutStream = [System.IO.File]::Create($logPath)
+        $stderrStream = [System.IO.File]::Create((Join-Path $artifactRoot 'source-autosave-error.txt'))
+        try {
+            $copyStdout = $process.StandardOutput.BaseStream.CopyToAsync($stdoutStream)
+            $copyStderr = $process.StandardError.BaseStream.CopyToAsync($stderrStream)
+            if (-not $process.WaitForExit(120000)) { try { $process.Kill() } catch { }; throw '自动保存契约探针超过 120 秒未结束' }
+            [void]$copyStdout.Wait(30000)
+            [void]$copyStderr.Wait(30000)
+        }
+        finally {
+            $stdoutStream.Dispose()
+            $stderrStream.Dispose()
+        }
+    }
+    finally {
+        $env:VISIONGUARD_AUTOSAVE_REPORT = $previousReport
+    }
+
+    if (-not (Test-Path -LiteralPath $reportPath)) { throw "自动保存契约探针未写出报告：$reportPath；日志：$logPath" }
+    $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $failedChecks = @($report.checks | Where-Object { -not $_.passed } | ForEach-Object { $_.name })
+    if (-not $report.passed -or $failedChecks.Count -gt 0) {
+        throw "来源自动保存契约未通过：$($failedChecks -join ', ')。报告：$reportPath"
+    }
+    Add-Result -Name 'Source auto-save contract' -Status 'PASS' `
+        -Note "$($report.checks.Count) checks: 改动即保存 / 防抖 / 目标重置 / 保存按钮已移除" -Evidence $reportPath
+}
+
+function Run-CardLayoutPlan {
+    # 卡片区布局契约：驱动 CardLayoutPlanner（纯计算，不开窗口、不建推理会话），
+    # 断言「卡片宽高比落在 1:1.2~1.2:1」「1/2/4 张的网格都恰好排得下且不裁剪」「最小窗口下 1:1 画面短边达标」
+    # 「宽扁/窄高容器不出现畸形卡片」「同输入结果确定」「零可用空间返回无效布局」。
+    # 它证明布局数学，不证明真实界面的视觉与拖拽手感——那部分必须 owner 目检。
+    $benchmarkProject = Join-Path $repoRoot 'tests\WpfInference.Benchmark\WpfInference.Benchmark.csproj'
+    if (-not (Test-Path -LiteralPath $benchmarkProject)) { throw "契约探针工程不存在：$benchmarkProject" }
+
+    Invoke-NativeLogged -FilePath 'dotnet' -Arguments @('build', $benchmarkProject, '-c', 'Release', '--nologo') `
+        -WorkingDirectory $repoRoot -LogPath (Join-Path $artifactRoot 'card-layout-plan-build.txt')
+
+    $exePath = Join-Path $repoRoot 'tests\WpfInference.Benchmark\bin\x64\modern\net472\WpfInference.Benchmark.exe'
+    if (-not (Test-Path -LiteralPath $exePath)) { throw "契约探针未生成：$exePath" }
+
+    $reportPath = Join-Path $artifactRoot 'card-layout-plan.json'
+    $logPath = Join-Path $artifactRoot 'card-layout-plan.log'
+    $errorLogPath = Join-Path $artifactRoot 'card-layout-plan-error.txt'
+
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $exePath
+    $startInfo.WorkingDirectory = $repoRoot
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.Arguments = (@('unused', '--layout-plan', $reportPath) | ForEach-Object { '"' + $_ + '"' }) -join ' '
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    $stdoutStream = [System.IO.File]::Create($logPath)
+    $stderrStream = [System.IO.File]::Create($errorLogPath)
+    try {
+        $copyStdout = $process.StandardOutput.BaseStream.CopyToAsync($stdoutStream)
+        $copyStderr = $process.StandardError.BaseStream.CopyToAsync($stderrStream)
+        if (-not $process.WaitForExit(120000)) { try { $process.Kill() } catch { }; throw '卡片布局契约探针超过 120 秒未结束' }
+        [void]$copyStdout.Wait(30000)
+        [void]$copyStderr.Wait(30000)
+    }
+    finally {
+        $stdoutStream.Dispose()
+        $stderrStream.Dispose()
+    }
+
+    if (-not (Test-Path -LiteralPath $reportPath)) { throw "卡片布局契约探针未写出报告：$reportPath；日志：$logPath" }
+    $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $failedChecks = @($report.checks | Where-Object { -not $_.passed } | ForEach-Object { $_.name })
+    if (-not $report.passed -or $failedChecks.Count -gt 0) {
+        throw "卡片布局契约未通过：$($failedChecks -join ', ')。报告：$reportPath"
+    }
+    Add-Result -Name 'Card layout plan contract' -Status 'PASS' `
+        -Note "$($report.checks.Count) checks: 单路预览高度 / 1-4 路单页 / 5 路以上分页自洽 / 放大不退化 / 确定性 / 退化输入" -Evidence $reportPath
+}
+
 function Run-WpfPersonDetection {
     $fixtureDirectory = Resolve-RepoPath $WpfFixtureDirectory
     $modelPath = Resolve-RepoPath $WpfModelPath
@@ -523,6 +912,11 @@ try {
                 -RuntimePermissions @('android.permission.POST_NOTIFICATIONS')
         }
         'WpfPersonDetection' { Run-WpfPersonDetection }
+        'WpfParserContract' { Run-WpfParserContract }
+        'ResidentLaunch' { Run-ResidentLaunch }
+        'ModelDownload' { Run-ModelDownload }
+        'SourceAutoSave' { Run-SourceAutoSave }
+        'CardLayoutPlan' { Run-CardLayoutPlan }
     }
 }
 catch {

@@ -58,6 +58,9 @@ dotnet run --project .\tests\WpfAlertChain.Probe\WpfAlertChain.Probe.csproj -c R
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode Discover
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode ServerBuild
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode WpfPersonDetection
+powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode WpfParserContract
+$env:VISIONGUARD_API_KEY = '<local-test-key>'
+powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode ResidentLaunch
 ```
 
 `-Mode WindowsTests` 与 `-Mode WinFormsPersonDetection` 已随 WinForms 退役从脚本的模式列表移除：它们依赖的 `tests/WindowsConfig.Tests`、`tests/WinFormsMultiSource.Tests`、`detector/windows-winforms-smoke/` 与 `scripts/test-winforms-person-detection.ps1` 都已删除，当前没有等价入口，不要按这两个模式报告结果。现存探针是 `tests/WpfAlertChain.Probe/`、`tests/WpfInference.Benchmark/`、`tests/SingleInstance.Probe/` 与 `detector/windows-wpf-smoke/`。
@@ -71,6 +74,8 @@ Android 运行 smoke 使用 `-Mode AndroidDetectorSmoke` 或 `-Mode AndroidRecei
 - `WindowsTests` 已随 WinForms 退役取消。它原先在宿主机跑 `tests/WindowsConfig.Tests` 与 `tests/WinFormsMultiSource.Tests` 两组机器可判定约束（采集尺寸、黑屏判定、窗口重绑、崩溃/容量策略、发件箱、设置合并、显示缩放策略与多来源协调器隔离），这两个工程已删除，等价覆盖当前缺位，也没有对应模式可跑；这条不验证设备、真机采集或报警链。
 - `WpfPersonDetection` 按 `-WpfSourceCount`（默认 4）打开对应数量的独立可见浏览器窗口，经 `WindowHandle` 捕获，要求每路至少一帧 `person` 且实际达到 2.5 FPS，并验证来源隔离、CPU 超容量提示和后端故障边界；夹具目录人像图数量不得少于来源数量，默认目录不足时用 `-WpfFixtureDirectory` 指定，脚本会报出实际张数而不是自动降低路数。不证明动态视频、报警链或 UI 目检。**夹具捕获注意**：这套用浏览器 `--app` 图片窗口承载来源，但当前 Chrome 的 GPU 合成层不进 `PrintWindow`，实测会抓到空白暗帧（表现为采集正常、但每路 0 命中）；需要可靠夹具时改用 net472 窗口工具承载（GDI 渲染可稳定捕获），参考 `artifacts/e2e/verify-wpf-multisource.ps1`。
 - `WinFormsPersonDetection` 已随 WinForms 检测端退役：它依赖的脚本、夹具工程和被测端都已删除，不再运行也不再计入验证结论；随之净减的覆盖见[验证报告](90-verification-report.md)。
+- `WpfParserContract` 按推理档位各构建一次 `tests/WpfInference.Benchmark` 并对真实图片断言输出形态、形态与档位一致、未知长度被拒、原生 ONNX Runtime 来自档位目录、解析出预期业务目标（默认 `person`，置信度 ≥0.5）。不打开窗口、不依赖 GPU，只证明「模型 → 解析 → 检测框」。
+- `ResidentLaunch` 需要 `VISIONGUARD_API_KEY`；它按 `-ResidentPort`（默认 3123，端口被占用会直接报错而不复用旧实例）启动隔离 Server，对两个档位分别断言「检测端拉起同目录驻留 → 驻留在超时内进入单实例握手 → 服务端 device-list 报 `components.resident = running`」。它只会结束自己拉起的驻留（按驻留配置路径匹配），不使用真实 settings。不覆盖远程 `open-detector`/`close-detector` 实际动作、登录自启与重启恢复。
 - 真实窗口采集、真机 UI、完整报警链、持续运行和故障恢复分别记录为人工/真机/完整 E2E 结果。
 - Windows 驻留程序已经迁移到 .NET Framework 4.7.2 x64；构建和隔离链路 smoke 仍不能替代 Win7 SP1 x64 目标环境中的启动、WSS、登录重启和网络恢复验收。
 - Win7 SP1 x64 前置环境可在虚拟机共享目录中双击 `scripts/run-win7-prerequisites.cmd` 核验；它调用 `scripts/check-win7-prerequisites.ps1` 检查系统版本、KB4490628、KB4474419、KB3140245、WinHTTP TLS 1.2 注册表、KB4019990 与 .NET Framework 4.7.2，并把机器可读结果写入 `artifacts/e2e/win7-prerequisites.json`。共享目录必须临时允许虚拟机写入该报告，验收后可恢复只读。

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ONNX Runtime 推理档位的唯一定义（Windows 检测端与其验证工程共用）。
+
+  档位（V10）：
+    modern（默认）= Windows 10 及以上：托管 ONNX Runtime 1.19.0 + 原生 1.19.0 + DirectML，模型 YOLO26。
+    legacy        = Windows 7 SP1 x64：托管 ONNX Runtime 1.2.0 + 原生 1.1.0，固定 CPU，模型 YOLOv5。
+
+  三件事必须由同一份定义推导，否则会静默错配：
+    1. 托管包与版本（OrtManagedPackage / OrtManagedVersion）；
+    2. 编译期开关（ORT_DIRECTML / ORT_LEGACY），决定 DirectML 提供程序是否存在；
+    3. 原生库布置目录（native\modern 与 native\legacy）与输出目录（bin\x64\<档位>）。
+
+  OrtProfile 必须按全局属性传播：`dotnet build -p:OrtProfile=legacy` 若不传播到被引用的
+  VisionGuard 工程，就会出现「探针按 legacy 编译、生产程序集仍按 modern 编译」的假验证。
+
+  托管层与原生层必须同代配对：托管 1.15/1.19 配原生 1.1.0 会在类型初始化时抛
+  `TypeInitializationException`（实测）。原生库不留在应用根目录（DllImport 会先命中根目录），
+  统一由 ArrangeNativeLibraries 放到 native\<档位>\ 后按绝对路径预加载。
+-->
+<Project>
+
+  <PropertyGroup>
+    <OrtProfile Condition="'$(OrtProfile)' == ''">modern</OrtProfile>
+    <OrtManagedPackage Condition="'$(OrtProfile)' == 'legacy'">Microsoft.ML.OnnxRuntime.Managed</OrtManagedPackage>
+    <OrtManagedPackage Condition="'$(OrtProfile)' != 'legacy'">Microsoft.ML.OnnxRuntime.DirectML</OrtManagedPackage>
+    <OrtManagedVersion Condition="'$(OrtProfile)' == 'legacy'">1.2.0</OrtManagedVersion>
+    <OrtManagedVersion Condition="'$(OrtProfile)' != 'legacy'">1.19.0</OrtManagedVersion>
+    <DefineConstants Condition="'$(OrtProfile)' == 'legacy'">$(DefineConstants);ORT_LEGACY</DefineConstants>
+    <DefineConstants Condition="'$(OrtProfile)' != 'legacy'">$(DefineConstants);ORT_DIRECTML</DefineConstants>
+    <!-- 两档输出到不同目录，避免互相覆盖。 -->
+    <OutputPath>bin\x64\$(OrtProfile)\</OutputPath>
+    <!-- legacy 原生 1.1.0 的唯一来源：NuGet 缓存里 Microsoft.ML.OnnxRuntime 包的 runtimes\win-x64\native。
+         GeneratePathProperty 生成的 PkgMicrosoft_ML_OnnxRuntime_1_1_0 指向包目录，避免写死缓存布局。 -->
+    <LegacyNativeSource Condition="'$(PkgMicrosoft_ML_OnnxRuntime_1_1_0)' != ''">$(PkgMicrosoft_ML_OnnxRuntime_1_1_0)\runtimes\win-x64\native\onnxruntime.dll</LegacyNativeSource>
+    <LegacyNativeSource Condition="'$(LegacyNativeSource)' == ''">$(NuGetPackageRoot)microsoft.ml.onnxruntime\1.1.0\runtimes\win-x64\native\onnxruntime.dll</LegacyNativeSource>
+  </PropertyGroup>
+
+  <Target Name="ArrangeNativeLibraries" AfterTargets="Build">
+    <!-- 不为另一档位建空目录，也不在 legacy 档输出里留 modern 原生库：
+         残留会让「按档位选择」看起来生效而实际加载了非同代的原生库。 -->
+    <Copy SourceFiles="$(OutputPath)onnxruntime.dll" DestinationFolder="$(OutputPath)native\modern" Condition="Exists('$(OutputPath)onnxruntime.dll') And '$(OrtProfile)' != 'legacy'" />
+    <Copy SourceFiles="$(OutputPath)onnxruntime_providers_shared.dll" DestinationFolder="$(OutputPath)native\modern" Condition="Exists('$(OutputPath)onnxruntime_providers_shared.dll') And '$(OrtProfile)' != 'legacy'" />
+    <Copy SourceFiles="$(OutputPath)DirectML.dll" DestinationFolder="$(OutputPath)native\modern" Condition="Exists('$(OutputPath)DirectML.dll') And '$(OrtProfile)' != 'legacy'" />
+    <Copy SourceFiles="$(OutputPath)DirectML.Debug.dll" DestinationFolder="$(OutputPath)native\modern" Condition="Exists('$(OutputPath)DirectML.Debug.dll') And '$(OrtProfile)' != 'legacy'" />
+    <Copy SourceFiles="$(LegacyNativeSource)" DestinationFolder="$(OutputPath)native\legacy" Condition="Exists('$(LegacyNativeSource)') And '$(OrtProfile)' == 'legacy'" />
+    <!-- 根目录不得留下任何 ONNX Runtime / DirectML 原生库（含 .lib/.pdb 等伴随文件）：
+         DllImport("onnxruntime") 会先命中根目录，导致按档位选择失效。 -->
+    <ItemGroup>
+      <RootNativeLeftover Include="$(OutputPath)onnxruntime*.*;$(OutputPath)DirectML*.*" />
+      <!-- 非本档位目录里的残留原生库同样要清掉，避免上一次另一档的构建结果留在输出目录。 -->
+      <ForeignNativeDir Include="$(OutputPath)native\legacy" Condition="'$(OrtProfile)' != 'legacy'" />
+      <ForeignNativeDir Include="$(OutputPath)native\modern" Condition="'$(OrtProfile)' == 'legacy'" />
+    </ItemGroup>
+    <Delete Files="@(RootNativeLeftover)" />
+    <RemoveDir Directories="@(ForeignNativeDir)" />
+    <RemoveDir Directories="$(OutputPath)runtimes" />
+    <Message Importance="high" Text="✓ 档位=$(OrtProfile) 原生库已布置到 $(OutputPath)native" />
+  </Target>
+
+</Project>

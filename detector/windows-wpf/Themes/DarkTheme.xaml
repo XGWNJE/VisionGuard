@@ -79,10 +79,11 @@
     </Style>
 
     <Style TargetType="Button" x:Key="CardIconButton" BasedOn="{StaticResource GhostButton}">
-        <Setter Property="Width" Value="30"/>
-        <Setter Property="Height" Value="30"/>
-        <Setter Property="MinWidth" Value="30"/>
-        <Setter Property="MinHeight" Value="30"/>
+        <!-- 22 与卡片标题行高度 26 配套：压缩卡片 UI 后图标按钮仍要完整落在标题行里。 -->
+        <Setter Property="Width" Value="22"/>
+        <Setter Property="Height" Value="22"/>
+        <Setter Property="MinWidth" Value="22"/>
+        <Setter Property="MinHeight" Value="22"/>
         <Setter Property="Padding" Value="0"/>
         <Setter Property="Margin" Value="1,0,0,0"/>
     </Style>

@@ -8,6 +8,9 @@ import WebSocket, { WebSocketServer } from 'ws';
 
 process.env.API_KEY = 'control-request-test-key';
 process.env.VISIONGUARD_CHANNEL = 'test-vnext';
+// 显式钉住 4 路上限：本文件要覆盖的是「超限心跳整组被拒 + 接收端看到 sourceLimitExceeded」，
+// 不能跟着 config 默认值走（默认值已改为 16，否则 5 路心跳不再超限，这条覆盖会静默失效）。
+process.env.MAX_SOURCES_PER_DETECTOR = '4';
 const alertStorePath = path.join(os.tmpdir(), `visionguard-alert-store-${process.pid}.json`);
 process.env.ALERT_STORE_PATH = alertStorePath;
 test.after(() => { try { fs.rmSync(alertStorePath, { force: true }); } catch {} });

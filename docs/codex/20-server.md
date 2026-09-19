@@ -56,7 +56,7 @@ visionguard.xgwnje.cn:443
 - `MAX_UPLOAD_BYTES`
 - `ENABLE_HTTP_SCREENSHOT_UPLOAD`
 - `MAX_WS_CONNECTIONS`
-- `MAX_SOURCES_PER_DETECTOR`（默认 4，允许 1–16；随 `auth-result`/`heartbeat-ack` 下发）
+- `MAX_SOURCES_PER_DETECTOR`（默认 16，允许 1–16；随 `auth-result`/`heartbeat-ack` 下发）
 
 ## 已验证事实
 
@@ -65,7 +65,7 @@ visionguard.xgwnje.cn:443
 - 检测端幽灵阈值当前也按 45s 统一处理
 - 截图目录当前为 `data/screenshots/<alertId>.(png|jpg)`；服务端按图片魔数决定扩展名
 - WS 认证存在超时控制，当前实现为 5000ms
-- 检测端来源上限由 `MAX_SOURCES_PER_DETECTOR` 持有（默认 4、范围 1–16），并在 `auth-result` 与 `heartbeat-ack` 中下发 `maxSources`。心跳的 `sources` 数组超过上限时整组拒绝并回明确原因，不再静默截断——静默截断会让超出部分既不报警也不可见。逐来源命令与参数调整只接受最近一次心跳中存在的 `targetSourceId`。
+- 检测端来源上限由 `MAX_SOURCES_PER_DETECTOR` 持有（默认 16、范围 1–16），并在 `auth-result` 与 `heartbeat-ack` 中下发 `maxSources`。默认值必须与检测端 `MultiSourceMonitorCoordinator.MaximumSourceLimit`（16）一致：默认 4 时检测端新增来源按钮在 4 路即变灰，且 4 路恰好一页装下、分页页脚从不出现（2026-09 实报“来源卡片不能显示多页、加到 4 个就加不了”）。心跳的 `sources` 数组超过上限时整组拒绝并回明确原因，不再静默截断——静默截断会让超出部分既不报警也不可见。逐来源命令与参数调整只接受最近一次心跳中存在的 `targetSourceId`。
 - `device-list` 的每个设备条目携带 `maxSources` 与 `sourceLimitExceeded`：后者表示最近一次心跳的来源数组因超限被整组拒绝（此时条目里的 `sources` 是上一次成功上报的快照），正常心跳会清除该标记。接收端据此解释“来源为什么只有这些”，不需要猜。
 - 业务控制命令只允许 `pause`、`resume`、`stop-alarm`；驻留生命周期只允许四个既定打开/关闭命令。无效命令或来源不会占用 `requestId`。无 `targetSourceId` 的命令按设备级中继，由检测端解释为“全部来源”；服务端不把设备级命令改写成某个具体来源。
 - `request-screenshot` 没有成功回执：检测端把截图作为 `screenshot-data` 异步广播，请求者按 `alertId` 关联；失败路径回带 `requestId` 与 `phase=completed` 的结构化 `command-ack`。
