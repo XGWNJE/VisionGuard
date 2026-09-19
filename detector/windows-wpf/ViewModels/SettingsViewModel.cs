@@ -134,12 +134,6 @@ namespace VisionGuard.ViewModels
             }
         }
 
-        private int _directMlCapacity = 4;
-        public int DirectMlCapacity { get => _directMlCapacity; set => SetProperty(ref _directMlCapacity, Net472Compat.Clamp(value, 1, 16)); }
-        private int _cpuCapacity = 1;
-        public int CpuCapacity { get => _cpuCapacity; set => SetProperty(ref _cpuCapacity, Net472Compat.Clamp(value, 1, 16)); }
-        public int GetCapacity(Inference.InferenceBackend backend) => backend == Inference.InferenceBackend.Cpu ? CpuCapacity : DirectMlCapacity;
-
         public RelayCommand DownloadModelCommand { get; }
 
         // ── 模型资源清单 ─────────────────────────────────────────────
@@ -299,8 +293,6 @@ namespace VisionGuard.ViewModels
             SelectedModelIndex = Net472Compat.Clamp(SettingsStore.GetInt("SelectedModelIndex", 0), 0, Utils.ModelManager.ModelKeys.Length - 1);
             bool savedCpu = SettingsStore.GetInt("SelectedBackendIndex", 0) == 1;
             SelectedBackendIndex = Runtime.NativeLibrarySelector.SupportsDirectMl ? (savedCpu ? 1 : 0) : 0;
-            DirectMlCapacity = Net472Compat.Clamp(SettingsStore.GetInt("Capacity.DirectML", 4), 1, 16);
-            CpuCapacity = Net472Compat.Clamp(SettingsStore.GetInt("Capacity.Cpu", 1), 1, 16);
 
             var watched = SettingsStore.GetStringList("WatchedClasses");
             WatchPerson     = watched.Contains("person");
@@ -325,8 +317,6 @@ namespace VisionGuard.ViewModels
             SettingsStore.Set("AlertCooldownSeconds", Cooldown);
             SettingsStore.Set("SelectedModelIndex", SelectedModelIndex);
             SettingsStore.Set("SelectedBackendIndex", SelectedBackendIndex);
-            SettingsStore.Set("Capacity.DirectML", DirectMlCapacity);
-            SettingsStore.Set("Capacity.Cpu", CpuCapacity);
 
             var watched = GetWatchedClasses();
             SettingsStore.Set("WatchedClasses", string.Join(",", watched));

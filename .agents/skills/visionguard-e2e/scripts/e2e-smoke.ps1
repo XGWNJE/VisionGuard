@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet('Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WpfPersonDetection', 'WpfParserContract', 'ResidentLaunch', 'ModelDownload', 'SourceAutoSave', 'CardLayoutPlan')]
+    [ValidateSet('Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WpfPersonDetection', 'WpfParserContract', 'ResidentLaunch', 'ModelDownload', 'SourceAutoSave', 'CardLayoutPlan', 'PerformanceWatchdog')]
     [string]$Mode = 'Discover',
 
     [ValidateSet('Auto', 'Physical', 'Emulator', 'None')]
@@ -793,6 +793,55 @@ function Run-CardLayoutPlan {
         -Note "$($report.checks.Count) checks: 单路预览高度 / 1-4 路单页 / 5 路以上分页自洽 / 放大不退化 / 确定性 / 退化输入" -Evidence $reportPath
 }
 
+function Run-PerformanceWatchdog {
+    # 推理性能看门狗契约：驱动 PerformanceWatchdog（纯计算，不开窗口、不建推理会话），
+    # 断言「实测 < 目标×80% 且持续 30 秒才提示」的判定边界、提示文案与三个口径常量。
+    # 它取代了原先「容量基线」的性能提示（容量菜单已于 2026-09-20 移除）。
+    $benchmarkProject = Join-Path $repoRoot 'tests\WpfInference.Benchmark\WpfInference.Benchmark.csproj'
+    if (-not (Test-Path -LiteralPath $benchmarkProject)) { throw "契约探针工程不存在：$benchmarkProject" }
+
+    Invoke-NativeLogged -FilePath 'dotnet' -Arguments @('build', $benchmarkProject, '-c', 'Release', '--nologo') `
+        -WorkingDirectory $repoRoot -LogPath (Join-Path $artifactRoot 'performance-watchdog-build.txt')
+
+    $exePath = Join-Path $repoRoot 'tests\WpfInference.Benchmark\bin\x64\modern\net472\WpfInference.Benchmark.exe'
+    if (-not (Test-Path -LiteralPath $exePath)) { throw "契约探针未生成：$exePath" }
+
+    $reportPath = Join-Path $artifactRoot 'performance-watchdog.json'
+    $logPath = Join-Path $artifactRoot 'performance-watchdog.log'
+    $errorLogPath = Join-Path $artifactRoot 'performance-watchdog-error.txt'
+
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $exePath
+    $startInfo.WorkingDirectory = $repoRoot
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.Arguments = (@('unused', '--performance-watchdog', $reportPath) | ForEach-Object { '"' + $_ + '"' }) -join ' '
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    $stdoutStream = [System.IO.File]::Create($logPath)
+    $stderrStream = [System.IO.File]::Create($errorLogPath)
+    try {
+        $copyStdout = $process.StandardOutput.BaseStream.CopyToAsync($stdoutStream)
+        $copyStderr = $process.StandardError.BaseStream.CopyToAsync($stderrStream)
+        if (-not $process.WaitForExit(60000)) { try { $process.Kill() } catch { }; throw '推理性能看门狗探针超过 60 秒未结束' }
+        [void]$copyStdout.Wait(15000)
+        [void]$copyStderr.Wait(15000)
+    }
+    finally {
+        $stdoutStream.Dispose()
+        $stderrStream.Dispose()
+    }
+
+    if (-not (Test-Path -LiteralPath $reportPath)) { throw "推理性能看门狗探针未写出报告：$reportPath；日志：$logPath" }
+    $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $failedChecks = @($report.checks | Where-Object { -not $_.passed } | ForEach-Object { $_.name })
+    if (-not $report.passed -or $failedChecks.Count -gt 0) {
+        throw "推理性能看门狗契约未通过：$($failedChecks -join ', ')。报告：$reportPath"
+    }
+    Add-Result -Name 'Performance watchdog contract' -Status 'PASS' `
+        -Note "$($report.checks.Count) checks: 80% 阈值边界 / 30 秒持续 / 提示文案 / 口径常量" -Evidence $reportPath
+}
+
 function Run-WpfPersonDetection {
     $fixtureDirectory = Resolve-RepoPath $WpfFixtureDirectory
     $modelPath = Resolve-RepoPath $WpfModelPath
@@ -917,6 +966,7 @@ try {
         'ModelDownload' { Run-ModelDownload }
         'SourceAutoSave' { Run-SourceAutoSave }
         'CardLayoutPlan' { Run-CardLayoutPlan }
+        'PerformanceWatchdog' { Run-PerformanceWatchdog }
     }
 }
 catch {

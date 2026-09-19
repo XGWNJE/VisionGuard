@@ -26,6 +26,8 @@ namespace VisionGuard.ViewModels
         private string _sourceLimitWarning = "";
         private string _previewSelectionHint = "";
         private bool _isGlobalView;
+        // 上一次性能弹窗的时间（UTC）。实测帧率持续不足时按冷却时间提醒，避免反复打扰。
+        private DateTime _lastPerformanceAlertUtc = DateTime.MinValue;
         // 收到服务端 maxSources 之前先放开到最大值，否则本地会被默认上限卡住，用户加不了更多来源。
         private int _sourceLimit = MultiSourceMonitorCoordinator.MaximumSourceLimit;
 
@@ -153,7 +155,7 @@ namespace VisionGuard.ViewModels
         {
             _server = server;
             _settings = settings;
-            _coordinator = new MultiSourceMonitorCoordinator(capacityProvider: settings.GetCapacity);
+            _coordinator = new MultiSourceMonitorCoordinator();
             ToggleGlobalViewCommand = new RelayCommand(() => IsGlobalView = !IsGlobalView);
             EnsureLegacyBackupAndMigration();
             EnsureSourceKeyMigration();
@@ -191,6 +193,7 @@ namespace VisionGuard.ViewModels
                 if (slot == null) return;
                 slot.ApplyStatus(status);
                 RefreshSummary();
+                RaisePerformanceAlertIfNeeded();
             });
             _coordinator.FrameProcessed += (_, e) =>
             {
@@ -381,6 +384,40 @@ namespace VisionGuard.ViewModels
         {
             OnPropertyChanged(nameof(SourceLimitText));
             foreach (var source in Sources) source.RaiseSourceActionStates();
+        }
+
+        /// <summary>
+        /// 实测帧率持续低于目标时弹一次提醒（owner 口径：任一路不足即提醒，弹窗冷却 10 分钟）。
+        ///
+        /// 卡片上的文字提示由 <see cref="PerformanceWarning"/> 持续表达，弹窗只负责“打断一次”，
+        /// 所以这里用冷却时间而不是状态去重：持续不足时每 10 分钟再提醒一次，避免被忽略。
+        /// 无界面宿主（验证探针）不弹窗，只保留状态字段供断言。
+        /// </summary>
+        private void RaisePerformanceAlertIfNeeded()
+        {
+            var insufficient = Sources.Where(source => source.IsPerformanceInsufficient).ToArray();
+            if (insufficient.Length == 0) return;
+
+            var now = DateTime.UtcNow;
+            if (now - _lastPerformanceAlertUtc < TimeSpan.FromMinutes(PerformanceWatchdog.AlertCooldownMinutes)) return;
+            // 先记时间再排队：状态事件每帧都会到，不先记会排队弹出多个对话框。
+            _lastPerformanceAlertUtc = now;
+
+            string detail = string.Join(Environment.NewLine, insufficient.Select(source =>
+                $"{source.DisplayIndex}：目标 {source.TargetFps:0.0} FPS，实际 {source.ActualFps:0.0} FPS"));
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher == null) return;
+            dispatcher.BeginInvoke(new Action(() =>
+            {
+                // 应用已在关闭过程中时不能弹窗（MessageBox 自己也是窗口，会抛“窗口正在关闭”）。
+                if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished) return;
+                MessageBox.Show(
+                    "当前设备的推理性能已达不到设定的检测频率：" + Environment.NewLine + Environment.NewLine +
+                    detail + Environment.NewLine + Environment.NewLine +
+                    "采集、推理与报警仍在继续，不会自动减路或降帧。" + Environment.NewLine +
+                    "建议降低检测频率、减少同时运行的来源，或改用更小的模型。",
+                    "VisionGuard · 推理性能不足", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }));
         }
 
         // ── 卡片区：画面比例、实时预览选择与全局来源视图 ──────────────────────────
@@ -671,6 +708,9 @@ namespace VisionGuard.ViewModels
         private BitmapSource? _previewImage;
         private double _frameWidth, _frameHeight;
         private string _lastFrameText = "尚无画面", _inferenceText = "推理 — ms", _lastAlertText = "最后报警 —", _backendText = "后端 —";
+        private string _statusToolTip = "";
+        private double _actualFps;
+        private bool _isPerformanceInsufficient;
 
         public string SourceId { get; }
         public string DisplayIndex => $"来源 {_index}";
@@ -808,6 +848,19 @@ namespace VisionGuard.ViewModels
         public string InferenceText { get => _inferenceText; private set => SetProperty(ref _inferenceText, value); }
         public string LastAlertText { get => _lastAlertText; private set => SetProperty(ref _lastAlertText, value); }
         public string BackendText { get => _backendText; private set => SetProperty(ref _backendText, value); }
+
+        /// <summary>实测推理帧率（10 秒滚动窗口），由协调器的状态推送。</summary>
+        public double ActualFps { get => _actualFps; private set => SetProperty(ref _actualFps, value); }
+
+        /// <summary>实测帧率已持续低于目标（看门狗确认）：卡片显示短提示，宿主据此弹窗。</summary>
+        public bool IsPerformanceInsufficient
+        {
+            get => _isPerformanceInsufficient;
+            private set => SetProperty(ref _isPerformanceInsufficient, value);
+        }
+
+        /// <summary>状态文本的 ToolTip：性能不足时给出完整说明，而不是标题行那句短提示。</summary>
+        public string StatusToolTip { get => _statusToolTip; private set => SetProperty(ref _statusToolTip, value); }
 
         public RelayCommand SelectCommand { get; }
         public RelayCommand PickWindowCommand { get; }
@@ -1117,14 +1170,20 @@ namespace VisionGuard.ViewModels
         internal void ApplyStatus(MonitorSourceStatus status)
         {
             IsMonitoring = status.IsMonitoring;
+            ActualFps = status.ActualFps;
+            // 只有“持续不足”达到看门狗的持续时间阈值后 PerformanceWarning 才有文案，
+            // 因此直接用它作为“已确认性能不足”的标记，卡片与弹窗共用同一个判据。
+            IsPerformanceInsufficient = !string.IsNullOrWhiteSpace(status.PerformanceWarning);
             BackendText = status.ActiveBackend == "Unavailable" ? "后端 —" : $"{status.ActiveBackend} · {status.ActualFps:0.0} FPS";
             StatusText = !string.IsNullOrWhiteSpace(status.Error)
                 ? $"异常：{status.Error}"
-                : !string.IsNullOrWhiteSpace(status.PerformanceWarning)
-                    ? status.PerformanceWarning
+                : IsPerformanceInsufficient
+                    // 标题行空间有限，这里只放短提示；完整说明进 ToolTip 与弹窗。
+                    ? $"性能不足 {status.ActualFps:0.0}/{status.TargetFps:0.0} FPS"
                 : status.IsMonitoring
                     ? "检测中"
                     : (IsReady ? (PreviewImage == null ? "就绪" : "已停止 · 保留最后画面") : (!string.IsNullOrWhiteSpace(_targetWindowTitle) ? (string.IsNullOrWhiteSpace(_windowResolutionError) ? "窗口未找到" : _windowResolutionError) : "未配置"));
+            StatusToolTip = IsPerformanceInsufficient ? status.PerformanceWarning : StatusText;
         }
 
         internal void ApplyFrame(BitmapSource image, List<Detection> detections, long inferenceMs)

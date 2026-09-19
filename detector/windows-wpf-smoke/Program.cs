@@ -145,15 +145,17 @@ var unexpectedRuntimeErrors = expectedRuntimeErrors.Where(error =>
     && !(error.StartsWith(lastSourceId + ":", StringComparison.Ordinal) && error.IndexOf("已关闭", StringComparison.Ordinal) >= 0)).ToArray();
 var stopped = coordinator.Statuses;
 
-var cpuMultiSourceAllowedWithWarning = false;
-using (var cpu = new MultiSourceMonitorCoordinator(capacityProvider: _ => 1))
+// CPU 多路允许运行：容量基线机制已于 2026-09-20 移除（改为按实测帧率提示性能不足），
+// 这里只断言两路 CPU 能同时进入监控、不被准入拒绝；性能不足的可见性由 PerformanceWatchdog 负责。
+var cpuMultiSourceAllowed = false;
+using (var cpu = new MultiSourceMonitorCoordinator())
 {
     cpu.Add(CreateSource(0, backend: InferenceBackend.Cpu));
     cpu.Add(CreateSource(1, backend: InferenceBackend.Cpu));
     cpu.FrameProcessed += (_, e) => e.Frame.Frame?.Dispose();
     cpu.Start("default", modelPath);
     cpu.Start("signal-2", modelPath);
-    cpuMultiSourceAllowedWithWarning = cpu.Statuses.All(status => status.IsMonitoring && status.PerformanceWarning.IndexOf("允许继续运行", StringComparison.Ordinal) >= 0);
+    cpuMultiSourceAllowed = cpu.Statuses.All(status => status.IsMonitoring);
     cpu.Stop("default"); cpu.Stop("signal-2");
 }
 
@@ -188,7 +190,7 @@ using (var faulting = new MultiSourceMonitorCoordinator((_, _, _) => new Faultin
 
 var passed = completed && unexpectedRuntimeErrors.Length == 0 && stopIsolation && configIsolation && moveResizePassed
     && minimizeFaultIsolated && restoreRecoveryPassed && occlusionCapturePassed && closeIsolationPassed
-    && cpuMultiSourceAllowedWithWarning && fallbackToCpu
+    && cpuMultiSourceAllowed && fallbackToCpu
     && directMlRuntimeFailureIsolated
     && subRegionCapturePassed
     && sourceIds.All(id => Net472Compat.DictOrDefault(personHits, id) > 0)
@@ -201,7 +203,7 @@ var report = new
     threshold, stopOneSourceIsolationPassed = stopIsolation, configChangeIsolationPassed = configIsolation,
     moveResizePassed, minimizeFaultIsolated, restoreRecoveryPassed, occlusionCapturePassed, closeIsolationPassed,
     subRegionCapturePassed,
-    cpuMultiSourceAllowedWithWarning, directMlFailureFallsBackToCpu = fallbackToCpu, directMlFallbackReason = fallback.BackendFallbackReason,
+    cpuMultiSourceAllowed, directMlFailureFallsBackToCpu = fallbackToCpu, directMlFallbackReason = fallback.BackendFallbackReason,
     directMlRuntimeFailureIsolated,
     elapsedMs = Math.Round((DateTime.UtcNow - startedAt).TotalMilliseconds, 2),
     sources = running.Select((s, i) =>

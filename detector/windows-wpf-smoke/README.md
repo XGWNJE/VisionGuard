@@ -1,6 +1,6 @@
 # WPF 人员检测 smoke 工具
 
-`VisionGuard.WpfSmoke` 用**真实可见窗口**做 WPF 检测端的人员推理验证：它按窗口句柄逐路 `WindowHandle` 采集、跑真实推理，要求每路至少产生 30 帧并至少命中一帧 `person`，同时验证停止一路不影响其他路、单路重配隔离、窗口移动缩放、遮挡、最小化故障隔离与恢复、关闭隔离、子区域裁剪、CPU 多路允许运行且超容量可见提示、DirectML 初始化失败回退，以及运行期推理故障逐路隔离。
+`VisionGuard.WpfSmoke` 用**真实可见窗口**做 WPF 检测端的人员推理验证：它按窗口句柄逐路 `WindowHandle` 采集、跑真实推理，要求每路至少产生 30 帧并至少命中一帧 `person`，同时验证停止一路不影响其他路、单路重配隔离、窗口移动缩放、遮挡、最小化故障隔离与恢复、关闭隔离、子区域裁剪、CPU 多路允许运行、DirectML 初始化失败回退，以及运行期推理故障逐路隔离。性能不足的可见提示改由 `PerformanceWatchdog` 按实测帧率判断（容量基线已于 2026-09-20 移除），其判定口径由 `-Mode PerformanceWatchdog` 的纯计算契约覆盖。
 
 它通过 `ProjectReference` 引用 `detector/windows-wpf/VisionGuard.csproj`，因此**构建档位与检测端一致**（默认 `OrtProfile=modern`）。它不替代动态视频、完整报警链、持续运行、其他 GPU 或 UI 目检。
 

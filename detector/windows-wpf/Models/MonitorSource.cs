@@ -32,7 +32,20 @@ namespace VisionGuard.Models
         public bool IsReady { get; init; }
         public string ActiveBackend { get; init; } = "Unavailable";
         public double ActualFps { get; init; }
+
+        /// <summary>这一路当前设定的目标推理频率（次/秒），用于判断实测帧率是否达标。</summary>
+        public double TargetFps { get; init; }
+
+        /// <summary>
+        /// 实测帧率连续低于目标（低于目标的 80%）的秒数；没有处于不足状态时为 0。
+        /// 达到 <see cref="Services.PerformanceWatchdog.SustainedSeconds"/> 之后
+        /// <see cref="PerformanceWarning"/> 才会有文案。
+        /// </summary>
+        public double SecondsBelowTarget { get; init; }
+
         public string Error { get; init; } = "";
+
+        /// <summary>实测帧率不足的可见提示（未确认不足时为空串）。</summary>
         public string PerformanceWarning { get; init; } = "";
     }
 }

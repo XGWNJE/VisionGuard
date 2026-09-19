@@ -15,14 +15,11 @@ namespace VisionGuard.Services
         private readonly object _sync = new();
         private readonly Dictionary<string, Runtime> _runtimes = new(StringComparer.Ordinal);
         private readonly Func<string, int, InferenceBackend, IInferenceEngine>? _engineFactory;
-        private readonly Func<InferenceBackend, int> _capacityProvider;
 
         public MultiSourceMonitorCoordinator(
-            Func<string, int, InferenceBackend, IInferenceEngine>? engineFactory = null,
-            Func<InferenceBackend, int>? capacityProvider = null)
+            Func<string, int, InferenceBackend, IInferenceEngine>? engineFactory = null)
         {
             _engineFactory = engineFactory;
-            _capacityProvider = capacityProvider ?? (_ => DefaultSourceLimit);
         }
 
         public event EventHandler<AlertEvent>? AlertTriggered;
@@ -128,19 +125,32 @@ namespace VisionGuard.Services
             var frames = runtime.FrameTimes.ToArray();
             // net472 的 Index/Range 不可用，用显式下标取代 ^1。
             var fps = frames.Length < 2 ? 0 : (frames.Length - 1) / Math.Max(0.001, (frames[frames.Length - 1] - frames[0]).TotalSeconds);
-            var activeBackend = runtime.Monitor.ActiveBackend;
-            var runningOnBackend = _runtimes.Values.Count(item => item.Monitor.IsStarted
-                && string.Equals(item.Monitor.ActiveBackend, activeBackend, StringComparison.OrdinalIgnoreCase));
-            var backend = string.Equals(activeBackend, nameof(InferenceBackend.Cpu), StringComparison.OrdinalIgnoreCase)
-                ? InferenceBackend.Cpu : InferenceBackend.DirectML;
-            var warning = runtime.Monitor.IsStarted
-                ? CapacityPolicy.GetWarning(activeBackend, runningOnBackend, _capacityProvider(backend)) : "";
+
+            // 性能看门狗：实测帧率连续低于目标帧率才算不足（容量基线机制已于 2026-09-20 移除）。
+            // 持续时间在这里累计：只要仍处于不足状态就保留起点，恢复正常即清零。
+            double targetFps = Math.Max(1, runtime.Source.Config.TargetFps);
+            bool belowTarget = PerformanceWatchdog.IsBelowTarget(fps, targetFps, runtime.Monitor.IsStarted);
+            if (belowTarget)
+            {
+                if (!runtime.BelowTargetSince.HasValue) runtime.BelowTargetSince = now;
+            }
+            else
+            {
+                runtime.BelowTargetSince = null;
+            }
+            double secondsBelowTarget = belowTarget && runtime.BelowTargetSince.HasValue
+                ? (now - runtime.BelowTargetSince.Value).TotalSeconds
+                : 0;
+
             return new MonitorSourceStatus
             {
                 SourceId = runtime.Source.SourceId, SourceName = runtime.Source.SourceName,
                 ModelKey = runtime.Source.ModelKey, IsMonitoring = runtime.Monitor.IsStarted,
                 IsReady = IsConfigured(runtime.Source.Config), ActiveBackend = runtime.Monitor.ActiveBackend,
-                ActualFps = Math.Round(fps, 2), Error = runtime.Error, PerformanceWarning = warning,
+                ActualFps = Math.Round(fps, 2), TargetFps = targetFps,
+                SecondsBelowTarget = Math.Round(secondsBelowTarget, 1),
+                Error = runtime.Error,
+                PerformanceWarning = PerformanceWatchdog.GetWarning(fps, targetFps, secondsBelowTarget, runtime.Monitor.IsStarted),
             };
         }
 
@@ -175,6 +185,10 @@ namespace VisionGuard.Services
             public MonitorService Monitor { get; }
             public Queue<DateTime> FrameTimes { get; } = new();
             public string Error { get; set; } = "";
+
+            /// <summary>实测帧率开始低于目标的时刻；恢复正常时清空。用于累计“持续不足”的时长。</summary>
+            public DateTime? BelowTargetSince { get; set; }
+
             public Runtime(MonitorSource source, AlertService alerts, MonitorService monitor) => (Source, Alerts, Monitor) = (source, alerts, monitor);
             public void Dispose() { Monitor.Dispose(); Alerts.Dispose(); }
         }

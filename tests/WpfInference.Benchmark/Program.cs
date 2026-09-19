@@ -326,6 +326,59 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
     return layoutPassed ? 0 : 1;
 }
 
+// ── 推理性能看门狗契约探针 ─────────────────────────────────────────────────
+// 目的：把「实测帧率达不到目标帧率」的判定口径变成机器可判定的检查。
+// 2026-09-20 起取代容量基线：不再让用户配置「DirectML 几路 / CPU 几路」，直接看实测帧率。
+if (args.Length >= 2 && args[1].Equals("--performance-watchdog", StringComparison.OrdinalIgnoreCase))
+{
+    if (args.Length != 3)
+    {
+        Console.Error.WriteLine("Usage: WpfInference.Benchmark <ignored> --performance-watchdog <report.json>");
+        return 2;
+    }
+
+    var watchdogChecks = new List<object>();
+    var watchdogPassed = true;
+    void CheckWatchdog(string name, bool ok, object? detail = null)
+    {
+        watchdogChecks.Add(new { name, passed = ok, detail });
+        if (!ok) watchdogPassed = false;
+    }
+
+    // 1) 判定边界：目标 3 FPS 时低于 2.4 才算不足，正好 2.4 不算（严格小于，带浮点容差）。
+    CheckWatchdog("2.39/3.0 视为不达标", PerformanceWatchdog.IsBelowTarget(2.39, 3, true));
+    CheckWatchdog("2.40/3.0 视为达标（边界严格小于）", !PerformanceWatchdog.IsBelowTarget(2.40, 3, true));
+    CheckWatchdog("2.30/3.0 视为不达标", PerformanceWatchdog.IsBelowTarget(2.30, 3, true));
+    CheckWatchdog("3.00/3.0 视为达标", !PerformanceWatchdog.IsBelowTarget(3, 3, true));
+    CheckWatchdog("未运行时不判定", !PerformanceWatchdog.IsBelowTarget(0.5, 3, false));
+    CheckWatchdog("尚无帧（fps=0）不判定", !PerformanceWatchdog.IsBelowTarget(0, 3, true));
+
+    // 2) 持续时间：29.9 秒不给提示，30 秒开始给；达标时立刻不给提示。
+    CheckWatchdog("持续 29.9 秒不给提示", PerformanceWatchdog.GetWarning(1, 3, 29.9, true).Length == 0);
+    var sustained = PerformanceWatchdog.GetWarning(1, 3, 30, true);
+    CheckWatchdog("持续 30 秒给出提示且含目标与实际",
+        sustained.IndexOf("目标 3.0", StringComparison.Ordinal) >= 0
+        && sustained.IndexOf("实际 1.0", StringComparison.Ordinal) >= 0
+        && sustained.IndexOf("允许继续运行", StringComparison.Ordinal) >= 0,
+        new { sustained });
+    CheckWatchdog("达标时即使持续很久也不提示", PerformanceWatchdog.GetWarning(3, 3, 600, true).Length == 0);
+
+    // 3) 口径常量固定：80% 阈值、30 秒持续、10 分钟弹窗冷却。
+    CheckWatchdog("阈值/持续/冷却常量",
+        Math.Abs(PerformanceWatchdog.TargetRatio - 0.8) < 0.0001
+        && Math.Abs(PerformanceWatchdog.SustainedSeconds - 30) < 0.0001
+        && Math.Abs(PerformanceWatchdog.AlertCooldownMinutes - 10) < 0.0001,
+        new { PerformanceWatchdog.TargetRatio, PerformanceWatchdog.SustainedSeconds, PerformanceWatchdog.AlertCooldownMinutes });
+
+    var watchdogReport = new { passed = watchdogPassed, probe = "performance-watchdog", checks = watchdogChecks };
+    var watchdogJson = JsonSerializer.Serialize(watchdogReport, new JsonSerializerOptions { WriteIndented = true });
+    var watchdogReportPath = Path.GetFullPath(args[2]);
+    Directory.CreateDirectory(Path.GetDirectoryName(watchdogReportPath)!);
+    File.WriteAllText(watchdogReportPath, watchdogJson, new System.Text.UTF8Encoding(false));
+    Console.WriteLine(watchdogJson);
+    return watchdogPassed ? 0 : 1;
+}
+
 // ── 模型下载契约探针 ───────────────────────────────────────────────────────
 // 目的：驱动「全局设定」页模型清单里那个下载按钮背后的同一条 ViewModel 路径，
 // 断言状态机与落盘结果。默认打生产服务器（模型下载本来就是线上行为），
