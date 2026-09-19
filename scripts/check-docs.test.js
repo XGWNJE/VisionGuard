@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
@@ -43,12 +44,35 @@ test('new canonical document must be registered in canonical documentation entry
 });
 
 test('stale artifact paths in current evidence documents are rejected', () => {
-  const errors = [];
-  checkEvidencePaths(root, [
-    ['docs/codex/90-verification-report.md', '`artifacts/e2e/does-not-exist/summary.json`']
-  ], errors);
-  assert.equal(errors.length, 1);
-  assert.match(errors[0], /missing artifact/);
+  // 临时 root 里自带 artifacts/：checkEvidencePaths 只在存在取证目录的环境做存在性校验
+  // （干净 checkout 会整类跳过），所以这条覆盖必须自带目录，否则在 CI 上会退化成空断言。
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-evidence-'));
+  try {
+    fs.mkdirSync(path.join(tempRoot, 'artifacts'), { recursive: true });
+    const errors = [];
+    checkEvidencePaths(tempRoot, [
+      ['docs/codex/90-verification-report.md', '`artifacts/e2e/does-not-exist/summary.json`']
+    ], errors);
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /missing artifact/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('artifact existence checks are skipped without a capture directory', () => {
+  // 干净 checkout（CI）没有 artifacts/：明确整类跳过而不是逐条假失败，
+  // 这条把该行为固化，避免以后有人把跳过改成静默通过或重新引入 59 条假失败。
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-evidence-skip-'));
+  try {
+    const errors = [];
+    checkEvidencePaths(tempRoot, [
+      ['docs/codex/90-verification-report.md', '`artifacts/e2e/does-not-exist/summary.json`']
+    ], errors);
+    assert.deepEqual(errors, []);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('stale current-version claims in verification reports are rejected', () => {
