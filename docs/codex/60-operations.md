@@ -114,3 +114,5 @@ node --test scripts/check-docs.test.js scripts/release-workflow.test.js
 ```
 
 审核会检查 Markdown 链接和锚点、UTF-8 无 BOM、版本来源、五个组件入口、四个 WS 角色、模型打包边界、Skill 与脚本契约、路线图产品边界和旧入口不存在。新增或删除文档/Skill/入口后必须先更新对应唯一来源，再运行审核。
+
+`.github/workflows/docs-audit.yml` 在 PR 与 `main` 推送时运行上述静态检查；每周一 03:17 UTC（北京时间 11:17）及手动触发时，额外运行 `node scripts/check-online-release-contract.js`。该巡检请求正式服务的 `/health`、各平台 `/api/update`、发行包 `HEAD` 与 Range 下载，并将返回的版本、URL、大小与 `server/data/releases.json` 对照；它用于发现仓库发布元数据和线上实际服务的漂移，不替代正式发布后的人工验收。

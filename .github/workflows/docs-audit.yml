@@ -5,6 +5,10 @@ on:
   push:
     branches:
       - main
+  schedule:
+    # 每周一 03:17 UTC（北京时间 11:17）校验公开服务与仓库发布元数据是否仍一致。
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,4 +30,20 @@ jobs:
         run: node scripts/check-docs.js
 
       - name: Test documentation guardrails
-        run: node --test scripts/check-docs.test.js scripts/release-workflow.test.js
+        run: node --test scripts/check-docs.test.js scripts/release-workflow.test.js scripts/online-release-contract.test.js
+
+  online-release-contract:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          package-manager-cache: false
+
+      - name: Verify public release contract
+        run: node scripts/check-online-release-contract.js

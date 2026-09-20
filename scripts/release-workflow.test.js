@@ -309,3 +309,11 @@ test('publish-release.ps1 skips held-back platforms when collecting GitHub asset
     'the Android detector package branch must also honour heldBack'
   );
 });
+
+test('文档审核工作流定时核验线上发布契约', () => {
+  const workflow = read('.github/workflows/docs-audit.yml');
+
+  assert.match(workflow, /schedule:[\s\S]*?- cron: '17 3 \* \* 1'/, 'the weekly audit schedule is missing');
+  assert.match(workflow, /online-release-contract:/, 'the online contract job is missing');
+  assert.match(workflow, /node scripts\/check-online-release-contract\.js/, 'the online contract command is missing');
+});
