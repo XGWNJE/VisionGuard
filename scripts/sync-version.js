@@ -139,6 +139,12 @@ function main() {
   if (fs.existsSync(releasesPath)) {
     const releases = JSON.parse(fs.readFileSync(releasesPath, 'utf-8'));
     for (const key of Object.keys(releases)) {
+      // 被明确搁置的端必须继续指向最后一个已发布包。若在统一版本同步时改写，
+      // 更新接口会错误地给未上线端返回当前版本及不存在的下载地址。
+      if (releases[key].heldBack === true) {
+        console.log(`  ↷ ${key} is held back; preserving ${releases[key].version}`);
+        continue;
+      }
       releases[key].version = newVersion;
       releases[key].url = `/releases/${releaseFileName(key, newVersion)}`;
     }

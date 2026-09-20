@@ -1290,14 +1290,20 @@ if (Test-TargetEnabled @('Windows', 'WPF')) {
 }
 
 if (Test-TargetEnabled @('Android', 'AndroidDetector')) {
-    $fileName = "VisionGuard-Detector-v$Version.apk"
-    $apkPath = Get-SignedAndroidApk -ProjectRoot (Join-Path $repoRoot 'detector\android') -Name 'Android detector'
-    $dest = Join-Path $releaseDir $fileName
-    Copy-Item -LiteralPath $apkPath -Destination $dest -Force
-    Verify-AndroidApk -ApkPath $dest
-    Add-ReleaseEntry -Metadata $metadata -Key 'android-detector' -FileName $fileName -FilePath $dest
-    $artifacts.Add([pscustomobject]@{ Platform = 'android-detector'; Path = $dest; FileName = $fileName }) | Out-Null
-    $platforms.Add('android-detector') | Out-Null
+    $detectorRelease = $metadata.PSObject.Properties['android-detector'].Value
+    if (($detectorRelease.PSObject.Properties.Name -contains 'heldBack') -and ($detectorRelease.heldBack -eq $true)) {
+        Write-Host "skip android-detector: held back in this release (stays at $($detectorRelease.version))"
+    }
+    else {
+        $fileName = "VisionGuard-Detector-v$Version.apk"
+        $apkPath = Get-SignedAndroidApk -ProjectRoot (Join-Path $repoRoot 'detector\android') -Name 'Android detector'
+        $dest = Join-Path $releaseDir $fileName
+        Copy-Item -LiteralPath $apkPath -Destination $dest -Force
+        Verify-AndroidApk -ApkPath $dest
+        Add-ReleaseEntry -Metadata $metadata -Key 'android-detector' -FileName $fileName -FilePath $dest
+        $artifacts.Add([pscustomobject]@{ Platform = 'android-detector'; Path = $dest; FileName = $fileName }) | Out-Null
+        $platforms.Add('android-detector') | Out-Null
+    }
 }
 
 if (Test-TargetEnabled @('Android', 'AndroidReceiver')) {

@@ -95,7 +95,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish-release.ps1 -Version 
 
 发布前必须确认 Android 签名材料、Windows ZIP 清洁度、元数据大小和目标范围；发布后才可执行公网 `/health`、`/api/update`、`HEAD 200` 和 byte-range `206` 验证。发布脚本是唯一的正式打包/部署实现，不恢复已删除的旧发布入口。
 
-**分端上线（某端本次不发布）**：`-Target` 是单值，要发多个端就按端分批跑（例如 `-Target Windows -UploadVps`、`-Target AndroidReceiver -UploadVps`、`-Target Server -UploadVps`）。未发布的端在 `server/data/releases.json` 的**该平台条目内部**标 `"heldBack": true` 并保持上一个已发布版本，使更新接口继续返回旧版本而不是指向不存在的文件（`sync-version.js` 会把所有平台都标成新版本，必须回改）。`check-docs`、`publish-release.ps1` 的 GitHub-only 资产收集与 `.github/workflows/release.yml` 都会跳过 heldBack 平台并给出提示；但 GitHub Release 两条入口在「一个平台都没对齐目标版本」时仍会失败，避免版本号打错时发出空 Release。
+**分端上线（某端本次不发布）**：`-Target` 是单值，要发多个端就按端分批跑（例如 `-Target Windows -UploadVps`、`-Target AndroidReceiver -UploadVps`、`-Target Server -UploadVps`）。未发布的端在 `server/data/releases.json` 的**该平台条目内部**标 `"heldBack": true` 并保持上一个已发布版本，使更新接口继续返回旧版本而不是指向不存在的文件；`sync-version.js` 与 `publish-release.ps1` 会保留并跳过该条目。`check-docs`、`publish-release.ps1` 的 GitHub-only 资产收集与 `.github/workflows/release.yml` 都会跳过 heldBack 平台并给出提示；但 GitHub Release 两条入口在「一个平台都没对齐目标版本」时仍会失败，避免版本号打错时发出空 Release。
 
 ## 配置与服务边界
 

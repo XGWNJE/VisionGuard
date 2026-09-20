@@ -5,9 +5,10 @@
                 "size":  16229409
             },
     "android-detector":  {
-                             "version":  "4.5.1",
-                             "url":  "/releases/VisionGuard-Detector-v4.5.1.apk",
-                             "size":  55353584
+                             "version":  "4.4.4",
+                             "url":  "/releases/VisionGuard-Detector-v4.4.4.apk",
+                             "size":  41570474,
+                             "heldBack":  true
                          },
     "android-receiver":  {
                              "version":  "4.5.1",

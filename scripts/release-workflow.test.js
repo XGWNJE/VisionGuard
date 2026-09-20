@@ -303,4 +303,9 @@ test('publish-release.ps1 skips held-back platforms when collecting GitHub asset
     /skip \$\(\$definition\.Platform\): held back in this release/,
     'the held-back skip message is missing'
   );
+  assert.match(
+    script,
+    /skip android-detector: held back in this release/,
+    'the Android detector package branch must also honour heldBack'
+  );
 });

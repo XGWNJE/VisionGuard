@@ -47,3 +47,14 @@ test('releases.json 的 url 与 releaseFileName 一致', () => {
     );
   }
 });
+
+test('被搁置的平台在统一版本同步时保留最后一个已发布包', () => {
+  const syncScript = fs.readFileSync(path.join(ROOT, 'scripts', 'sync-version.js'), 'utf-8');
+  const releases = JSON.parse(fs.readFileSync(path.join(ROOT, 'server', 'data', 'releases.json'), 'utf-8'));
+  const detector = releases['android-detector'];
+
+  assert.equal(detector.heldBack, true);
+  assert.equal(detector.version, '4.4.4');
+  assert.equal(detector.url, '/releases/VisionGuard-Detector-v4.4.4.apk');
+  assert.match(syncScript, /releases\[key\]\.heldBack === true/, 'sync-version must preserve held-back entries');
+});
