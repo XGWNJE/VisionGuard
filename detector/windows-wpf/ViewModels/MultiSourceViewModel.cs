@@ -840,6 +840,31 @@ namespace VisionGuard.ViewModels
         public string TargetInfo => _captureMode == CaptureMode.WindowHandle
             ? (string.IsNullOrWhiteSpace(_targetWindowTitle) ? "未选择窗口" : $"窗口：{_targetWindowTitle}{(_windowSubRegion == Rectangle.Empty ? "" : $" · 选区 {_windowSubRegion.Width}×{_windowSubRegion.Height}")}")
             : (CaptureSizeConstraints.IsValid(_screenRegion) ? $"屏幕选区：{_screenRegion.X},{_screenRegion.Y} {_screenRegion.Width}×{_screenRegion.Height}" : "未选择屏幕区域");
+
+        /// <summary>
+        /// 选区比例越极端，等比缩放到方形模型输入后被黑边占用的面积越多。
+        /// 这只是一条选择建议：用户仍可按场景使用任意有效尺寸的来源。
+        /// </summary>
+        public string AspectRatioWarning
+        {
+            get
+            {
+                Rectangle target = GetConfiguredCaptureBounds();
+                if (!CaptureSizeConstraints.IsValid(target)) return string.Empty;
+
+                int longer = Math.Max(target.Width, target.Height);
+                int shorter = Math.Min(target.Width, target.Height);
+                if (longer <= shorter * 2) return string.Empty;
+
+                double effectiveArea = shorter / (double)longer;
+                string ratio = target.Width >= target.Height
+                    ? $"{target.Width / (double)target.Height:0.#}:1"
+                    : $"1:{target.Height / (double)target.Width:0.#}";
+                return $"选区 {ratio}，模型有效画面约 {effectiveArea * 100:0}%；1:1 最佳，比例越极端识别越弱。";
+            }
+        }
+
+        public bool HasAspectRatioWarning => !string.IsNullOrWhiteSpace(AspectRatioWarning);
         public string MaskInfo => MaskRegions.Count == 0 ? "无遮罩" : $"{MaskRegions.Count} 个遮罩";
         public BitmapSource? PreviewImage { get => _previewImage; private set => SetProperty(ref _previewImage, value); }
         public double FrameWidth { get => _frameWidth; private set => SetProperty(ref _frameWidth, value); }
@@ -999,7 +1024,13 @@ namespace VisionGuard.ViewModels
 
         internal bool ResolveWindowForStart()
         {
-            if (_captureMode == CaptureMode.WindowHandle) { ResolveWindow(); if (_targetWindow == null) { StatusText = _windowResolutionError; OnPropertyChanged(nameof(IsReady)); return false; } }
+            if (_captureMode == CaptureMode.WindowHandle)
+            {
+                ResolveWindow();
+                OnPropertyChanged(nameof(AspectRatioWarning));
+                OnPropertyChanged(nameof(HasAspectRatioWarning));
+                if (_targetWindow == null) { StatusText = _windowResolutionError; OnPropertyChanged(nameof(IsReady)); return false; }
+            }
             if (!IsReady) { StatusText = "采集目标宽度和高度必须都大于 100 像素。"; return false; }
             return true;
         }
@@ -1229,6 +1260,8 @@ namespace VisionGuard.ViewModels
             RefreshPendingApply();
             StatusText = IsReady ? "就绪" : "未配置";
             OnPropertyChanged(nameof(TargetInfo));
+            OnPropertyChanged(nameof(AspectRatioWarning));
+            OnPropertyChanged(nameof(HasAspectRatioWarning));
             OnPropertyChanged(nameof(MaskInfo));
             OnPropertyChanged(nameof(HasAnyTarget));
             OnPropertyChanged(nameof(IsReady));
@@ -1238,6 +1271,13 @@ namespace VisionGuard.ViewModels
         }
 
         private void ClearMasksInternal() { MaskRegions.Clear(); OnPropertyChanged(nameof(MaskInfo)); OnPropertyChanged(nameof(HasAnyTarget)); }
+
+        private Rectangle GetConfiguredCaptureBounds()
+        {
+            if (_captureMode == CaptureMode.WindowHandle)
+                return _windowSubRegion != Rectangle.Empty ? _windowSubRegion : _targetWindow?.Bounds ?? Rectangle.Empty;
+            return _screenRegion;
+        }
 
         /// <summary>
         /// 参数改动即自动保存（防抖 500ms，避免文本框逐字符写盘）。

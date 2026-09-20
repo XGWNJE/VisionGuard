@@ -3,7 +3,7 @@
   <h1>VisionGuard</h1>
   <p>面向 Windows 与 Android 的 AI 实时监控与报警系统。</p>
 
-  [![Version](https://img.shields.io/badge/version-4.5.0-1f6feb)](./VERSION)
+  [![Version](https://img.shields.io/badge/version-4.5.1-1f6feb)](./VERSION)
   [![License](https://img.shields.io/badge/license-VGSAL--1.0-7c3aed)](./LICENSE)
   [![Docs](https://img.shields.io/badge/docs-verified-f59e0b)](./docs/codex/00-index.md)
 </div>

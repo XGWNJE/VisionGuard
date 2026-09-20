@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.Windows;
 using VisionGuard.Services;
 using VisionGuard.Utils;
@@ -64,6 +65,19 @@ namespace VisionGuard.ViewModels
 
         public RelayCommand RefreshResidentCommand { get; }
 
+        private bool _isCompletingExit;
+        public bool IsCompletingExit
+        {
+            get => _isCompletingExit;
+            private set
+            {
+                if (SetProperty(ref _isCompletingExit, value))
+                    FullExitCommand.RaiseCanExecuteChanged();
+            }
+        }
+
+        public RelayCommand FullExitCommand { get; }
+
         /// <summary>刷新驻留状态。仅在未运行时尝试拉起，运行中只做只读刷新。</summary>
         public void RefreshResidentStatus(bool allowLaunch)
         {
@@ -106,6 +120,36 @@ namespace VisionGuard.ViewModels
                 RefreshResidentStatus(allowLaunch: true);
                 RefreshResidentStatus(allowLaunch: false);
             });
+
+            FullExitCommand = new RelayCommand(async () =>
+            {
+                if (IsCompletingExit) return;
+                IsCompletingExit = true;
+                try
+                {
+                    var result = await Task.Run(() => Runtime.ResidentLauncher.StopForCompleteExit());
+                    if (!result.Succeeded)
+                    {
+                        MessageBox.Show("主体仍在运行，未执行完整退出。\n" + result.FailureReason,
+                            "VisionGuard 错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
+
+                    Application.Current?.Shutdown();
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("主体仍在运行，未执行完整退出。\n" + ex.Message,
+                        "VisionGuard 错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                finally
+                {
+                    if (Application.Current != null
+                        && !Application.Current.Dispatcher.HasShutdownStarted
+                        && !Application.Current.Dispatcher.HasShutdownFinished)
+                        IsCompletingExit = false;
+                }
+            }, () => !IsCompletingExit);
 
             ApplyNameCommand = new RelayCommand(() =>
             {

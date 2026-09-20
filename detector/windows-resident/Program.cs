@@ -30,6 +30,7 @@ namespace VisionGuard.Resident
         private const int HeartbeatIntervalMs = 3000;
         private const int AuthTimeoutMs = 12000;
         private const int CommandTimeoutMs = 10000;
+        private const string ResidentShutdownEventName = @"Local\VisionGuard.Resident.Shutdown";
         private static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = 1024 * 1024 };
         private static readonly object LogLock = new object();
 
@@ -41,6 +42,7 @@ namespace VisionGuard.Resident
                 ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
                 if (args.Length == 2 && args[0] == "--enable-startup") return SetStartup(args[1], true);
                 if (args.Length == 1 && args[0] == "--disable-startup") return SetStartup(string.Empty, false);
+                if (args.Length == 1 && args[0] == "--shutdown-resident") return SignalResidentShutdown() ? 0 : 3;
                 if (args.Length == 2 && args[0] == "--status") return IsRunning(args[1]) ? 0 : 3;
                 if (args.Length == 2 && args[0] == "--shutdown") return SignalShutdown(args[1]) ? 0 : 3;
                 if (args.Length != 2 || args[0] != "--config") return 2;
@@ -55,7 +57,10 @@ namespace VisionGuard.Resident
                     // 由检测端拉起时自行登记登录自启：检测端退出或崩溃后驻留要保持存活，
                     // 机器重启后也要能自动恢复，否则远程重新打开能力会随之丢失。
                     TryEnsureLoginStartup(args[1]);
-                    Run(config, apiKey);
+                    using (var shutdownRequested = new EventWaitHandle(false, EventResetMode.ManualReset, ResidentShutdownEventName))
+                    {
+                        Run(config, apiKey, shutdownRequested);
+                    }
                 }
                 return 0;
             }
@@ -93,22 +98,23 @@ namespace VisionGuard.Resident
             return 0;
         }
 
-        private static void Run(ResidentConfig config, string apiKey)
+        private static void Run(ResidentConfig config, string apiKey, EventWaitHandle shutdownRequested)
         {
             int delaySeconds = 1;
-            while (true)
+            while (!shutdownRequested.WaitOne(0))
             {
-                try { RunSession(config, apiKey); delaySeconds = 1; }
+                try { RunSession(config, apiKey, shutdownRequested); delaySeconds = 1; }
                 catch (Exception ex)
                 {
                     Log("connection failed: " + ex.Message);
-                    Thread.Sleep(TimeSpan.FromSeconds(delaySeconds));
+                    if (shutdownRequested.WaitOne(TimeSpan.FromSeconds(delaySeconds))) break;
                     delaySeconds = Math.Min(30, delaySeconds * 2);
                 }
             }
+            Log("resident shutdown requested");
         }
 
-        private static void RunSession(ResidentConfig config, string apiKey)
+        private static void RunSession(ResidentConfig config, string apiKey, EventWaitHandle shutdownRequested)
         {
             string endpoint = config.ServerUrl.TrimEnd('/') + "/ws";
             endpoint = endpoint.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
@@ -197,7 +203,9 @@ namespace VisionGuard.Resident
                     ["deviceId"] = config.DeviceId, ["deviceName"] = config.DeviceName
                 });
 
-                if (!authenticated.WaitOne(AuthTimeoutMs)) throw new TimeoutException("Resident authentication timed out.");
+                int authWait = WaitHandle.WaitAny(new WaitHandle[] { authenticated, shutdownRequested }, AuthTimeoutMs);
+                if (authWait == 1) return;
+                if (authWait == WaitHandle.WaitTimeout) throw new TimeoutException("Resident authentication timed out.");
                 if (!authSucceeded) throw new InvalidOperationException(failure);
                 heartbeat = new Thread(new ThreadStart(delegate
                 {
@@ -209,10 +217,11 @@ namespace VisionGuard.Resident
                 })) { IsBackground = true, Name = "VG_ResidentHeartbeat" };
                 heartbeat.Start();
                 SendHeartbeat(send, config);
-                closed.WaitOne();
+                int closeWait = WaitHandle.WaitAny(new WaitHandle[] { closed, shutdownRequested });
                 heartbeatStop.Set();
                 heartbeat.Join(2000);
                 try { ws.Abort(); } catch { }
+                if (closeWait == 1) return;
                 throw new IOException(failure);
             }
         }
@@ -295,6 +304,23 @@ namespace VisionGuard.Resident
             if (!IsRunning(appId)) return false;
             try { using (EventWaitHandle handle = EventWaitHandle.OpenExisting(@"Local\VisionGuard." + appId + ".Shutdown")) { handle.Set(); return true; } }
             catch (WaitHandleCannotBeOpenedException) { return false; }
+        }
+
+        /// <summary>请求驻留自身退出；与检测端退出事件分离，避免误关主体。</summary>
+        private static bool SignalResidentShutdown()
+        {
+            try
+            {
+                using (EventWaitHandle handle = EventWaitHandle.OpenExisting(ResidentShutdownEventName))
+                {
+                    handle.Set();
+                    return true;
+                }
+            }
+            catch (WaitHandleCannotBeOpenedException)
+            {
+                return false;
+            }
         }
 
         private static void Validate(ResidentConfig config)

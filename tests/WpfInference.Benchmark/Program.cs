@@ -2,11 +2,17 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Text.Json;
 using System.Threading;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using VisionGuard.Inference;
 using VisionGuard.Runtime;
 using VisionGuard.Services;
 using VisionGuard.ViewModels;
+using VisionGuard.Views;
+using WpfMatrix = System.Windows.Media.Matrix;
+using WpfMatrixTransform = System.Windows.Media.MatrixTransform;
+using WpfRect = System.Windows.Rect;
+using WpfSize = System.Windows.Size;
 
 if (args.Length < 1)
 {
@@ -78,10 +84,14 @@ if (args.Length >= 2 && args[1].Equals("--parser-contract", StringComparison.Ord
             Stage("engine-created inputSize=" + contractEngine.ModelInputSize);
             var contractInputSize = contractEngine.ModelInputSize;
             float[] contractOutput;
+            PreprocessedImage contractPreprocessed;
             using (var contractBitmap = new Bitmap(imagePath))
+            {
+                contractPreprocessed = ImagePreprocessor.Prepare(contractBitmap, contractInputSize);
                 contractOutput = contractEngine.Run(
-                    ImagePreprocessor.ToTensor(contractBitmap, contractInputSize),
+                    contractPreprocessed.Tensor,
                     ImagePreprocessor.InputShape(contractInputSize));
+            }
             Stage("inference-done rawLength=" + contractOutput.Length);
 
             var rawLength = contractOutput.Length;
@@ -103,8 +113,8 @@ if (args.Length >= 2 && args[1].Equals("--parser-contract", StringComparison.Ord
             var loadedNative = NativeLibrarySelector.LoadedOnnxRuntimePath();
             Check("native-onnxruntime-from-profile-directory",
                 loadedNative.StartsWith(NativeLibrarySelector.SelectedDirectory, StringComparison.OrdinalIgnoreCase),
-                $"loaded={loadedNative} expectedDir={NativeLibrarySelector.SelectedDirectory}");            var contractRegion = new Rectangle(0, 0, contractInputSize, contractInputSize);
-            var allClasses = YoloOutputParser.Parse(contractOutput, contractRegion, 0.25f, new HashSet<string>(), contractInputSize);
+                $"loaded={loadedNative} expectedDir={NativeLibrarySelector.SelectedDirectory}");
+            var allClasses = YoloOutputParser.Parse(contractOutput, contractPreprocessed.Transform, 0.25f, new HashSet<string>());
             Stage("parsed detections=" + allClasses.Count);
             var wanted = allClasses.Where(d => string.Equals(d.Label, expectedLabel, StringComparison.OrdinalIgnoreCase)).ToArray();
 
@@ -115,7 +125,8 @@ if (args.Length >= 2 && args[1].Equals("--parser-contract", StringComparison.Ord
             Check("boxes-within-frame", allClasses.All(d =>
                     d.BoundingBox.Width > 0 && d.BoundingBox.Height > 0
                     && d.BoundingBox.Left >= -1 && d.BoundingBox.Top >= -1
-                    && d.BoundingBox.Right <= contractInputSize + 1 && d.BoundingBox.Bottom <= contractInputSize + 1),
+                    && d.BoundingBox.Right <= contractPreprocessed.Transform.SourceWidth + 1
+                    && d.BoundingBox.Bottom <= contractPreprocessed.Transform.SourceHeight + 1),
                 string.Join("; ", allClasses.Select(d => $"{d.Label} {d.BoundingBox.X:F0},{d.BoundingBox.Y:F0},{d.BoundingBox.Width:F0}x{d.BoundingBox.Height:F0}")));
 
             var contractReport = new
@@ -289,6 +300,116 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
     var noAspect = PlanFor(2, 1420d, 880d, null);
     CheckLayout("无画面比例时仍能求解", noAspect.IsValid && noAspect.Rows * noAspect.Columns >= 2,
         new { noAspect.CellWidth, noAspect.CellHeight });
+
+    // 7) 原始帧比例只能影响卡片内的等比画面，绝不能改变卡片外框或固定操作区的尺寸。
+    var wideFramePlan = PlanFor(4, 1420d, 880d, 3d);
+    var tallFramePlan = PlanFor(4, 1420d, 880d, 1d / 3d);
+    CheckLayout("3:1 与 1:3 画面不改变卡片外框尺寸",
+        wideFramePlan.CellWidth == tallFramePlan.CellWidth && wideFramePlan.CellHeight == tallFramePlan.CellHeight,
+        new
+        {
+            wide = new { wideFramePlan.CellWidth, wideFramePlan.CellHeight, wideFramePlan.PictureWidth, wideFramePlan.PictureHeight },
+            tall = new { tallFramePlan.CellWidth, tallFramePlan.CellHeight, tallFramePlan.PictureWidth, tallFramePlan.PictureHeight },
+        });
+
+    // 8) 等比留白输入：方形无黑边，2:1 边界仍保留一半有效面积，3:1 / 1:3 居中留黑边。
+    // 同时检查张量中留白位置真的是纯黑，而不是 Bitmap 默认值或拉伸后的图像残留。
+    void CheckLetterbox(string name, int width, int height, int expectedWidth, int expectedHeight, int expectedLeft, int expectedTop)
+    {
+        const int inputSize = 32;
+        using var bitmap = new Bitmap(width, height);
+        using (var graphics = Graphics.FromImage(bitmap)) graphics.Clear(System.Drawing.Color.Red);
+        var prepared = ImagePreprocessor.Prepare(bitmap, inputSize);
+        var transform = prepared.Transform;
+        int blackIndex = 0;
+        int contentX = transform.PadLeft + transform.ResizedWidth / 2;
+        int contentY = transform.PadTop + transform.ResizedHeight / 2;
+        int contentIndex = contentY * inputSize + contentX;
+        bool hasBlackBorder = transform.PadLeft > 0 || transform.PadTop > 0;
+        CheckLayout(name,
+            prepared.Tensor.Length == 3 * inputSize * inputSize
+            && transform.ResizedWidth == expectedWidth && transform.ResizedHeight == expectedHeight
+            && transform.PadLeft == expectedLeft && transform.PadTop == expectedTop
+            && (!hasBlackBorder || Math.Abs(prepared.Tensor[blackIndex]) < 0.001f)
+            && prepared.Tensor[contentIndex] > 0.95f,
+            new { transform.ResizedWidth, transform.ResizedHeight, transform.PadLeft, transform.PadTop, transform.EffectiveAreaRatio, black = prepared.Tensor[blackIndex], red = prepared.Tensor[contentIndex] });
+    }
+
+    CheckLetterbox("1:1 输入无黑边", 100, 100, 32, 32, 0, 0);
+    CheckLetterbox("2:1 输入等比留黑边", 200, 100, 32, 16, 0, 8);
+    CheckLetterbox("3:1 输入等比留黑边", 300, 100, 32, 11, 0, 10);
+    CheckLetterbox("1:3 输入等比留黑边", 100, 300, 11, 32, 10, 0);
+
+    // 9) 两种模型输出都要使用同一变换还原坐标：跨黑边的框裁剪，纯黑边中的框丢弃。
+    var letterbox = LetterboxTransform.Create(300, 100, 300);
+    var modernOutput = new float[300 * 6];
+    modernOutput[0] = 60; modernOutput[1] = 110; modernOutput[2] = 120; modernOutput[3] = 150; modernOutput[4] = 0.9f; modernOutput[5] = 0;
+    modernOutput[6] = 10; modernOutput[7] = 0; modernOutput[8] = 30; modernOutput[9] = 50; modernOutput[10] = 0.9f; modernOutput[11] = 0;
+    var modernLetterboxDetections = YoloOutputParser.Parse(modernOutput, letterbox, 0.5f, new HashSet<string> { "person" });
+    CheckLayout("YOLO26 留白坐标回映且过滤纯黑边框",
+        modernLetterboxDetections.Count == 1
+        && Math.Abs(modernLetterboxDetections[0].BoundingBox.X - 60) < 0.01f
+        && Math.Abs(modernLetterboxDetections[0].BoundingBox.Y - 10) < 0.01f
+        && Math.Abs(modernLetterboxDetections[0].BoundingBox.Width - 60) < 0.01f
+        && Math.Abs(modernLetterboxDetections[0].BoundingBox.Height - 40) < 0.01f,
+        modernLetterboxDetections.Select(detection => detection.BoundingBox).ToArray());
+
+    const int legacyAnchors = 2100;
+    var legacyOutput = new float[84 * legacyAnchors];
+    legacyOutput[0 * legacyAnchors] = 90;
+    legacyOutput[1 * legacyAnchors] = 130;
+    legacyOutput[2 * legacyAnchors] = 60;
+    legacyOutput[3 * legacyAnchors] = 40;
+    legacyOutput[4 * legacyAnchors] = 0.9f;
+    var legacyLetterboxDetections = YoloOutputParser.Parse(legacyOutput, letterbox, 0.5f, new HashSet<string> { "person" });
+    CheckLayout("YOLOv5 留白坐标回映", legacyLetterboxDetections.Count == 1
+        && Math.Abs(legacyLetterboxDetections[0].BoundingBox.X - 60) < 0.01f
+        && Math.Abs(legacyLetterboxDetections[0].BoundingBox.Y - 10) < 0.01f
+        && Math.Abs(legacyLetterboxDetections[0].BoundingBox.Width - 60) < 0.01f
+        && Math.Abs(legacyLetterboxDetections[0].BoundingBox.Height - 40) < 0.01f,
+        legacyLetterboxDetections.Select(detection => detection.BoundingBox).ToArray());
+
+    // 10) 预览容器的原始帧尺寸不得反向撑开卡片：在固定 400×200 画面区中，
+    // 3:1 画布只等比缩放并居中，容器自身的期望尺寸仍为 0（由外层星号行决定）。
+    Exception? presenterFailure = null;
+    bool emptyFrameArranged = false;
+    WpfSize presenterDesired = WpfSize.Empty;
+    WpfMatrix presenterMatrix = WpfMatrix.Identity;
+    var presenterThread = new Thread(() =>
+    {
+        try
+        {
+            var sourceCanvas = new Grid { Width = 300, Height = 100 };
+            var presenter = new UniformFramePresenter { Child = sourceCanvas };
+            presenter.Measure(new WpfSize(400, 200));
+            presenterDesired = presenter.DesiredSize;
+            presenter.Arrange(new WpfRect(0, 0, 400, 200));
+            presenterMatrix = ((WpfMatrixTransform)sourceCanvas.RenderTransform).Matrix;
+
+            // 启动时还没有捕获帧，绑定的 Grid 宽高均为 0。此前把它 Arrange 到 Rect.Empty，
+            // WPF 会在 ArrangeCore 内部修改 Size.Empty 而直接抛异常。
+            var emptyFramePresenter = new UniformFramePresenter { Child = new Grid { Width = 0, Height = 0 } };
+            emptyFramePresenter.Measure(new WpfSize(400, 200));
+            emptyFramePresenter.Arrange(new WpfRect(0, 0, 400, 200));
+            emptyFrameArranged = true;
+        }
+        catch (Exception ex)
+        {
+            presenterFailure = ex;
+        }
+    });
+    presenterThread.SetApartmentState(ApartmentState.STA);
+    presenterThread.Start();
+    presenterThread.Join();
+    CheckLayout("极端帧不撑开卡片且在固定画面区等比居中",
+        presenterFailure == null
+        && presenterDesired.Width == 0 && presenterDesired.Height == 0
+        && Math.Abs(presenterMatrix.M11 - (4d / 3d)) < 0.001
+        && Math.Abs(presenterMatrix.M22 - (4d / 3d)) < 0.001
+        && Math.Abs(presenterMatrix.OffsetX) < 0.001
+        && Math.Abs(presenterMatrix.OffsetY - (200d - 100d * 4d / 3d) / 2d) < 0.001
+        && emptyFrameArranged,
+        new { presenterDesired, presenterMatrix, emptyFrameArranged, error = presenterFailure?.Message });
 
     var layoutReport = new
     {

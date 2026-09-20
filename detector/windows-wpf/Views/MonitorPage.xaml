@@ -37,6 +37,8 @@
                             MinWidth="52" MinHeight="28" Height="28" Padding="9,2" ToolTip="清除窗口、选区与遮罩"/>
                 </Grid>
                 <TextBlock Text="{Binding TargetInfo}" Style="{StaticResource BodyText}" TextTrimming="CharacterEllipsis" ToolTip="{Binding TargetInfo}" Margin="0,0,0,7"/>
+                <TextBlock Text="{Binding AspectRatioWarning}" Foreground="{StaticResource WarningBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,-3,0,7"
+                           Visibility="{Binding HasAspectRatioWarning, Converter={StaticResource BoolToVis}}"/>
                 <Grid>
                     <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
                     <Button Content="应用窗口" Style="{StaticResource PrimaryButton}" Command="{Binding PickWindowCommand}" Margin="0,0,4,0" ToolTip="选择一个应用窗口作为采集目标"/>

@@ -37,6 +37,13 @@ namespace VisionGuard.Runtime
         }
     }
 
+    /// <summary>完整退出时关闭驻留的结果；失败时主体必须保持打开以避免留下未知后台状态。</summary>
+    internal sealed class ResidentExitResult
+    {
+        public bool Succeeded { get; set; }
+        public string FailureReason { get; set; } = string.Empty;
+    }
+
     /// <summary>
     /// 由检测端拉起 Windows 驻留程序（V10 决策 28）。
     ///
@@ -56,7 +63,9 @@ namespace VisionGuard.Runtime
         private const string ResidentExeName = "VisionGuard.Resident.exe";
         private const string ResidentExeConfigName = "VisionGuard.Resident.exe.config";
         private const string ResidentMutexName = @"Local\VisionGuard.Resident.SingleInstance";
+        private const string ResidentShutdownEventName = @"Local\VisionGuard.Resident.Shutdown";
         private const int HandshakeWaitMs = 6000;
+        private const int ShutdownWaitMs = 6000;
 
         private static readonly object StatusLock = new object();
         private static ResidentStatus _status = new ResidentStatus();
@@ -163,6 +172,60 @@ namespace VisionGuard.Runtime
                 }
                 Log("WARN [resident] 拉起驻留失败: " + reason);
             }
+        }
+
+        /// <summary>
+        /// 为用户发起的「完整退出」停止驻留并取消登录自启。
+        /// 先去掉自启，再通过驻留专用事件请求优雅退出；只有确认互斥体消失才允许主体关闭。
+        /// </summary>
+        public static ResidentExitResult StopForCompleteExit()
+        {
+            string exePath = ResolveResidentPath(AppDomain.CurrentDomain.BaseDirectory);
+            if (string.IsNullOrEmpty(exePath))
+            {
+                return new ResidentExitResult
+                {
+                    Succeeded = false,
+                    FailureReason = "未找到驻留程序，无法确认已取消登录自启。"
+                };
+            }
+
+            string startupFailure;
+            if (!RunResidentCommand(exePath, "--disable-startup", out startupFailure))
+            {
+                return new ResidentExitResult
+                {
+                    Succeeded = false,
+                    FailureReason = "取消驻留登录自启失败：" + startupFailure
+                };
+            }
+
+            if (!IsResidentRunning())
+            {
+                Log("INFO [resident] 完整退出：驻留未运行，已取消登录自启");
+                return new ResidentExitResult { Succeeded = true };
+            }
+
+            if (!SignalResidentShutdown())
+            {
+                return new ResidentExitResult
+                {
+                    Succeeded = false,
+                    FailureReason = "未能向驻留发送退出请求。"
+                };
+            }
+
+            if (!WaitForStopped(ShutdownWaitMs))
+            {
+                return new ResidentExitResult
+                {
+                    Succeeded = false,
+                    FailureReason = "驻留在 " + ShutdownWaitMs + "ms 内未退出。"
+                };
+            }
+
+            Log("INFO [resident] 完整退出：驻留已停止，登录自启已取消");
+            return new ResidentExitResult { Succeeded = true };
         }
 
         private static void MarkRunning(string note)
@@ -328,6 +391,69 @@ namespace VisionGuard.Runtime
                 Thread.Sleep(200);
             }
             return false;
+        }
+
+        private static bool WaitForStopped(int timeoutMs)
+        {
+            var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (!IsResidentRunning()) return true;
+                Thread.Sleep(100);
+            }
+            return !IsResidentRunning();
+        }
+
+        private static bool SignalResidentShutdown()
+        {
+            try
+            {
+                using (EventWaitHandle handle = EventWaitHandle.OpenExisting(ResidentShutdownEventName))
+                {
+                    handle.Set();
+                    return true;
+                }
+            }
+            catch (WaitHandleCannotBeOpenedException)
+            {
+                return false;
+            }
+        }
+
+        private static bool RunResidentCommand(string executablePath, string arguments, out string failure)
+        {
+            failure = string.Empty;
+            try
+            {
+                using (Process process = Process.Start(new ProcessStartInfo
+                {
+                    FileName = executablePath,
+                    Arguments = arguments,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    WorkingDirectory = Path.GetDirectoryName(executablePath),
+                }))
+                {
+                    if (process == null)
+                    {
+                        failure = "进程未启动";
+                        return false;
+                    }
+                    if (!process.WaitForExit(ShutdownWaitMs))
+                    {
+                        failure = "命令超时";
+                        return false;
+                    }
+                    if (process.ExitCode == 0) return true;
+                    failure = "退出码 " + process.ExitCode;
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                failure = ex.GetType().Name + " - " + ex.Message;
+                return false;
+            }
         }
     }
 }

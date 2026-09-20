@@ -101,8 +101,9 @@
                                                     <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding PreviewImage}" Value="{x:Null}"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
                                                 </TextBlock>
                                             </StackPanel>
-                                            <!-- 缩放边距收到 1px：求解器已按画面比例给卡片收边，这里再留腔只会白吃一圈画面。 -->
-                                            <Viewbox Stretch="Uniform" Margin="1">
+                                            <!-- 原始画布只在固定画面区内等比缩放；其自然像素尺寸不得参与卡片测量，
+                                                 否则极端选区会把星号画面行撑开并遮住底部按钮。 -->
+                                            <local:UniformFramePresenter Margin="1">
                                                 <Grid Width="{Binding FrameWidth}" Height="{Binding FrameHeight}">
                                                     <Image Source="{Binding PreviewImage}" Stretch="None"/>
                                                     <ItemsControl ItemsSource="{Binding Detections}">
@@ -111,7 +112,7 @@
                                                         <ItemsControl.ItemTemplate><DataTemplate><Grid><Rectangle Width="{Binding Width}" Height="{Binding Height}" Stroke="{StaticResource DangerBrush}" StrokeThickness="2"/><TextBlock Text="{Binding Label}" Foreground="White" Background="#DDFF6B5E" FontSize="10" Padding="4,1" VerticalAlignment="Top" Margin="0,-17,0,0"/></Grid></DataTemplate></ItemsControl.ItemTemplate>
                                                     </ItemsControl>
                                                 </Grid>
-                                            </Viewbox>
+                                            </local:UniformFramePresenter>
                                             <!--
                                                 信息量压缩：原来底部两行四段，现在一行三段。
                                                 三段统一用 CaptionText（同一字号）并显式垂直居中，避免基线与字号不一致而错位。

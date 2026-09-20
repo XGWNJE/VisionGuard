@@ -124,18 +124,34 @@ namespace VisionGuard.Inference
         {
             if (rawOutput == null) throw new ArgumentNullException(nameof(rawOutput));
 
-            float scaleX = captureRegion.Width  / (float)modelSize;
-            float scaleY = captureRegion.Height / (float)modelSize;
+            return Parse(rawOutput,
+                LetterboxTransform.CreateStretched(captureRegion.Width, captureRegion.Height, modelSize),
+                confThreshold,
+                watchedClasses);
+        }
+
+        /// <summary>
+        /// 按预处理产生的等比留白变换，把模型输出还原到原始捕获帧坐标。
+        /// 完全落在黑边中的检测框会被丢弃，跨边界的框会裁剪到真实画面内。
+        /// </summary>
+        public static List<Detection> Parse(
+            float[] rawOutput,
+            LetterboxTransform transform,
+            float confThreshold,
+            HashSet<string> watchedClasses)
+        {
+            if (rawOutput == null) throw new ArgumentNullException(nameof(rawOutput));
+            if (transform == null) throw new ArgumentNullException(nameof(transform));
 
             return Detect(rawOutput.Length) == OutputLayout.Yolo26EndToEnd
-                ? ParseYolo26(rawOutput, scaleX, scaleY, confThreshold, watchedClasses)
-                : ParseYoloV5(rawOutput, scaleX, scaleY, confThreshold, watchedClasses);
+                ? ParseYolo26(rawOutput, transform, confThreshold, watchedClasses)
+                : ParseYoloV5(rawOutput, transform, confThreshold, watchedClasses);
         }
 
         // ── YOLO26 [1,300,6]：模型已内置 NMS，只做阈值/类别过滤 ──────────────
 
         private static List<Detection> ParseYolo26(
-            float[] rawOutput, float scaleX, float scaleY, float confThreshold, HashSet<string> watchedClasses)
+            float[] rawOutput, LetterboxTransform transform, float confThreshold, HashSet<string> watchedClasses)
         {
             var candidates = new List<Detection>();
 
@@ -156,13 +172,15 @@ namespace VisionGuard.Inference
                 float x2 = rawOutput[idx + 2];
                 float y2 = rawOutput[idx + 3];
 
+                var boundingBox = transform.MapAndClipToSource(x1, y1, x2 - x1, y2 - y1);
+                if (boundingBox == RectangleF.Empty) continue;
+
                 candidates.Add(new Detection
                 {
                     ClassId     = cls,
                     Label       = label,
                     Confidence  = conf,
-                    BoundingBox = new RectangleF(x1 * scaleX, y1 * scaleY,
-                                                 (x2 - x1) * scaleX, (y2 - y1) * scaleY)
+                    BoundingBox = boundingBox,
                 });
             }
 
@@ -172,7 +190,7 @@ namespace VisionGuard.Inference
         // ── YOLOv5u [1,84,N]：通道优先原始锚点，需要类内 NMS ─────────────────
 
         private static List<Detection> ParseYoloV5(
-            float[] rawOutput, float scaleX, float scaleY, float confThreshold, HashSet<string> watchedClasses)
+            float[] rawOutput, LetterboxTransform transform, float confThreshold, HashSet<string> watchedClasses)
         {
             int anchors = rawOutput.Length / YoloV5Channels;
             int classCount = Math.Min(80, CocoLabels.Count);
@@ -205,13 +223,15 @@ namespace VisionGuard.Inference
                 float bh = rawOutput[3 * anchors + a];
                 if (bw <= 0f || bh <= 0f) continue;
 
+                var boundingBox = transform.MapAndClipToSource(cx - bw / 2f, cy - bh / 2f, bw, bh);
+                if (boundingBox == RectangleF.Empty) continue;
+
                 candidates.Add(new Detection
                 {
                     ClassId     = bestClass,
                     Label       = label,
                     Confidence  = bestScore,
-                    BoundingBox = new RectangleF((cx - bw / 2f) * scaleX, (cy - bh / 2f) * scaleY,
-                                                 bw * scaleX, bh * scaleY)
+                    BoundingBox = boundingBox,
                 });
             }
 

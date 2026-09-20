@@ -18,9 +18,12 @@
                                TextWrapping="Wrap" Margin="64,6,0,0"/>
                 </StackPanel>
 
-                <!-- 模型资源：清单直接表达「已下载/未下载/下载中」，按钮就在每一项上 -->
-                <StackPanel Margin="0,0,0,18">
-                    <TextBlock Text="模型资源" Style="{StaticResource SectionLabel}" Margin="0,0,0,7"/>
+                <!-- 模型资源默认收起，需要下载或管理模型时再展开，避免全局设定首次打开被清单淹没。 -->
+                <Expander IsExpanded="False" Margin="0,0,0,18">
+                    <Expander.Header>
+                        <TextBlock Text="模型资源" Style="{StaticResource SectionLabel}"/>
+                    </Expander.Header>
+                    <StackPanel Margin="0,7,0,0">
                     <ItemsControl ItemsSource="{Binding Models}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
@@ -66,7 +69,8 @@
                     </ItemsControl>
                     <TextBlock Text="{Binding ModelDownloadProgress}" Foreground="{StaticResource Primary}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"
                                Visibility="{Binding HasModelNotice, Converter={StaticResource BoolToVis}}"/>
-                </StackPanel>
+                    </StackPanel>
+                </Expander>
             </StackPanel>
 
             <!-- ═══ 连接、设备身份与驻留（原「连接」页） ═══ -->
@@ -103,12 +107,14 @@
                 <StackPanel>
                     <TextBlock Text="客户端" Style="{StaticResource SectionLabel}" Margin="0,0,0,7"/>
                     <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="{Binding VersionText}" Style="{StaticResource BodyText}" FontWeight="SemiBold"/>
                             <TextBlock Text="{Binding UpdateStatusText}" Foreground="{StaticResource Primary}" FontSize="11" Margin="0,2,0,0" Visibility="{Binding IsCheckingUpdate, Converter={StaticResource BoolToVis}}"/>
                         </StackPanel>
                         <Button Grid.Column="1" Content="{Binding UpdateButtonText}" Style="{StaticResource DarkButton}" Command="{Binding CheckUpdateCommand}" IsEnabled="{Binding IsUpdateButtonEnabled}" MinWidth="88" Margin="8,0,0,0"/>
+                        <Button Grid.Column="2" Content="完整退出" Style="{StaticResource DarkButton}" Command="{Binding FullExitCommand}" MinWidth="88" Margin="8,0,0,0"
+                                ToolTip="停止检测端并关闭驻留程序；下次手动启动检测端会自动恢复驻留。"/>
                     </Grid>
                 </StackPanel>
             </StackPanel>
