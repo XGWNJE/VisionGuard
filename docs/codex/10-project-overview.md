@@ -4,21 +4,7 @@
 
 ## 产品定位
 
-VisionGuard 当前是由视觉检测端、Server、Android 接收端和 Windows 驻留程序组成的 AI 实时监控系统；长期定位是可部署、可扩展、可运营的边缘智能探测平台。
-
-产品闭环为：
-
-`现场感知 -> 本地判断 -> 证据生成 -> 可靠送达 -> 用户处置 -> 设备运维`
-
-长期产品方向包括 Detector Platform、Reliable Event Network 和 Device & Fleet Cloud。视觉检测是当前首要能力，但不是未来产品定义的全部。
-
-产品对象统一定义如下：
-
-- **Detector**：能够产生标准 Observation / AlertEvent 的探测器总称。
-- **Visual Detector**：现有 Windows WPF 和 Android 检测端。
-- **Edge Detector**：未来 Linux ARM64 开发板探测器，可接入视觉和非视觉传感器。
-- **Receiver**：接收、展示和处置报警的终端。
-- **Web Management Console**：未来的系统管理控制面；当前仓库还没有独立 Web 控制台实现。
+VisionGuard 当前由视觉检测端、Server、Android 接收端和 Windows 驻留程序组成：检测端生成告警与截图，Server 中继，接收端展示结果。产品对象定义、长期定位和未来硬件方向见[产品路线图](15-product-roadmap.md)。
 
 商业分层、硬件探测器方向和长期网络约束由[产品路线图](15-product-roadmap.md)维护。当前已实现的纯软件视觉方案为免费版；接入检测硬件探测器后进入付费版。当前主线使用 `VGSAL-1.0`；历史 MIT 边界由根目录 `LICENSE-HISTORY.md` 维护。WinForms 检测端已退役；Windows 对外只交付一个统一包，由 Win7 兼容启动器按系统选择两个内部 WPF 推理运行时（见[路线图 8.13](15-product-roadmap.md)）。
 

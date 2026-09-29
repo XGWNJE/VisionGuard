@@ -58,7 +58,7 @@ visionguard.xgwnje.cn:443
 - `MAX_WS_CONNECTIONS`
 - `MAX_SOURCES_PER_DETECTOR`（默认 16，允许 1–16；随 `auth-result`/`heartbeat-ack` 下发）
 
-## 已验证事实
+## 实现事实
 
 - 连接上限当前由 `MAX_WS_CONNECTIONS` 控制，默认 100
 - 接收端幽灵阈值当前为 45s

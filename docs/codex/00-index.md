@@ -4,10 +4,10 @@
 
 ## 文档分工
 
-- [10-project-overview.md](10-project-overview.md) - 六个实际组件的地图、规范名称和当前状态边界
+- [10-project-overview.md](10-project-overview.md) - 五个实际组件的地图、规范名称和当前状态边界
 - [15-product-roadmap.md](15-product-roadmap.md) - 商业化定位、边缘探测器方向、阶段顺序与验收闸门
 - [20-server.md](20-server.md) - Server 当前职责、接口、运行参数和协议角色
-- [30-windows-detector.md](30-windows-detector.md) - 两个 Windows 检测端和驻留程序的实现事实
+- [30-windows-detector.md](30-windows-detector.md) - 统一启动器、WPF 两套内部运行时和驻留程序的实现事实
 - [35-model-assets.md](35-model-assets.md) - ONNX 模型、COCO 类别、目标子集和资源维护约束
 - [40-android-detector.md](40-android-detector.md) - Android 检测端的采集、推理、前台服务和 WS
 - [50-android-receiver.md](50-android-receiver.md) - Android 接收端的设备列表、告警、前台服务和 WS

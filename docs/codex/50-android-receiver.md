@@ -44,7 +44,7 @@
 - Server 地址与隔离通道由 Gradle 注入 `BuildConfig.SERVER_URL` 和 `BuildConfig.CHANNEL`；测试 APK 可连接独立 Server 进程，不接收其他通道的设备、报警或控制结果。
 - 显式 Gradle 属性或环境变量优先于本地默认配置，避免测试包误连线上；仅 `src/debug/AndroidManifest.xml` 允许本机模拟器使用明文 HTTP/WS，Release 清单不放宽 HTTPS/WSS。
 
-## 已验证事实
+## 实现事实
 
 - 包名为 `com.xgwnje.visionguard_android`
 - 前台服务类型当前为 `remoteMessaging`
@@ -55,5 +55,7 @@
 - 设置层使用 DataStore
 - WS 消息模型与检测端/Server 对齐
 - 本地也缓存 `targets`，默认值为 `person`
-- 2026-07-08 模拟器验证：设备页启动、手动拖拽排序、强停重启后排序保留、断网离线卡片保留、离线侧滑删除、恢复联网后实时设备并回列表均通过；该验证不等同于完整检测端到接收端真实告警链路。
-- 2026-09-11 MI 6X 真机验证：接收端认证成功，3 条缺少当前字段的旧协议设备记录被丢弃；应用保持运行且界面显示已连接。证据见 `artifacts/e2e/20260911-004712/`。
+
+## 验证边界
+
+模拟器、真机启动和协议记录统一见[验证报告](90-verification-report.md)；局部 UI 或认证通过不能替代完整检测端到接收端的真实告警链路验收。

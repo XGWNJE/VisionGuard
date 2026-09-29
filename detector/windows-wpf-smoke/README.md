@@ -18,6 +18,6 @@ dotnet run --project detector\windows-wpf-smoke\VisionGuard.WpfSmoke.csproj -c R
 
 ## 谁提供目标窗口
 
-**当前仓库不含夹具窗口工具。** 目标窗口由外部提供，要求是可被 `PrintWindow` 稳定重绘的顶层窗口（历史实现是 net472 的 DPI-unaware WinForms 窗口逐个显示一张含人图片；该工具 `detector/windows-winforms-smoke/` 已随 WinForms 检测端退役一并删除，替换工具尚未落地）。
+`visionguard-e2e` 脚本中的 `Start-WpfFixtureWindows` 用 WinForms 创建可见图片窗口，`WpfPersonDetection` 模式调用本工具并在结束后释放窗口。它提供静态图片推理与隔离证据，不能满足项目规则要求的动态视频窗口 smoke，也不能替代真实 WPF 主程序验收。
 
-`visionguard-e2e` 的 `WpfPersonDetection` 模式负责创建这些窗口并调用本工具，参数与证据边界见该 Skill 与[运维文档](../../docs/codex/60-operations.md)。已知取舍：`PrintWindow` 对纯合成（WPF/Chromium）窗口可能抓到空白帧，所以夹具必须是自绘或 GDI 绘制的窗口。
+运行入口及限制见[运维文档](../../docs/codex/60-operations.md)，验收证据见[验证报告](../../docs/codex/90-verification-report.md)。

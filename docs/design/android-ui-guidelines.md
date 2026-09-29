@@ -1,6 +1,6 @@
 # VisionGuard Android UI Guidelines
 
-本规范是当前 Android UI 的唯一设计风格基准。来源以 `receiver/android/` 当前 Compose 实现为准；目前只有 Android 接收端的新方案被确认采用。Android 检测端、WinForms 和 WPF 仍按毛坯状态看待，旧设计方案不再保留为实现依据。
+本规范是当前 Android UI 的唯一设计风格基准。来源以 `receiver/android/` 当前 Compose 实现为准；目前只有 Android 接收端的新方案被确认采用。Android 检测端和 Windows WPF 界面不以本规范作为已采用方案；WinForms 检测端已退役，旧设计方案不再保留为实现依据。
 
 ## 设计定位
 
@@ -112,7 +112,7 @@ Android 检测端后续迁移时：
 - 模型下载状态仍放在模型选择处，不新增模型管理页。
 - 监控运行态优先显示当前状态和可执行动作，避免解释性卡片占据首屏。
 
-WinForms / WPF 后续探索时：
+Windows WPF 后续探索时：
 
 - 不从已删除的 Android 原型或旧 Pencil 方案继承布局。
 - 先保证检测工作流和构建输出稳定，再单独探索桌面视觉语言。

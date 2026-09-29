@@ -2,7 +2,7 @@
 
 `detector/android/` 是 Android 检测端，负责摄像头采集、推理、遮罩、告警和上传。
 
-> **当前状态：暂缓（2026-09-15，路线图决策 19）**。本端不纳入当前实施顺序，也不参与验收结论；等 Server、Windows 两个检测端与 Android 接收端的整条链路完整实现并验收后，再实现本端，并一次性把三端协议与语义统一到同一套约定。本文以下内容是暂缓时的实现快照，不代表当前可用状态。恢复实施的第一批修复项：认证缺少 `channel` 字段导致当前协议下无法认证；缺少来源（source）维度与逐来源命令、配置、告警来源字段。
+> **当前状态：暂缓（2026-09-15，路线图决策 19）**。本端不纳入当前实施顺序，也不参与验收结论；等 Server、统一 Windows 检测端与 Android 接收端的整条链路完整实现并验收后，再实现本端，并一次性把三端协议与语义统一到同一套约定。本文以下内容是暂缓时的实现快照，不代表当前可用状态。恢复实施的第一批修复项：认证缺少 `channel` 字段导致当前协议下无法认证；缺少来源（source）维度与逐来源命令、配置、告警来源字段。
 
 当前 UI 仍按毛坯状态看待；旧模块专属 Pencil 设计源已清理，不再作为实现依据。后续 UI 迁移应参考 `docs/design/android-ui-guidelines.md` 的颜色、状态和组件语义，但不照搬接收端信息架构。
 
@@ -40,7 +40,7 @@
 - `detector/android/app/src/main/java/com/xgwnje/visionguard/util/AutoUpdater.kt`
 - `detector/android/app/build.gradle.kts`
 
-## 已验证事实
+## 实现事实
 
 - 包名为 `com.xgwnje.visionguard`
 - 设置层使用 DataStore
@@ -53,4 +53,4 @@
 
 ## 验证边界
 
-当前 Android 单测、Debug 构建、启动 smoke 和小米 15 上使用归一化 `yolo26n_320` 的真实相机推理/NNAPI provider 证据可以分别报告。MI 6X（SDM660/Adreno 512）实测证明原始公网模型因 `Split` 回退 CPU，约 `157–179 ms/次`；归一化模型虽进入 `NnapiExecutionProvider`，但系统编译目标是 `nnapi-reference`，约 `471–499 ms/次`，属于更慢的参考 CPU 路径而非硬件加速。QNN/NCNN、可靠的 NNAPI 设备识别、长时温升、精度矩阵、完整检测端→Server→接收端报警链和真机 UI 目检尚未验收。当前未执行正式版本发布，因此公网现有模型不因本地证据自动更新。
+历史构建、启动与 NNAPI 推理证据，以及人工/真机未覆盖项，统一见[验证报告](90-verification-report.md)。NNAPI provider 命中不能单独证明硬件加速；历史认证记录不证明当前协议可用。
