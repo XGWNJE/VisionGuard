@@ -20,7 +20,7 @@ VisionGuard 当前是由视觉检测端、Server、Android 接收端和 Windows 
 - **Receiver**：接收、展示和处置报警的终端。
 - **Web Management Console**：未来的系统管理控制面；当前仓库还没有独立 Web 控制台实现。
 
-商业分层、硬件探测器方向和长期网络约束由[产品路线图](15-product-roadmap.md)维护。当前已实现的纯软件视觉方案为免费版；接入检测硬件探测器后进入付费版。当前主线使用 `VGSAL-1.0`；历史 MIT 边界由根目录 `LICENSE-HISTORY.md` 维护。WinForms 检测端已退役，Windows 只剩 `detector/windows-wpf/` 的单一 WPF 构建与两个推理档位（见[路线图 8.13](15-product-roadmap.md)）。
+商业分层、硬件探测器方向和长期网络约束由[产品路线图](15-product-roadmap.md)维护。当前已实现的纯软件视觉方案为免费版；接入检测硬件探测器后进入付费版。当前主线使用 `VGSAL-1.0`；历史 MIT 边界由根目录 `LICENSE-HISTORY.md` 维护。WinForms 检测端已退役；Windows 对外只交付一个统一包，由 Win7 兼容启动器按系统选择两个内部 WPF 推理运行时（见[路线图 8.13](15-product-roadmap.md)）。
 
 ## 当前实际组件与验证状态
 
@@ -28,7 +28,7 @@ VisionGuard 当前是由视觉检测端、Server、Android 接收端和 Windows 
 
 | 规范名称 | 路径 | 当前状态 | 自动验证边界 |
 |---|---|---|---|
-| Windows 检测端（WPF Visual Detector） | `detector/windows-wpf/` | 多来源主体实现；来源数量按 Server 协商上限生成；**net472 单一构建，按 `OrtProfile` 产出 legacy（Win7 SP1 x64：CPU + 原生 1.1.0 + YOLOv5）与 modern（Win10/11：DirectML + 原生 1.19.0 + YOLO26）两个推理档位** | 两档位各自 Release 编译 0 警告 0 错误、原生库档位路径与 UI 档位文案已取证；legacy 档与服务端 `● 已连接`、隔离 Server 下的驻留拉起与 `open-detector` 重新拉起链路已取证；动态视频、多路帧率、完整报警链和 Win7 真机验收仍待独立验证 |
+| Windows 检测端（WPF Visual Detector） | `detector/windows-launcher/`、`detector/windows-wpf/` | 多来源主体实现；**单一对外包与入口**，net472 启动器在 Win7 选择 legacy（CPU + 原生 1.1.0 + YOLOv5）、在 Win10/11 选择 modern（DirectML + 原生 1.19.0 + YOLO26），并负责校验、目录切换与失败回滚的整包更新 | 启动器、两套内部运行时和驻留程序 Release 编译通过；统一目录、运行时选择与必要文件校验已自动验证；真实跨版本更新、Win7 启动器与故障回滚仍待实机验证 |
 | Windows 驻留程序（Windows Resident） | `detector/windows-resident/` | .NET Framework 4.7.2 x64 后台进程；独立 WS 身份、单实例和进程握手已接入 | 框架/API 已对齐 Win7 SP1 x64；Win7 实机、重启、崩溃、完整远控链路待验收 |
 | Android 检测端（Android Visual Detector） | `detector/android/` | 主体实现；**当前暂缓**（[路线图决策 19](15-product-roadmap.md)） | 单测、构建和历史启动证据可分别报告；当前协议下缺少 `channel` 无法认证、且没有来源维度；恢复实施时先统一三端语义 |
 | Android 接收端（Android Receiver） | `receiver/android/` | 主体实现；设备/来源 UI 已接入 | JVM 单测、构建和历史启动证据可分别报告；完整报警链待补 |
@@ -47,7 +47,9 @@ Server 当前实现连接认证、心跳、告警广播、截图/更新路由和
 
 | 目录 | 职责 |
 |---|---|
-| `detector/windows-wpf/` | Windows 检测端（WPF，net472 单一构建，按 `OrtProfile` 产出 legacy 与 modern 两个推理档位） |
+| `detector/windows-launcher/` | Windows 检测端统一入口与整包更新器（net472 / Win7+） |
+| `detector/windows-wpf/` | Windows 检测端两套内部 WPF 运行时源码 |
+| `detector/windows-package/` | 构建生成的统一 Windows 目录；不作为独立源码组件 |
 | `detector/windows-resident/` | Windows 驻留程序 |
 | `detector/windows-shared/` | Windows 检测端与驻留程序共用的进程/身份代码 |
 | `detector/windows-wpf-smoke/` | 人员检测 smoke 工具，按配置的来源数量取证；用独立 net472 窗口承载来源，legacy 档因此也能在 Win7 上运行 |

@@ -836,6 +836,10 @@ namespace VisionGuard.ViewModels
         public bool IsReady => _captureMode == CaptureMode.WindowHandle
             ? _targetWindow != null && CaptureSizeConstraints.IsValid(_targetWindow.Bounds)
             : CaptureSizeConstraints.IsValid(_screenRegion);
+        /// <summary>已选择采集目标；窗口暂时失联时仍视为已绑定。</summary>
+        public bool IsTargetBound => _captureMode == CaptureMode.WindowHandle
+            ? !string.IsNullOrWhiteSpace(_targetWindowTitle)
+            : _screenRegion != Rectangle.Empty;
         public string StatusText { get => _statusText; private set => SetProperty(ref _statusText, value); }
         public string TargetInfo => _captureMode == CaptureMode.WindowHandle
             ? (string.IsNullOrWhiteSpace(_targetWindowTitle) ? "未选择窗口" : $"窗口：{_targetWindowTitle}{(_windowSubRegion == Rectangle.Empty ? "" : $" · 选区 {_windowSubRegion.Width}×{_windowSubRegion.Height}")}")

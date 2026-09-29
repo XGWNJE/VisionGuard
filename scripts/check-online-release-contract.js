@@ -44,6 +44,9 @@ async function checkOnlineReleaseContract({ baseUrl, releases, fetchImpl = fetch
     if (payload.latestVersion !== release.version || payload.downloadUrl !== release.url || Number(payload.size) !== Number(release.size)) {
       throw new Error(`${platform} update metadata drifted: ${JSON.stringify(payload)}`);
     }
+    if (release.sha256 && String(payload.sha256 || '').toUpperCase() !== String(release.sha256).toUpperCase()) {
+      throw new Error(`${platform} update checksum drifted: ${payload.sha256} != ${release.sha256}`);
+    }
 
     const assetUrl = `${base}${release.url}`;
     const head = await expectResponse(fetchImpl, assetUrl, { method: 'HEAD' }, 200);

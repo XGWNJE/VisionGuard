@@ -47,7 +47,7 @@ namespace VisionGuard
             // 迁移旧 Assets 目录下的模型到 AppData
             _ = Task.Run(() =>
             {
-                var oldDir = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets");
+                var oldDir = System.IO.Path.Combine(Runtime.InstallLayout.InstallRoot, "Assets");
                 Utils.ModelManager.MigrateOldModels(oldDir);
             });
 

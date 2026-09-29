@@ -70,6 +70,7 @@ visionguard.xgwnje.cn:443
 - 业务控制命令只允许 `pause`、`resume`、`stop-alarm`；驻留生命周期只允许四个既定打开/关闭命令。无效命令或来源不会占用 `requestId`。无 `targetSourceId` 的命令按设备级中继，由检测端解释为“全部来源”；服务端不把设备级命令改写成某个具体来源。
 - `request-screenshot` 没有成功回执：检测端把截图作为 `screenshot-data` 异步广播，请求者按 `alertId` 关联；失败路径回带 `requestId` 与 `phase=completed` 的结构化 `command-ack`。
 - 驻留连接与检测端、接收端一样参与幽灵清理（同为 45s 阈值）。只有驻留在线的设备仍算在线，因此对它的业务命令回“该设备当前没有检测端在线”，而不是“设备离线”。
+- 同一 `deviceId` 的 Windows 主检测端与驻留程序共用一个设备名称；主检测端认证或心跳中的自定义名称会同步到驻留连接记录，主检测端关闭并经过重连宽限后，驻留设备卡仍延续该名称。
 - `session-info` 只在 `android` 角色被接受，并且以认证身份为准，不使用消息自称的 `deviceId`。
 - 新协议 Server 实例由 `VISIONGUARD_CHANNEL` 标识隔离域，认证消息必须携带完全一致的 `channel`；错误或缺失通道直接拒绝。测试实例使用独立端口、进程和 `VISIONGUARD_DATA_DIR`，因此连接表、报警、截图和广播不会与仍在线的旧版本混合。
 - WS 报警以 `alertId` 幂等入库：首次报警原子落盘并 `fsync` 后返回 `alert-ack/stored`，相同内容重试返回 `duplicate` 且不重复广播，同 ID 不同内容返回永久 `alert-id-conflict`；临时落盘失败返回 `storage-failed`，检测端保留队列继续重试。

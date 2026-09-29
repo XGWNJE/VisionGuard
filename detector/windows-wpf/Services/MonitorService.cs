@@ -82,6 +82,12 @@ namespace VisionGuard.Services
                     || (config.WindowSubRegion != Rectangle.Empty && !CaptureSizeConstraints.IsValid(config.WindowSubRegion))))
                 throw new InvalidOperationException("目标窗口或窗口选区无效，宽度和高度必须都大于 100 像素。");
 
+            // 启动阶段的预加载若遇到短暂文件占用，这里会重试；仍失败时必须在触发 ORT
+            // NativeMethods 静态初始化前停止，否则类型会在本进程内永久保持失败状态。
+            NativeLibrarySelector.Initialize();
+            if (!NativeLibrarySelector.IsReady)
+                throw new InvalidOperationException(NativeLibrarySelector.FailureReason);
+
             _config  = config;
             _engine  = _engineFactory(modelPath, 2, preferredBackend);
 

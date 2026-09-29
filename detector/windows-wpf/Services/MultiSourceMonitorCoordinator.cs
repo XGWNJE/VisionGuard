@@ -85,9 +85,9 @@ namespace VisionGuard.Services
             }
             catch (Exception ex)
             {
-                runtime.Error = ex.Message;
+                runtime.Error = NativeLibrarySelector.DescribeInferenceFailure(ex);
                 RaiseStatus(runtime);
-                throw;
+                throw new InvalidOperationException(runtime.Error, ex);
             }
             RaiseStatus(runtime);
         }

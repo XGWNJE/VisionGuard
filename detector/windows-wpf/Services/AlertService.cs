@@ -118,9 +118,7 @@ namespace VisionGuard.Services
         {
             try
             {
-                string dir = Path.Combine(
-                    AppDomain.CurrentDomain.BaseDirectory,
-                    "alerts");
+                string dir = AlertDirectory;
                 Directory.CreateDirectory(dir);
 
                 string filename = alertId + ".png";
@@ -138,9 +136,12 @@ namespace VisionGuard.Services
         /// </summary>
         public static string GetSnapshotPath(string alertId)
         {
-            string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "alerts");
-            return Path.Combine(dir, alertId + ".png");
+            return Path.Combine(AlertDirectory, alertId + ".png");
         }
+
+        private static string AlertDirectory => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VisionGuard", "alerts");
 
         /// <summary>
         /// 清理截图缓存：满足 1GB / 7天 / 5000张 约束（LRU）。

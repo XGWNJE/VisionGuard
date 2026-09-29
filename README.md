@@ -1,74 +1,59 @@
-<div align="center">
-  <img src="./icon/visionguard-windows.png" alt="VisionGuard" width="120">
-  <h1>VisionGuard</h1>
-  <p>本地 AI 视觉检测、实时告警与移动端接收。</p>
+# <img src="./icon/visionguard-windows.png" alt="" width="36" height="36"> VisionGuard
 
-  [![Version](https://img.shields.io/badge/version-4.5.1-1f6feb)](./VERSION)
-  [![License](https://img.shields.io/badge/license-VGSAL--1.0-7c3aed)](./LICENSE)
-  [![Docs](https://img.shields.io/badge/docs-verified-f59e0b)](./docs/codex/00-index.md)
-</div>
+在 Windows 电脑上检测画面中的目标，通过 Server 转发告警和截图，在 Android 接收端查看结果与设备状态。
 
-VisionGuard 在采集设备本地完成 Visual Detector 推理，把告警、截图、状态、模型和更新统一经 Server 转发给 Android 接收端。正式服务地址：`https://visionguard.xgwnje.cn`。
+[快速开始](#快速开始) · [当前组件](#当前组件) · [项目文档](./docs/codex/00-index.md) · [反馈问题](./CONTRIBUTING.md)
 
-## 当前组件
+[![Version](https://img.shields.io/badge/version-4.5.1-1f6feb)](./VERSION) [![License](https://img.shields.io/badge/license-VGSAL--1.0-7c3aed)](./LICENSE)
 
-| 组件 | 当前状态 | 入口 |
-|---|---|---|
-| Windows 检测端 | 已发布；WPF 单一构建，modern / legacy 两个推理档位 | [`detector/windows-wpf/`](./detector/windows-wpf/) |
-| Windows 驻留程序 | 已发布；随 Windows 包分发，负责受控打开、关闭与驻留状态 | [`detector/windows-resident/`](./detector/windows-resident/) |
-| Android 检测端 | 当前暂缓；4.5.1 不发布，更新保持在已验证的 4.4.4 | [`detector/android/`](./detector/android/) |
-| Android 接收端 | 已发布；接收告警、截图与设备状态 | [`receiver/android/`](./receiver/android/) |
-| Server | 已发布；HTTP / WebSocket 中继、模型与更新路由 | [`server/`](./server/) |
+**适合**需要在自己的设备上运行视觉检测，并在 Android 手机上接收告警的个人或团队。目前已经实现的纯软件视觉方案为免费版；接入检测硬件探测器后进入付费版，具体权利以[许可证](./LICENSE)为准。
 
-## 实时链路
+**当前边界**：Android 检测端暂缓更新；Server 的“离线”是连接状态，尚未实现独立的设备离线报警（`DeviceOfflineAlert`）。漏报风险是检测效果与故障处置的最高优先级。已发布 v4.5.1 的范围见[发布说明](./docs/releases/v4.5.1.md)。
 
-```text
-Windows Visual Detector ── 告警、截图、状态 ──▶ VisionGuard Server ── 告警、控制 ──▶ Android Receiver
-Windows Resident ───────── 生命周期状态、控制 ───────────────▶ VisionGuard Server
-```
+## 使用方式
 
-- 推理链：`Capture -> MaskApply -> Preprocess -> ONNX Inference -> Parse -> AlertDecision -> Push`。
-- Windows 来源预览与模型输入都等比缩放、黑边填充；不会拉伸画面。当前人员检测验证以 `person` 类为准。
-- Win7 SP1 x64 使用 WPF legacy（CPU + YOLOv5），Windows 10/11 使用 WPF modern（DirectML + YOLO26）。
-- 所有公网业务数据统一通过 Server，不再规划 P2P、ICE、STUN 或 TURN。
+1. Windows 检测端（Visual Detector）从屏幕或窗口采集画面，在本机运行视觉模型；当前人员检测以 `person` 类为验证对象。
+2. 检测端把告警、截图和状态发往 Server；所有公网业务数据统一通过 Server，不再规划 P2P、ICE、STUN 或 TURN。正式服务地址为 `https://visionguard.xgwnje.cn`。
+3. Android 接收端展示告警、截图和设备状态。连接状态不等于告警已送达。
 
-连接离线只表示连接状态；它不等于已产生或送达离线报警，`DeviceOfflineAlert` 仍是未来能力。允许在可管理范围内误报，漏报风险是检测效果与故障处置的最高优先级。
+仓库正在开发统一 Windows 包：用户从包根目录启动 `VisionGuard.exe`，启动器按系统选择 WPF modern 或 legacy 运行时。**这描述的是当前源码，不能当作 v4.5.1 已发布包的安装说明**；Win7 SP1 x64 的 legacy 档与 Windows 10/11 的 modern 档仍需按[验证报告](./docs/codex/90-verification-report.md)分别判断覆盖范围。
 
 ## 快速开始
 
-验证 Server：
+以下命令从仓库根目录运行，用于验证源码和构建产物。需要 Windows、PowerShell、Node.js/npm 与 .NET SDK；运行客户端还需要相应的服务配置，见[运维文档](./docs/codex/60-operations.md)。
+
+验证 Server 的测试与编译：
 
 ```powershell
 cd server
 npm ci
 npm test
 npm run build
+cd ..
 ```
 
-构建 Windows 检测端的两个 Release 推理档位：
+成功后应生成 `server/dist/index.js`。构建 Windows 检测端、驻留程序与统一包：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scripts\build-all.ps1 -Target WPF
+powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scripts\build-all.ps1 -Target Windows
 ```
 
-检查文档、版本、组件入口和发布契约：
+成功后应生成 `detector/windows-package/bin/Release/VisionGuard.exe`；构建通过不代表真机画面、告警送达或 Win7 实机已验收。要运行或验证客户端，请按[运维文档](./docs/codex/60-operations.md)选择对应流程。
 
-```powershell
-node scripts/check-docs.js
-node --test scripts/check-docs.test.js scripts/release-workflow.test.js scripts/online-release-contract.test.js
-```
+## 当前组件
 
-构建、真实窗口采集、真机 UI、完整报警链和正式发布是不同级别的验证；操作命令与边界见[运维文档](./docs/codex/60-operations.md)，逐项证据见[验证报告](./docs/codex/90-verification-report.md)。
+| 组件 | 当前范围 | 源码入口 |
+|---|---|---|
+| Windows 检测端 | 本地视觉检测；统一入口和 modern / legacy 运行时正在开发验证 | [启动器](./detector/windows-launcher/) · [WPF 运行时](./detector/windows-wpf/) |
+| Windows 驻留程序 | 随 Windows 检测端运行，处理受控打开、关闭和状态上报 | [`detector/windows-resident/`](./detector/windows-resident/) |
+| Android 检测端 | 当前暂缓；不在 v4.5.1 发布范围 | [`detector/android/`](./detector/android/) |
+| Android 接收端 | 查看告警、截图和设备状态 | [`receiver/android/`](./receiver/android/) |
+| Server | HTTP / WebSocket 中继、模型与更新路由 | [`server/`](./server/) |
 
-## 文档与发布状态
+组件的实现状态见[项目概览](./docs/codex/10-project-overview.md)；产品规划只在[路线图](./docs/codex/15-product-roadmap.md)维护，自动化与真机证据只在[验证报告](./docs/codex/90-verification-report.md)维护。
 
-- [项目文档索引](./docs/codex/00-index.md)：当前事实的导航入口。
-- [项目概览](./docs/codex/10-project-overview.md)：组件状态与实现边界。
-- [产品路线图](./docs/codex/15-product-roadmap.md)：产品方向和验收闸门的唯一来源。
-- [发布说明](./docs/releases/v4.5.1.md)：当前版本的上线范围；Android 检测端不在 4.5.1 发布范围内。
+## 文档与许可
 
-CI 的文档巡检和定时线上发布契约检查入口、频率与覆盖范围见[运维文档](./docs/codex/60-operations.md)。
+从[文档索引](./docs/codex/00-index.md)查找各模块说明；构建、配置、运行和发布边界见[运维文档](./docs/codex/60-operations.md)。提交问题或建议前请阅读[贡献说明](./CONTRIBUTING.md)。
 
-## 版本与授权
-
-目前已经实现的纯软件视觉方案为免费版；接入检测硬件探测器后进入付费版。当前主线采用 [VGSAL-1.0](./LICENSE)，这是源码可见许可证，不是开源许可证；再分发、对外托管或产品集成需要[商业授权](./COMMERCIAL-LICENSE.md)。历史 MIT 授权边界见 [LICENSE-HISTORY.md](./LICENSE-HISTORY.md) 和 [LICENSE-MIT](./LICENSE-MIT)。
+当前主线使用 [VGSAL-1.0](./LICENSE)：这是源码可见许可证，不是开源许可证。再分发、对外托管、产品集成或接入检测硬件需要[商业授权](./COMMERCIAL-LICENSE.md)；历史 MIT 版本的边界见 [LICENSE-HISTORY.md](./LICENSE-HISTORY.md) 和 [LICENSE-MIT](./LICENSE-MIT)。

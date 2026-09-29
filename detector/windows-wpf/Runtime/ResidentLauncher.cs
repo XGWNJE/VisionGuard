@@ -98,17 +98,11 @@ namespace VisionGuard.Runtime
             }
         }
 
-        /// <summary>确保驻留已运行；已在运行则直接返回。</summary>
+        /// <summary>确保驻留已按当前设备身份运行；配置变化时重启驻留使其重新认证。</summary>
         public static void EnsureStarted()
         {
             try
             {
-                if (IsResidentRunning())
-                {
-                    MarkRunning("驻留已在运行，跳过拉起");
-                    return;
-                }
-
                 string appDir = AppDomain.CurrentDomain.BaseDirectory;
                 string exePath = ResolveResidentPath(appDir);
                 if (exePath == null)
@@ -125,12 +119,28 @@ namespace VisionGuard.Runtime
                     Log("WARN [resident] 缺少 " + ResidentExeConfigName + "（与 " + exePath + " 同目录），仍按原样尝试拉起");
                 }
 
-                string configPath = WriteConfig(appDir);
+                bool configChanged;
+                string configPath = WriteConfig(out configChanged);
+                if (IsResidentRunning())
+                {
+                    if (!configChanged)
+                    {
+                        MarkRunning("驻留已按当前设备身份运行，跳过拉起");
+                        return;
+                    }
+
+                    Log("INFO [resident] 设备身份或连接配置已变化，重启驻留以重新认证");
+                    if (!SignalResidentShutdown() || !WaitForStopped(ShutdownWaitMs))
+                    {
+                        throw new InvalidOperationException("驻留配置已更新，但现有驻留未能在限定时间内退出");
+                    }
+                }
+
                 var startInfo = new ProcessStartInfo
                 {
                     FileName = exePath,
                     Arguments = "--config \"" + configPath + "\"",
-                    WorkingDirectory = appDir,
+                    WorkingDirectory = Path.GetDirectoryName(exePath),
                     // 关键：脱离父进程生命周期，检测端退出或崩溃后驻留继续运行。
                     UseShellExecute = true,
                 };
@@ -292,7 +302,7 @@ namespace VisionGuard.Runtime
         /// 检测端每次启动都重写配置，驻留在 Win7 与 Win10 上都是“起来了但立刻死”，
         /// 而界面上完全没有提示）。
         /// </summary>
-        private static string WriteConfig(string appDir)
+        private static string WriteConfig(out bool changed)
         {
             string directory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionGuard");
@@ -304,14 +314,43 @@ namespace VisionGuard.Runtime
                 ["serverUrl"] = AppConfig.ServerUrl ?? string.Empty,
                 ["apiKey"] = AppConfig.ApiKey ?? string.Empty,
                 ["deviceId"] = AppConfig.DeviceId ?? string.Empty,
-                ["deviceName"] = Environment.MachineName,
+                // 自定义名称是设备名称的唯一来源；驻留不得另行上报电脑名。
+                ["deviceName"] = SettingsStore.GetString("DeviceName", Environment.MachineName),
                 ["channel"] = AppConfig.Channel ?? string.Empty,
                 // 驻留在收到 open-detector 时按此路径启动检测端，因此由检测端写入自身位置。
-                ["detectorPath"] = Path.Combine(appDir, "VisionGuard.exe"),
+                ["detectorPath"] = InstallLayout.LauncherPath,
                 ["appId"] = ApplicationId,
             };
 
             string json = JsonSerializer.Serialize(payload);
+            changed = true;
+            if (File.Exists(configPath))
+            {
+                try
+                {
+                    var existing = JsonSerializer.Deserialize<Dictionary<string, string>>(
+                        File.ReadAllText(configPath, Encoding.UTF8));
+                    changed = existing == null || existing.Count != payload.Count;
+                    if (!changed)
+                    {
+                        foreach (var pair in payload)
+                        {
+                            string existingValue;
+                            if (!existing.TryGetValue(pair.Key, out existingValue)
+                                || !string.Equals(existingValue, pair.Value, StringComparison.Ordinal))
+                            {
+                                changed = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // 损坏或旧格式配置必须覆盖，并让正在运行的驻留重新加载。
+                    changed = true;
+                }
+            }
             File.WriteAllText(configPath, json, new UTF8Encoding(false));
 
             // 自检：写出的配置必须能被同一族序列化器读回，避免把非法 JSON 交给驻留后才在它那边 fatal。
@@ -334,6 +373,7 @@ namespace VisionGuard.Runtime
         {
             return new[]
             {
+                InstallLayout.ResidentPath,
                 Path.Combine(appDir, ResidentExeName),
                 Path.Combine(appDir, "resident", ResidentExeName),
                 // 开发布局：检测端在 detector\windows-wpf\bin\x64\<档位>\，驻留在 detector\windows-resident\bin\Release\net472\。

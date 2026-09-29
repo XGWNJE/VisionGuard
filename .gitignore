@@ -33,6 +33,9 @@ detector/windows-wpf/Assets/*.onnx
 
 detector/windows-resident/bin/
 detector/windows-resident/obj/
+detector/windows-launcher/bin/
+detector/windows-launcher/obj/
+detector/windows-package/bin/
 detector/windows-wpf-smoke/bin/
 detector/windows-wpf-smoke/obj/
 tests/**/bin/

@@ -100,6 +100,14 @@ try {
     }
 
     if (Should-Run @("Windows", "WPF")) {
+        Invoke-Step `
+            -Name "Windows Launcher" `
+            -CommandText "dotnet build detector\windows-launcher\VisionGuard.Launcher.csproj -c Release" `
+            -Artifact "detector/windows-launcher/bin/Release/net472/VisionGuard.exe" `
+            -Script { dotnet build "detector\windows-launcher\VisionGuard.Launcher.csproj" -c Release }
+    }
+
+    if (Should-Run @("Windows", "WPF")) {
         # V10：Windows 检测端有两套推理档位，都从同一份源码构建，输出到 bin\x64\<档位>\。
         #   modern（默认）= Windows 10 及以上：托管 ORT 1.19.0 + 原生 1.19.0 + DirectML，模型 YOLO26。
         #   legacy        = Windows 7 SP1 x64：托管 ORT 1.2.0 + 原生 1.1.0，固定 CPU，模型 YOLOv5。
@@ -114,6 +122,13 @@ try {
             -CommandText "dotnet build detector\windows-wpf\VisionGuard.csproj -c Release -p:OrtProfile=legacy" `
             -Artifact "detector/windows-wpf/bin/x64/legacy/VisionGuard.exe" `
             -Script { dotnet build "detector\windows-wpf\VisionGuard.csproj" -c Release -p:OrtProfile=legacy }
+
+        Invoke-Step `
+            -Name "Windows Unified Package" `
+            -CommandText "node scripts\assemble-windows-unified.js" `
+            -Artifact "detector/windows-package/bin/Release/VisionGuard.exe" `
+            -Note "单一入口，运行时按 Windows 版本选择 modern 或 legacy" `
+            -Script { node "scripts\assemble-windows-unified.js" }
     }
 
     if (Should-Run @("Android", "AndroidDetector")) {

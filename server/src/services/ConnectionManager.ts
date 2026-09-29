@@ -659,6 +659,8 @@ function handleAuth(
     }
     const client = createDetectorClient(ws, msg, 'windows');
     detectorWindowsClients.set(msg.deviceId, client);
+    const resident = residentWindowsClients.get(msg.deviceId);
+    if (resident) resident.deviceName = client.deviceName;
     console.log(`[ws][${ts}] Windows 上线: ${msg.deviceName} (${msg.deviceId}) | Win:${detectorWindowsClients.size} AdrDet:${detectorAndroidClients.size} Recv:${receiverClients.size}`);
   } else if (msg.role === 'android-detector') {
     clearPendingDetectorRemoval('android-detector', msg.deviceId);
@@ -710,7 +712,9 @@ function handleAuth(
       existing.ws.terminate();
     }
     residentWindowsClients.set(msg.deviceId, {
-      ws, deviceId: msg.deviceId, deviceName: msg.deviceName || msg.deviceId,
+      ws, deviceId: msg.deviceId,
+      // 同一设备的主检测端名称具有权威性；驻留只延续这份身份。
+      deviceName: detectorWindowsClients.get(msg.deviceId)?.deviceName || msg.deviceName || msg.deviceId,
       lastSeen: new Date(), components: { resident: 'running', detectorApp: 'stopped' },
     });
     console.log(`[ws][${ts}] Windows驻留 上线: ${msg.deviceName} (${msg.deviceId})`);
@@ -793,6 +797,10 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   if (msg.sources !== undefined) client.sourceLimitExceeded = sourceOverLimit;
   if (nameChanged) {
     client.deviceName = msg.deviceName!;
+    if (client.clientType === 'windows') {
+      const resident = residentWindowsClients.get(msg.deviceId);
+      if (resident) resident.deviceName = client.deviceName;
+    }
     console.log(`[ws][${new Date().toISOString()}] 设备名称更新: ${client.deviceName} (${msg.deviceId})`);
   }
 

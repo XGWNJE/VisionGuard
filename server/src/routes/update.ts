@@ -16,34 +16,23 @@ const PLATFORM_MAP: Record<string, string> = {
   'android': 'android-receiver',
 };
 
-/** Windows 检测端的两个推理档位；档位决定更新包，不能混用。 */
-const WINDOWS_PROFILES = new Set(['modern', 'legacy']);
-
 /**
  * 解析请求要用的发布条目键。
  *
- * Windows 检测端是单一源码的两个推理档位（modern = Win10+，legacy = Win7 SP1），
- * 两档的原生 ONNX Runtime 不兼容，更新包也必须分开：
- * 档位键为 `wpf-<profile>`。该键尚未随某次发行登记时回落到 `wpf`，
- * 以免给 legacy 端返回 404；回落与否由 releases.json 的实际内容决定，不猜测。
+ * Windows 检测端由统一包的启动器按操作系统选择内部运行时，服务端只发布 `wpf`。
+ * profile 参数保留在函数签名中只为旧调用方平滑升级，不再影响发布条目。
  */
 export function resolveReleaseKey(
-  releases: Record<string, unknown>,
+  _releases: Record<string, unknown>,
   platform: string,
-  profile: string
+  _profile: string
 ): string | null {
-  const mapped = PLATFORM_MAP[platform] || platform;
-  if (mapped !== 'wpf' || !WINDOWS_PROFILES.has(profile)) {
-    return mapped;
-  }
-
-  const profileKey = `wpf-${profile}`;
-  return profileKey in releases ? profileKey : mapped;
+  return PLATFORM_MAP[platform] || platform;
 }
 
 /**
- * GET /api/update?platform=wpf&version=<current-version>&profile=<modern|legacy>
- * 查询指定平台（Windows 检测端可再指定推理档位）的最新版本信息
+ * GET /api/update?platform=wpf&version=<current-version>
+ * 查询指定平台的最新版本信息
  */
 router.get('/api/update', (req, res) => {
   const platform = String(req.query.platform || '').toLowerCase();
@@ -52,7 +41,7 @@ router.get('/api/update', (req, res) => {
 
   // 读取 releases.json
   const releasesPath = path.resolve(__dirname, '..', '..', 'data', 'releases.json');
-  let releases: Record<string, { version: string; url: string; size: number }> = {};
+  let releases: Record<string, { version: string; url: string; size: number; sha256?: string }> = {};
   try {
     releases = JSON.parse(fs.readFileSync(releasesPath, 'utf-8'));
   } catch {
@@ -73,6 +62,7 @@ router.get('/api/update', (req, res) => {
     latestVersion: info.version,
     downloadUrl: info.url,
     size: info.size,
+    sha256: info.sha256 || '',
     forceUpdate: false,
   });
 });

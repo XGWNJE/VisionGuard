@@ -38,8 +38,9 @@ The script currently accepts `All`, `Server`, `Windows`, `WPF`, `WindowsResident
 ## Expected Artifacts
 
 - Server: `server/dist/index.js`
-- WPF (modern / Windows 10+): `detector/windows-wpf/bin/x64/modern/VisionGuard.exe`
-- WPF (legacy / Windows 7 SP1): `detector/windows-wpf/bin/x64/legacy/VisionGuard.exe`
+- Windows unified package: `detector/windows-package/bin/Release/VisionGuard.exe`
+- Internal modern runtime: `detector/windows-package/bin/Release/runtimes/modern/VisionGuard.exe`
+- Internal legacy runtime: `detector/windows-package/bin/Release/runtimes/legacy/VisionGuard.exe`
 - Windows Resident: `detector/windows-resident/bin/Release/net472/VisionGuard.Resident.exe`
 - Android Detector: `detector/android/app/build/outputs/apk/release/app-release.apk`
 - Android Receiver: `receiver/android/app/build/outputs/apk/release/app-release.apk`

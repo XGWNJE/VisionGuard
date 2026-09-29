@@ -486,9 +486,8 @@ function New-ZipPackage {
 function Assert-ZipIsClean {
     param(
         [string]$ZipPath,
-        # 档位必需的原生 ONNX Runtime 压缩包内条目。原生库缺失时客户端能启动、能建会话之外的一切，
-        # 但一推理就崩（legacy 档在 Win7 实测为无诊断信息的进程终止），必须在发布前拦住。
-        [string]$RequiredNativeEntry = ""
+        # 统一 Windows 包的必要入口与两套运行时文件；缺任一项都必须在发布前拦住。
+        [string[]]$RequiredEntries = @()
     )
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -501,10 +500,7 @@ function Assert-ZipIsClean {
             } |
             Select-Object -ExpandProperty FullName
 
-        $nativePresent = $true
-        if ($RequiredNativeEntry) {
-            $nativePresent = [bool]($zip.Entries | Where-Object { $_.FullName -eq $RequiredNativeEntry })
-        }
+        $entryNames = @($zip.Entries | Select-Object -ExpandProperty FullName)
         # 驻留程序与检测端是配套软件：缺它就没有「远程重新打开检测端」的能力。
         $residentEntries = @($zip.Entries | Where-Object { $_.FullName -eq 'VisionGuard.Resident.exe' -or $_.FullName -eq 'VisionGuard.Resident.exe.config' })
     }
@@ -516,8 +512,9 @@ function Assert-ZipIsClean {
         throw "Forbidden files were found in $(Split-Path -Leaf $ZipPath): $($badEntries -join ', ')"
     }
 
-    if (-not $nativePresent) {
-        throw "$(Split-Path -Leaf $ZipPath) 缺少本档位原生 ONNX Runtime：$RequiredNativeEntry"
+    $missingEntries = @($RequiredEntries | Where-Object { $entryNames -notcontains $_ })
+    if ($missingEntries.Count -gt 0) {
+        throw "$(Split-Path -Leaf $ZipPath) 缺少统一 Windows 包必要文件：$($missingEntries -join ', ')"
     }
 
     if ($residentEntries.Count -ne 2) {
@@ -609,6 +606,7 @@ function Add-ReleaseEntry {
         version = $Version
         url = "/releases/$FileName"
         size = $size
+        sha256 = (Get-Sha256 -Path $FilePath).ToUpperInvariant()
     }
 
     if ($Metadata.PSObject.Properties.Name -contains $Key) {
@@ -693,7 +691,6 @@ function Get-GitHubOnlyArtifacts {
     $metadata = Get-Content -LiteralPath $releasesJsonPath -Encoding UTF8 -Raw | ConvertFrom-Json
     $definitions = @(
         [pscustomobject]@{ Platform = 'wpf'; Targets = @('Windows', 'WPF'); FileName = "VisionGuard-WPF-v$Version.zip"; Kind = 'zip' },
-        [pscustomobject]@{ Platform = 'wpf-legacy'; Targets = @('Windows', 'WPF'); FileName = "VisionGuard-WPF-Legacy-v$Version.zip"; Kind = 'zip' },
         [pscustomobject]@{ Platform = 'android-detector'; Targets = @('Android', 'AndroidDetector'); FileName = "VisionGuard-Detector-v$Version.apk"; Kind = 'apk' },
         [pscustomobject]@{ Platform = 'android-receiver'; Targets = @('Android', 'AndroidReceiver'); FileName = "VisionGuard-Receiver-v$Version.apk"; Kind = 'apk' }
     )
@@ -1270,25 +1267,21 @@ Copy-Models
 $metadata = Get-Content -Encoding UTF8 -LiteralPath $releasesJsonPath -Raw | ConvertFrom-Json
 
 if (Test-TargetEnabled @('Windows', 'WPF')) {
-    # Windows 检测端是同一份源码的两个推理档位，两档的原生 ONNX Runtime 不兼容，
-    # 因此按档位分别打包：wpf = modern（Win10+，DirectML），wpf-legacy = legacy（Win7 SP1，CPU）。
-    # 客户端带 profile 查询 /api/update：legacy 端取 wpf-legacy，其余回落到 wpf。
-    $profilePackages = @(
-        [pscustomobject]@{ Key = 'wpf'; Profile = 'modern'; FileName = "VisionGuard-WPF-v$Version.zip"; NativeEntry = 'native/modern/onnxruntime.dll' },
-        [pscustomobject]@{ Key = 'wpf-legacy'; Profile = 'legacy'; FileName = "VisionGuard-WPF-Legacy-v$Version.zip"; NativeEntry = 'native/legacy/onnxruntime.dll' }
+    $fileName = "VisionGuard-WPF-v$Version.zip"
+    $zipPath = Join-Path $releaseDir $fileName
+    New-ZipPackage -SourceDir (Join-Path $repoRoot 'detector\windows-package\bin\Release') -Destination $zipPath
+    Assert-ZipIsClean -ZipPath $zipPath -RequiredEntries @(
+        'VisionGuard.exe',
+        'VisionGuard.Resident.exe',
+        'runtimes/modern/VisionGuard.exe',
+        'runtimes/modern/native/modern/onnxruntime.dll',
+        'runtimes/legacy/VisionGuard.exe',
+        'runtimes/legacy/native/legacy/onnxruntime.dll'
     )
-    foreach ($package in $profilePackages) {
-        $zipPath = Join-Path $releaseDir $package.FileName
-        # 驻留程序已由检测端构建复制进 bin\x64\<档位>\（与检测端配套分发），
-        # 因此这里只打包档位目录；再额外合并驻留目录会触发重复根名检查并中止发布。
-        New-ZipPackage -SourceDir (Join-Path $repoRoot "detector\windows-wpf\bin\x64\$($package.Profile)") -Destination $zipPath
-        Assert-ZipIsClean -ZipPath $zipPath -RequiredNativeEntry $package.NativeEntry
-        Add-ReleaseEntry -Metadata $metadata -Key $package.Key -FileName $package.FileName -FilePath $zipPath
-        $artifacts.Add([pscustomobject]@{ Platform = $package.Key; Path = $zipPath; FileName = $package.FileName }) | Out-Null
-        $platforms.Add($package.Key) | Out-Null
-    }
+    Add-ReleaseEntry -Metadata $metadata -Key 'wpf' -FileName $fileName -FilePath $zipPath
+    $artifacts.Add([pscustomobject]@{ Platform = 'wpf'; Path = $zipPath; FileName = $fileName }) | Out-Null
+    $platforms.Add('wpf') | Out-Null
 }
-
 if (Test-TargetEnabled @('Android', 'AndroidDetector')) {
     $detectorRelease = $metadata.PSObject.Properties['android-detector'].Value
     if (($detectorRelease.PSObject.Properties.Name -contains 'heldBack') -and ($detectorRelease.heldBack -eq $true)) {

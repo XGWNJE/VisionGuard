@@ -14,10 +14,5 @@
                              "version":  "4.5.1",
                              "url":  "/releases/VisionGuard-Receiver-v4.5.1.apk",
                              "size":  22456286
-                         },
-    "wpf-legacy":  {
-                       "version":  "4.5.1",
-                       "url":  "/releases/VisionGuard-WPF-Legacy-v4.5.1.zip",
-                       "size":  2887272
-                   }
+                         }
 }

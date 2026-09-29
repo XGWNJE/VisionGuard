@@ -6,7 +6,7 @@ namespace VisionGuard.Utils
 {
     /// <summary>
     /// 唯一设置入口。读取前必须调用一次 <see cref="Load"/>：
-    /// 生产路径由 MainViewModel 在构造子 ViewModel 之前调用；非界面宿主（验证探针）也必须先加载，
+    /// 生产路径由 Program 在拉起驻留之前调用；非界面宿主（验证探针）也必须先加载，
     /// 否则会读到空存储、把磁盘上已有的值当成缺失。
     /// </summary>
     internal static class SettingsStore

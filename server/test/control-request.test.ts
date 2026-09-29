@@ -102,12 +102,12 @@ test('acknowledges durable alerts and suppresses retry duplicates', async (t) =>
   assert.equal(conflict.reason, 'alert-id-conflict');
 });
 
-function waitForMessage(ws: WebSocket, predicate: (message: any) => boolean): Promise<any> {
+function waitForMessage(ws: WebSocket, predicate: (message: any) => boolean, waitMs = 3000): Promise<any> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       ws.off('message', onMessage);
       reject(new Error('timed out waiting for WebSocket message'));
-    }, 3000);
+    }, waitMs);
     const onMessage = (raw: WebSocket.RawData) => {
       const message = JSON.parse(raw.toString());
       if (!predicate(message)) return;
@@ -481,4 +481,54 @@ test('keeps resident identity separate and routes lifecycle commands only to it'
   const relayPromise = waitForMessage(resident, msg => msg.type === 'command' && msg.requestId === requestId);
   receiver.send(JSON.stringify({ type: 'command', requestId, targetDeviceId: 'resident-control-test', command: 'close-detector' }));
   assert.equal((await relayPromise).command, 'close-detector');
+});
+
+test('keeps the detector custom name after only the Windows resident remains online', async (t) => {
+  const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+  wss.on('connection', handleConnection);
+  await new Promise<void>((resolve) => wss.once('listening', resolve));
+  const address = wss.address();
+  assert.ok(address && typeof address === 'object');
+
+  const resident = await connect(address.port);
+  const detector = await connect(address.port);
+  const receiver = await connect(address.port);
+  t.after(() => { resident.terminate(); detector.terminate(); receiver.terminate(); wss.close(); });
+
+  const residentAuth = waitForMessage(resident, msg => msg.type === 'auth-result');
+  resident.send(JSON.stringify({
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY,
+    role: 'windows-resident', deviceId: 'resident-name-test', deviceName: 'DESKTOP-MACHINE',
+  }));
+  assert.equal((await residentAuth).success, true);
+
+  const detectorAuth = waitForMessage(detector, msg => msg.type === 'auth-result');
+  detector.send(JSON.stringify({
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY,
+    role: 'windows', deviceId: 'resident-name-test', deviceName: '客厅检测端',
+  }));
+  assert.equal((await detectorAuth).success, true);
+
+  const renamedList = waitForMessage(receiver, msg => msg.type === 'device-list' &&
+    msg.devices?.some((d: any) => d.deviceId === 'resident-name-test' && d.deviceName === '门口检测端'));
+  const receiverAuth = waitForMessage(receiver, msg => msg.type === 'auth-result');
+  receiver.send(JSON.stringify({
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY,
+    role: 'android', deviceId: 'resident-name-receiver', deviceName: 'Receiver',
+  }));
+  assert.equal((await receiverAuth).success, true);
+
+  detector.send(JSON.stringify({
+    type: 'heartbeat', deviceId: 'resident-name-test', deviceName: '门口检测端',
+    isMonitoring: false, isReady: true,
+  }));
+  await renamedList;
+
+  const residentOnlyList = waitForMessage(receiver, msg => msg.type === 'device-list' &&
+    msg.devices?.some((d: any) => d.deviceId === 'resident-name-test'
+      && d.deviceName === '门口检测端' && d.components?.detectorApp === 'stopped'), 12_000);
+  detector.close();
+  const listed = (await residentOnlyList).devices.find((d: any) => d.deviceId === 'resident-name-test');
+  assert.equal(listed.deviceName, '门口检测端');
+  assert.deepEqual(listed.capabilities, ['app-lifecycle-control']);
 });

@@ -17,19 +17,17 @@ test('resolveReleaseKey 把 Windows 平台别名统一到 wpf', () => {
   assert.equal(resolveReleaseKey(releases, 'winforms', ''), 'winforms');
 });
 
-test('resolveReleaseKey 在档位键已登记时按档位分发，未登记时回落到 wpf', () => {
+test('resolveReleaseKey 忽略旧档位参数并统一分发 wpf', () => {
   const withLegacy = {
     wpf: { version: '1.0.0', url: '/releases/modern.zip', size: 1 },
     'wpf-legacy': { version: '1.0.0', url: '/releases/legacy.zip', size: 1 },
   };
-  // Win7 上的 legacy 构建只能拿到 legacy 包，两档原生 ONNX Runtime 不兼容。
-  assert.equal(resolveReleaseKey(withLegacy, 'wpf', 'legacy'), 'wpf-legacy');
+  // modern 与 legacy 已成为同一安装包内的实现细节。
+  assert.equal(resolveReleaseKey(withLegacy, 'wpf', 'legacy'), 'wpf');
   assert.equal(resolveReleaseKey(withLegacy, 'wpf', 'modern'), 'wpf');
 
   const withoutLegacy = { wpf: { version: '1.0.0', url: '/releases/modern.zip', size: 1 } };
-  // 档位包尚未登记时回落，避免给 legacy 端返回 404。
   assert.equal(resolveReleaseKey(withoutLegacy, 'wpf', 'legacy'), 'wpf');
-  // 未知档位不参与分发。
   assert.equal(resolveReleaseKey(withoutLegacy, 'wpf', 'arm64'), 'wpf');
 });
 
@@ -47,6 +45,7 @@ test('releases.json 的平台条目自洽', () => {
   assert.ok(keys.includes('android-receiver'), '缺少 android-receiver 条目');
   // WinForms 检测端已退役，条目不得再留在发布元数据里。
   assert.ok(!keys.includes('winforms'), 'winforms 条目应已退役');
+  assert.ok(!keys.includes('wpf-legacy'), 'Windows 发布条目必须统一为 wpf');
   // 每个条目的 URL 必须是它的版本号对应的文件名，避免发布脚本改名后静默错配。
   for (const [platform, entry] of Object.entries(releases)) {
     assert.ok(

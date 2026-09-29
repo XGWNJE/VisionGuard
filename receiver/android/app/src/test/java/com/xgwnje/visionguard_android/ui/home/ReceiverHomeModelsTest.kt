@@ -110,7 +110,8 @@ class ReceiverHomeModelsTest {
             online = true,
             isMonitoring = true,
             isReady = true,
-            lastSeen = ""
+            lastSeen = "",
+            clientType = "android-detector"
         )
         val offline = monitoring.copy(online = false, isMonitoring = false)
 
@@ -123,6 +124,7 @@ class ReceiverHomeModelsTest {
         assertEquals("停止监控", monitoringModel.controlActionLabel)
         assertEquals("pause", monitoringModel.controlCommand)
         assertEquals(true, monitoringModel.controlsEnabled)
+        assertEquals(true, monitoringModel.showLegacyControls)
 
         assertEquals("离线", offlineModel.statusLabel)
         assertEquals(DeviceStatusTone.OFFLINE, offlineModel.statusTone)
@@ -171,13 +173,14 @@ class ReceiverHomeModelsTest {
         val chrome = buildDeviceCardChrome()
 
         assertEquals(28, chrome.cardCornerRadiusDp)
-        assertEquals(128, chrome.heroHeightDp)
+        assertEquals(104, chrome.heroHeightDp)
         assertEquals(22, chrome.heroContentHorizontalPaddingDp)
+        assertEquals(8, chrome.heroContentVerticalPaddingDp)
         assertEquals(false, chrome.titleHasContainer)
         assertEquals(true, chrome.statusUsesCompactPill)
         assertEquals(18, chrome.actionAreaHorizontalPaddingDp)
-        assertEquals(16, chrome.actionAreaVerticalPaddingDp)
-        assertEquals(52, chrome.actionButtonHeightDp)
+        assertEquals(10, chrome.actionAreaVerticalPaddingDp)
+        assertEquals(44, chrome.actionButtonHeightDp)
         assertEquals(0.58f, chrome.heroBackgroundAlpha, 0.001f)
         assertEquals(1.08f, chrome.heroBackgroundScale, 0.001f)
     }
@@ -225,6 +228,7 @@ class ReceiverHomeModelsTest {
         assertEquals("open-detector", model.detectorLifecycleCommand)
         assertEquals("resume", model.controlCommand)
         assertEquals(false, model.controlsEnabled)
+        assertEquals(false, model.showLegacyControls)
         assertEquals(true, model.lifecycleControlsEnabled)
         assertEquals("驻留在线 · 程序关闭", model.statusLabel)
     }
@@ -326,6 +330,22 @@ class ReceiverHomeModelsTest {
         assertEquals(DeviceStatusTone.PARTIAL_MONITORING, model.statusTone)
         assertEquals("部分检测中 1/2", model.statusLabel)
         assertEquals(false, model.controlsEnabled)
+        assertEquals(false, model.showLegacyControls)
+    }
+
+    @Test
+    fun sourceControlDeviceWithoutBoundSourcesDoesNotRestoreWholeDeviceButtons() {
+        val device = DeviceInfo(
+            deviceId = "pc", deviceName = "PC", clientType = "windows", online = true,
+            isMonitoring = false, isReady = false, lastSeen = "刚刚",
+            capabilities = listOf("source-control"), sources = emptyList()
+        )
+
+        val model = buildDeviceCardUiModel(device)
+
+        assertEquals(false, model.showLegacyControls)
+        assertEquals(false, model.controlsEnabled)
+        assertEquals(DeviceStatusTone.NOT_READY, model.statusTone)
     }
 
     @Test

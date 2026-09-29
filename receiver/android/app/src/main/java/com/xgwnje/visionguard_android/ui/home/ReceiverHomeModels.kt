@@ -75,6 +75,7 @@ data class DeviceCardUiModel(
     val controlActionLabel: String,
     val controlCommand: String,
     val controlsEnabled: Boolean,
+    val showLegacyControls: Boolean,
     val lifecycleControlsEnabled: Boolean = false,
     val firstRowLayout: DeviceCardFirstRowLayout,
     val illustration: DeviceCardIllustration,
@@ -202,7 +203,8 @@ fun buildDeviceCardUiModel(device: DeviceInfo): DeviceCardUiModel {
         it.isMonitoring && it.isReady && it.error.isNullOrBlank()
     }
     val allSourcesRunning = totalSourceCount > 0 && runningSources == totalSourceCount
-    val hasSourceControls = "source-control" in device.capabilities && device.sources.isNotEmpty()
+    val hasSourceControls = "source-control" in device.capabilities
+    val showLegacyControls = !hasSourceControls && device.clientType.lowercase(Locale.US) != "windows"
     val statusTone = when {
         !device.online -> DeviceStatusTone.OFFLINE
         device.components["resident"] == "running" && device.components["detectorApp"] != "running" -> DeviceStatusTone.RESIDENT_ONLY
@@ -227,9 +229,10 @@ fun buildDeviceCardUiModel(device: DeviceInfo): DeviceCardUiModel {
         statusTone = statusTone,
         controlActionLabel = if (device.isMonitoring) "停止监控" else "开始监控",
         controlCommand = if (device.isMonitoring) "pause" else "resume",
-        controlsEnabled = !hasSourceControls && device.online && (
+        controlsEnabled = showLegacyControls && device.online && (
             device.components["detectorApp"] == "running" || "app-lifecycle-control" !in device.capabilities
         ),
+        showLegacyControls = showLegacyControls,
         lifecycleControlsEnabled = device.online && device.components["resident"] == "running",
         firstRowLayout = DeviceCardFirstRowLayout.BALANCED_TWO_COLUMN,
         illustration = deviceCardIllustrationOf(device.clientType),
@@ -246,15 +249,15 @@ private fun lifecycleCommand(device: DeviceInfo, component: String, suffix: Stri
 fun buildDeviceCardChrome(): DeviceCardChrome =
     DeviceCardChrome(
         cardCornerRadiusDp = 28,
-        heroHeightDp = 128,
+        heroHeightDp = 104,
         heroContentHorizontalPaddingDp = 22,
-        heroContentVerticalPaddingDp = 20,
+        heroContentVerticalPaddingDp = 8,
         titleHasContainer = false,
         statusUsesCompactPill = true,
         actionAreaHorizontalPaddingDp = 18,
-        actionAreaVerticalPaddingDp = 16,
+        actionAreaVerticalPaddingDp = 10,
         columnGapDp = 10,
-        actionButtonHeightDp = 52,
+        actionButtonHeightDp = 44,
         actionContentHorizontalPaddingDp = 16,
         heroBackgroundAlpha = 0.58f,
         heroBackgroundScale = 1.08f

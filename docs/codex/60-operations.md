@@ -17,7 +17,7 @@ Windows 驻留程序的生命周期命令以源码为准：`open-detector`、`cl
 构建结果必须按组件分别报告，并在完成后检查：
 
 - Server：`server/dist/index.js`
-- Windows 检测端：`detector/windows-wpf/bin/x64/VisionGuard.exe`，按档位分别为 `detector/windows-wpf/bin/x64/modern/` 与 `detector/windows-wpf/bin/x64/legacy/`；两档都必须把原生库放在各自的 `native\modern\`、`native\legacy\`，应用根目录不得残留 `onnxruntime.dll` 或 `DirectML.dll`
+- Windows 检测端统一入口：`detector/windows-package/bin/Release/VisionGuard.exe`；内部运行时位于 `runtimes/modern/` 与 `runtimes/legacy/`，各自只保留匹配的 `native\modern\`、`native\legacy\`，包根目录不得残留 `onnxruntime.dll` 或 `DirectML.dll`
 - Windows 驻留程序：`detector/windows-resident/bin/Release/net472/VisionGuard.Resident.exe`
 - Android 检测端：`detector/android/app/build/outputs/apk/release/app-release.apk`
 - Android 接收端：`receiver/android/app/build/outputs/apk/release/app-release.apk`

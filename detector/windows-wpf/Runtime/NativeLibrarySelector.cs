@@ -1,7 +1,10 @@
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
 using VisionGuard.Utils;
 
 namespace VisionGuard.Runtime
@@ -54,6 +57,8 @@ namespace VisionGuard.Runtime
         /// <summary>失败原因（仅在选择或加载失败时有值）。</summary>
         public static string FailureReason { get; private set; } = string.Empty;
 
+        private static readonly object InitializationLock = new object();
+
         /// <summary>按运行环境与编译期开关确定档位（类型初始化与 Initialize 共用同一份判定）。</summary>
         private static void ApplyEnvironmentProfile()
         {
@@ -84,58 +89,152 @@ namespace VisionGuard.Runtime
 
         public static void Initialize()
         {
-            // 幂等：类型初始化已定过档位，这里只做原生库预加载。
-            ApplyEnvironmentProfile();
-            if (IsReady) return;
+            lock (InitializationLock)
+            {
+                // 幂等：类型初始化已定过档位，这里只做原生库预加载。启动阶段失败后允许
+                // 来源启动再次尝试，避免杀毒扫描、文件刚解压等短暂占用把本进程永久判死。
+                ApplyEnvironmentProfile();
+                if (IsReady) return;
+                FailureReason = string.Empty;
 
-            string appDir = AppDomain.CurrentDomain.BaseDirectory;
+                string appDir = AppDomain.CurrentDomain.BaseDirectory;
 
-            string onnxPath = Path.Combine(SelectedDirectory, "onnxruntime.dll");
-            string rootOnnx = Path.Combine(appDir, "onnxruntime.dll");
-            string rootDirectMl = Path.Combine(appDir, "DirectML.dll");
+                string onnxPath = Path.Combine(SelectedDirectory, "onnxruntime.dll");
+                string rootOnnx = Path.Combine(appDir, "onnxruntime.dll");
+                string rootDirectMl = Path.Combine(appDir, "DirectML.dll");
 
-            Debug.WriteLine(string.Format(
-                "[native] 档位={0} 目录={1} 存在={2}",
-                IsLegacy ? "legacy(1.1.0/CPU)" : "modern(1.19/DirectML)", SelectedDirectory, File.Exists(onnxPath)));
+                Debug.WriteLine(string.Format(
+                    "[native] 档位={0} 目录={1} 存在={2}",
+                    IsLegacy ? "legacy(1.1.0/CPU)" : "modern(1.19/DirectML)", SelectedDirectory, File.Exists(onnxPath)));
 
             // 档位是决定推理能力的关键运行环境信息，必须可诊断而不是只在调试输出里。
-            LogManager.StaticInfo(string.Format(
-                "[native] 档位={0} 目录={1} 支持DirectML={2} OS={3}",
-                IsLegacy ? "legacy" : "modern", SelectedDirectory, SupportsDirectMl, Environment.OSVersion.Version));
+                LogManager.StaticInfo(string.Format(
+                    "[native] 档位={0} 目录={1} 支持DirectML={2} OS={3}",
+                    IsLegacy ? "legacy" : "modern", SelectedDirectory, SupportsDirectMl, Environment.OSVersion.Version));
 
             // 根目录残留会让所选目录失效（DllImport 会先命中根目录），必须显式报错而不是静默使用。
-            if (File.Exists(rootOnnx) || File.Exists(rootDirectMl))
-            {
-                FailureReason = "应用根目录存在 " +
-                    (File.Exists(rootOnnx) ? "onnxruntime.dll " : string.Empty) +
-                    (File.Exists(rootDirectMl) ? "DirectML.dll" : string.Empty) +
-                    "，会抢占所选档位目录；请清理发行目录。";
-                Debug.Fail("[native] " + FailureReason);
-                return;
-            }
+                if (File.Exists(rootOnnx) || File.Exists(rootDirectMl))
+                {
+                    FailureReason = "应用根目录存在 " +
+                        (File.Exists(rootOnnx) ? "onnxruntime.dll " : string.Empty) +
+                        (File.Exists(rootDirectMl) ? "DirectML.dll" : string.Empty) +
+                        "，会抢占所选档位目录；请清理发行目录。";
+                    Debug.Fail("[native] " + FailureReason);
+                    return;
+                }
 
-            if (!File.Exists(onnxPath))
-            {
-                FailureReason = "所选档位目录下找不到 onnxruntime.dll：" + SelectedDirectory;
-                Debug.WriteLine("[native] " + FailureReason);
-                return;
-            }
+                if (!File.Exists(onnxPath))
+                {
+                    FailureReason = "所选档位目录下找不到 onnxruntime.dll：" + SelectedDirectory;
+                    Debug.WriteLine("[native] " + FailureReason);
+                    return;
+                }
 
-            IntPtr handle = LoadLibraryW(onnxPath);
-            if (handle == IntPtr.Zero)
-            {
-                int error = Marshal.GetLastWin32Error();
-                FailureReason = string.Format("预加载失败（Win32Error={0}）：{1}", error, onnxPath);
-                Debug.WriteLine("[native] " + FailureReason);
-                return;
-            }
+                if (!HasExpectedNativeVersion(onnxPath))
+                {
+                    var version = FileVersionInfo.GetVersionInfo(onnxPath).FileVersion ?? "未知";
+                    FailureReason = string.Format(
+                        "原生 ONNX Runtime 版本与当前档位不匹配：文件版本 {0}，档位 {1}。请重新完整解压对应 Windows 安装包。",
+                        version, IsLegacy ? "legacy 1.1" : "modern 1.19");
+                    return;
+                }
 
-            IsReady = true;
-            Debug.WriteLine("[native] 已用绝对路径预加载（句柄=0x" + handle.ToInt64().ToString("X") + "）");
+                // .NET Framework 的 DllImport 只使用模块名 `onnxruntime`。显式登记本档位目录，
+                // 既让托管层稳定找到同一文件，也让 DirectML 等同目录依赖按相同路径解析。
+                if (!SetDllDirectoryW(SelectedDirectory))
+                {
+                    int directoryError = Marshal.GetLastWin32Error();
+                    FailureReason = "无法登记 ONNX Runtime 原生库目录（Win32Error=" + directoryError + "：" +
+                        new Win32Exception(directoryError).Message + "）：" + SelectedDirectory;
+                    return;
+                }
+
+                IntPtr handle = IntPtr.Zero;
+                int error = 0;
+                for (int attempt = 1; attempt <= 3 && handle == IntPtr.Zero; attempt++)
+                {
+                    handle = LoadLibraryW(onnxPath);
+                    if (handle != IntPtr.Zero) break;
+                    error = Marshal.GetLastWin32Error();
+                    if (attempt < 3) Thread.Sleep(150);
+                }
+                if (handle == IntPtr.Zero)
+                {
+                    FailureReason = string.Format(
+                        "ONNX Runtime 原生库连续 3 次加载失败（Win32Error={0}：{1}）：{2}。" +
+                        "请确认安装包已完整解压，并已安装 Microsoft Visual C++ 2015-2022 x64 运行库。",
+                        error, new Win32Exception(error).Message, onnxPath);
+                    Debug.WriteLine("[native] " + FailureReason);
+                    return;
+                }
+
+                if (GetProcAddress(handle, "OrtGetApiBase") == IntPtr.Zero)
+                {
+                    FailureReason = "已加载的 onnxruntime.dll 缺少 OrtGetApiBase 入口点，文件版本不兼容：" + onnxPath;
+                    return;
+                }
+
+                string loaded = LoadedOnnxRuntimePath();
+                if (!string.Equals(loaded, "(尚未加载)", StringComparison.Ordinal)
+                    && !loaded.StartsWith(SelectedDirectory, StringComparison.OrdinalIgnoreCase))
+                {
+                    FailureReason = "ONNX Runtime 被其它同名 DLL 抢占：已加载 " + loaded +
+                        "，应加载 " + onnxPath + "。请完整退出程序后清理旧文件再重试。";
+                    return;
+                }
+
+                IsReady = true;
+                Debug.WriteLine("[native] 已用绝对路径预加载（句柄=0x" + handle.ToInt64().ToString("X") + "）");
+            }
+        }
+
+        private static bool HasExpectedNativeVersion(string path)
+        {
+            // 旧 1.1.0 原生包没有 Windows 文件版本资源，只能依赖导出入口与实际推理契约校验。
+            if (IsLegacy) return true;
+            var version = FileVersionInfo.GetVersionInfo(path);
+            return version.FileMajorPart == 1 && version.FileMinorPart == 19;
         }
 
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         private static extern IntPtr LoadLibraryW(string lpFileName);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool SetDllDirectoryW(string lpPathName);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Ansi)]
+        private static extern IntPtr GetProcAddress(IntPtr hModule, string lpProcName);
+
+        /// <summary>把包装异常展开为接收端可读的根因，并把完整堆栈保存到检测端本机。</summary>
+        public static string DescribeInferenceFailure(Exception exception)
+        {
+            var summary = new StringBuilder();
+            Exception current = exception;
+            for (int depth = 0; current != null && depth < 8; depth++, current = current.InnerException)
+            {
+                if (summary.Length > 0) summary.Append(" → ");
+                summary.Append(current.GetType().Name).Append("：").Append(current.Message);
+            }
+            if (!IsReady && !string.IsNullOrWhiteSpace(FailureReason))
+                summary.Append("；原生库检查：").Append(FailureReason);
+
+            try
+            {
+                string directory = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionGuard");
+                Directory.CreateDirectory(directory);
+                string diagnostic = string.Format(
+                    "[{0:yyyy-MM-dd HH:mm:ss.fff}] profile={1} ready={2} selected={3} loaded={4}{5}{6}{5}{5}",
+                    DateTime.Now, IsLegacy ? "legacy" : "modern", IsReady, SelectedDirectory,
+                    LoadedOnnxRuntimePath(), Environment.NewLine, exception);
+                File.AppendAllText(Path.Combine(directory, "inference-error.log"), diagnostic, new UTF8Encoding(false));
+            }
+            catch
+            {
+                // 诊断落盘失败不能覆盖原始推理异常。
+            }
+            return summary.ToString();
+        }
 
         /// <summary>读取进程实际加载的原生库路径，用于确认档位真的生效。</summary>
         public static string LoadedOnnxRuntimePath()

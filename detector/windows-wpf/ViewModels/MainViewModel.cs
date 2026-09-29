@@ -23,9 +23,6 @@ namespace VisionGuard.ViewModels
 
         public MainViewModel()
         {
-            // 加载持久化设置
-            SettingsStore.Load();
-
             // 创建共享服务
             _serverPushService = new ServerPushService();
 
@@ -123,7 +120,8 @@ namespace VisionGuard.ViewModels
         private void RefreshHeartbeat(ServerPushService sps)
         {
             var sourceStatuses = MultiSourceVm.Statuses;
-            object[] heartbeatSources = sourceStatuses.Select(x =>
+            object[] heartbeatSources = sourceStatuses.Where(x =>
+                MultiSourceVm.Sources.First(s => s.SourceId == x.SourceId).IsTargetBound).Select(x =>
                 {
                     var slot = MultiSourceVm.Sources.First(s => s.SourceId == x.SourceId);
                     return (object)new Dictionary<string, object>

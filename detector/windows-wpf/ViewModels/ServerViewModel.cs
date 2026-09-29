@@ -151,13 +151,17 @@ namespace VisionGuard.ViewModels
                 }
             }, () => !IsCompletingExit);
 
-            ApplyNameCommand = new RelayCommand(() =>
+            ApplyNameCommand = new RelayCommand(async () =>
             {
+                // 先持久化，再刷新驻留配置；主检测端和驻留始终使用同一个名称。
+                Save();
                 _serverPushService.Configure(
                     AppConfig.ServerUrl,
                     AppConfig.ApiKey,
                     AppConfig.DeviceId,
                     DeviceName);
+                await Task.Run(() => Runtime.ResidentLauncher.EnsureStarted());
+                RefreshResidentStatus(allowLaunch: false);
             });
 
             CheckUpdateCommand = new RelayCommand(async () =>
@@ -168,7 +172,7 @@ namespace VisionGuard.ViewModels
 
                 try
                 {
-                    await AutoUpdater.CheckUpdateAsync();
+                    await AutoUpdater.CheckUpdateAsync(userInitiated: true);
                 }
                 finally
                 {

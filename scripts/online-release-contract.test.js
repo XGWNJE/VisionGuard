@@ -9,7 +9,7 @@ function response(status, body = null, headers = {}) {
 
 test('线上发布契约同时校验健康、更新元数据、文件大小和 Range 下载', async () => {
   const releases = {
-    wpf: { version: '4.5.1', url: '/releases/VisionGuard-WPF-v4.5.1.zip', size: 123 }
+    wpf: { version: '4.5.1', url: '/releases/VisionGuard-WPF-v4.5.1.zip', size: 123, sha256: 'ABC123' }
   };
   const calls = [];
   const fetchImpl = async (url, options = {}) => {
@@ -17,7 +17,7 @@ test('线上发布契约同时校验健康、更新元数据、文件大小和 R
     calls.push({ text, options });
     if (text.endsWith('/health')) return response(200, { ok: true });
     if (text.includes('/api/update?')) {
-      return response(200, { latestVersion: '4.5.1', downloadUrl: releases.wpf.url, size: 123 });
+      return response(200, { latestVersion: '4.5.1', downloadUrl: releases.wpf.url, size: 123, sha256: 'abc123' });
     }
     if (options.method === 'HEAD') return response(200, null, { 'content-length': '123' });
     if (options.headers?.Range) return response(206);

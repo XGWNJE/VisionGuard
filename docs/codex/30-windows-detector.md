@@ -6,6 +6,7 @@
 
 | 规范名称 | 路径 | 职责 |
 |---|---|---|
+| Windows 启动器 / 更新器 | `detector/windows-launcher/` | .NET Framework 4.7.2 x64；统一入口，Win7 选择 legacy、Win10+ 选择 modern；负责下载、大小与 SHA256 校验、安全解压、整目录切换、启动确认和失败回滚 |
 | Windows 检测端（WPF Visual Detector） | `detector/windows-wpf/` | .NET Framework 4.7.2 / WPF / MVVM；同一份源码按 `OrtProfile` 产出两个推理档位——legacy 供 Win7 SP1 x64（CPU + 原生 1.1.0 + YOLOv5），modern 供 Win10/11（DirectML + 原生 1.19.0 + YOLO26）；来源数量按 Server 协商上限生成 |
 | Windows 驻留程序（Windows Resident） | `detector/windows-resident/` | .NET Framework 4.7.2 x64 当前用户后台进程；承接主程序生命周期远控，不承接推理；框架与 API 已对齐 Win7 SP1 x64 |
 
@@ -30,10 +31,12 @@ Windows 检测端支持窗口/屏幕捕获、遮罩、预处理、ONNX 推理、
 
 状态文案统一为**检测中**（逐来源与设备级一致）；没有任何完整配置的来源时显示**未就绪**，此时启动入口不可用。来源页**没有保存/撤销按钮**：参数改动即自动保存（防抖 500ms 落盘），其中模型、检测类别、阈值、频率、冷却是冷改动，改动后在下一次启动该来源时生效，界面在参数区下方以「已保存：阈值、检测类别 · 重新启动此来源后生效」提示；采集目标三件套（窗口 / 选区 / 遮罩）不经过冷改动路径，变更即重建来源并立即生效。运行中上述参数控件仍不可用，切换模型会被明确拒绝。
 
-来源数量行为：默认 1 个来源，用户在 Server 下发上限内手动新增/删除（删除保底保留 1 个，运行中的来源必须先停止）；上限只是上界，不再等于槽位数量。只在服务端**真的下发了** `maxSources` 时才收窄上限：服务端未声明上限时保持本地已放开的范围（最大 16 路），不静默压回默认 4 路。界面文案与标签页统一使用**来源**这一说法：“当前来源”为标签页名，设置键前缀为 `Source.{i}.`（早期 `Signal.*` 键做一次性迁移并保留作备份），类型名为 `SourceViewModel`。`sourceId` 取值保持不变（`default`、`signal-N`）——它是接收端历史与静音偏好的归属键，不随显示名改动。
+来源数量行为：默认 1 个来源，用户在 Server 下发上限内手动新增/删除（删除保底保留 1 个，运行中的来源必须先停止）；上限只是上界，不再等于槽位数量。只在服务端**真的下发了** `maxSources` 时才收窄上限：服务端未声明上限时保持本地已放开的范围（最大 16 路），不静默压回默认 4 路。心跳的 `sources` 只包含已绑定采集窗口或屏幕选区的来源；窗口暂时失联仍保留已绑定身份并上报故障，空槽位不上报给接收端。界面文案与标签页统一使用**来源**这一说法：“当前来源”为标签页名，设置键前缀为 `Source.{i}.`（早期 `Signal.*` 键做一次性迁移并保留作备份），类型名为 `SourceViewModel`。`sourceId` 取值保持不变（`default`、`signal-N`）——它是接收端历史与静音偏好的归属键，不随显示名改动。
 
 ## WPF 当前实现
 
+- 对外只分发 `detector/windows-package/bin/Release/` 的一个目录：根 `VisionGuard.exe` 是启动器，两套 WPF 运行时位于 `runtimes/modern/` 与 `runtimes/legacy/`。用户、驻留程序和更新完成后的重启都只指向根入口；`VISIONGUARD_RUNTIME_PROFILE` 仅用于自动化探针。检测端不再生成 PowerShell 更新脚本。
+- 更新器先把完整 ZIP 下载到 `%LOCALAPPDATA%\VisionGuard\updates\`，同时校验服务端给出的字节数和 SHA256，再拒绝 ZIP 越界路径并验证根启动器、驻留程序和两套原生运行时。校验完成后才请求检测端与驻留退出；临时更新器在同一磁盘复制新目录、原子换名、等待新检测端启动确认，失败则恢复旧目录。报警截图固定写入 `%LOCALAPPDATA%\VisionGuard\alerts\`，不参与程序目录替换。
 - .NET Framework 4.7.2、WPF + MVVM；legacy 档为 YOLOv5 输出解析 + 固定 CPU，modern 档为 YOLO26 输出格式 `[1,300,6]` + DirectML 默认后端并支持显式 CPU 回退。两档引擎源码共用，唯一按档位分岔的是 `AppendExecutionProvider_DML` 一行。模型与档位必须配套：legacy 档只列 `yolov5*`、modern 档只列 `yolo26*`，把另一档的模型喂进来会在解析层显式报错而不是静默不出框。
 - `MonitorService` 负责窗口/区域捕获、推理、告警和 UI 更新；多来源协调器按 Server 协商上限维护来源槽位，每个来源拥有独立配置、ONNX Session、定时器和冷却状态，不再提供产品图片直读来源。
 - 主窗口移除左侧导航、页内重复品牌块、来源区说明栏和全局底部信息栏，中央为**按可用空间实时求解的自适应监控网格**；右侧控制台只有两页：**当前来源**与**全局设定**（原“运行环境”与“连接”两页已合并，合并后 `SettingsPage`/`ServerPage` 与对应 XAML 已删除）。`GlobalSettingsViewModel` 只做页面级组合，推理设备与模型资源仍归 `SettingsViewModel`、连接/设备身份/驻留/更新仍归 `ServerViewModel`，两套状态不合并成一个类；页内用嵌套 `DataContext` 定位。控制台移除重复页标题、操作说明和嵌套卡片，主要按钮、单行输入框、下拉框与多选入口统一为 40px 高，次要清除动作允许使用 28px 紧凑高度。当前来源名称与状态合并为单行，点击名称原位编辑，回车或失焦只自动保存名称。“当前来源”只分三组并按实际作业顺序排列：**采集目标**（窗口 / 选区 / 遮罩，共用一次“重置”）→ **识别设置**（模型、检测类别）→ **检测参数**（阈值、频率、冷却），末尾只有一行冷改动提示。“全局设定”按“推理设备（后端）→ 模型资源 → 服务器 → 设备身份 → 驻留程序 → 客户端更新”顺序排列；模型资源清单默认折叠，点击标题再展开，每个区块标题与操作各占一行；客户端行提供“完整退出”，托盘也提供同名入口，普通“退出主体”则明确保留驻留。逐路阈值、类别、频率和冷却只在当前来源中配置，其中检测类别使用基于 COCO 80 类中英文映射的下拉多选菜单。每路画面内独立显示更新时间、推理耗时、最后报警与实际后端。
@@ -51,7 +54,7 @@ Windows 检测端支持窗口/屏幕捕获、遮罩、预处理、ONNX 推理、
 - 模型资源区是一个清单而不是“下拉 + 状态 + 下载按钮”：本档位每个模型一行，行内直接给出展示名、`✓ 已下载 / 未下载 / 下载中 n%`、下载进度条和行内下载按钮（已下载时按钮转成不可点的“已就绪”）。模型缓存为 `%APPDATA%\VisionGuard\models\`，旧 `Assets/` 模型会迁移。
 - 下载失败必须可读：`ModelManager.LastFailureReason` 记录具体原因（HTTP 状态码或异常类型与消息），由模型行直接显示；服务端断流导致字节数与 `Content-Length` 不一致时判为失败并删除临时文件重下，不会把半截文件当成功。档位判定在 `NativeLibrarySelector` 的类型初始化阶段完成，因此 `ModelManager.ModelKeys` 这类静态清单不会在 `Initialize()` 之前读到错误的档位（legacy 档曾因此列出 `yolo26*`）。
 - 来源页的模型下拉**只列本机已下载的模型**：未下载的模型选了也启动不了，把它们列出来等于把失败推给用户。当前选中模型若不在本机，会在读取时收敛到第一个已下载模型；一个都没下载时下拉禁用，并在下方显示“本机还没有模型：请到「全局设定 → 模型资源」下载后再选”。在全局设定里下载完成后，来源页下拉立即能看到新模型（下载完成会触发一次可用性刷新，不需要重启）。
-- Release 输出按档位分别为 `bin\x64\modern\` 与 `bin\x64\legacy\`；两档的原生库各自放在 `native\modern\`、`native\legacy\`，应用根目录不得出现 `onnxruntime.dll` 或 `DirectML.dll`（根目录残留会让 DllImport 先命中根目录，程序显式报错而不静默换档）。档位、托管包版本、编译期开关、输出目录与原生库布置全部由 `detector/windows-shared/NativeLibraries.props` 单点定义，检测端、人员 smoke 与推理探针共用；`OrtProfile` 必须按 MSBuild 全局属性传播（`-p:OrtProfile=legacy` 同时作用于被引用的检测端工程），否则会出现“探针按 legacy、生产程序集按 modern”的假验证。建会话后检测端还会校验实际加载的原生库确实来自本档位目录：机器上存在系统级同名 `onnxruntime.dll` 时会按模块名抢占，实测表现为一推理就无诊断信息的进程终止，现在会变成可读的启动故障。导航 PNG 以内嵌 Resource 提供，模型和 `Assets/` 不随发行包分发。
+- Release 输出按档位分别为 `bin\x64\modern\` 与 `bin\x64\legacy\`；两档的原生库各自放在 `native\modern\`、`native\legacy\`，应用根目录不得出现 `onnxruntime.dll` 或 `DirectML.dll`（根目录残留会让 DllImport 先命中根目录，程序显式报错而不静默换档）。档位、托管包版本、编译期开关、输出目录与原生库布置全部由 `detector/windows-shared/NativeLibraries.props` 单点定义，检测端、人员 smoke 与推理探针共用；`OrtProfile` 必须按 MSBuild 全局属性传播（`-p:OrtProfile=legacy` 同时作用于被引用的检测端工程），否则会出现“探针按 legacy、生产程序集按 modern”的假验证。启动时先把本档位目录登记到 Windows DLL 搜索路径，再以绝对路径最多重试三次加载原生库，并在进入 ONNX `NativeMethods` 静态初始化前校验 modern 文件版本、`OrtGetApiBase` 入口和进程实际加载路径；检查失败时禁止创建会话，避免一次短暂加载失败把该类型在整个进程内永久置为失败状态。建会话后还会再次校验实际路径。推理初始化异常会展开内部异常写入 `%LOCALAPPDATA%\VisionGuard\inference-error.log`，并把根因同步到来源状态，而不是只显示外层“类型初始值设定项引发异常”。导航 PNG 以内嵌 Resource 提供，模型和 `Assets/` 不随发行包分发。
 - WPF 采集目标使用统一像素下限：窗口客户区、屏幕选区和窗口子区域的宽度与高度必须分别严格大于 100 像素；屏幕选区拖拽提示与提交校验共用 DIP 到物理像素映射，窗口子区域则直接使用 `PrintWindow` 客户区帧内像素。窗口枚举直接过滤任一边不达标的候选，确认、启动和实际截图层继续做防御式校验。遮罩仍是帧内 `[0,1]` 相对坐标，不受客户区像素尺寸变化影响。
 - WPF 不维护启动时 DPI 基线，也不会因缩放变化停止来源或要求重启；PerMonitorV2 负责窗口布局与输入坐标更新，采集帧则按每次捕获的实际重绘范围自洽。常见缩放比例共用同一路径，没有按 100%/150%/200% 分支。
 - 新选择的窗口会持久化标题、窗口类名和进程名；恢复时优先精确匹配，标题变化后只有稳定身份唯一时才自动重绑，同名或同身份多候选会保持停止并要求重新选择。旧配置继续使用唯一标题匹配。
@@ -67,6 +70,7 @@ Windows 检测端支持窗口/屏幕捕获、遮罩、预处理、ONNX 推理、
 - **启动方向已被 V10 反转**：驻留不再负责打开检测端，而是由检测端在启动时用 `UseShellExecute = true` 拉起（传入自身写出的 `%LOCALAPPDATA%\VisionGuard\resident-config.json`），使驻留脱离父进程生命周期；驻留自行登记登录自启。检测端正常退出或崩溃后驻留继续运行，因此仍能接受 `open-detector` 远程重新打开。
 - 驻留程序目标框架为 .NET Framework 4.7.2 x64，JSON 使用 `JavaScriptSerializer`，WebSocket 使用与检测端同一份自研 `Net/MinimalWebSocketClient.cs`（源码链接复用，显式 TLS 1.2）；Release 目录必须同时包含主 EXE 与配置文件。**不再依赖 `websocket-sharp`**——该库以 `SslProtocols.Default` 协商 TLS，在 Windows 7 上退化为 TLS 1.0 会被服务端拒绝（检测端已在 Win7 实测确认该根因）。
 - 驻留自身使用当前用户会话命名互斥体防止重复启动；连接认证成功后才发送组件心跳，远控完成回执携带 `requestId`、`phase=completed` 与目标设备，供 Server 严格关联请求。
+- 设备自定义名称只有 `settings.ini` 的 `DeviceName` 一个来源：检测端先加载设置，再把同一 `deviceId` 与 `deviceName` 写入驻留配置。名称或连接配置变化时会重启驻留并重新认证；驻留不得另行使用电脑名。Server 在两者同时在线时也以主检测端名称同步驻留记录，因此关闭主检测端后卡片名称保持不变。
 - Win7 支持基线为 Windows 7 SP1 x64 + .NET Framework 4.7.2 + TLS 1.2 系统更新；代码与产物满足该基线不替代 Win7 实机/WSS 证书链验收。
 - 与检测端通过当前用户会话事件完成启动握手和正常退出请求（`Local\VisionGuard.Detector.Running` / `.Shutdown`）；远程打开只启动检测端，不自动开始监控。
 - 检测端与驻留共用同一应用标识 `Detector`，阻止手动启动和远程启动产生第二实例。

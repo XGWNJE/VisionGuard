@@ -22,6 +22,10 @@ namespace VisionGuard
             if (args.Length >= 1 && args[0] == "--resident-launch")
                 return RunResidentLaunchProbe(args);
 
+            // 驻留与主检测端必须读取同一份持久化设备身份。若在加载设置前拉起驻留，
+            // AppConfig.DeviceId 会把空内存状态误判为首次运行，名称也只能退回电脑名。
+            Utils.SettingsStore.Load();
+
             // 按运行环境选择并预加载 ONNX Runtime 原生库；必须在任何推理调用之前。
             Runtime.NativeLibrarySelector.Initialize();
 

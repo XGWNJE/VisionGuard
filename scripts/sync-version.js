@@ -15,13 +15,11 @@ const ROOT = path.resolve(__dirname, '..');
  * releases.json 里各平台条目应指向的产物文件名。
  *
  * 必须与 scripts/publish-release.ps1 实际生成的包名逐字一致，否则更新接口会指向不存在的文件。
- * Windows 检测端是同一份源码的两个推理档位，包必须区分：
- * `wpf` = modern（Windows 10/11，DirectML），`wpf-legacy` = legacy（Windows 7 SP1，纯 CPU）。
+ * Windows 检测端只发布一个整包，启动器按操作系统选择内部推理运行时。
  */
 function releaseFileName(key, version) {
   if (key === 'android-detector') return `VisionGuard-Detector-v${version}.apk`;
   if (key === 'android-receiver') return `VisionGuard-Receiver-v${version}.apk`;
-  if (key === 'wpf-legacy') return `VisionGuard-WPF-Legacy-v${version}.zip`;
   if (key === 'wpf') return `VisionGuard-WPF-v${version}.zip`;
   return `VisionGuard-${key}-v${version}.zip`;
 }
@@ -133,6 +131,20 @@ function main() {
     /<AssemblyVersion>[\d.]+<\/AssemblyVersion>/,
     `<AssemblyVersion>${newVersion}</AssemblyVersion>`
   );
+
+  // 10.1 Windows 启动器必须与统一包使用同一版本号。
+  replaceInFile(
+    path.join(ROOT, 'detector', 'windows-launcher', 'Program.cs'),
+    /private const string Version = "[\d.]+"/,
+    `private const string Version = "${newVersion}"`
+  );
+  for (const element of ['Version', 'FileVersion', 'AssemblyVersion']) {
+    replaceInFile(
+      path.join(ROOT, 'detector', 'windows-launcher', 'VisionGuard.Launcher.csproj'),
+      new RegExp(`<${element}>[\\d.]+<\\/${element}>`),
+      `<${element}>${newVersion}</${element}>`
+    );
+  }
 
   // 11. Server releases.json
   const releasesPath = path.join(ROOT, 'server', 'data', 'releases.json');

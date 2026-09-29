@@ -95,7 +95,7 @@ test('publish-release.ps1 keeps GitHub optional and release deployment reproduci
   assert.match(script, /Invoke-ReleasePreflight/);
   assert.match(script, /scripts\\check-docs\.js/);
   assert.match(script, /Preflight only complete/);
-  assert.match(script, /VisionGuard-WPF-Legacy-v\$Version\.zip/);
+  assert.match(script, /VisionGuard-WPF-v\$Version\.zip/);
   // 驻留程序由检测端构建复制进 bin\x64\<档位>\，发布只打包档位目录；
   // 再额外合并驻留目录会触发 New-ZipPackage 的重复根名检查。
   assert.doesNotMatch(script, /windows-resident\\bin\\Release\\net472/);
@@ -214,7 +214,7 @@ test('server deployment script targets the current dedicated runtime layout', ()
   assert.doesNotMatch(script, /VPS_ALIAS="xgwnje"/);
 });
 
-test('publish-release.ps1 ships one Windows package per WPF inference profile', () => {
+test('publish-release.ps1 ships one Windows package containing both runtimes', () => {
   const script = read('scripts/publish-release.ps1');
   const windowsBlock = script.slice(
     script.indexOf("if (Test-TargetEnabled @('Windows', 'WPF')) {"),
@@ -224,19 +224,11 @@ test('publish-release.ps1 ships one Windows package per WPF inference profile', 
   assert.doesNotMatch(script, /WinForms/);
   assert.doesNotMatch(script, /windows-winforms/);
   assert.ok(windowsBlock.length > 0, 'the Windows packaging block should exist');
-  assert.match(
-    windowsBlock,
-    /Key = 'wpf'; Profile = 'modern'; FileName = "VisionGuard-WPF-v\$Version\.zip"/
-  );
-  assert.match(
-    windowsBlock,
-    /Key = 'wpf-legacy'; Profile = 'legacy'; FileName = "VisionGuard-WPF-Legacy-v\$Version\.zip"/
-  );
-  assert.match(windowsBlock, /bin\\x64\\\$\(\$package\.Profile\)/);
-  assert.match(
-    script,
-    /Platform = 'wpf-legacy'; Targets = @\('Windows', 'WPF'\); FileName = "VisionGuard-WPF-Legacy-v\$Version\.zip"/
-  );
+  assert.match(windowsBlock, /VisionGuard-WPF-v\$Version\.zip/);
+  assert.match(windowsBlock, /detector\\windows-package\\bin\\Release/);
+  assert.match(windowsBlock, /runtimes\/modern\/native\/modern\/onnxruntime\.dll/);
+  assert.match(windowsBlock, /runtimes\/legacy\/native\/legacy\/onnxruntime\.dll/);
+  assert.doesNotMatch(script, /Platform = 'wpf-legacy'/);
 });
 
 test('Windows build script compiles both WPF inference profiles and drops the WinForms target', () => {
@@ -252,6 +244,8 @@ test('Windows build script compiles both WPF inference profiles and drops the Wi
   assert.match(script, /-p:OrtProfile=legacy/);
   assert.match(script, /detector\/windows-wpf\/bin\/x64\/modern\/VisionGuard\.exe/);
   assert.match(script, /detector\/windows-wpf\/bin\/x64\/legacy\/VisionGuard\.exe/);
+  assert.match(script, /detector\/windows-package\/bin\/Release\/VisionGuard\.exe/);
+  assert.match(script, /assemble-windows-unified\.js/);
 });
 
 test('release preflight refuses to package Windows without every model the detector can select', () => {
@@ -291,8 +285,8 @@ test('release workflow skips held-back platforms but still fails an all-mismatch
   assert.match(workflow, /if \[ -z "\$published" \]/, 'the all-mismatch guard is missing');
   assert.match(workflow, /no platform is aligned with \$VERSION/, 'the all-mismatch error text is missing');
 
-  // legacy 文件名前缀校验不能因为跳过逻辑被删掉：服务端档位包缺失时 API 会回落到 modern 包。
-  assert.match(workflow, /VisionGuard-WPF-Legacy-\*/, 'the legacy filename guard is missing');
+  assert.match(workflow, /expected_sha256/, 'the published checksum guard is missing');
+  assert.doesNotMatch(workflow, /wpf-legacy/, 'Windows must use one release platform');
 });
 
 test('publish-release.ps1 skips held-back platforms when collecting GitHub assets', () => {

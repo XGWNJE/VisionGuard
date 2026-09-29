@@ -11,6 +11,7 @@ using System.Diagnostics;
 using System.Linq;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
+using VisionGuard.Runtime;
 
 namespace VisionGuard.Inference
 {
@@ -60,6 +61,12 @@ namespace VisionGuard.Inference
             InferenceBackend preferredBackend = InferenceBackend.DirectML,
             int directMlDeviceId = 0)
         {
+            // 所有调用方共用同一闸门：原生库未就绪时不得触发 NativeMethods 静态初始化，
+            // 否则一次短暂加载失败会把该类型在当前进程内永久置为失败状态。
+            NativeLibrarySelector.Initialize();
+            if (!NativeLibrarySelector.IsReady)
+                throw new InvalidOperationException(NativeLibrarySelector.FailureReason);
+
             if (SupportsDirectMl && preferredBackend == InferenceBackend.DirectML)
             {
                 try

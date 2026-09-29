@@ -114,12 +114,14 @@ fun DeviceCard(
                 chrome = chrome,
                 dragHandleModifier = dragHandleModifier
             )
-            DeviceCardActions(
-                model = model,
-                chrome = chrome,
-                onCommand = { command -> onCommand(command, null) },
-                onConfigClick = { configSourceId = null; showConfigEditor = true }
-            )
+            if (model.showLegacyControls || model.detectorLifecycleCommand != null) {
+                DeviceCardActions(
+                    model = model,
+                    chrome = chrome,
+                    onCommand = { command -> onCommand(command, null) },
+                    onConfigClick = { configSourceId = null; showConfigEditor = true }
+                )
+            }
             if (device.sourceLimitExceeded) {
                 val limit = device.maxSources?.let { "最多 $it 路" } ?: "服务端上限"
                 Text(
@@ -204,7 +206,7 @@ private fun DeviceCardHero(
                     horizontal = chrome.heroContentHorizontalPaddingDp.dp,
                     vertical = chrome.heroContentVerticalPaddingDp.dp
                 ),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
                 text = model.deviceName,
@@ -288,7 +290,7 @@ private fun DeviceStatusPill(
         shadowElevation = 0.dp
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
@@ -325,42 +327,44 @@ private fun DeviceCardActions(
             ),
         verticalArrangement = Arrangement.spacedBy(chrome.columnGapDp.dp)
     ) {
-      Row(horizontalArrangement = Arrangement.spacedBy(chrome.columnGapDp.dp)) {
-        DeviceActionButton(
-            label = model.controlActionLabel,
-            icon = if (model.controlCommand == "pause") Icons.Default.Pause else Icons.Default.PlayArrow,
-            enabled = model.controlsEnabled,
-            emphasized = model.controlCommand == "resume",
-            danger = model.controlCommand == "pause",
-            heightDp = chrome.actionButtonHeightDp,
-            contentHorizontalPaddingDp = chrome.actionContentHorizontalPaddingDp,
-            onClick = { onCommand(model.controlCommand) },
-            modifier = Modifier.weight(1f)
-        )
-        DeviceActionButton(
-            label = "参数调节",
-            icon = Icons.Default.Tune,
-            enabled = model.controlsEnabled,
-            emphasized = false,
-            danger = false,
-            heightDp = chrome.actionButtonHeightDp,
-            contentHorizontalPaddingDp = chrome.actionContentHorizontalPaddingDp,
-            onClick = onConfigClick,
-            modifier = Modifier.weight(1f)
-        )
-      }
-      // Windows 只剩一个检测端（V10 决策 28），因此这里只有一个生命周期入口。
-      model.detectorLifecycleCommand?.let { command ->
-        Row(horizontalArrangement = Arrangement.spacedBy(chrome.columnGapDp.dp)) {
-          DeviceActionButton(
-            label = if (command.startsWith("open")) "打开检测端" else "关闭检测端",
-            icon = if (command.startsWith("open")) Icons.Default.PlayArrow else Icons.Default.Pause,
-            enabled = model.lifecycleControlsEnabled, emphasized = command.startsWith("open"), danger = false,
-            heightDp = chrome.actionButtonHeightDp, contentHorizontalPaddingDp = 8,
-            onClick = { onCommand(command) }, modifier = Modifier.weight(1f)
-          )
+        if (model.showLegacyControls) {
+            Row(horizontalArrangement = Arrangement.spacedBy(chrome.columnGapDp.dp)) {
+                DeviceActionButton(
+                    label = model.controlActionLabel,
+                    icon = if (model.controlCommand == "pause") Icons.Default.Pause else Icons.Default.PlayArrow,
+                    enabled = model.controlsEnabled,
+                    emphasized = model.controlCommand == "resume",
+                    danger = model.controlCommand == "pause",
+                    heightDp = chrome.actionButtonHeightDp,
+                    contentHorizontalPaddingDp = chrome.actionContentHorizontalPaddingDp,
+                    onClick = { onCommand(model.controlCommand) },
+                    modifier = Modifier.weight(1f)
+                )
+                DeviceActionButton(
+                    label = "参数调节",
+                    icon = Icons.Default.Tune,
+                    enabled = model.controlsEnabled,
+                    emphasized = false,
+                    danger = false,
+                    heightDp = chrome.actionButtonHeightDp,
+                    contentHorizontalPaddingDp = chrome.actionContentHorizontalPaddingDp,
+                    onClick = onConfigClick,
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
-      }
+        // Windows 只剩一个检测端（V10 决策 28），因此这里只有一个生命周期入口。
+        model.detectorLifecycleCommand?.let { command ->
+            Row(horizontalArrangement = Arrangement.spacedBy(chrome.columnGapDp.dp)) {
+                DeviceActionButton(
+                    label = if (command.startsWith("open")) "打开检测端" else "关闭检测端",
+                    icon = if (command.startsWith("open")) Icons.Default.PlayArrow else Icons.Default.Pause,
+                    enabled = model.lifecycleControlsEnabled, emphasized = command.startsWith("open"), danger = false,
+                    heightDp = chrome.actionButtonHeightDp, contentHorizontalPaddingDp = 8,
+                    onClick = { onCommand(command) }, modifier = Modifier.weight(1f)
+                )
+            }
+        }
     }
 }
 
@@ -376,47 +380,94 @@ private fun SourceControlList(
     ) {
         device.sources.forEach { source ->
             Surface(
-                shape = RoundedCornerShape(18.dp), color = ReceiverSurfaceMuted,
+                shape = RoundedCornerShape(16.dp), color = ReceiverSurfaceMuted,
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.7f))
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(source.sourceName, style = MaterialTheme.typography.titleSmall, color = ReceiverPrimary, fontWeight = FontWeight.Bold)
-                        val status = when {
-                            source.error?.isNotBlank() == true -> source.error
-                            source.isMonitoring -> "检测中 · ${source.actualFps?.let { "%.1f FPS".format(it) } ?: "频率计算中"}"
-                            !source.isReady -> "未绑定"
-                            else -> "已停止 · ${source.modelKey.ifBlank { "未选模型" }}"
-                        }
-                        Text(status, style = MaterialTheme.typography.bodySmall, color = ReceiverMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = source.sourceName,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = ReceiverPrimary,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        SourceIconAction(
+                            icon = if (source.isMonitoring) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            label = if (source.isMonitoring) "停止${source.sourceName}" else "启动${source.sourceName}",
+                            enabled = device.online && "source-control" in device.capabilities &&
+                                source.isReady && source.error.isNullOrBlank(),
+                            emphasized = !source.isMonitoring,
+                            danger = source.isMonitoring,
+                            onClick = { onCommand(if (source.isMonitoring) "pause" else "resume", source.sourceId) }
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        SourceIconAction(
+                            icon = Icons.Default.Tune,
+                            label = "调节${source.sourceName}参数",
+                            // 检测端拒绝运行中修改来源配置。
+                            enabled = device.online && "source-control" in device.capabilities &&
+                                source.isReady && !source.isMonitoring,
+                            emphasized = false,
+                            danger = false,
+                            onClick = { onConfig(source.sourceId) }
+                        )
                     }
-                    DeviceActionButton(
-                        label = if (source.isMonitoring) "停止" else "启动",
-                        icon = if (source.isMonitoring) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        enabled = device.online && "source-control" in device.capabilities && source.isReady && source.error.isNullOrBlank(),
-                        emphasized = !source.isMonitoring, danger = source.isMonitoring,
-                        heightDp = 42, contentHorizontalPaddingDp = 10,
-                        onClick = { onCommand(if (source.isMonitoring) "pause" else "resume", source.sourceId) },
-                        modifier = Modifier.width(92.dp)
-                    )
-                    DeviceActionButton(
-                        label = "参数",
-                        icon = Icons.Default.Tune,
-                        // 统一语义：监控中的来源必须先停止才能改配置（检测端会直接拒绝），
-                        // 因此运行中不提供必然失败的入口。
-                        enabled = device.online && "source-control" in device.capabilities &&
-                            source.isReady && !source.isMonitoring,
-                        emphasized = false, danger = false,
-                        heightDp = 42, contentHorizontalPaddingDp = 8,
-                        onClick = { onConfig(source.sourceId) },
-                        modifier = Modifier.width(82.dp)
+                    val status = when {
+                        source.error?.isNotBlank() == true -> source.error
+                        !source.isReady -> "目标暂不可用"
+                        source.isMonitoring -> "检测中 · ${source.actualFps?.let { "%.1f FPS".format(it) } ?: "频率计算中"}"
+                        else -> "已停止 · ${source.modelKey.ifBlank { "未选模型" }}"
+                    }
+                    Text(
+                        text = status,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = ReceiverMuted,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SourceIconAction(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean,
+    emphasized: Boolean,
+    danger: Boolean,
+    onClick: () -> Unit
+) {
+    val containerColor = when {
+        emphasized -> ReceiverPrimary
+        danger -> ReceiverAlertSoft
+        else -> ReceiverSurface
+    }
+    val contentColor = when {
+        emphasized -> Color.White
+        danger -> ReceiverAlert
+        else -> ReceiverPrimary
+    }
+    Surface(
+        modifier = Modifier
+            .size(40.dp)
+            .alpha(if (enabled) 1f else 0.48f)
+            .clip(CircleShape)
+            .clickable(enabled = enabled, onClickLabel = label, onClick = onClick),
+        shape = CircleShape,
+        color = containerColor
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = label, tint = contentColor, modifier = Modifier.size(19.dp))
         }
     }
 }
