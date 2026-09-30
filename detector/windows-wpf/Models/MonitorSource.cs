@@ -1,7 +1,7 @@
 using System;
-using VisionGuard.Inference;
+using VisionGuard.Detector.Windows.Inference;
 
-namespace VisionGuard.Models
+namespace VisionGuard.Detector.Windows.Models
 {
     public sealed class MonitorSource
     {

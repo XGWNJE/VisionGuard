@@ -2,11 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
-using VisionGuard.Inference;
-using VisionGuard.Models;
-using VisionGuard.Runtime;
+using VisionGuard.Detector.Windows.Inference;
+using VisionGuard.Detector.Windows.Models;
+using VisionGuard.Detector.Windows.Runtime;
 
-namespace VisionGuard.Services
+namespace VisionGuard.Detector.Windows.Services
 {
     public sealed class MultiSourceMonitorCoordinator : IDisposable
     {
@@ -158,9 +158,9 @@ namespace VisionGuard.Services
         {
             if (config.CaptureMode == CaptureMode.WindowHandle)
                 return config.TargetWindowHandle != IntPtr.Zero
-                    && (config.WindowSubRegion == System.Drawing.Rectangle.Empty || VisionGuard.Capture.CaptureSizeConstraints.IsValid(config.WindowSubRegion));
+                    && (config.WindowSubRegion == System.Drawing.Rectangle.Empty || VisionGuard.Detector.Windows.Capture.CaptureSizeConstraints.IsValid(config.WindowSubRegion));
             if (config.CaptureMode == CaptureMode.ScreenRegion)
-                return VisionGuard.Capture.CaptureSizeConstraints.IsValid(config.CaptureRegion);
+                return VisionGuard.Detector.Windows.Capture.CaptureSizeConstraints.IsValid(config.CaptureRegion);
             return false;
         }
 

@@ -3,9 +3,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
-using VisionGuard.Runtime;
+using VisionGuard.Detector.Windows.Runtime;
 
-namespace VisionGuard.Utils
+namespace VisionGuard.Detector.Windows.Utils
 {
     /// <summary>把更新检查交给安装根目录中的 Win7 兼容启动器。</summary>
     public static class AutoUpdater
@@ -19,7 +19,7 @@ namespace VisionGuard.Utils
                     const string message = "当前是开发构建或旧式目录，无法执行整包更新。请使用统一 Windows 安装包。";
                     LogManager.StaticWarn("[AutoUpdater] " + message);
                     if (userInitiated)
-                        MessageBox.Show(message, "VisionGuard 更新", MessageBoxButton.OK, MessageBoxImage.Information);
+                        MessageBox.Show(message, "视觉检测更新", MessageBoxButton.OK, MessageBoxImage.Information);
                     return Task.CompletedTask;
                 }
 
@@ -38,7 +38,7 @@ namespace VisionGuard.Utils
             {
                 LogManager.StaticWarn("[AutoUpdater] 无法启动更新检查: " + ex.Message);
                 if (userInitiated)
-                    MessageBox.Show("无法启动更新检查：" + ex.Message, "VisionGuard 更新", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show("无法启动更新检查：" + ex.Message, "视觉检测更新", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             return Task.CompletedTask;
         }

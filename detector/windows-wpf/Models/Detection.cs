@@ -5,7 +5,7 @@
 // └─────────────────────────────────────────────────────────┘
 using System.Drawing;
 
-namespace VisionGuard.Models
+namespace VisionGuard.Detector.Windows.Models
 {
     public class Detection
     {

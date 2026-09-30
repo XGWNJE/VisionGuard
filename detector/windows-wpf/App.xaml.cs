@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 
-namespace VisionGuard
+namespace VisionGuard.Detector.Windows
 {
     public partial class App : Application
     {
@@ -97,7 +97,7 @@ namespace VisionGuard
                     e.Handled = true;
                     return;
                 }
-                MessageBox.Show($"发生未处理异常:\n{e.Exception.Message}", "VisionGuard 错误",
+                MessageBox.Show($"发生未处理异常:\n{e.Exception.Message}", "视觉检测错误",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
             catch { }

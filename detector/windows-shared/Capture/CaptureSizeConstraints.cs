@@ -1,9 +1,9 @@
 using System.Drawing;
 
-namespace VisionGuard.Capture
+namespace VisionGuard.Detector.Windows.Capture
 {
     /// <summary>
-    /// 采集目标的统一像素尺寸边界。Windows 检测端与驻留共用同一份实现，
+    /// 采集目标的统一像素尺寸边界。视觉检测（Windows）与驻留共用同一份实现，
     /// 避免各自维护出不同的下限或缺失 DPI 映射。
     /// </summary>
     public static class CaptureSizeConstraints

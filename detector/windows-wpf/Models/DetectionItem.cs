@@ -3,7 +3,7 @@
 // │ 角色：检测框 UI 绑定模型（Canvas 坐标 + 标签）          │
 // │ 用途：MainWindow 预览区 ItemsControl 数据模板绑定       │
 // └─────────────────────────────────────────────────────────┘
-namespace VisionGuard.Models
+namespace VisionGuard.Detector.Windows.Models
 {
     /// <summary>
     /// 单个检测框的 UI 绑定表示，坐标为原始帧像素坐标。

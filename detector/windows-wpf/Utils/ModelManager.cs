@@ -3,9 +3,9 @@ using System.IO;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-using VisionGuard.Runtime;
+using VisionGuard.Detector.Windows.Runtime;
 
-namespace VisionGuard.Utils
+namespace VisionGuard.Detector.Windows.Utils
 {
     public static class ModelManager
     {

@@ -502,7 +502,7 @@ function Assert-ZipIsClean {
 
         $entryNames = @($zip.Entries | Select-Object -ExpandProperty FullName)
         # 驻留程序与检测端是配套软件：缺它就没有「远程重新打开检测端」的能力。
-        $residentEntries = @($zip.Entries | Where-Object { $_.FullName -eq 'VisionGuard.Resident.exe' -or $_.FullName -eq 'VisionGuard.Resident.exe.config' })
+        $residentEntries = @($zip.Entries | Where-Object { $_.FullName -eq 'VisionGuard.Resident.Windows.exe' -or $_.FullName -eq 'VisionGuard.Resident.Windows.exe.config' })
     }
     finally {
         $zip.Dispose()
@@ -518,7 +518,7 @@ function Assert-ZipIsClean {
     }
 
     if ($residentEntries.Count -ne 2) {
-        throw "$(Split-Path -Leaf $ZipPath) 未同时包含驻留程序与配置（找到 $($residentEntries.Count) 项）：VisionGuard.Resident.exe 与 VisionGuard.Resident.exe.config 必须都在包根目录。"
+        throw "$(Split-Path -Leaf $ZipPath) 未同时包含驻留程序与配置（找到 $($residentEntries.Count) 项）：VisionGuard.Resident.Windows.exe 与 VisionGuard.Resident.Windows.exe.config 必须都在包根目录。"
     }
 }
 
@@ -1271,11 +1271,11 @@ if (Test-TargetEnabled @('Windows', 'WPF')) {
     $zipPath = Join-Path $releaseDir $fileName
     New-ZipPackage -SourceDir (Join-Path $repoRoot 'detector\windows-package\bin\Release') -Destination $zipPath
     Assert-ZipIsClean -ZipPath $zipPath -RequiredEntries @(
-        'VisionGuard.exe',
-        'VisionGuard.Resident.exe',
-        'runtimes/modern/VisionGuard.exe',
+        'VisionGuard.Detector.Windows.exe',
+        'VisionGuard.Resident.Windows.exe',
+        'runtimes/modern/VisionGuard.Detector.Windows.exe',
         'runtimes/modern/native/modern/onnxruntime.dll',
-        'runtimes/legacy/VisionGuard.exe',
+        'runtimes/legacy/VisionGuard.Detector.Windows.exe',
         'runtimes/legacy/native/legacy/onnxruntime.dll'
     )
     Add-ReleaseEntry -Metadata $metadata -Key 'wpf' -FileName $fileName -FilePath $zipPath

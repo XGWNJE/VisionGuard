@@ -1,4 +1,4 @@
-namespace VisionGuard.Utils
+namespace VisionGuard.Detector.Windows.Utils
 {
     /// <summary>应用级常量配置。</summary>
     internal static class AppConfig

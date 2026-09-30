@@ -11,9 +11,9 @@ using System.Diagnostics;
 using System.Linq;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
-using VisionGuard.Runtime;
+using VisionGuard.Detector.Windows.Runtime;
 
-namespace VisionGuard.Inference
+namespace VisionGuard.Detector.Windows.Inference
 {
     public enum InferenceBackend
     {

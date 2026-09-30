@@ -1,6 +1,6 @@
 using System;
 
-namespace VisionGuard.Runtime
+namespace VisionGuard.Detector.Windows.Runtime
 {
     /// <summary>
     /// net472 缺失的 .NET Core API 兼容实现，集中放置以避免散落修改。

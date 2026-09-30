@@ -9,7 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 
-namespace VisionGuard.Inference
+namespace VisionGuard.Detector.Windows.Inference
 {
     /// <summary>
     /// 把相对坐标 [0,1] 的遮罩区域以纯黑填充到 Bitmap 上。

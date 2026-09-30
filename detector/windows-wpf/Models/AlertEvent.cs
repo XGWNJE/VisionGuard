@@ -6,9 +6,9 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using VisionGuard.Utils;
+using VisionGuard.Detector.Windows.Utils;
 
-namespace VisionGuard.Models
+namespace VisionGuard.Detector.Windows.Models
 {
     public class AlertEvent : EventArgs
     {

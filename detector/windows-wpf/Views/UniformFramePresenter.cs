@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 
-namespace VisionGuard.Views
+namespace VisionGuard.Detector.Windows.Views
 {
     /// <summary>
     /// 在固定画面区内承载一张原始像素坐标的画布。

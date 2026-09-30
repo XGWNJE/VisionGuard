@@ -1,6 +1,6 @@
 using System;
 
-namespace VisionGuard.Utils
+namespace VisionGuard.Detector.Windows.Utils
 {
     public static class ApiKeyProvider
     {

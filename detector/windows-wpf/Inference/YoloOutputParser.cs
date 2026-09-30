@@ -8,10 +8,10 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
-using VisionGuard.Data;
-using VisionGuard.Models;
+using VisionGuard.Detector.Windows.Data;
+using VisionGuard.Detector.Windows.Models;
 
-namespace VisionGuard.Inference
+namespace VisionGuard.Detector.Windows.Inference
 {
     /// <summary>
     /// 解析 YOLO ONNX 输出张量为 Detection 列表。

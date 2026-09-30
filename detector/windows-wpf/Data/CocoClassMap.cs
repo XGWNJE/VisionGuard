@@ -6,7 +6,7 @@
 // └─────────────────────────────────────────────────────────┘
 using System.Collections.Generic;
 
-namespace VisionGuard.Data
+namespace VisionGuard.Detector.Windows.Data
 {
     /// <summary>
     /// COCO 80 类中英文映射静态表。
@@ -120,7 +120,7 @@ namespace VisionGuard.Data
             "vase", "scissors", "teddy bear", "hair drier", "toothbrush",
         };
 
-        /// <summary>与 Android 检测端对齐的 6 类监控目标（COCO 原始顺序子集）</summary>
+        /// <summary>与 视觉检测（Android）对齐的 6 类监控目标（COCO 原始顺序子集）</summary>
         public static readonly List<string> TargetClassNames = new List<string>
         {
             "person", "bicycle", "car", "motorcycle", "bus", "truck",

@@ -1,6 +1,6 @@
 using System;
 
-namespace VisionGuard.Utils
+namespace VisionGuard.Detector.Windows.Utils
 {
     /// <summary>
     /// 一次性的设置键前缀迁移：把早期使用的“信号”前缀迁到统一的“来源”前缀。

@@ -4,7 +4,7 @@ using System.IO;
 using System.Text;
 using System.Threading;
 
-namespace VisionGuard.Utils
+namespace VisionGuard.Detector.Windows.Utils
 {
     internal sealed class SharedSettingsFile
     {

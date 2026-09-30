@@ -11,10 +11,10 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
-using VisionGuard.Models;
-using VisionGuard.Utils;
+using VisionGuard.Detector.Windows.Models;
+using VisionGuard.Detector.Windows.Utils;
 
-namespace VisionGuard.Services
+namespace VisionGuard.Detector.Windows.Services
 {
     /// <summary>
     /// 接收检测结果，应用冷却逻辑，触发 AlertTriggered 事件。

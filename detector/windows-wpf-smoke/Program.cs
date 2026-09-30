@@ -1,12 +1,12 @@
-using VisionGuard.Runtime;
+using VisionGuard.Detector.Windows.Runtime;
 using System.Collections.Concurrent;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Text.Json;
-using VisionGuard.Capture;
-using VisionGuard.Inference;
-using VisionGuard.Models;
-using VisionGuard.Services;
+using VisionGuard.Detector.Windows.Capture;
+using VisionGuard.Detector.Windows.Inference;
+using VisionGuard.Detector.Windows.Models;
+using VisionGuard.Detector.Windows.Services;
 
 if (args.Length is < 3 or > 4)
 {

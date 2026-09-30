@@ -8,11 +8,11 @@ const DEFAULT_ROOT = path.resolve(__dirname, '..');
 const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 
 const COMPONENTS = [
-  { label: 'Windows 检测端', relativePath: 'detector/windows-wpf', source: 'detector/windows-wpf/App.xaml.cs' },
-  { label: 'Windows 驻留程序', relativePath: 'detector/windows-resident', source: 'detector/windows-resident/Program.cs' },
-  { label: 'Android 检测端', relativePath: 'detector/android', source: 'detector/android/app/build.gradle.kts' },
-  { label: 'Android 接收端', relativePath: 'receiver/android', source: 'receiver/android/app/build.gradle.kts' },
-  { label: 'Server', relativePath: 'server', source: 'server/src/index.ts' }
+  { label: '视觉检测', platform: 'Windows', relativePath: 'detector/windows-wpf', source: 'detector/windows-wpf/App.xaml.cs' },
+  { label: '视觉驻留', platform: 'Windows', relativePath: 'detector/windows-resident', source: 'detector/windows-resident/Program.cs' },
+  { label: '视觉检测', platform: 'Android', relativePath: 'detector/android', source: 'detector/android/app/build.gradle.kts' },
+  { label: '视觉告警', platform: 'Android', relativePath: 'receiver/android', source: 'receiver/android/app/build.gradle.kts' },
+  { label: '视觉中继', platform: '服务端', relativePath: 'server', source: 'server/src/index.ts' }
 ];
 
 const WS_ROLES = ['windows', 'android', 'android-detector', 'windows-resident'];
@@ -96,16 +96,16 @@ function checkVersionSources(root, version, errors) {
   const versionCode = major * 1000 + minor * 100 + patch;
   const exactChecks = [
     ['detector/windows-wpf/Utils/AppConfig.cs', `Version = "${version}"`],
-    ['detector/windows-wpf/VisionGuard.csproj', `<Version>${version}</Version>`],
-    ['detector/windows-wpf/VisionGuard.csproj', `<FileVersion>${version}</FileVersion>`],
-    ['detector/windows-wpf/VisionGuard.csproj', `<AssemblyVersion>${version}</AssemblyVersion>`],
+    ['detector/windows-wpf/VisionGuard.Detector.Windows.csproj', `<Version>${version}</Version>`],
+    ['detector/windows-wpf/VisionGuard.Detector.Windows.csproj', `<FileVersion>${version}</FileVersion>`],
+    ['detector/windows-wpf/VisionGuard.Detector.Windows.csproj', `<AssemblyVersion>${version}</AssemblyVersion>`],
     ['detector/android/app/build.gradle.kts', `versionName = "${version}"`],
     ['detector/android/app/build.gradle.kts', `versionCode = ${versionCode}`],
-    ['detector/android/app/src/main/java/com/xgwnje/visionguard/AppConstants.kt', `VERSION = "${version}"`],
+    ['detector/android/app/src/main/java/com/xgwnje/visionguard/detector/AppConstants.kt', `VERSION = "${version}"`],
     ['receiver/android/app/build.gradle.kts', `versionName = "${version}"`],
     ['receiver/android/app/build.gradle.kts', `versionCode = ${versionCode}`],
-    ['receiver/android/app/src/main/java/com/xgwnje/visionguard_android/AppConstants.kt', `VERSION = "${version}"`],
-    ['server/src/index.ts', `VisionGuard Server v${version} 已启动`]
+    ['receiver/android/app/src/main/java/com/xgwnje/visionguard/receiver/AppConstants.kt', `VERSION = "${version}"`],
+    ['server/src/index.ts', `VisionGuard 视觉中继 v${version} 已启动`]
   ];
 
   const cache = new Map();
@@ -307,6 +307,18 @@ function checkComponentContract(root, readme, overview, operations, errors) {
     errors.push(`[component] docs/codex/10-project-overview.md current component table has ${overviewRows.length} data rows; expected ${COMPONENTS.length}`);
   }
 
+  const expectedNames = COMPONENTS.map(component => component.label);
+  for (const [relativePath, rows] of [['README.md', readmeRows], ['docs/codex/10-project-overview.md', overviewRows]]) {
+    const names = rows.map(row => row.split('|')[1].trim());
+    const platforms = rows.map(row => row.split('|')[2].trim());
+    if (JSON.stringify(platforms) !== JSON.stringify(COMPONENTS.map(component => component.platform))) {
+      errors.push(`[component] ${relativePath} must list the canonical platforms separately from application names`);
+    }
+    if (JSON.stringify(names) !== JSON.stringify(expectedNames)) {
+      errors.push(`[component] ${relativePath} must use the five canonical component names in order: ${expectedNames.join(', ')}`);
+    }
+  }
+
   for (const component of COMPONENTS) {
     if (!fs.existsSync(path.join(root, component.relativePath))) {
       errors.push(`[component] missing current component directory: ${component.relativePath}`);
@@ -328,16 +340,43 @@ function checkComponentContract(root, readme, overview, operations, errors) {
   }
 
   const residentProgram = readUtf8(root, 'detector/windows-resident/Program.cs', errors, { checkBom: false });
-  // V10 决策 28：Windows 只剩一个检测端，生命周期命令统一为 detector。
+  // Windows 只剩一个检测端，生命周期命令统一为 detector。
   for (const command of ['open-detector', 'close-detector']) {
     requireText(residentProgram, `"${command}"`, 'detector/windows-resident/Program.cs', `the resident command ${command}`, errors);
     requireText(operations, `\`${command}\``, 'docs/codex/60-operations.md', `the resident command ${command}`, errors);
   }
 
-  const detectorGradle = readUtf8(root, 'detector/android/app/build.gradle.kts', errors, { checkBom: false });
-  const receiverGradle = readUtf8(root, 'receiver/android/app/build.gradle.kts', errors, { checkBom: false });
-  requireText(detectorGradle, 'com.xgwnje.visionguard', 'detector/android/app/build.gradle.kts', 'the Android detector package', errors);
-  requireText(receiverGradle, 'com.xgwnje.visionguard_android', 'receiver/android/app/build.gradle.kts', 'the Android receiver package', errors);
+  for (const [directory, role, name, engineering] of [
+    ['detector', 'detector', '视觉检测', 'VisionGuard.Detector.Android'],
+    ['receiver', 'receiver', '视觉告警', 'VisionGuard.Receiver.Android']
+  ]) {
+    const base = directory + '/android';
+    const packageName = 'com.xgwnje.visionguard.' + role;
+    const gradlePath = base + '/app/build.gradle.kts';
+    const gradle = readUtf8(root, gradlePath, errors, { checkBom: false });
+    for (const key of ['namespace', 'applicationId']) {
+      requirePattern(gradle, new RegExp(key + '\\s*=\\s*"' + packageName.replaceAll('.', '\\.') + '"'), gradlePath, 'the canonical Android ' + key, errors);
+    }
+    const settingsPath = base + '/settings.gradle.kts';
+    requireText(readUtf8(root, settingsPath, errors, { checkBom: false }), 'rootProject.name = "' + engineering + '"', settingsPath, 'the canonical engineering name', errors);
+    const stringsPath = base + '/app/src/main/res/values/strings.xml';
+    requireText(readUtf8(root, stringsPath, errors, { checkBom: false }), '<string name="app_name">' + name + '</string>', stringsPath, 'the short application display name', errors);
+    requireText(overview, packageName, 'docs/codex/10-project-overview.md', 'the canonical Android package', errors);
+    requireText(overview, engineering, 'docs/codex/10-project-overview.md', 'the canonical engineering name', errors);
+  }
+  for (const [project, assembly, title] of [
+    ['detector/windows-wpf/VisionGuard.Detector.Windows.csproj', 'VisionGuard.Detector.Windows', '视觉检测'],
+    ['detector/windows-launcher/VisionGuard.Detector.Windows.Launcher.csproj', 'VisionGuard.Detector.Windows', '视觉检测'],
+    ['detector/windows-resident/VisionGuard.Resident.Windows.csproj', 'VisionGuard.Resident.Windows', '视觉驻留']
+  ]) {
+    const content = readUtf8(root, project, errors, { checkBom: false });
+    requireText(content, '<AssemblyName>' + assembly + '</AssemblyName>', project, 'the canonical executable identity', errors);
+    requireText(content, '<Title>' + title + '</Title>', project, 'the application title', errors);
+    requireText(content, '<AssemblyTitle>' + title + '</AssemblyTitle>', project, 'the Windows file description', errors);
+  }
+  const packageJson = JSON.parse(readUtf8(root, 'server/package.json', errors, { checkBom: false }));
+  if (packageJson.name !== 'visionguard-relay') errors.push('[component] server/package.json must use the canonical relay package name');
+
 }
 
 function checkSkillContract(root, errors) {
@@ -418,17 +457,17 @@ function checkValidationContract(root, readme, operations, verificationReport, e
   requirePattern(verificationReport, /待人工[、/].*真机/, 'docs/codex/90-verification-report.md', 'the pending manual/device status vocabulary', errors);
 }
 
-function checkDocumentResponsibilities(readme, index, codexGuide, agents, roadmap, operations, verificationReport, errors) {
+function checkDocumentResponsibilities(readme, index, codexGuide, agents, operations, verificationReport, errors) {
   requireText(readme, './docs/codex/00-index.md', 'README.md', 'the canonical documentation index link', errors);
   requireText(readme, './docs/codex/60-operations.md', 'README.md', 'the operational verification pointer', errors);
   requireText(index, 'README 面向用户和开发者', 'docs/codex/00-index.md', 'the README responsibility statement', errors);
   requireText(index, 'AGENTS.md 维护项目操作规则', 'docs/codex/00-index.md', 'the AGENTS responsibility statement', errors);
-  requireText(index, '路线图维护规划、阶段进度和验收状态', 'docs/codex/00-index.md', 'the roadmap responsibility statement', errors);
+
   requireText(index, '验证报告维护自动化、人工和真机证据', 'docs/codex/00-index.md', 'the verification responsibility statement', errors);
   requireText(codexGuide, 'docs/codex/00-index.md', 'CODEX.md', 'the canonical documentation index pointer', errors);
   requireText(agents, 'docs/codex/90-verification-report.md', 'AGENTS.md', 'the verification evidence pointer', errors);
   requireText(agents, 'docs/codex/60-operations.md', 'AGENTS.md', 'the operations pointer', errors);
-  requireText(roadmap, '验收', 'docs/codex/15-product-roadmap.md', 'the roadmap acceptance ownership', errors);
+
   requireText(operations, 'ServerBuild', 'docs/codex/60-operations.md', 'the operational ServerBuild entry', errors);
   requireText(verificationReport, '证据台账', 'docs/codex/90-verification-report.md', 'the verification-ledger ownership', errors);
 }
@@ -483,37 +522,36 @@ function checkVerificationVersionClaims(version, verificationReport, errors) {
   }
 }
 
-function checkProductContract(readme, overview, roadmap, agents, errors) {
-  requireText(roadmap, '本文是产品方向、阶段顺序与验收闸门的唯一事实来源', 'docs/codex/15-product-roadmap.md', 'the roadmap ownership statement', errors);
-  requireText(roadmap, '免费版以目前已经实现的纯软件视觉方案为边界', 'docs/codex/15-product-roadmap.md', 'the free software-visual edition boundary', errors);
-  requireText(roadmap, '系统一旦接入检测硬件探测器，即进入付费版', 'docs/codex/15-product-roadmap.md', 'the paid hardware-detector edition boundary', errors);
-  requireText(roadmap, '首个销售市场暂定中国大陆', 'docs/codex/15-product-roadmap.md', 'the initial sales market', errors);
-  requireText(roadmap, '以控制台为最高权限管理入口', 'docs/codex/15-product-roadmap.md', 'the Web console authority boundary', errors);
-  requirePattern(roadmap, /Win7[^\n]*(?:WPF|Visual Detector)/, 'docs/codex/15-product-roadmap.md', 'the implemented Win7 compatibility boundary', errors);
-  requirePattern(roadmap, /驻留程序[^\n]*Win7 SP1 x64 兼容[^\n]*硬门槛/, 'docs/codex/15-product-roadmap.md', 'the resident Win7 delivery gate', errors);
-  requireText(roadmap, '不再规划 P2P、ICE、STUN 或 TURN', 'docs/codex/15-product-roadmap.md', 'the Server-only network boundary', errors);
-  requireText(roadmap, '允许在可管理范围内误报', 'docs/codex/15-product-roadmap.md', 'the missed-detection priority', errors);
-  requireText(roadmap, 'DeviceOfflineAlert', 'docs/codex/15-product-roadmap.md', 'the device-offline alert contract', errors);
-  requireText(roadmap, '独立的 Server 外部健康监测', 'docs/codex/15-product-roadmap.md', 'the external Server monitoring boundary', errors);
-
+function checkProductContract(readme, overview, agents, errors) {
   for (const [relativePath, content] of [
     ['README.md', readme],
     ['docs/codex/10-project-overview.md', overview]
   ]) {
-    requirePattern(content, /Visual Detector/, relativePath, 'the Visual Detector product term', errors);
+    requireText(content, '当前', relativePath, 'the current implementation summary', errors);
     requirePattern(content, /(?:目前|当前)已(?:经)?实现的纯软件视觉方案[^\n]*免费版/, relativePath, 'the free software-visual edition summary', errors);
-    requirePattern(content, /接入检测硬件探测器[^\n]*付费版/, relativePath, 'the paid hardware-detector edition summary', errors);
-    requirePattern(content, /Win7[^\n]*(?:WPF|Visual Detector)|(?:WPF|Visual Detector)[^\n]*Win7/, relativePath, 'the Win7-only compatibility summary', errors);
-    requireText(content, '所有公网业务数据统一通过 Server', relativePath, 'the Server-only transport summary', errors);
-    requirePattern(content, /不再规划 P2P/, relativePath, 'the no-P2P boundary', errors);
+    requirePattern(content, /接入检测硬件探测器[^\n]*付费版/, relativePath, 'the licensed hardware-use boundary', errors);
+    requirePattern(content, /Win7[^\n]*legacy|legacy[^\n]*Win7/, relativePath, 'the Win7 legacy compatibility summary', errors);
+    requireText(content, '所有公网业务数据统一通过视觉中继', relativePath, 'the relay-only transport summary', errors);
+    requireText(content, '不使用 P2P、ICE、STUN 或 TURN', relativePath, 'the no-P2P boundary', errors);
     requirePattern(content, /漏报风险[^\n]*最高优先级/, relativePath, 'the missed-detection priority summary', errors);
-    requirePattern(content, /离线报警/, relativePath, 'the device-offline alert summary', errors);
-    requirePattern(content, /(?:未来|尚未|不等于)[^\n]*DeviceOfflineAlert|DeviceOfflineAlert[^\n]*(?:未来|尚未|不等于|未)/, relativePath, 'the not-yet-delivered offline-alert boundary', errors);
+    requirePattern(content, /(?:尚未实现|不等于)[^\n]*设备离线报警/, relativePath, 'the not-delivered offline-alert boundary', errors);
   }
+  requireText(agents, '未实现独立的设备离线报警', 'AGENTS.md', 'the evidence anti-overclaim boundary', errors);
+}
 
-  requireText(readme, '](./docs/codex/15-product-roadmap.md)', 'README.md', 'the canonical roadmap link', errors);
-  requireText(overview, '](15-product-roadmap.md)', 'docs/codex/10-project-overview.md', 'the canonical roadmap link', errors);
-  requireText(agents, '](docs/codex/15-product-roadmap.md)', 'AGENTS.md', 'the canonical roadmap link', errors);
+function checkCancelledPlans(root, markdownFiles, contents, errors) {
+  const retiredPath = 'docs/codex/15-product-roadmap.md';
+  if (fs.existsSync(path.join(root, retiredPath))) {
+    errors.push('[cancelled-plan] cancelled roadmap must not be restored');
+  }
+  const cancelledTerms = /15-product-roadmap\.md|(?<![\d.])5\.0(?![\d.])|路线图|\bV\d+\s*[·：]|决策\s*\d+|Detector Platform|Reliable Event Network|Device & Fleet Cloud|Linux (?:ARM64 )?Edge Detector|Web Management Console|DeviceOfflineAlert/;
+  for (const relativePath of markdownFiles) {
+    // 授权条款与正式发布历史不作为未来工作清单；它们仍受独立的许可与版本检查约束。
+    if (!['README.md', 'AGENTS.md', 'CODEX.md'].includes(relativePath) && !relativePath.startsWith('docs/codex/') && !relativePath.startsWith('docs/design/')) continue;
+    if (cancelledTerms.test(contents.get(relativePath) || '')) {
+      errors.push(`[cancelled-plan] ${relativePath} references cancelled version/platform plans`);
+    }
+  }
 }
 
 function checkLicenseTexts(texts, errors) {
@@ -524,7 +562,6 @@ function checkLicenseTexts(texts, errors) {
     commercialLicense,
     contributing,
     readme,
-    roadmap,
     agents
   } = texts;
   const cutoff = 'c43c0ff122043d477b442b7507d193b62ea321bb';
@@ -554,20 +591,18 @@ function checkLicenseTexts(texts, errors) {
   requireText(readme, 'COMMERCIAL-LICENSE.md', 'README.md', 'the commercial license link', errors);
   requireText(readme, 'LICENSE-HISTORY.md', 'README.md', 'the license history link', errors);
   requireText(readme, 'LICENSE-MIT', 'README.md', 'the historical MIT link', errors);
-  requireText(roadmap, '`VGSAL-1.0`', 'docs/codex/15-product-roadmap.md', 'the product license strategy', errors);
+
   requireText(agents, 'LICENSE-HISTORY.md', 'AGENTS.md', 'the immutable MIT cutoff pointer', errors);
 }
 
-function checkLicenseContract(root, readme, roadmap, agents, errors) {
+function checkLicenseContract(root, readme, agents, errors) {
   checkLicenseTexts({
     license: readUtf8(root, 'LICENSE', errors),
     legacyMit: readUtf8(root, 'LICENSE-MIT', errors),
     licenseHistory: readUtf8(root, 'LICENSE-HISTORY.md', errors),
     commercialLicense: readUtf8(root, 'COMMERCIAL-LICENSE.md', errors),
     contributing: readUtf8(root, 'CONTRIBUTING.md', errors),
-    readme,
-    roadmap,
-    agents
+    readme,    agents
   }, errors);
 }
 
@@ -583,8 +618,8 @@ function checkDomainAlignment(root, operations, readme, overview, errors) {
     ['README.md', readme],
     ['docs/codex/10-project-overview.md', overview],
     ['detector/windows-wpf/Utils/AppConfig.cs', readUtf8(root, 'detector/windows-wpf/Utils/AppConfig.cs', errors, { checkBom: false })],
-    ['detector/android/app/src/main/java/com/xgwnje/visionguard/AppConstants.kt', readUtf8(root, 'detector/android/app/src/main/java/com/xgwnje/visionguard/AppConstants.kt', errors, { checkBom: false })],
-    ['receiver/android/app/src/main/java/com/xgwnje/visionguard_android/AppConstants.kt', readUtf8(root, 'receiver/android/app/src/main/java/com/xgwnje/visionguard_android/AppConstants.kt', errors, { checkBom: false })]
+    ['detector/android/app/src/main/java/com/xgwnje/visionguard/detector/AppConstants.kt', readUtf8(root, 'detector/android/app/src/main/java/com/xgwnje/visionguard/detector/AppConstants.kt', errors, { checkBom: false })],
+    ['receiver/android/app/src/main/java/com/xgwnje/visionguard/receiver/AppConstants.kt', readUtf8(root, 'receiver/android/app/src/main/java/com/xgwnje/visionguard/receiver/AppConstants.kt', errors, { checkBom: false })]
   ]) {
     requireText(content, domain, relativePath, 'the canonical service domain', errors);
   }
@@ -620,7 +655,7 @@ function auditRepository(root = DEFAULT_ROOT) {
   const codexGuide = contents.get('CODEX.md') || '';
   const index = contents.get('docs/codex/00-index.md') || '';
   const overview = contents.get('docs/codex/10-project-overview.md') || '';
-  const roadmap = contents.get('docs/codex/15-product-roadmap.md') || '';
+
   const operations = contents.get('docs/codex/60-operations.md') || '';
   const verificationReport = contents.get('docs/codex/90-verification-report.md') || '';
 
@@ -630,20 +665,21 @@ function auditRepository(root = DEFAULT_ROOT) {
     checkVerificationVersionClaims(version, verificationReport, errors);
   }
   checkIndexCoverage(codexFiles, index, codexGuide, errors);
-  checkProductContract(readme, overview, roadmap, agents, errors);
-  checkLicenseContract(root, readme, roadmap, agents, errors);
+  checkProductContract(readme, overview, agents, errors);
+  checkLicenseContract(root, readme, agents, errors);
   checkDomainAlignment(root, operations, readme, overview, errors);
   checkComponentContract(root, readme, overview, operations, errors);
   checkSkillContract(root, errors);
   checkValidationContract(root, readme, operations, verificationReport, errors);
-  checkDocumentResponsibilities(readme, index, codexGuide, agents, roadmap, operations, verificationReport, errors);
+  checkDocumentResponsibilities(readme, index, codexGuide, agents, operations, verificationReport, errors);
   checkEvidencePaths(root, [
-    ['docs/codex/15-product-roadmap.md', roadmap],
+
     ['docs/codex/90-verification-report.md', verificationReport]
   ], errors);
   checkLocalLinks(root, markdownFiles, contents, errors);
   checkDocumentAnchors(markdownFiles, contents, errors);
   checkDeprecatedEntrypoints(root, markdownFiles, contents, errors);
+  checkCancelledPlans(root, markdownFiles, contents, errors);
 
   const designIndex = contents.get('docs/design/README.md') || '';
   for (const relativePath of designFiles) {
@@ -667,7 +703,7 @@ function main() {
     return;
   }
 
-  console.log('Documentation audit passed: navigation, links, encoding, versions, six components, four WS roles, retained Skills, evidence paths, domain, license and product boundaries are aligned.');
+  console.log('Documentation audit passed: navigation, links, encoding, versions, five components, four WS roles, retained Skills, evidence paths, domain, license and product boundaries are aligned.');
 }
 
 if (require.main === module) {
@@ -684,6 +720,7 @@ module.exports = {
   checkIndexCoverage,
   checkLicenseTexts,
   checkProductContract,
+  checkCancelledPlans,
   checkReadmeVersion,
   checkSkillContract,
   checkValidationContract,

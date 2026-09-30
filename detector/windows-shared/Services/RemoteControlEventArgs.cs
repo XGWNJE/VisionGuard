@@ -1,6 +1,6 @@
 using System;
 
-namespace VisionGuard.Services
+namespace VisionGuard.Detector.Windows.Services
 {
     public sealed class RemoteCommandEventArgs : EventArgs
     {

@@ -5,7 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 
-namespace VisionGuard.Views
+namespace VisionGuard.Detector.Windows.Views
 {
     public partial class RegionSelectorWindow : Window
     {
@@ -96,7 +96,7 @@ namespace VisionGuard.Views
 
             var captureRegion = MapToCapturePixels(x, y, w, h);
             DimensionLabel.Visibility = Visibility.Visible;
-            DimensionLabel.Text = VisionGuard.Capture.CaptureSizeConstraints.IsValid(captureRegion)
+            DimensionLabel.Text = VisionGuard.Detector.Windows.Capture.CaptureSizeConstraints.IsValid(captureRegion)
                 ? $"{captureRegion.Width} × {captureRegion.Height} px"
                 : $"{captureRegion.Width} × {captureRegion.Height} px · 最小 101 × 101";
             Canvas.SetLeft(DimensionLabel, x + w + 4);
@@ -121,7 +121,7 @@ namespace VisionGuard.Views
 
             SelectedRegion = MapToCapturePixels(left, top, width, height);
 
-            if (!VisionGuard.Capture.CaptureSizeConstraints.IsValid(SelectedRegion))
+            if (!VisionGuard.Detector.Windows.Capture.CaptureSizeConstraints.IsValid(SelectedRegion))
             {
                 DimensionLabel.Visibility = Visibility.Visible;
                 DimensionLabel.Text = $"{SelectedRegion.Width} × {SelectedRegion.Height} px · 选区过小";
@@ -172,7 +172,7 @@ namespace VisionGuard.Views
                 scaleY = dpi.DpiScaleY;
             }
 
-            return VisionGuard.Capture.CaptureSizeConstraints.MapToCapturePixels(
+            return VisionGuard.Detector.Windows.Capture.CaptureSizeConstraints.MapToCapturePixels(
                 left, top, width, height, scaleX, scaleY);
         }
     }

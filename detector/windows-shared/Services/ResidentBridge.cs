@@ -1,7 +1,7 @@
 using System;
 using System.Threading;
 
-namespace VisionGuard.Services
+namespace VisionGuard.Detector.Windows.Services
 {
     public sealed class ResidentBridge : IDisposable
     {

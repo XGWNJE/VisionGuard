@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <AssemblyName>VisionGuard.Resident.Windows</AssemblyName>
+    <Title>视觉驻留</Title>
+    <AssemblyTitle>视觉驻留</AssemblyTitle>
+    <Product>视觉驻留</Product>
+    <Description>视觉检测后台驻留程序</Description>
+    <RootNamespace>VisionGuard.Resident.Windows</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+    <DebugType Condition="'$(Configuration)' == 'Release'">none</DebugType>
+    <DebugSymbols Condition="'$(Configuration)' == 'Release'">false</DebugSymbols>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Web.Extensions" />
+  </ItemGroup>
+  <ItemGroup>
+    <!--
+      共用检测端验证过的自研 WebSocket 客户端（显式 TLS 1.2）。
+      原先使用 websocket-sharp，但它以 SslProtocols.Default 协商 TLS，Windows 7 上退化为 TLS 1.0
+      会被服务端拒绝，且不暴露 TLS 版本配置入口——检测端在 Win7 实测过同一根因。
+    -->
+    <Compile Include="..\windows-wpf\Net\MinimalWebSocketClient.cs" Link="Net\MinimalWebSocketClient.cs" />
+  </ItemGroup>
+</Project>

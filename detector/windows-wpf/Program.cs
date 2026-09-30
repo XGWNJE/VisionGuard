@@ -1,6 +1,6 @@
 using System;
 
-namespace VisionGuard
+namespace VisionGuard.Detector.Windows
 {
     /// <summary>
     /// 显式入口点。

@@ -1,0 +1,104 @@
+package com.xgwnje.visionguard.receiver.data.model
+
+// ┌─────────────────────────────────────────────────────────┐
+// │ WsMessage.kt                                            │
+// │ 角色：WebSocket 消息数据类                               │
+// │ 用途：Gson 序列化/反序列化                               │
+// └─────────────────────────────────────────────────────────┘
+
+import com.google.gson.JsonObject
+import com.xgwnje.visionguard.receiver.AppConstants
+import com.xgwnje.visionguard.receiver.BuildConfig
+
+/** 所有 WS 消息的原始容器；先按 type 字段决定具体类型 */
+data class RawWsMessage(
+    val type: String = ""
+)
+
+/** Android → 服务器：认证 */
+data class WsAuthMessage(
+    val type: String = "auth",
+    val channel: String = AppConstants.CHANNEL,
+    val apiKey: String,
+    val role: String = "android",
+    val deviceId: String,
+    val deviceName: String = "Android",
+    val version: String = BuildConfig.VERSION_NAME
+)
+
+/** 服务器 → Android：认证结果 */
+data class WsAuthResult(
+    val type: String = "auth-result",
+    val success: Boolean = false,
+    val reason: String = ""
+)
+
+/** Android → 服务器：发送控制命令（pause / resume / stop-alarm） */
+data class WsCommandMessage(
+    val type: String = "command",
+    val requestId: String,
+    val targetDeviceId: String,
+    val targetSourceId: String? = null,
+    val command: String             // "pause" | "resume" | "stop-alarm"
+)
+
+/** Android → 服务器：下发参数调整（set-config） */
+data class WsSetConfigMessage(
+    val type: String = "set-config",
+    val requestId: String,
+    val targetDeviceId: String,
+    val targetSourceId: String? = null,
+    val key: String,    // "cooldown" | "confidence" | "targets" | "targetSamplingRate" | "modelKey"
+    val value: String   // 字符串形式的值
+)
+
+/** 服务器 → Android：命令回执 */
+data class WsCommandAck(
+    val type: String = "command-ack",
+    val requestId: String = "",
+    val phase: String = "",
+    val targetDeviceId: String = "",
+    val targetSourceId: String? = null,
+    val command: String = "",
+    val success: Boolean = false,
+    val reason: String = ""
+)
+
+data class CommandResult(
+    val requestId: String,
+    val targetDeviceId: String,
+    val targetSourceId: String?,
+    val command: String,
+    val success: Boolean,
+    val reason: String
+)
+
+fun WsCommandAck.toCompletedResult(): CommandResult? {
+    if (phase != "completed" || requestId.isBlank() || targetDeviceId.isBlank() || command.isBlank()) return null
+    return CommandResult(requestId, targetDeviceId, targetSourceId, command, success, reason)
+}
+
+/** Android → 服务器：请求指定设备的截图 */
+data class WsScreenshotDataMessage(
+    val type: String = "request-screenshot",
+    val alertId: String,
+    val targetDeviceId: String = "",
+    val imageBase64: String = "",   // 服务器回传时才有值
+    val width: Int = 0,
+    val height: Int = 0
+)
+
+/**
+ * 服务器 → Android：检测端独立推送的截图(协议分离)。
+ * 与 alert 消息解耦,接收端拿到后用同一 alertId 静默更新通知 BigPicture。
+ */
+data class WsScreenshotDataPush(
+    val type: String = "screenshot-data",
+    val alertId: String = "",
+    val deviceId: String = "",
+    val sourceId: String = "",
+    val sourceName: String = "",
+    val imageBase64: String = "",
+    val width: Int = 0,
+    val height: Int = 0
+)

@@ -16,11 +16,11 @@ using System.Net.NetworkInformation;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Net.WebSockets;
-using VisionGuard.Models;
-using VisionGuard.Utils;
-using VisionGuard.Runtime;
+using VisionGuard.Detector.Windows.Models;
+using VisionGuard.Detector.Windows.Utils;
+using VisionGuard.Detector.Windows.Runtime;
 
-namespace VisionGuard.Services
+namespace VisionGuard.Detector.Windows.Services
 {
     public enum WsState { Disconnected, Connecting, Connected, AuthFailed }
 

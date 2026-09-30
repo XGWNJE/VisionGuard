@@ -111,7 +111,7 @@ const MAX_MODEL_OPTIONS = 16;
 const MAX_CAPABILITIES = 32;
 const MAX_COMPONENTS = 8;
 const DETECTOR_COMMANDS = new Set(['pause', 'resume', 'stop-alarm']);
-// Windows 只剩一个检测端，生命周期命令统一为 detector（V10 决策 28）。
+// Windows 只剩一个检测端，生命周期命令统一为 detector。
 const RESIDENT_COMMANDS = new Set(['open-detector', 'close-detector']);
 
 function validateDetection(d: any): boolean {
@@ -544,18 +544,18 @@ export function handleConnection(ws: WebSocket): void {
       if (role === 'windows') {
         const existing = detectorWindowsClients.get(deviceId);
         if (existing && existing.ws === ws) {
-          console.log(`[ws][${ts2}] Windows 断开: ${deviceId} code=${code}(${codeName}) Win检测端在线=${detectorWindowsClients.size}`);
+          console.log(`[ws][${ts2}] 视觉检测（Windows） 断开: ${deviceId} code=${code}(${codeName}) 视觉检测（Windows）在线=${detectorWindowsClients.size}`);
           scheduleDetectorRemoval(detectorWindowsClients, 'windows', deviceId, ws);
         } else {
-          console.log(`[ws][${ts2}] Windows 旧连接关闭（已被新连接替代）: ${deviceId} code=${code}(${codeName})`);
+          console.log(`[ws][${ts2}] 视觉检测（Windows） 旧连接关闭（已被新连接替代）: ${deviceId} code=${code}(${codeName})`);
         }
       } else if (role === 'android-detector') {
         const existing = detectorAndroidClients.get(deviceId);
         if (existing && existing.ws === ws) {
-          console.log(`[ws][${ts2}] Android检测端 断开: ${deviceId} code=${code}(${codeName}) 安卓检测端在线=${detectorAndroidClients.size}`);
+          console.log(`[ws][${ts2}] 视觉检测（Android） 断开: ${deviceId} code=${code}(${codeName}) 视觉检测（Android）在线=${detectorAndroidClients.size}`);
           scheduleDetectorRemoval(detectorAndroidClients, 'android-detector', deviceId, ws);
         } else {
-          console.log(`[ws][${ts2}] Android检测端 旧连接关闭: ${deviceId} code=${code}(${codeName})`);
+          console.log(`[ws][${ts2}] 视觉检测（Android） 旧连接关闭: ${deviceId} code=${code}(${codeName})`);
         }
       } else if (role === 'android') {
         const existing = receiverClients.get(deviceId);
@@ -576,7 +576,7 @@ export function handleConnection(ws: WebSocket): void {
         if (existing?.ws === ws) {
           residentWindowsClients.delete(deviceId);
           scheduleBroadcast();
-          console.log(`[ws][${ts2}] Windows驻留 断开: ${deviceId}`);
+          console.log(`[ws][${ts2}] 视觉驻留 断开: ${deviceId}`);
         }
       }
     } else {
@@ -652,7 +652,7 @@ function handleAuth(
     clearPendingDetectorRemoval('windows', msg.deviceId);
     const existing = detectorWindowsClients.get(msg.deviceId);
     if (existing) {
-      console.log(`[ws][${ts}] Windows 重复连接: ${msg.deviceName} (${msg.deviceId}) 踢掉旧连接`);
+      console.log(`[ws][${ts}] 视觉检测（Windows） 重复连接: ${msg.deviceName} (${msg.deviceId}) 踢掉旧连接`);
       detectorWindowsClients.delete(msg.deviceId);
       sendJson(existing.ws, { type: 'kicked', reason: 'duplicate connection' });
       existing.ws.terminate();
@@ -661,19 +661,19 @@ function handleAuth(
     detectorWindowsClients.set(msg.deviceId, client);
     const resident = residentWindowsClients.get(msg.deviceId);
     if (resident) resident.deviceName = client.deviceName;
-    console.log(`[ws][${ts}] Windows 上线: ${msg.deviceName} (${msg.deviceId}) | Win:${detectorWindowsClients.size} AdrDet:${detectorAndroidClients.size} Recv:${receiverClients.size}`);
+    console.log(`[ws][${ts}] 视觉检测（Windows） 上线: ${msg.deviceName} (${msg.deviceId}) | Win:${detectorWindowsClients.size} AdrDet:${detectorAndroidClients.size} Recv:${receiverClients.size}`);
   } else if (msg.role === 'android-detector') {
     clearPendingDetectorRemoval('android-detector', msg.deviceId);
     const existing = detectorAndroidClients.get(msg.deviceId);
     if (existing) {
-      console.log(`[ws][${ts}] Android检测端 重复连接: ${msg.deviceName} (${msg.deviceId}) 踢掉旧连接`);
+      console.log(`[ws][${ts}] 视觉检测（Android） 重复连接: ${msg.deviceName} (${msg.deviceId}) 踢掉旧连接`);
       detectorAndroidClients.delete(msg.deviceId);
       sendJson(existing.ws, { type: 'kicked', reason: 'duplicate connection' });
       existing.ws.terminate();
     }
     const client = createDetectorClient(ws, msg, 'android-detector');
     detectorAndroidClients.set(msg.deviceId, client);
-    console.log(`[ws][${ts}] Android检测端 上线: ${msg.deviceName} (${msg.deviceId}) | Win:${detectorWindowsClients.size} AdrDet:${detectorAndroidClients.size} Recv:${receiverClients.size}`);
+    console.log(`[ws][${ts}] 视觉检测（Android） 上线: ${msg.deviceName} (${msg.deviceId}) | Win:${detectorWindowsClients.size} AdrDet:${detectorAndroidClients.size} Recv:${receiverClients.size}`);
   } else if (msg.role === 'android') {
     const existing = receiverClients.get(msg.deviceId);
     if (existing) {
@@ -717,7 +717,7 @@ function handleAuth(
       deviceName: detectorWindowsClients.get(msg.deviceId)?.deviceName || msg.deviceName || msg.deviceId,
       lastSeen: new Date(), components: { resident: 'running', detectorApp: 'stopped' },
     });
-    console.log(`[ws][${ts}] Windows驻留 上线: ${msg.deviceName} (${msg.deviceId})`);
+    console.log(`[ws][${ts}] 视觉驻留 上线: ${msg.deviceName} (${msg.deviceId})`);
   } else {
     console.log(`[ws][${ts}] 认证失败: 无效 role=${msg.role}`);
     sendJson(ws, { type: 'auth-result', success: false, reason: 'invalid role' });
@@ -808,7 +808,7 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   _heartbeatCounter.set(msg.deviceId, count % 60 === 0 ? 0 : count);
   if (count === 1 || count % 60 === 0) {
     const silentSec = Math.round((Date.now() - client.lastSeen.getTime()) / 1000);
-    const roleLabel = client.clientType === 'android-detector' ? 'Android检测端' : 'Windows';
+    const roleLabel = client.clientType === 'android-detector' ? '视觉检测（Android）' : '视觉检测（Windows）';
     console.log(`[ws][${new Date().toISOString()}] ${roleLabel} 心跳: ${client.deviceName} (${msg.deviceId}) monitoring=${msg.isMonitoring} 静默${silentSec}s`);
   }
 
@@ -1178,7 +1178,7 @@ const maintenanceTimer = setInterval(() => {
     for (const [id, client] of clients) {
       if (client.lastSeen.getTime() <= detectorDeadline) {
         const silentSec = Math.round((now - client.lastSeen.getTime()) / 1000);
-        const roleLabel = client.clientType === 'android-detector' ? 'Android检测端' : 'Windows';
+        const roleLabel = client.clientType === 'android-detector' ? '视觉检测（Android）' : '视觉检测（Windows）';
         console.log(`[ws][${ts}] ${roleLabel} 幽灵清理: ${client.deviceName} (${id}) 静默 ${silentSec}s 阈值 ${config.deviceOfflineMs / 1000}s`);
         client.ws.terminate();
         clients.delete(id);
@@ -1202,7 +1202,7 @@ const maintenanceTimer = setInterval(() => {
 
   if (detectorCleaned && (receiverClients.size > 0 || detectorWindowsClients.size > 0 || detectorAndroidClients.size > 0)) {
     broadcastDeviceList();
-    console.log(`[ws][${ts}] 设备清理后推送 → 接收端:${receiverClients.size} / Windows:${detectorWindowsClients.size} / Android检测端:${detectorAndroidClients.size}`);
+    console.log(`[ws][${ts}] 设备清理后推送 → 接收端:${receiverClients.size} / 视觉检测（Windows）:${detectorWindowsClients.size} / 视觉检测（Android）:${detectorAndroidClients.size}`);
   }
 }, 30_000);
 maintenanceTimer.unref();

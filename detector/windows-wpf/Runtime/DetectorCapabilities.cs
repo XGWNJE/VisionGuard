@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace VisionGuard.Runtime
+namespace VisionGuard.Detector.Windows.Runtime
 {
     /// <summary>
     /// 检测端能力声明。

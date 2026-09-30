@@ -1,7 +1,7 @@
 using System;
 using System.Windows.Input;
 
-namespace VisionGuard.ViewModels
+namespace VisionGuard.Detector.Windows.ViewModels
 {
     public class RelayCommand : ICommand
     {

@@ -39,7 +39,7 @@ const launcher = path.join(repoRoot, 'detector', 'windows-launcher', 'bin', 'Rel
 copyTree(launcher, destination, entry => !entry.name.toLowerCase().endsWith('.pdb'));
 
 const resident = path.join(repoRoot, 'detector', 'windows-resident', 'bin', 'Release', 'net472');
-for (const name of ['VisionGuard.Resident.exe', 'VisionGuard.Resident.exe.config']) {
+for (const name of ['VisionGuard.Resident.Windows.exe', 'VisionGuard.Resident.Windows.exe.config']) {
   const source = path.join(resident, name);
   if (!fs.existsSync(source)) throw new Error(`缺少驻留产物: ${source}`);
   fs.copyFileSync(source, path.join(destination, name));
@@ -51,7 +51,7 @@ for (const profile of ['modern', 'legacy']) {
   copyTree(source, target, entry => {
     const lower = entry.name.toLowerCase();
     if (lower === 'alerts' || lower === 'assets') return false;
-    if (lower === 'visionguard.resident.exe' || lower === 'visionguard.resident.exe.config') return false;
+    if (lower === 'visionguard.resident.windows.exe' || lower === 'visionguard.resident.windows.exe.config') return false;
     if (lower.endsWith('.pdb') || lower.endsWith('.lib') || lower.endsWith('.onnx')) return false;
     if (lower.endsWith('.debug.dll')) return false;
     return true;
@@ -59,13 +59,13 @@ for (const profile of ['modern', 'legacy']) {
 }
 
 const required = [
-  'VisionGuard.exe',
-  'VisionGuard.exe.config',
-  'VisionGuard.Resident.exe',
-  'VisionGuard.Resident.exe.config',
-  'runtimes/modern/VisionGuard.exe',
+  'VisionGuard.Detector.Windows.exe',
+  'VisionGuard.Detector.Windows.exe.config',
+  'VisionGuard.Resident.Windows.exe',
+  'VisionGuard.Resident.Windows.exe.config',
+  'runtimes/modern/VisionGuard.Detector.Windows.exe',
   'runtimes/modern/native/modern/onnxruntime.dll',
-  'runtimes/legacy/VisionGuard.exe',
+  'runtimes/legacy/VisionGuard.Detector.Windows.exe',
   'runtimes/legacy/native/legacy/onnxruntime.dll',
 ];
 for (const relative of required) {
@@ -79,10 +79,10 @@ const version = fs.readFileSync(path.join(repoRoot, 'VERSION'), 'utf8').trim();
 const manifest = {
   schemaVersion: 1,
   version,
-  entryPoint: 'VisionGuard.exe',
+  entryPoint: 'VisionGuard.Detector.Windows.exe',
   profiles: {
-    modern: 'runtimes/modern/VisionGuard.exe',
-    legacy: 'runtimes/legacy/VisionGuard.exe',
+    modern: 'runtimes/modern/VisionGuard.Detector.Windows.exe',
+    legacy: 'runtimes/legacy/VisionGuard.Detector.Windows.exe',
   },
   requiredFiles: Object.fromEntries(required.map(relative => [relative, sha256(path.join(destination, relative))])),
 };

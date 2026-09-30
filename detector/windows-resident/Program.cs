@@ -8,9 +8,9 @@ using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
 using Microsoft.Win32;
-using VisionGuard.Net;
+using VisionGuard.Detector.Windows.Net;
 
-namespace VisionGuard.Resident
+namespace VisionGuard.Resident.Windows
 {
     internal sealed class ResidentConfig
     {

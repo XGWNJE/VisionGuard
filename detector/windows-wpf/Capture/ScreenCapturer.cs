@@ -10,7 +10,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
-namespace VisionGuard.Capture
+namespace VisionGuard.Detector.Windows.Capture
 {
     /// <summary>
     /// 通过 GDI BitBlt 捕获屏幕指定区域。

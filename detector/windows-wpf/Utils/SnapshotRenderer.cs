@@ -5,9 +5,9 @@
 // └─────────────────────────────────────────────────────────┘
 using System.Collections.Generic;
 using System.Drawing;
-using VisionGuard.Models;
+using VisionGuard.Detector.Windows.Models;
 
-namespace VisionGuard.Utils
+namespace VisionGuard.Detector.Windows.Utils
 {
     public static class SnapshotRenderer
     {

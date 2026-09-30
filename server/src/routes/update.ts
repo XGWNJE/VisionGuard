@@ -6,7 +6,7 @@ const router = Router();
 
 /**
  * 平台类型映射。
- * 只保留迁移后的客户端标识：Windows 检测端统一为单一 WPF 构建（V10 起 WinForms 已退役），
+ * 只保留迁移后的客户端标识：视觉检测（Windows）统一为单一 WPF 构建，
  * 旧标识 open/close-wpf|winforms 一并不再受理，客户端一律查询 `wpf`。
  */
 const PLATFORM_MAP: Record<string, string> = {
@@ -19,7 +19,7 @@ const PLATFORM_MAP: Record<string, string> = {
 /**
  * 解析请求要用的发布条目键。
  *
- * Windows 检测端由统一包的启动器按操作系统选择内部运行时，服务端只发布 `wpf`。
+ * 视觉检测（Windows）由统一包的启动器按操作系统选择内部运行时，服务端只发布 `wpf`。
  * profile 参数保留在函数签名中只为旧调用方平滑升级，不再影响发布条目。
  */
 export function resolveReleaseKey(

@@ -11,13 +11,13 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Threading;
-using VisionGuard.Capture;
-using VisionGuard.Inference;
-using VisionGuard.Models;
-using VisionGuard.Runtime;
-using VisionGuard.Utils;
+using VisionGuard.Detector.Windows.Capture;
+using VisionGuard.Detector.Windows.Inference;
+using VisionGuard.Detector.Windows.Models;
+using VisionGuard.Detector.Windows.Runtime;
+using VisionGuard.Detector.Windows.Utils;
 
-namespace VisionGuard.Services
+namespace VisionGuard.Detector.Windows.Services
 {
     /// <summary>
     /// 主监控循环：定时截图 → 推理 → 报警。

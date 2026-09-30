@@ -11,7 +11,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Text;
 
-namespace VisionGuard.Capture
+namespace VisionGuard.Detector.Windows.Capture
 {
     /// <summary>
     /// 枚举系统中所有可见的顶层窗口，过滤后返回 <see cref="WindowInfo"/> 列表。

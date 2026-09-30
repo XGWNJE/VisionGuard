@@ -1,6 +1,6 @@
 using System;
 
-namespace VisionGuard.Services
+namespace VisionGuard.Detector.Windows.Services
 {
     /// <summary>
     /// 推理性能看门狗：把「实测推理帧率」与这一路设定的目标帧率对比，判断设备是否已经跑不动当前配置。

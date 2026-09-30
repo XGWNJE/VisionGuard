@@ -7,7 +7,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace VisionGuard.Capture
+namespace VisionGuard.Detector.Windows.Capture
 {
     internal static class NativeMethods
     {

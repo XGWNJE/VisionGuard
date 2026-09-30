@@ -3,7 +3,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 
-namespace VisionGuard.ViewModels
+namespace VisionGuard.Detector.Windows.ViewModels
 {
     /// <summary>遮罩矩形（像素坐标），用于编辑器内部交互</summary>
     public class MaskRect : ViewModelBase

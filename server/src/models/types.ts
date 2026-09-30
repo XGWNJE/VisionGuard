@@ -11,7 +11,7 @@
 export interface AlertMeta {
   deviceId: string;
   deviceName: string;
-  /** Stable source identity and event-time display-name snapshot (V1). */
+  /** Stable source identity and event-time display-name snapshot. */
   sourceId?: string;
   sourceName?: string;
   timestamp: string;          // ISO 8601

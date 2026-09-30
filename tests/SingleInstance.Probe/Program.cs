@@ -1,4 +1,4 @@
-using VisionGuard.Utils;
+using VisionGuard.Detector.Windows.Utils;
 
 var applicationId = args.FirstOrDefault() ?? "Probe";
 var holdMilliseconds = args.Length > 1 && int.TryParse(args[1], out var parsed) ? parsed : 0;

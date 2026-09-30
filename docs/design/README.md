@@ -1,10 +1,10 @@
 # VisionGuard Design
 
-这个目录只保留当前仍有效的设计规范。旧 Android 接收端 HTML 原型、Android 检测端 Pencil 源、一次性生成脚本、Pencil 导出和未采用素材已清理，不能再作为实现依据。
+这个目录维护当前采用的设计规范；实现依据以 视觉告警 Compose 源码为准。
 
 ## 当前入口
 
-- [android-ui-guidelines.md](./android-ui-guidelines.md)：Android UI 通用规范。当前只有接收端 Compose 方案是已确认基准；Android 检测端后续迁移复用这套视觉语言，Windows 端后续另行探索。
+- [android-ui-guidelines.md](./android-ui-guidelines.md)：Android UI 通用规范。当前只有接收端 Compose 方案是已确认基准；视觉检测（Android）与 视觉检测（Windows）当前未采用本规范。
 
 ## 维护约定
 

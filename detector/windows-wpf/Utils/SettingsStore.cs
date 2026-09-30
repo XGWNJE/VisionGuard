@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 
-namespace VisionGuard.Utils
+namespace VisionGuard.Detector.Windows.Utils
 {
     /// <summary>
     /// 唯一设置入口。读取前必须调用一次 <see cref="Load"/>：

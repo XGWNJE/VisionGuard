@@ -4,9 +4,9 @@ using System.Drawing;
 using System.Windows;
 using System.Windows.Controls.Primitives;
 using System.Windows.Forms;
-using VisionGuard.Utils;
+using VisionGuard.Detector.Windows.Utils;
 
-namespace VisionGuard.Views
+namespace VisionGuard.Detector.Windows.Views
 {
     public partial class MainWindow : Window
     {
@@ -27,7 +27,7 @@ namespace VisionGuard.Views
                 Icon = System.Drawing.Icon.ExtractAssociatedIcon(
                     System.Reflection.Assembly.GetExecutingAssembly().Location)
                     ?? SystemIcons.Shield,
-                Text = "VisionGuard",
+                Text = "视觉检测",
                 Visible = true,
             };
 
@@ -97,7 +97,7 @@ namespace VisionGuard.Views
         private void CardsSplitter_OnDragCompleted(object sender, DragCompletedEventArgs e)
         {
             CardsColumn.Width = new GridLength(1, GridUnitType.Star);
-            VisionGuard.Utils.SettingsStore.Save();
+            VisionGuard.Detector.Windows.Utils.SettingsStore.Save();
         }
 
         private void DisposeResourcesOnce()

@@ -5,7 +5,7 @@ description: Build and verify one or more VisionGuard targets without packaging,
 
 # VisionGuard Build
 
-Compile the requested targets through the maintained project script and verify the expected artifacts exist. The five targets are Server, WPF, Windows Resident, Android Detector, and Android Receiver.
+Compile the requested targets through the maintained project script and verify the expected artifacts exist. 组件名称统一为 视觉检测（Windows）、视觉驻留、视觉检测（Android）、视觉告警、视觉中继；脚本目标标识保持原值。
 
 ## Boundaries
 
@@ -37,13 +37,13 @@ The script currently accepts `All`, `Server`, `Windows`, `WPF`, `WindowsResident
 
 ## Expected Artifacts
 
-- Server: `server/dist/index.js`
-- Windows unified package: `detector/windows-package/bin/Release/VisionGuard.exe`
-- Internal modern runtime: `detector/windows-package/bin/Release/runtimes/modern/VisionGuard.exe`
-- Internal legacy runtime: `detector/windows-package/bin/Release/runtimes/legacy/VisionGuard.exe`
-- Windows Resident: `detector/windows-resident/bin/Release/net472/VisionGuard.Resident.exe`
-- Android Detector: `detector/android/app/build/outputs/apk/release/app-release.apk`
-- Android Receiver: `receiver/android/app/build/outputs/apk/release/app-release.apk`
+- 视觉中继： `server/dist/index.js`
+- Windows unified package: `detector/windows-package/bin/Release/VisionGuard.Detector.Windows.exe`
+- Internal modern runtime: `detector/windows-package/bin/Release/runtimes/modern/VisionGuard.Detector.Windows.exe`
+- Internal legacy runtime: `detector/windows-package/bin/Release/runtimes/legacy/VisionGuard.Detector.Windows.exe`
+- 视觉驻留： `detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe`
+- 视觉检测（Android）： `detector/android/app/build/outputs/apk/release/app-release.apk`
+- 视觉告警： `receiver/android/app/build/outputs/apk/release/app-release.apk`
 
 Report the command, per-target result, artifact paths, important warnings, and any skipped target. State explicitly that no version, release, deployment, commit, or push action occurred unless the user requested it.
 

@@ -1,7 +1,7 @@
 {
-  "name": "visionguard-server",
+  "name": "visionguard-relay",
   "version": "4.5.1",
-  "description": "VisionGuard Server 中继服务 (HTTP + WebSocket)",
+  "description": "视觉中继 (VisionGuard.Relay，HTTP + WebSocket)",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",

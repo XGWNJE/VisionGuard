@@ -13,7 +13,7 @@ test('resolveReleaseKey 把 Windows 平台别名统一到 wpf', () => {
   const releases = { wpf: { version: '1.0.0', url: '/releases/a.zip', size: 1 } };
   assert.equal(resolveReleaseKey(releases, 'wpf', ''), 'wpf');
   assert.equal(resolveReleaseKey(releases, 'windows', ''), 'wpf');
-  // V10 起 Windows 只剩单一 WPF 检测端，旧标识不得再被受理。
+  // Windows 只维护单一 WPF 检测端，旧标识不得再被受理。
   assert.equal(resolveReleaseKey(releases, 'winforms', ''), 'winforms');
 });
 

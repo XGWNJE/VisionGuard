@@ -1,6 +1,6 @@
 # VisionGuard Android UI Guidelines
 
-本规范是当前 Android UI 的唯一设计风格基准。来源以 `receiver/android/` 当前 Compose 实现为准；目前只有 Android 接收端的新方案被确认采用。Android 检测端和 Windows WPF 界面不以本规范作为已采用方案；WinForms 检测端已退役，旧设计方案不再保留为实现依据。
+本规范是当前 Android UI 的唯一设计风格基准。来源以 `receiver/android/` 当前 Compose 实现为准；目前只有 视觉告警的新方案被确认采用。视觉检测（Android）和 视觉检测（Windows）界面不以本规范作为已采用方案。
 
 ## 设计定位
 
@@ -24,7 +24,7 @@
 | `ReceiverAmber` | `#D09A25` | 连接中、未就绪 |
 | `ReceiverAmberSoft` | `#FFF5DE` | 琥珀轻背景 |
 
-不要启用默认 Material 动态紫色主题。Android 检测端后续迁移时也使用这组 token，可按端名重命名，但语义不要变。
+不要启用默认 Material 动态紫色主题。视觉检测（Android）其他平台迁移时也使用这组 token，可按端名重命名，但语义不要变。
 
 ## 字体
 
@@ -105,17 +105,17 @@
 
 不要恢复独立 `Settings` Tab。更新检查留在警报页连接状态条，设备参数留在设备卡上下文入口。
 
-Android 检测端后续迁移时：
+视觉检测（Android）其他平台迁移时：
 
 - 保留其监控、遮罩、模型和服务器设置等任务分区。
 - 视觉语言复用本规范的颜色、圆角、浮层、chip 和状态表达。
 - 模型下载状态仍放在模型选择处，不新增模型管理页。
 - 监控运行态优先显示当前状态和可执行动作，避免解释性卡片占据首屏。
 
-Windows WPF 后续探索时：
+视觉检测（Windows）当前边界：
 
-- 不从已删除的 Android 原型或旧 Pencil 方案继承布局。
-- 先保证检测工作流和构建输出稳定，再单独探索桌面视觉语言。
+- 本规范只作为 视觉告警的当前基准。
+- 桌面布局以 视觉检测（Windows）现有实现为准。
 - 若要复用本规范，只复用颜色和状态语义，不强行套用移动端浮层/底部导航结构。
 
 ## 禁止项
@@ -131,5 +131,5 @@ Windows WPF 后续探索时：
 ## 验证
 
 - UI 模型变化先跑 `receiver/android` JVM 单元测试。
-- Android 接收端 UI 改动至少跑 `:app:testDebugUnitTest` 和 `:app:assembleDebug`。
+- 视觉告警 UI 改动至少跑 `:app:testDebugUnitTest` 和 `:app:assembleDebug`。
 - 视觉变更需要安装到模拟器或真机并截图核对：顶部状态条、底部导航、警报卡、设备卡、弹窗/底部 sheet 不遮挡、不溢出。

@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace VisionGuard.Runtime
+namespace VisionGuard.Detector.Windows.Runtime
 {
     /// <summary>统一安装包与开发构建目录的路径事实。</summary>
     internal static class InstallLayout
@@ -15,8 +15,8 @@ namespace VisionGuard.Runtime
             ? Directory.GetParent(Directory.GetParent(RuntimeDirectory).FullName).FullName
             : RuntimeDirectory;
 
-        public static string LauncherPath => Path.Combine(InstallRoot, "VisionGuard.exe");
-        public static string ResidentPath => Path.Combine(InstallRoot, "VisionGuard.Resident.exe");
+        public static string LauncherPath => Path.Combine(InstallRoot, "VisionGuard.Detector.Windows.exe");
+        public static string ResidentPath => Path.Combine(InstallRoot, "VisionGuard.Resident.Windows.exe");
 
         private static bool DetectUnifiedPackage()
         {

@@ -2,7 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 
-namespace VisionGuard.Views
+namespace VisionGuard.Detector.Windows.Views
 {
     /// <summary>
     /// 「全局来源」的编号卡片面板：按可用空间求列数与行数，把卡片**铺满整个容器**

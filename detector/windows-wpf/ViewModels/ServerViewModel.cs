@@ -1,10 +1,10 @@
 using System;
 using System.Threading.Tasks;
 using System.Windows;
-using VisionGuard.Services;
-using VisionGuard.Utils;
+using VisionGuard.Detector.Windows.Services;
+using VisionGuard.Detector.Windows.Utils;
 
-namespace VisionGuard.ViewModels
+namespace VisionGuard.Detector.Windows.ViewModels
 {
     public class ServerViewModel : ViewModelBase
     {
@@ -131,7 +131,7 @@ namespace VisionGuard.ViewModels
                     if (!result.Succeeded)
                     {
                         MessageBox.Show("主体仍在运行，未执行完整退出。\n" + result.FailureReason,
-                            "VisionGuard 错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            "视觉检测错误", MessageBoxButton.OK, MessageBoxImage.Warning);
                         return;
                     }
 
@@ -140,7 +140,7 @@ namespace VisionGuard.ViewModels
                 catch (Exception ex)
                 {
                     MessageBox.Show("主体仍在运行，未执行完整退出。\n" + ex.Message,
-                        "VisionGuard 错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        "视觉检测错误", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
                 finally
                 {

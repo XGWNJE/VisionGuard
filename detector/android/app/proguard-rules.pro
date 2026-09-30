@@ -11,7 +11,7 @@
 -keepattributes Signature
 -keepattributes *Annotation*
 -keep class com.google.gson.** { *; }
--keep class com.xgwnje.visionguard.data.model.** { *; }
+-keep class com.xgwnje.visionguard.detector.data.model.** { *; }
 
 # CameraX
 -keep class androidx.camera.** { *; }
@@ -26,7 +26,7 @@
 -dontwarn androidx.compose.**
 
 # Keep data classes used in serialization
--keep class com.xgwnje.visionguard.** { *; }
+-keep class com.xgwnje.visionguard.detector.** { *; }
 
 # Remove debug logging in release
 -assumenosideeffects class android.util.Log {

@@ -1,6 +1,6 @@
 using System;
 
-namespace VisionGuard.Services
+namespace VisionGuard.Detector.Windows.Services
 {
     /// <summary>
     /// 卡片网格的求解输入。纯数据，不依赖 WPF，因此可以在无界面宿主里断言布局数学。

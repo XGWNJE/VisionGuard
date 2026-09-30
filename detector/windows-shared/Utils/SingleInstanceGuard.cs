@@ -1,7 +1,7 @@
 using System;
 using System.Threading;
 
-namespace VisionGuard.Utils
+namespace VisionGuard.Detector.Windows.Utils
 {
     public sealed class SingleInstanceGuard : IDisposable
     {

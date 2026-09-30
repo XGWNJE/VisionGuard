@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using VisionGuard.Models;
-using VisionGuard.Services;
-using VisionGuard.Utils;
-using VisionGuard.Runtime;
+using VisionGuard.Detector.Windows.Models;
+using VisionGuard.Detector.Windows.Services;
+using VisionGuard.Detector.Windows.Utils;
+using VisionGuard.Detector.Windows.Runtime;
 
-namespace VisionGuard.ViewModels
+namespace VisionGuard.Detector.Windows.ViewModels
 {
     public class MainViewModel : ViewModelBase
     {

@@ -8,7 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace VisionGuard.Net
+namespace VisionGuard.Detector.Windows.Net
 {
     /// <summary>
     /// 自研最小 WebSocket 客户端，用于替代两条在 Windows 7 上走不通的路径：

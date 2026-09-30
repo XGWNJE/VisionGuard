@@ -1,6 +1,6 @@
 using System;
 
-namespace VisionGuard.Capture
+namespace VisionGuard.Detector.Windows.Capture
 {
     /// <summary>
     /// PrintWindow 只返回全黑画面时抛出的采集故障。Windows 两个检测端共用同一份实现，

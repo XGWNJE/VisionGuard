@@ -100,7 +100,7 @@ test('publish-release.ps1 keeps GitHub optional and release deployment reproduci
   // 再额外合并驻留目录会触发 New-ZipPackage 的重复根名检查。
   assert.doesNotMatch(script, /windows-resident\\bin\\Release\\net472/);
   assert.doesNotMatch(script, /windows-resident\\bin\\Release\\net9\.0-windows/);
-  assert.match(script, /VisionGuard\.Resident\.exe\.config/);
+  assert.match(script, /VisionGuard\.Resident\.Windows\.exe\.config/);
   assert.match(script, /Test-PythonParamiko/);
   assert.match(script, /Deploy-ServerCode/);
   assert.match(script, /Verify-OnlineServer/);
@@ -240,11 +240,11 @@ test('Windows build script compiles both WPF inference profiles and drops the Wi
     script,
     /ValidateSet\("All", "Server", "Windows", "WPF", "WindowsResident", "Android", "AndroidDetector", "AndroidReceiver"\)/
   );
-  assert.match(script, /dotnet build detector\\windows-wpf\\VisionGuard\.sln -c Release/);
+  assert.match(script, /dotnet build detector\\windows-wpf\\VisionGuard\.Detector\.Windows\.sln -c Release/);
   assert.match(script, /-p:OrtProfile=legacy/);
-  assert.match(script, /detector\/windows-wpf\/bin\/x64\/modern\/VisionGuard\.exe/);
-  assert.match(script, /detector\/windows-wpf\/bin\/x64\/legacy\/VisionGuard\.exe/);
-  assert.match(script, /detector\/windows-package\/bin\/Release\/VisionGuard\.exe/);
+  assert.match(script, /detector\/windows-wpf\/bin\/x64\/modern\/VisionGuard\.Detector\.Windows\.exe/);
+  assert.match(script, /detector\/windows-wpf\/bin\/x64\/legacy\/VisionGuard\.Detector\.Windows\.exe/);
+  assert.match(script, /detector\/windows-package\/bin\/Release\/VisionGuard\.Detector\.Windows\.exe/);
   assert.match(script, /assemble-windows-unified\.js/);
 });
 

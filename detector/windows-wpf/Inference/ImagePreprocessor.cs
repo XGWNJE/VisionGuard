@@ -11,7 +11,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
-namespace VisionGuard.Inference
+namespace VisionGuard.Detector.Windows.Inference
 {
     /// <summary>
     /// 原始帧与正方形模型输入之间的几何关系。

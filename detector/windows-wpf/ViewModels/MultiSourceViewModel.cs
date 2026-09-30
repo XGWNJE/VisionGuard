@@ -6,16 +6,16 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Media.Imaging;
-using VisionGuard.Capture;
-using VisionGuard.Data;
-using VisionGuard.Inference;
-using VisionGuard.Models;
-using VisionGuard.Services;
-using VisionGuard.Utils;
-using VisionGuard.Views;
-using VisionGuard.Runtime;
+using VisionGuard.Detector.Windows.Capture;
+using VisionGuard.Detector.Windows.Data;
+using VisionGuard.Detector.Windows.Inference;
+using VisionGuard.Detector.Windows.Models;
+using VisionGuard.Detector.Windows.Services;
+using VisionGuard.Detector.Windows.Utils;
+using VisionGuard.Detector.Windows.Views;
+using VisionGuard.Detector.Windows.Runtime;
 
-namespace VisionGuard.ViewModels
+namespace VisionGuard.Detector.Windows.ViewModels
 {
     public sealed class MultiSourceViewModel : ViewModelBase, IDisposable, ICardGridHost
     {
@@ -416,7 +416,7 @@ namespace VisionGuard.ViewModels
                     detail + Environment.NewLine + Environment.NewLine +
                     "采集、推理与报警仍在继续，不会自动减路或降帧。" + Environment.NewLine +
                     "建议降低检测频率、减少同时运行的来源，或改用更小的模型。",
-                    "VisionGuard · 推理性能不足", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    "视觉检测 · 推理性能不足", MessageBoxButton.OK, MessageBoxImage.Warning);
             }));
         }
 
@@ -1075,7 +1075,7 @@ namespace VisionGuard.ViewModels
             BitmapSource? background = null;
             var windowMode = _captureMode == CaptureMode.WindowHandle && !string.IsNullOrWhiteSpace(_targetWindowTitle);
             if (windowMode && _targetWindow == null) ResolveWindow();
-            if (windowMode && _targetWindow == null) { MessageBox.Show("目标窗口当前不存在，请重新选择窗口或清除目标后选择屏幕区域。", "VisionGuard", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            if (windowMode && _targetWindow == null) { MessageBox.Show("目标窗口当前不存在，请重新选择窗口或清除目标后选择屏幕区域。", "视觉检测", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             try { using var bitmap = windowMode ? WindowCapturer.CaptureWindow(_targetWindow!.Handle, Rectangle.Empty) : ScreenCapturer.CapturePrimaryScreen(); background = MonitorViewModel.ConvertBitmapToSource(bitmap); } catch { }
             var selector = new RegionSelectorWindow(background) { Owner = Application.Current.MainWindow };
             selector.ShowDialog();
@@ -1102,7 +1102,7 @@ namespace VisionGuard.ViewModels
             _screenRegion = Rectangle.Empty; _windowSubRegion = Rectangle.Empty; ClearMasksInternal(); NotifyTargetChanged();
         }
 
-        private bool ConfirmTargetChange() => MaskRegions.Count == 0 || MessageBox.Show("更换捕获目标或选区会清除当前遮罩。是否继续？", "VisionGuard", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
+        private bool ConfirmTargetChange() => MaskRegions.Count == 0 || MessageBox.Show("更换捕获目标或选区会清除当前遮罩。是否继续？", "视觉检测", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
 
         private void EditMasks()
         {
@@ -1114,7 +1114,7 @@ namespace VisionGuard.ViewModels
                 if (!editor.IsConfirmed) return;
                 MaskRegions = editor.ResultMasks; OnPropertyChanged(nameof(MaskInfo)); MarkDirty();
             }
-            catch (Exception ex) { MessageBox.Show($"抓图失败：{ex.Message}", "VisionGuard", MessageBoxButton.OK, MessageBoxImage.Error); }
+            catch (Exception ex) { MessageBox.Show($"抓图失败：{ex.Message}", "视觉检测", MessageBoxButton.OK, MessageBoxImage.Error); }
         }
 
         private Bitmap GrabFrame()

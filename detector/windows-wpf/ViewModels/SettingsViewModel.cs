@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
-using VisionGuard.Utils;
-using VisionGuard.Runtime;
+using VisionGuard.Detector.Windows.Utils;
+using VisionGuard.Detector.Windows.Runtime;
 
-namespace VisionGuard.ViewModels
+namespace VisionGuard.Detector.Windows.ViewModels
 {
     /// <summary>
     /// 模型资源清单里的一项：本档位的一个可下载模型及其本机状态。

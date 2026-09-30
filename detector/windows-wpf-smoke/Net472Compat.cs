@@ -4,7 +4,7 @@ using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace VisionGuard.Runtime
+namespace VisionGuard.Detector.Windows.Runtime
 {
     /// <summary>
     /// net472 缺失的 .NET Core API 兼容实现。

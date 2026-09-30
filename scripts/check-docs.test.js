@@ -10,6 +10,8 @@ const {
   checkEvidencePaths,
   checkLicenseTexts,
   checkProductContract,
+  checkCancelledPlans,
+  checkComponentContract,
   checkReadmeVersion,
   checkVerificationVersionClaims
 } = require('./check-docs');
@@ -34,13 +36,13 @@ test('README version drift is rejected', () => {
 test('new canonical document must be registered in canonical documentation entrypoints', () => {
   const errors = [];
   checkIndexCoverage(
-    ['docs/codex/00-index.md', 'docs/codex/15-product-roadmap.md'],
+    ['docs/codex/00-index.md', 'docs/codex/new-current-module.md'],
     '# Index',
     '# CODEX',
     errors
   );
   assert.equal(errors.length, 2);
-  assert.ok(errors.every((message) => message.includes('15-product-roadmap.md')));
+  assert.ok(errors.every((message) => message.includes('new-current-module.md')));
 });
 
 test('stale artifact paths in current evidence documents are rejected', () => {
@@ -85,29 +87,56 @@ test('stale current-version claims in verification reports are rejected', () => 
   assert.equal(errors.length, 2);
 });
 
-test('network and offline-alarm product decisions cannot silently drift', () => {
-  const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), 'utf8');
+test('current relay and offline-state boundaries cannot silently drift', () => {
+  const read = p => fs.readFileSync(path.join(root, p), 'utf8');
   const errors = [];
-  const roadmap = read('docs/codex/15-product-roadmap.md')
-    .replaceAll('不再规划 P2P、ICE、STUN 或 TURN', '重新规划 P2P')
-    .replaceAll('DeviceOfflineAlert', 'DeviceStatus')
-    .replaceAll('允许在可管理范围内误报', '误报与漏报同等处理')
-    .replaceAll('免费版以目前已经实现的纯软件视觉方案为边界', '视觉功能按功能点收费')
-    .replaceAll('系统一旦接入检测硬件探测器，即进入付费版', '高级软件功能进入付费版');
-
   checkProductContract(
-    read('README.md'),
-    read('docs/codex/10-project-overview.md'),
-    roadmap,
-    read('AGENTS.md'),
-    errors
+    read('README.md').replaceAll('不使用 P2P、ICE、STUN 或 TURN', '使用 P2P')
+      .replaceAll('尚未实现独立的设备离线报警', '已实现独立的设备离线报警')
+      .replaceAll('漏报风险是检测效果与故障处置的最高优先级', '误报与漏报同等处理'),
+    read('docs/codex/10-project-overview.md'), read('AGENTS.md'), errors
   );
+  assert.ok(errors.some(message => message.includes('no-P2P boundary')));
+  assert.ok(errors.some(message => message.includes('not-delivered offline-alert boundary')));
+  assert.ok(errors.some(message => message.includes('missed-detection priority')));
+});
 
-  assert.ok(errors.some((message) => message.includes('Server-only network boundary')));
-  assert.ok(errors.some((message) => message.includes('device-offline alert contract')));
-  assert.ok(errors.some((message) => message.includes('missed-detection priority')));
-  assert.ok(errors.some((message) => message.includes('free software-visual edition boundary')));
-  assert.ok(errors.some((message) => message.includes('paid hardware-detector edition boundary')));
+test('cancelled plans cannot return as active documents or references', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-cancelled-'));
+  try {
+    const docs = ['README.md', 'docs/codex/10-project-overview.md', 'docs/codex/90-verification-report.md'];
+    const contents = new Map([
+      ['README.md', '[旧入口](docs/codex/15-product-roadmap.md)'],
+      ['docs/codex/10-project-overview.md', '5.0 以内更新：Detector Platform'],
+      ['docs/codex/90-verification-report.md', '# V10 · 批次历史']
+    ]);
+    fs.mkdirSync(path.join(tempRoot, 'docs/codex'), { recursive: true });
+    fs.writeFileSync(path.join(tempRoot, 'docs/codex/15-product-roadmap.md'), '# 已取消的方案');
+    const errors = [];
+    checkCancelledPlans(tempRoot, docs, contents, errors);
+    assert.equal(errors.length, 4);
+    assert.ok(errors.every(message => message.includes('cancelled-plan')));
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('five canonical component names cannot drift', () => {
+  const read = p => fs.readFileSync(path.join(root, p), 'utf8');
+  const errors = [];
+  checkComponentContract(root,
+    read('README.md').replaceAll('视觉中继', 'Server'),
+    read('docs/codex/10-project-overview.md'), read('docs/codex/60-operations.md'), errors);
+  assert.ok(errors.some(message => message.includes('canonical component name 视觉中继')));
+});
+
+test('platforms remain distinct when detector application names are identical', () => {
+  const read = p => fs.readFileSync(path.join(root, p), 'utf8');
+  const errors = [];
+  checkComponentContract(root,
+    read('README.md').replace('| 视觉检测 | Android |', '| 视觉检测 | Windows |'),
+    read('docs/codex/10-project-overview.md'), read('docs/codex/60-operations.md'), errors);
+  assert.ok(errors.some(message => message.includes('README.md must list the canonical platforms')));
 });
 
 test('license transition and commercial boundary cannot silently drift', () => {
@@ -119,9 +148,7 @@ test('license transition and commercial boundary cannot silently drift', () => {
     licenseHistory: read('LICENSE-HISTORY.md').replace('c43c0ff122043d477b442b7507d193b62ea321bb', 'unknown'),
     commercialLicense: read('COMMERCIAL-LICENSE.md'),
     contributing: read('CONTRIBUTING.md').replace('暂不接受外部代码、模型、素材或文档 Pull Request', '欢迎直接提交任何 Pull Request'),
-    readme: read('README.md').replace('badge/license-VGSAL--1.0-', 'badge/license-MIT-'),
-    roadmap: read('docs/codex/15-product-roadmap.md'),
-    agents: read('AGENTS.md')
+    readme: read('README.md').replace('badge/license-VGSAL--1.0-', 'badge/license-MIT-'),    agents: read('AGENTS.md')
   }, errors);
 
   assert.ok(errors.some((message) => message.includes('paid hardware-detector definition')));

@@ -89,7 +89,7 @@ if (releasePackagingRequested && !hasReleaseKeystore && !allowUnsignedRelease) {
 }
 
 android {
-    namespace = "com.xgwnje.visionguard"
+    namespace = "com.xgwnje.visionguard.detector"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -97,7 +97,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.xgwnje.visionguard"
+        applicationId = "com.xgwnje.visionguard.detector"
         minSdk = 28
         targetSdk = 36
         versionCode = 4501

@@ -4,9 +4,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using VisionGuard.Runtime;
+using VisionGuard.Detector.Windows.Runtime;
 
-namespace VisionGuard.Services
+namespace VisionGuard.Detector.Windows.Services
 {
     public sealed class AlertOutbox
     {

@@ -1,6 +1,6 @@
 using System;
 
-namespace VisionGuard.Inference
+namespace VisionGuard.Detector.Windows.Inference
 {
     public interface IInferenceEngine : IDisposable
     {

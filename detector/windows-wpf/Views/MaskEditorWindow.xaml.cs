@@ -7,9 +7,9 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
-using VisionGuard.ViewModels;
+using VisionGuard.Detector.Windows.ViewModels;
 
-namespace VisionGuard.Views
+namespace VisionGuard.Detector.Windows.Views
 {
     public partial class MaskEditorWindow : Window
     {

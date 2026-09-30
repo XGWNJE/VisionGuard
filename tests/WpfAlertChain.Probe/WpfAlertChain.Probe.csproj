@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!-- 验证 target 与 detector/windows-wpf 一致：Windows 检测端统一为 net472。 -->
+    <!-- 验证 target 与 detector/windows-wpf 一致：视觉检测（Windows）统一为 net472。 -->
     <OutputType>Exe</OutputType>
     <TargetFramework>net472</TargetFramework>
     <UseWPF>true</UseWPF>
@@ -13,6 +13,6 @@
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\detector\windows-wpf\VisionGuard.csproj" />
+    <ProjectReference Include="..\..\detector\windows-wpf\VisionGuard.Detector.Windows.csproj" />
   </ItemGroup>
 </Project>

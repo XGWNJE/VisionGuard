@@ -4,8 +4,8 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Threading;
-using VisionGuard.Models;
-using VisionGuard.Services;
+using VisionGuard.Detector.Windows.Models;
+using VisionGuard.Detector.Windows.Services;
 
 if (args.Length != 2)
     throw new ArgumentException("Usage: WpfAlertChain.Probe <server-url> <api-key>");

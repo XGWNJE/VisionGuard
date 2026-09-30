@@ -89,7 +89,7 @@ cleanupScreenshots();
 startCleanupTimer();
 
 server.listen(config.port, config.host, () => {
-  console.log(`[server] VisionGuard Server v4.5.1 已启动`);
+  console.log(`[server] VisionGuard 视觉中继 v4.5.1 已启动`);
   console.log(`[server] 隔离通道: ${config.channelId} / 数据目录: ${config.dataDir}`);
   console.log(`[server] HTTP + WS 监听地址: ${config.host}:${config.port}`);
   console.log(`[server] 截图模式: 内嵌 Base64 自动推送 (无 HTTP 文件存储)`);

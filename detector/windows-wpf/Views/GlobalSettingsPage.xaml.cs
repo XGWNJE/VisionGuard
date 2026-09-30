@@ -1,6 +1,6 @@
 using System.Windows.Controls;
 
-namespace VisionGuard.Views
+namespace VisionGuard.Detector.Windows.Views
 {
     /// <summary>
     /// 「全局设定」页：把原「运行环境」与「连接」两页合并成一页。

@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>VisionGuard.Detector.Windows</AssemblyName>
+    <Title>视觉检测</Title>
+    <AssemblyTitle>视觉检测</AssemblyTitle>
+    <Product>视觉检测</Product>
+    <Description>视觉检测统一启动入口</Description>
+    <RootNamespace>VisionGuard.Detector.Windows.Launcher</RootNamespace>
+    <StartupObject>VisionGuard.Detector.Windows.Launcher.Program</StartupObject>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\windows-wpf\favico3n.ico</ApplicationIcon>
+    <LangVersion>7.3</LangVersion>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+    <Version>4.5.1</Version>
+    <FileVersion>4.5.1</FileVersion>
+    <AssemblyVersion>4.5.1</AssemblyVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Windows.Forms" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\windows-shared\Utils\ApiKeyProvider.cs" Link="Utils\ApiKeyProvider.cs" />
+  </ItemGroup>
+</Project>

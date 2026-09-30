@@ -5,13 +5,13 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media.Imaging;
-using VisionGuard.Capture;
-using VisionGuard.Models;
-using VisionGuard.Services;
-using VisionGuard.Utils;
-using VisionGuard.Views;
+using VisionGuard.Detector.Windows.Capture;
+using VisionGuard.Detector.Windows.Models;
+using VisionGuard.Detector.Windows.Services;
+using VisionGuard.Detector.Windows.Utils;
+using VisionGuard.Detector.Windows.Views;
 
-namespace VisionGuard.ViewModels
+namespace VisionGuard.Detector.Windows.ViewModels
 {
     public class MonitorViewModel : ViewModelBase
     {
@@ -152,7 +152,7 @@ namespace VisionGuard.ViewModels
                         _serverPushService.SendCommandAck("resume", false, msg, requestId);
                         return;
                     }
-                    MessageBox.Show(msg, "VisionGuard", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(msg, "视觉检测", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
             }
@@ -168,7 +168,7 @@ namespace VisionGuard.ViewModels
                         _serverPushService.SendCommandAck("resume", false, msg, requestId);
                         return;
                     }
-                    MessageBox.Show(msg, "VisionGuard", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(msg, "视觉检测", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
             }
@@ -449,7 +449,7 @@ namespace VisionGuard.ViewModels
             if (bg == null)
             {
                 MessageBox.Show("无法抓取当前区域截图，请确保已选择有效的窗口或屏幕区域。",
-                    "VisionGuard", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    "视觉检测", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 

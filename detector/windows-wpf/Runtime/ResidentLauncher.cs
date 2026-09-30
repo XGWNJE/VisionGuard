@@ -5,9 +5,9 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
-using VisionGuard.Utils;
+using VisionGuard.Detector.Windows.Utils;
 
-namespace VisionGuard.Runtime
+namespace VisionGuard.Detector.Windows.Runtime
 {
     /// <summary>驻留程序在本机的拉起状态与最近一次失败原因。</summary>
     internal sealed class ResidentStatus
@@ -45,7 +45,7 @@ namespace VisionGuard.Runtime
     }
 
     /// <summary>
-    /// 由检测端拉起 Windows 驻留程序（V10 决策 28）。
+    /// 由检测端拉起 视觉驻留。
     ///
     /// 角色反转：驻留不再负责打开检测端，而是由检测端在启动时拉起驻留；驻留自行注册登录自启
     /// 并**脱离父进程生命周期**继续运行，因此检测端正常退出或崩溃后，驻留仍可接受
@@ -60,8 +60,8 @@ namespace VisionGuard.Runtime
         /// <summary>检测端与驻留共用的应用标识；用于单实例互斥体与运行/退出事件名。</summary>
         public const string ApplicationId = "Detector";
 
-        private const string ResidentExeName = "VisionGuard.Resident.exe";
-        private const string ResidentExeConfigName = "VisionGuard.Resident.exe.config";
+        private const string ResidentExeName = "VisionGuard.Resident.Windows.exe";
+        private const string ResidentExeConfigName = "VisionGuard.Resident.Windows.exe.config";
         private const string ResidentMutexName = @"Local\VisionGuard.Resident.SingleInstance";
         private const string ResidentShutdownEventName = @"Local\VisionGuard.Resident.Shutdown";
         private const int HandshakeWaitMs = 6000;

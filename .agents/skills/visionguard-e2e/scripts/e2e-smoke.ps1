@@ -550,11 +550,11 @@ function Run-ResidentLaunch {
         if (-not $ready) { throw "隔离 Server 未在 60 秒内就绪，日志：$serverLog" }
 
         $profiles = @('modern', 'legacy')
-        $paths = @{ modern = 'detector\windows-wpf\bin\x64\modern\VisionGuard.exe'; legacy = 'detector\windows-wpf\bin\x64\legacy\VisionGuard.exe' }
+        $paths = @{ modern = 'detector\windows-wpf\bin\x64\modern\VisionGuard.Detector.Windows.exe'; legacy = 'detector\windows-wpf\bin\x64\legacy\VisionGuard.Detector.Windows.exe' }
         foreach ($profile in $profiles) {
             $detectorExe = Resolve-RepoPath $paths[$profile]
             if (-not (Test-Path -LiteralPath $detectorExe)) { throw "$profile 档检测端不存在：$detectorExe（先运行 visionguard-build -Target Windows）" }
-            $residentExe = Join-Path (Split-Path -Parent $detectorExe) 'VisionGuard.Resident.exe'
+            $residentExe = Join-Path (Split-Path -Parent $detectorExe) 'VisionGuard.Resident.Windows.exe'
             if (-not (Test-Path -LiteralPath $residentExe)) { throw "$profile 档产物缺少配套驻留程序：$residentExe" }
 
             $reportPath = Join-Path $artifactRoot "resident-launch-$profile.json"
@@ -609,7 +609,7 @@ function Run-ResidentLaunch {
             $residentConfigPath = Join-Path $env:LOCALAPPDATA 'VisionGuard\resident-config.json'
             $ours = @()
             try {
-                $ours = @(Get-CimInstance Win32_Process -Filter "Name = 'VisionGuard.Resident.exe'" -ErrorAction SilentlyContinue |
+                $ours = @(Get-CimInstance Win32_Process -Filter "Name = 'VisionGuard.Resident.Windows.exe'" -ErrorAction SilentlyContinue |
                     Where-Object { $_.CommandLine -and $_.CommandLine -like "*$residentConfigPath*" })
             }
             catch { }
@@ -623,7 +623,7 @@ function Run-ResidentLaunch {
         # 以免杀掉用户真实运行中的驻留（那会让接收端的「打开/关闭检测端」静默失效）。
         try {
             $residentConfigPath = Join-Path $env:LOCALAPPDATA 'VisionGuard\resident-config.json'
-            foreach ($process in @(Get-CimInstance Win32_Process -Filter "Name = 'VisionGuard.Resident.exe'" -ErrorAction SilentlyContinue |
+            foreach ($process in @(Get-CimInstance Win32_Process -Filter "Name = 'VisionGuard.Resident.Windows.exe'" -ErrorAction SilentlyContinue |
                 Where-Object { $_.CommandLine -and $_.CommandLine -like "*$residentConfigPath*" })) {
                 try { Stop-Process -Id $process.ProcessId -Force } catch { }
             }
@@ -950,14 +950,14 @@ try {
             Run-AndroidAppSmoke `
                 -Name 'android-detector' `
                 -ProjectDirectory 'detector\android' `
-                -PackageName 'com.xgwnje.visionguard' `
+                -PackageName 'com.xgwnje.visionguard.detector' `
                 -RuntimePermissions @('android.permission.CAMERA', 'android.permission.POST_NOTIFICATIONS')
         }
         'AndroidReceiverSmoke' {
             Run-AndroidAppSmoke `
                 -Name 'android-receiver' `
                 -ProjectDirectory 'receiver\android' `
-                -PackageName 'com.xgwnje.visionguard_android' `
+                -PackageName 'com.xgwnje.visionguard.receiver' `
                 -RuntimePermissions @('android.permission.POST_NOTIFICATIONS')
         }
         'WpfPersonDetection' { Run-WpfPersonDetection }

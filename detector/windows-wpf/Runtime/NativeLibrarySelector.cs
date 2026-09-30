@@ -5,9 +5,9 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
-using VisionGuard.Utils;
+using VisionGuard.Detector.Windows.Utils;
 
-namespace VisionGuard.Runtime
+namespace VisionGuard.Detector.Windows.Runtime
 {
     /// <summary>
     /// 按运行环境选择 ONNX Runtime 原生库档位。

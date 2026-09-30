@@ -1,4 +1,4 @@
-namespace VisionGuard.Services
+namespace VisionGuard.Detector.Windows.Services
 {
     /// <summary>
     /// 逐来源的故障分类，随帧结果上报到对应来源。

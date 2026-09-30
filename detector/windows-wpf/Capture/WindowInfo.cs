@@ -6,7 +6,7 @@
 using System;
 using System.Drawing;
 
-namespace VisionGuard.Capture
+namespace VisionGuard.Detector.Windows.Capture
 {
     /// <summary>
     /// 描述一个顶层窗口的基本信息。

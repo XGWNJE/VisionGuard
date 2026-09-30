@@ -94,39 +94,39 @@ try {
         # 两者是配套软件，缺驻留的检测端产物无法提供「远程重新打开检测端」。
         Invoke-Step `
             -Name "Windows Resident" `
-            -CommandText "dotnet build detector\windows-resident\VisionGuard.Resident.csproj -c Release" `
-            -Artifact "detector/windows-resident/bin/Release/net472/VisionGuard.Resident.exe" `
-            -Script { dotnet build "detector\windows-resident\VisionGuard.Resident.csproj" -c Release }
+            -CommandText "dotnet build detector\windows-resident\VisionGuard.Resident.Windows.csproj -c Release" `
+            -Artifact "detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe" `
+            -Script { dotnet build "detector\windows-resident\VisionGuard.Resident.Windows.csproj" -c Release }
     }
 
     if (Should-Run @("Windows", "WPF")) {
         Invoke-Step `
             -Name "Windows Launcher" `
-            -CommandText "dotnet build detector\windows-launcher\VisionGuard.Launcher.csproj -c Release" `
-            -Artifact "detector/windows-launcher/bin/Release/net472/VisionGuard.exe" `
-            -Script { dotnet build "detector\windows-launcher\VisionGuard.Launcher.csproj" -c Release }
+            -CommandText "dotnet build detector\windows-launcher\VisionGuard.Detector.Windows.Launcher.csproj -c Release" `
+            -Artifact "detector/windows-launcher/bin/Release/net472/VisionGuard.Detector.Windows.exe" `
+            -Script { dotnet build "detector\windows-launcher\VisionGuard.Detector.Windows.Launcher.csproj" -c Release }
     }
 
     if (Should-Run @("Windows", "WPF")) {
-        # V10：Windows 检测端有两套推理档位，都从同一份源码构建，输出到 bin\x64\<档位>\。
+        # 视觉检测（Windows）有两套推理档位，都从同一份源码构建，输出到 bin\x64\<档位>\。
         #   modern（默认）= Windows 10 及以上：托管 ORT 1.19.0 + 原生 1.19.0 + DirectML，模型 YOLO26。
         #   legacy        = Windows 7 SP1 x64：托管 ORT 1.2.0 + 原生 1.1.0，固定 CPU，模型 YOLOv5。
         Invoke-Step `
             -Name "WPF (modern)" `
-            -CommandText "dotnet build detector\windows-wpf\VisionGuard.sln -c Release" `
-            -Artifact "detector/windows-wpf/bin/x64/modern/VisionGuard.exe" `
-            -Script { dotnet build "detector\windows-wpf\VisionGuard.sln" -c Release }
+            -CommandText "dotnet build detector\windows-wpf\VisionGuard.Detector.Windows.sln -c Release" `
+            -Artifact "detector/windows-wpf/bin/x64/modern/VisionGuard.Detector.Windows.exe" `
+            -Script { dotnet build "detector\windows-wpf\VisionGuard.Detector.Windows.sln" -c Release }
 
         Invoke-Step `
             -Name "WPF (legacy / Win7)" `
-            -CommandText "dotnet build detector\windows-wpf\VisionGuard.csproj -c Release -p:OrtProfile=legacy" `
-            -Artifact "detector/windows-wpf/bin/x64/legacy/VisionGuard.exe" `
-            -Script { dotnet build "detector\windows-wpf\VisionGuard.csproj" -c Release -p:OrtProfile=legacy }
+            -CommandText "dotnet build detector\windows-wpf\VisionGuard.Detector.Windows.csproj -c Release -p:OrtProfile=legacy" `
+            -Artifact "detector/windows-wpf/bin/x64/legacy/VisionGuard.Detector.Windows.exe" `
+            -Script { dotnet build "detector\windows-wpf\VisionGuard.Detector.Windows.csproj" -c Release -p:OrtProfile=legacy }
 
         Invoke-Step `
             -Name "Windows Unified Package" `
             -CommandText "node scripts\assemble-windows-unified.js" `
-            -Artifact "detector/windows-package/bin/Release/VisionGuard.exe" `
+            -Artifact "detector/windows-package/bin/Release/VisionGuard.Detector.Windows.exe" `
             -Note "单一入口，运行时按 Windows 版本选择 modern 或 legacy" `
             -Script { node "scripts\assemble-windows-unified.js" }
     }

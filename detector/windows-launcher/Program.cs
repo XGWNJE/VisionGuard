@@ -9,9 +9,9 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
-using VisionGuard.Utils;
+using VisionGuard.Detector.Windows.Utils;
 
-namespace VisionGuard.Launcher
+namespace VisionGuard.Detector.Windows.Launcher
 {
     internal static class Program
     {
@@ -42,7 +42,7 @@ namespace VisionGuard.Launcher
             catch (Exception ex)
             {
                 WriteLog("fatal", ex.ToString());
-                MessageBox.Show("VisionGuard 启动失败：\n" + ex.Message, "VisionGuard", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("视觉检测启动失败：\n" + ex.Message, "视觉检测", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return 1;
             }
         }
@@ -50,7 +50,7 @@ namespace VisionGuard.Launcher
         private static int LaunchRuntime(string[] forwardedArgs, string postUpdateMarker)
         {
             string profile = SelectProfile();
-            string runtimeExe = Path.Combine(InstallRoot, "runtimes", profile, "VisionGuard.exe");
+            string runtimeExe = Path.Combine(InstallRoot, "runtimes", profile, "VisionGuard.Detector.Windows.exe");
             if (!File.Exists(runtimeExe))
                 throw new FileNotFoundException("统一安装包缺少 " + profile + " 运行时，请重新完整解压安装包。", runtimeExe);
 
@@ -95,13 +95,13 @@ namespace VisionGuard.Launcher
                 catch (Exception ex)
                 {
                     WriteLog("update-check-failed", ex.ToString());
-                    if (interactive) MessageBox.Show("检查更新失败：\n" + ex.Message, "VisionGuard 更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    if (interactive) MessageBox.Show("检查更新失败：\n" + ex.Message, "视觉检测更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return 1;
                 }
 
                 if (!info.HasUpdate)
                 {
-                    if (interactive) MessageBox.Show("当前已是最新版本。", "VisionGuard 更新", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    if (interactive) MessageBox.Show("当前已是最新版本。", "视觉检测更新", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return 0;
                 }
                 if (string.IsNullOrWhiteSpace(info.LatestVersion) || string.IsNullOrWhiteSpace(info.DownloadUrl))
@@ -112,7 +112,7 @@ namespace VisionGuard.Launcher
                 var answer = MessageBox.Show(
                     "发现新版本 " + info.LatestVersion + "（当前 " + Version + "）。\n\n" +
                     "更新器会校验完整包、关闭检测端和驻留程序，并在失败时恢复旧版本。现在更新吗？",
-                    "VisionGuard 更新", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                    "视觉检测更新", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
                 if (answer != DialogResult.Yes) return 0;
 
                 string updateRoot = Path.Combine(
@@ -126,8 +126,8 @@ namespace VisionGuard.Launcher
                 ValidatePackage(stagePath);
 
                 string updaterExe = Path.Combine(updateRoot, "VisionGuard.Updater.exe");
-                File.Copy(Path.Combine(InstallRoot, "VisionGuard.exe"), updaterExe, true);
-                string config = Path.Combine(InstallRoot, "VisionGuard.exe.config");
+                File.Copy(Path.Combine(InstallRoot, "VisionGuard.Detector.Windows.exe"), updaterExe, true);
+                string config = Path.Combine(InstallRoot, "VisionGuard.Detector.Windows.exe.config");
                 if (File.Exists(config)) File.Copy(config, updaterExe + ".config", true);
 
                 SignalShutdown(DetectorShutdownEvent);
@@ -214,9 +214,9 @@ namespace VisionGuard.Launcher
         {
             string[] required =
             {
-                "VisionGuard.exe", "VisionGuard.Resident.exe", "VisionGuard.Resident.exe.config",
-                @"runtimes\modern\VisionGuard.exe", @"runtimes\modern\native\modern\onnxruntime.dll",
-                @"runtimes\legacy\VisionGuard.exe", @"runtimes\legacy\native\legacy\onnxruntime.dll",
+                "VisionGuard.Detector.Windows.exe", "VisionGuard.Resident.Windows.exe", "VisionGuard.Resident.Windows.exe.config",
+                @"runtimes\modern\VisionGuard.Detector.Windows.exe", @"runtimes\modern\native\modern\onnxruntime.dll",
+                @"runtimes\legacy\VisionGuard.Detector.Windows.exe", @"runtimes\legacy\native\legacy\onnxruntime.dll",
             };
             foreach (string relative in required)
                 if (!File.Exists(Path.Combine(root, relative)))
@@ -262,7 +262,7 @@ namespace VisionGuard.Launcher
                     "VisionGuard", "updates", "started-" + version + "-" + Guid.NewGuid().ToString("N") + ".ok");
                 var launched = Process.Start(new ProcessStartInfo
                 {
-                    FileName = Path.Combine(target, "VisionGuard.exe"),
+                    FileName = Path.Combine(target, "VisionGuard.Detector.Windows.exe"),
                     Arguments = "--post-update-marker " + Quote(marker),
                     WorkingDirectory = target,
                     UseShellExecute = true,
@@ -290,7 +290,7 @@ namespace VisionGuard.Launcher
                         TryDeleteDirectory(failed);
                         Process.Start(new ProcessStartInfo
                         {
-                            FileName = Path.Combine(target, "VisionGuard.exe"), WorkingDirectory = target, UseShellExecute = true
+                            FileName = Path.Combine(target, "VisionGuard.Detector.Windows.exe"), WorkingDirectory = target, UseShellExecute = true
                         });
                     }
                 }
@@ -298,7 +298,7 @@ namespace VisionGuard.Launcher
                 {
                     throw new AggregateException("更新失败且自动回滚失败。旧目录：" + backup, ex, rollbackError);
                 }
-                MessageBox.Show("更新失败，已经恢复旧版本：\n" + ex.Message, "VisionGuard 更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("更新失败，已经恢复旧版本：\n" + ex.Message, "视觉检测更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return 1;
             }
             finally
@@ -380,7 +380,7 @@ namespace VisionGuard.Launcher
         private static int WriteProfileProbe(string path)
         {
             string profile = SelectProfile();
-            string runtimePath = Path.Combine(InstallRoot, "runtimes", profile, "VisionGuard.exe");
+            string runtimePath = Path.Combine(InstallRoot, "runtimes", profile, "VisionGuard.Detector.Windows.exe");
             var data = new Dictionary<string, object>
             {
                 ["profile"] = profile,

@@ -6,7 +6,7 @@ const { spawn } = require('node:child_process');
 const WebSocket = require('../server/node_modules/ws');
 
 const root = path.resolve(__dirname, '..');
-const exe = path.join(root, 'detector/windows-resident/bin/Release/net472/VisionGuard.Resident.exe');
+const exe = path.join(root, 'detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe');
 const apiKey = process.env.VISIONGUARD_API_KEY;
 const channel = process.env.VISIONGUARD_CHANNEL || 'vnext-e2e';
 const serverUrl = process.env.VISIONGUARD_SERVER_URL || 'http://127.0.0.1:3100';
@@ -19,9 +19,9 @@ fs.writeFileSync(configPath, JSON.stringify({
   ApiKey: apiKey,
   DeviceId: 'resident-win7-smoke',
   DeviceName: 'Resident Win7 Smoke',
-  // V10 决策 28：Windows 只剩一个检测端，生命周期命令为 open-detector/close-detector。
+  // Windows 只剩一个检测端，生命周期命令为 open-detector/close-detector。
   // 这里给一个不存在的路径，用于断言失败原因，不干扰当前人工验收窗口。
-  DetectorPath: 'C:/missing/VisionGuard.exe',
+  DetectorPath: 'C:/missing/VisionGuard.Detector.Windows.exe',
   AppId: 'Detector',
 }), 'utf8');
 

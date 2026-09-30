@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Windows;
-using VisionGuard.Capture;
+using VisionGuard.Detector.Windows.Capture;
 
-namespace VisionGuard.Views
+namespace VisionGuard.Detector.Windows.Views
 {
     public partial class WindowPickerWindow : Window
     {
@@ -64,7 +64,7 @@ namespace VisionGuard.Views
                 var currentBounds = WindowEnumerator.GetWindowBounds(win.Handle);
                 if (!CaptureSizeConstraints.IsValid(currentBounds))
                 {
-                    MessageBox.Show("该窗口当前尺寸过小，宽度和高度必须都大于 100 像素。", "VisionGuard",
+                    MessageBox.Show("该窗口当前尺寸过小，宽度和高度必须都大于 100 像素。", "视觉检测",
                         MessageBoxButton.OK, MessageBoxImage.Information);
                     _ = LoadWindowsAsync();
                     return;

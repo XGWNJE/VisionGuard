@@ -1,4 +1,4 @@
-namespace VisionGuard.ViewModels
+namespace VisionGuard.Detector.Windows.ViewModels
 {
     /// <summary>
     /// 「全局设定」页的容器 ViewModel（原「运行环境」与「连接」两页合一）。

@@ -5,12 +5,11 @@
 ## 专题文档
 
 - [项目概览](docs/codex/10-project-overview.md)：五个实际组件、规范名称和当前实现状态
-- [产品路线图](docs/codex/15-product-roadmap.md)：产品方向、阶段顺序和验收闸门
-- [Server](docs/codex/20-server.md)：Server 当前职责、接口和协议角色
+- [视觉中继](docs/codex/20-server.md)：视觉中继当前职责、接口和协议角色
 - [Windows](docs/codex/30-windows-detector.md)：统一启动器、WPF 运行时和驻留程序
 - [模型资源](docs/codex/35-model-assets.md)：模型、类别映射和打包边界
-- [Android 检测端](docs/codex/40-android-detector.md)
-- [Android 接收端](docs/codex/50-android-receiver.md)
+- [视觉检测（Android）](docs/codex/40-android-detector.md)
+- [视觉告警](docs/codex/50-android-receiver.md)
 - [运维](docs/codex/60-operations.md)：构建、验证和发布授权边界
 - [验证报告](docs/codex/90-verification-report.md)：证据、状态和未覆盖项
 

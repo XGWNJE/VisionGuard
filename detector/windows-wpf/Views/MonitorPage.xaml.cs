@@ -2,9 +2,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
-using VisionGuard.ViewModels;
+using VisionGuard.Detector.Windows.ViewModels;
 
-namespace VisionGuard.Views
+namespace VisionGuard.Detector.Windows.Views
 {
     public partial class MonitorPage : UserControl
     {

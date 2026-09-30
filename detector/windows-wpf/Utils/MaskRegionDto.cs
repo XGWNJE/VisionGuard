@@ -3,7 +3,7 @@
 // │ 角色：遮罩区域持久化 DTO（与旧版 settings.ini 兼容）     │
 // │ 格式：JSON 数组 [{left,top,right,bottom},...]           │
 // └─────────────────────────────────────────────────────────┘
-namespace VisionGuard.Utils
+namespace VisionGuard.Detector.Windows.Utils
 {
     /// <summary>
     /// 遮罩区域序列化 DTO，与旧版 VisionGuard 的 settings.ini 格式完全兼容。

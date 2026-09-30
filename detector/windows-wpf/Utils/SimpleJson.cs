@@ -9,7 +9,7 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-namespace VisionGuard.Utils
+namespace VisionGuard.Detector.Windows.Utils
 {
     /// <summary>
     /// 轻量 JSON 序列化/反序列化，基于 System.Text.Json。

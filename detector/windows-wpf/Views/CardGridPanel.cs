@@ -1,9 +1,9 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
-using VisionGuard.Services;
+using VisionGuard.Detector.Windows.Services;
 
-namespace VisionGuard.Views
+namespace VisionGuard.Detector.Windows.Views
 {
     /// <summary>
     /// 卡片网格面板需要宿主（<c>MultiSourceViewModel</c>）提供的少量信息。

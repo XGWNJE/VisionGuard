@@ -8,7 +8,7 @@
 using System;
 using System.Diagnostics;
 
-namespace VisionGuard.Utils
+namespace VisionGuard.Detector.Windows.Utils
 {
     /// <summary>
     /// 线程安全的日志管理器，将消息输出到 IDE 输出窗口（Debug.WriteLine）。

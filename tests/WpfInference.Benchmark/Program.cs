@@ -4,11 +4,11 @@ using System.Text.Json;
 using System.Threading;
 using System.Windows.Controls;
 using System.Windows.Threading;
-using VisionGuard.Inference;
-using VisionGuard.Runtime;
-using VisionGuard.Services;
-using VisionGuard.ViewModels;
-using VisionGuard.Views;
+using VisionGuard.Detector.Windows.Inference;
+using VisionGuard.Detector.Windows.Runtime;
+using VisionGuard.Detector.Windows.Services;
+using VisionGuard.Detector.Windows.ViewModels;
+using VisionGuard.Detector.Windows.Views;
 using WpfMatrix = System.Windows.Media.Matrix;
 using WpfMatrixTransform = System.Windows.Media.MatrixTransform;
 using WpfRect = System.Windows.Rect;
@@ -522,7 +522,7 @@ if (args.Length >= 2 && args[1].Equals("--model-download", StringComparison.Ordi
         if (!ok) downloadPassed = false;
     }
 
-    var downloadPath = VisionGuard.Utils.ModelManager.GetModelPath(downloadKey);
+    var downloadPath = VisionGuard.Detector.Windows.Utils.ModelManager.GetModelPath(downloadKey);
     if (File.Exists(downloadPath)) File.Delete(downloadPath);
     var tempPath = downloadPath + ".tmp";
     if (File.Exists(tempPath)) File.Delete(tempPath);
@@ -567,9 +567,9 @@ if (args.Length >= 2 && args[1].Equals("--model-download", StringComparison.Ordi
         string.Join(",", MultiSourceViewModel.AvailableModelKeys()));
     // 失败路径必须给出可读原因：否则用户机器上只看到“下载失败”，无法区分网络、证书还是服务端缺文件。
     CheckDownload("failure-reason-captured-or-cleared",
-        option.IsDownloaded ? string.IsNullOrEmpty(VisionGuard.Utils.ModelManager.LastFailureReason)
-                            : !string.IsNullOrEmpty(VisionGuard.Utils.ModelManager.LastFailureReason),
-        option.IsDownloaded ? "(download ok; reason cleared)" : VisionGuard.Utils.ModelManager.LastFailureReason);
+        option.IsDownloaded ? string.IsNullOrEmpty(VisionGuard.Detector.Windows.Utils.ModelManager.LastFailureReason)
+                            : !string.IsNullOrEmpty(VisionGuard.Detector.Windows.Utils.ModelManager.LastFailureReason),
+        option.IsDownloaded ? "(download ok; reason cleared)" : VisionGuard.Detector.Windows.Utils.ModelManager.LastFailureReason);
     // 本档位清单里必须只出现本档位模型：档位判定若晚于 ModelManager 的静态初始化，
     // legacy 档会列出 yolo26* 并去下载本档位跑不了的模型（2026-09-17 实测）。
     var profileKeys = viewModel.Models.Select(m => m.Key).ToArray();
