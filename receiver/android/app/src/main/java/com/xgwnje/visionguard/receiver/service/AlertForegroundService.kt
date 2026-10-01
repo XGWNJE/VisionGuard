@@ -25,7 +25,6 @@ import com.xgwnje.visionguard.receiver.data.model.DeviceInfo
 import com.xgwnje.visionguard.receiver.data.model.RemovedDevice
 import com.xgwnje.visionguard.receiver.data.model.ScreenshotData
 import com.xgwnje.visionguard.receiver.data.cache.ScreenshotCache
-import com.xgwnje.visionguard.receiver.data.model.DeviceConfig
 import com.xgwnje.visionguard.receiver.data.model.DeviceRegistrySyncState
 import com.xgwnje.visionguard.receiver.data.model.moveDeviceWithinGroup
 import com.xgwnje.visionguard.receiver.data.model.removeOfflineDeviceById
@@ -94,9 +93,6 @@ class AlertForegroundService : LifecycleService() {
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
-
-    // ── 设备参数缓存（记录每台设备最后下发的值）──────────────
-    private val deviceConfigs = mutableMapOf<String, DeviceConfig>()
 
     // ── 截图数据（拦截缓存后转发）────────────────────────────
     private val _onScreenshotData = MutableSharedFlow<ScreenshotData>(extraBufferCapacity = 8)
@@ -319,29 +315,6 @@ class AlertForegroundService : LifecycleService() {
 
     fun sendSetConfig(targetDeviceId: String, key: String, value: String, targetSourceId: String? = null) {
         wsClient.sendSetConfig(targetDeviceId, key, value, targetSourceId)
-        // 同步更新本地参数缓存
-        val current = deviceConfigs.getOrPut(targetDeviceId) { DeviceConfig() }
-        deviceConfigs[targetDeviceId] = when (key) {
-            "cooldown" -> current.copy(cooldown = value.toIntOrNull() ?: current.cooldown)
-            "confidence" -> current.copy(confidence = value.toDoubleOrNull() ?: current.confidence)
-            "targets" -> current.copy(targets = value)
-            "targetSamplingRate" -> current.copy(
-                targetSamplingRate = value.toIntOrNull()?.coerceIn(1, 5) ?: current.targetSamplingRate
-            )
-            "modelKey" -> current.copy(modelKey = value.ifBlank { current.modelKey })
-            else -> current
-        }
-    }
-
-    /** 查询设备最后下发的参数配置 */
-    fun getDeviceConfig(deviceId: String): DeviceConfig? = deviceConfigs[deviceId]
-
-    /** 手动重试连接（UI 重试按钮调用） */
-    fun reconnect() {
-        lifecycleScope.launch {
-            val deviceId = settingsRepo.ensureDeviceId()
-            wsClient.connect(AppConstants.SERVER_URL, AppConstants.API_KEY, deviceId)
-        }
     }
 
     fun moveDevice(fromIndex: Int, toIndex: Int) {

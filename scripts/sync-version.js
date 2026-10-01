@@ -3,7 +3,6 @@
 // │ sync-version.js                                         │
 // │ 角色：版本号统一同步脚本                                 │
 // │ 用法：node scripts/sync-version.js [new-version]        │
-// │ 示例：node scripts/sync-version.js 4.1.0               │
 // └─────────────────────────────────────────────────────────┘
 
 const fs = require('fs');
@@ -71,7 +70,7 @@ function main() {
     `CURRENT_VERSION = "${newVersion}"`
   );
 
-  // 6. 视觉告警 build.gradle.kts
+  // 6. VisionGuard 控制台 build.gradle.kts
   replaceInFile(
     path.join(ROOT, 'receiver', 'android', 'app', 'build.gradle.kts'),
     /versionName = "[\d.]+"/,
@@ -83,7 +82,7 @@ function main() {
     `versionCode = ${versionCode}`
   );
 
-  // 7. 视觉告警 AppConstants.kt (VERSION)
+  // 7. VisionGuard 控制台 AppConstants.kt (VERSION)
   replaceInFile(
     path.join(ROOT, 'receiver', 'android', 'app', 'src', 'main', 'java', 'com', 'xgwnje', 'visionguard', 'receiver', 'AppConstants.kt'),
     /VERSION = "[\d.]+"/,

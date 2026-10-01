@@ -2,7 +2,7 @@
 // │ NativeMethods.cs                                        │
 // │ 角色：Windows API P/Invoke 集中声明                     │
 // │ 包含：GDI (BitBlt), 窗口 (PrintWindow, EnumWindows),    │
-// │       DWM, 键盘钩子, TextBox Placeholder, 主题          │
+// │       DWM 窗口边界和可见状态                            │
 // └─────────────────────────────────────────────────────────┘
 using System;
 using System.Runtime.InteropServices;
@@ -111,12 +111,6 @@ namespace VisionGuard.Detector.Windows.Capture
 
         internal const int SM_CXSCREEN = 0;
         internal const int SM_CYSCREEN = 1;
-
-        // ── TextBox Placeholder（cue banner）────────────────────────
-        internal const int EM_SETCUEBANNER = 0x1501;
-
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        internal static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, string lParam);
 
     }
 }

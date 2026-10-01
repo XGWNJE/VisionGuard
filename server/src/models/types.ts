@@ -2,7 +2,6 @@
 // │ types.ts                                                │
 // │ 角色：所有 TypeScript 接口/类型定义                       │
 // │ 覆盖：HTTP 请求/响应、WebSocket 消息、内部数据结构        │
-// │ 版本：4.0.0                                              │
 // └─────────────────────────────────────────────────────────┘
 
 // ── HTTP ──────────────────────────────────────────────────
@@ -50,7 +49,7 @@ export interface WsAuthMessage {
   version?: string;
 }
 
-/** 检测端 → 服务器：心跳 (每 15 秒) */
+/** 检测端 → 服务器：心跳 (每 3 秒) */
 export interface WsHeartbeat {
   type: 'heartbeat';
   deviceId: string;
@@ -70,7 +69,7 @@ export interface WsHeartbeat {
   sources?: SourceStatus[];
 }
 
-/** 接收端 → 服务器：心跳 (每 20 秒) */
+/** 控制台 → 服务器：心跳 (每 30 秒) */
 export interface WsHeartbeatAndroid {
   type: 'heartbeat-android';
   deviceId: string;
@@ -97,7 +96,7 @@ export interface SourceStatus {
   targetSamplingRate?: number;
 }
 
-/** 服务器 → 接收端：报警推送 (v4.0.0+: 元数据 only, 截图走独立 screenshot-data 消息) */
+/** 服务器 → 控制台：报警元数据；截图走独立 screenshot-data 消息。 */
 export interface WsAlertPush {
   type: 'alert';
   alertId: string;
@@ -110,9 +109,9 @@ export interface WsAlertPush {
   createdAt?: number;
   screenshotUrl?: string;
   timings?: Record<string, number>;
-  /** @deprecated since 4.0.0 — 使用 capturedAt 替代 */
+  /** 兼容字段；帧时间使用 capturedAt。 */
   wsSentAt?: string;
-  /** v4.0.0: 检测端捕获帧的 NTP 时间戳 (ISO8601) */
+  /** 检测端捕获帧的 NTP 时间戳 (ISO8601) */
   capturedAt?: string;
   serverReceivedAt?: string;
   serverRelayedAt?: string;
@@ -194,16 +193,6 @@ export interface WsSetConfigRelay {
   value: string;
   targetDeviceId: string;
   targetSourceId?: string;
-}
-
-/** 服务器 → 检测端：报警持久化确认；同一 alertId 可安全重试。 */
-export interface WsAlertAck {
-  type: 'alert-ack';
-  alertId: string;
-  accepted: boolean;
-  duplicate: boolean;
-  reason: 'stored' | 'duplicate' | 'alert-id-conflict' | 'storage-failed';
-  serverReceivedAt: string;
 }
 
 /** 客户端 → 服务器：主动断开原因 */

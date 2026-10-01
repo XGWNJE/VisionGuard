@@ -1017,35 +1017,6 @@ private fun ConfigSection(
 }
 
 @Composable
-private fun StepperButton(
-    icon: ImageVector,
-    enabled: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .size(44.dp)
-            .alpha(if (enabled) 1f else 0.42f)
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(18.dp),
-        color = ReceiverSurface,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.76f)),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = ReceiverPrimary,
-                modifier = Modifier.size(22.dp)
-            )
-        }
-    }
-}
-
-@Composable
 private fun QuickValueChip(
     text: String,
     selected: Boolean,

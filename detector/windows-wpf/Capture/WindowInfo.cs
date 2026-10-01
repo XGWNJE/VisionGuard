@@ -1,7 +1,7 @@
 // ┌─────────────────────────────────────────────────────────┐
 // │ WindowInfo.cs                                           │
 // │ 角色：顶层窗口信息 DTO (Handle, Title, ClassName, Bounds)│
-// │ 用途：WindowEnumerator 返回值，Form1 持有当前目标窗口   │
+// │ 用途：WindowEnumerator 返回值，SourceViewModel 持有当前目标窗口   │
 // └─────────────────────────────────────────────────────────┘
 using System;
 using System.Drawing;

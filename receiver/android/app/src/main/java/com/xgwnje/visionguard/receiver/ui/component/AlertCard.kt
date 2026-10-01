@@ -52,7 +52,6 @@ import com.xgwnje.visionguard.receiver.ui.home.AlertCardUiModel
 import com.xgwnje.visionguard.receiver.ui.home.DetectionChipUiModel
 import com.xgwnje.visionguard.receiver.ui.home.DetectionTarget
 import com.xgwnje.visionguard.receiver.ui.home.buildAlertCardUiModel
-import com.xgwnje.visionguard.receiver.ui.home.formatAlertTime
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverAlert
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverAlertSoft
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverAmber
@@ -226,5 +225,3 @@ private fun targetColor(target: DetectionTarget): Color =
         DetectionTarget.UNKNOWN -> ReceiverMuted
         else -> ReceiverPrimary
     }
-
-internal fun formatTimestamp(iso: String): String = formatAlertTime(iso)

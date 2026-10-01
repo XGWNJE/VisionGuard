@@ -32,10 +32,6 @@ class ScreenshotCache(context: Context) {
         return if (file.exists()) file else null
     }
 
-    /** 是否已缓存 */
-    fun isCached(alertId: String): Boolean =
-        File(cacheDir, "$alertId.jpg").exists()
-
     /** 清除所有缓存 */
     fun clearAll() {
         cacheDir.listFiles()?.forEach { it.delete() }

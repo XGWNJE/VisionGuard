@@ -10,31 +10,15 @@ function readReleases(): Record<string, { version: string; url: string; size: nu
 }
 
 test('resolveReleaseKey 把 Windows 平台别名统一到 wpf', () => {
-  const releases = { wpf: { version: '1.0.0', url: '/releases/a.zip', size: 1 } };
-  assert.equal(resolveReleaseKey(releases, 'wpf', ''), 'wpf');
-  assert.equal(resolveReleaseKey(releases, 'windows', ''), 'wpf');
-  // Windows 只维护单一 WPF 检测端，旧标识不得再被受理。
-  assert.equal(resolveReleaseKey(releases, 'winforms', ''), 'winforms');
+  assert.equal(resolveReleaseKey('wpf'), 'wpf');
+  assert.equal(resolveReleaseKey('windows'), 'wpf');
+  assert.equal(resolveReleaseKey('winforms'), 'winforms');
 });
 
-test('resolveReleaseKey 忽略旧档位参数并统一分发 wpf', () => {
-  const withLegacy = {
-    wpf: { version: '1.0.0', url: '/releases/modern.zip', size: 1 },
-    'wpf-legacy': { version: '1.0.0', url: '/releases/legacy.zip', size: 1 },
-  };
-  // modern 与 legacy 已成为同一安装包内的实现细节。
-  assert.equal(resolveReleaseKey(withLegacy, 'wpf', 'legacy'), 'wpf');
-  assert.equal(resolveReleaseKey(withLegacy, 'wpf', 'modern'), 'wpf');
-
-  const withoutLegacy = { wpf: { version: '1.0.0', url: '/releases/modern.zip', size: 1 } };
-  assert.equal(resolveReleaseKey(withoutLegacy, 'wpf', 'legacy'), 'wpf');
-  assert.equal(resolveReleaseKey(withoutLegacy, 'wpf', 'arm64'), 'wpf');
-});
-
-test('android 平台不受档位影响', () => {
-  const releases = { 'android-detector': { version: '1.0.0', url: '/releases/d.apk', size: 1 } };
-  assert.equal(resolveReleaseKey(releases, 'android-detector', 'legacy'), 'android-detector');
-  assert.equal(resolveReleaseKey(releases, 'android', 'legacy'), 'android-receiver');
+test('resolveReleaseKey 解析 Android 平台', () => {
+  assert.equal(resolveReleaseKey('android-detector'), 'android-detector');
+  assert.equal(resolveReleaseKey('android'), 'android-receiver');
+  assert.equal(resolveReleaseKey('android-receiver'), 'android-receiver');
 });
 
 test('releases.json 的平台条目自洽', () => {
@@ -43,7 +27,7 @@ test('releases.json 的平台条目自洽', () => {
   assert.ok(keys.includes('wpf'), '缺少 wpf 条目');
   assert.ok(keys.includes('android-detector'), '缺少 android-detector 条目');
   assert.ok(keys.includes('android-receiver'), '缺少 android-receiver 条目');
-  // WinForms 检测端已退役，条目不得再留在发布元数据里。
+  // 发布只维护当前三个平台，Windows 不按内部运行时拆分条目。
   assert.ok(!keys.includes('winforms'), 'winforms 条目应已退役');
   assert.ok(!keys.includes('wpf-legacy'), 'Windows 发布条目必须统一为 wpf');
   // 每个条目的 URL 必须是它的版本号对应的文件名，避免发布脚本改名后静默错配。

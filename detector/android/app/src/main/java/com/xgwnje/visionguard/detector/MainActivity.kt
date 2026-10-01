@@ -45,10 +45,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.lifecycle.lifecycleScope
 import com.xgwnje.visionguard.detector.data.model.DeploymentOrientation
 import com.xgwnje.visionguard.detector.data.model.MonitorConfig
-import com.xgwnje.visionguard.detector.data.remote.WsState
 import com.xgwnje.visionguard.detector.data.repository.SettingsRepository
 import com.xgwnje.visionguard.detector.inference.SocWhitelist
 import com.xgwnje.visionguard.detector.service.DetectorForegroundService

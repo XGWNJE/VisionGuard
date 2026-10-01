@@ -241,16 +241,6 @@
     </Style>
 
     <!-- ════════════════════════════════════════════════════════════ -->
-    <!-- 窗口默认背景 -->
-    <!-- ════════════════════════════════════════════════════════════ -->
-    <Style TargetType="Window" x:Key="DarkWindow">
-        <Setter Property="Background" Value="{StaticResource BackgroundDark}"/>
-        <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
-        <Setter Property="FontFamily" Value="Segoe UI Variable Text, Microsoft YaHei UI"/>
-        <Setter Property="FontSize" Value="13"/>
-    </Style>
-
-    <!-- ════════════════════════════════════════════════════════════ -->
     <!-- ScrollBar —— 彻底覆盖系统默认浅色滚动条 -->
     <!-- ════════════════════════════════════════════════════════════ -->
     <Style TargetType="ScrollBar">
@@ -291,39 +281,6 @@
                 <Setter Property="MinHeight" Value="10"/>
             </Trigger>
         </Style.Triggers>
-    </Style>
-
-    <!-- ════════════════════════════════════════════════════════════ -->
-    <!-- Slider —— 重模板实现暗色滑块 -->
-    <!-- ════════════════════════════════════════════════════════════ -->
-    <Style TargetType="Slider" x:Key="DarkSlider">
-        <Setter Property="Background" Value="{StaticResource BorderBrush}"/>
-        <Setter Property="Foreground" Value="{StaticResource Primary}"/>
-        <Setter Property="Template">
-            <Setter.Value>
-                <ControlTemplate TargetType="Slider">
-                    <Grid>
-                        <Track x:Name="PART_Track">
-                            <Track.DecreaseRepeatButton>
-                                <RepeatButton Command="Slider.DecreaseLarge" Background="Transparent" Focusable="false"/>
-                            </Track.DecreaseRepeatButton>
-                            <Track.IncreaseRepeatButton>
-                                <RepeatButton Command="Slider.IncreaseLarge" Background="Transparent" Focusable="false"/>
-                            </Track.IncreaseRepeatButton>
-                            <Track.Thumb>
-                                <Thumb Width="16" Height="16">
-                                    <Thumb.Template>
-                                        <ControlTemplate TargetType="Thumb">
-                                            <Ellipse Fill="{StaticResource Primary}" Stroke="{StaticResource TextPrimary}" StrokeThickness="1"/>
-                                        </ControlTemplate>
-                                    </Thumb.Template>
-                                </Thumb>
-                            </Track.Thumb>
-                        </Track>
-                    </Grid>
-                </ControlTemplate>
-            </Setter.Value>
-        </Setter>
     </Style>
 
     <!-- ════════════════════════════════════════════════════════════ -->

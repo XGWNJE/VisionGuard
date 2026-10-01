@@ -130,7 +130,7 @@ test('five canonical component names cannot drift', () => {
   assert.ok(errors.some(message => message.includes('canonical component name 视觉中继')));
 });
 
-test('platforms remain distinct when detector application names are identical', () => {
+test('component platforms cannot drift', () => {
   const read = p => fs.readFileSync(path.join(root, p), 'utf8');
   const errors = [];
   checkComponentContract(root,
@@ -139,20 +139,20 @@ test('platforms remain distinct when detector application names are identical', 
   assert.ok(errors.some(message => message.includes('README.md must list the canonical platforms')));
 });
 
-test('license transition and commercial boundary cannot silently drift', () => {
+test('MIT license and contribution policy cannot silently drift', () => {
   const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), 'utf8');
   const errors = [];
   checkLicenseTexts({
-    license: read('LICENSE').replaceAll('Hardware Detector Use', 'Optional Hardware Use'),
-    legacyMit: read('LICENSE-MIT'),
-    licenseHistory: read('LICENSE-HISTORY.md').replace('c43c0ff122043d477b442b7507d193b62ea321bb', 'unknown'),
-    commercialLicense: read('COMMERCIAL-LICENSE.md'),
+    license: read('LICENSE').replace('MIT License', 'Restricted License')
+      .replace('Permission is hereby granted, free of charge', 'Permission requires approval'),
     contributing: read('CONTRIBUTING.md').replace('暂不接受外部代码、模型、素材或文档 Pull Request', '欢迎直接提交任何 Pull Request'),
-    readme: read('README.md').replace('badge/license-VGSAL--1.0-', 'badge/license-MIT-'),    agents: read('AGENTS.md')
+    readme: read('README.md').replace('badge/license-MIT-', 'badge/license-Other-'),
+    overview: read('docs/codex/10-project-overview.md'),
+    agents: read('AGENTS.md')
   }, errors);
 
-  assert.ok(errors.some((message) => message.includes('paid hardware-detector definition')));
-  assert.ok(errors.some((message) => message.includes('exact MIT cutoff commit')));
+  assert.ok(errors.some((message) => message.includes('MIT license title')));
+  assert.ok(errors.some((message) => message.includes('MIT permission grant')));
   assert.ok(errors.some((message) => message.includes('controlled contribution boundary')));
-  assert.ok(errors.some((message) => message.includes('VGSAL-1.0 badge')));
+  assert.ok(errors.some((message) => message.includes('MIT badge')));
 });

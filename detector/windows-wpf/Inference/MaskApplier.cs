@@ -1,7 +1,7 @@
 // ┌─────────────────────────────────────────────────────────┐
 // │ MaskApplier.cs                                          │
 // │ 角色：在捕获后的 Bitmap 上 in-place 涂黑遮罩区域        │
-// │ 调用：MonitorService.OnTick 在 ToTensor 之前执行         │
+// │ 调用：MonitorService.OnTick 在 Prepare 之前执行         │
 // │ 副作用：推理帧 / 报警截图 / UI 预览三处同源              │
 // │ 与 Android cropAndMask 行为对齐（黑色填充，相对坐标）   │
 // └─────────────────────────────────────────────────────────┘

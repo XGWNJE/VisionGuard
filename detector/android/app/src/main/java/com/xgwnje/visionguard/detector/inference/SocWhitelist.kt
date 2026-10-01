@@ -12,8 +12,6 @@ import android.util.Log
 object SocWhitelist {
 
     private const val TAG = "VG_SoC"
-    private const val INPUT_SIZE_LOW = 320
-    private const val INPUT_SIZE_HIGH = 640
 
     // 骁龙 8 Gen 系列关键字（高端 + 旧旗舰）
     private val SNAPDRAGON_8_KEYWORDS = listOf(
@@ -118,15 +116,6 @@ object SocWhitelist {
 
         Log.i(TAG, "No high-end SoC detected, using default low resolution")
         return false
-    }
-
-    /**
-     * 推荐输入分辨率。
-     *
-     * @return 高端 SoC → 640，其他 → 320
-     */
-    fun recommendInputSize(): Int {
-        return if (isHighEndSoc()) INPUT_SIZE_HIGH else INPUT_SIZE_LOW
     }
 
     /**

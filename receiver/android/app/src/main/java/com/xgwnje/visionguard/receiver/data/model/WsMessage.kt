@@ -6,14 +6,8 @@ package com.xgwnje.visionguard.receiver.data.model
 // │ 用途：Gson 序列化/反序列化                               │
 // └─────────────────────────────────────────────────────────┘
 
-import com.google.gson.JsonObject
 import com.xgwnje.visionguard.receiver.AppConstants
 import com.xgwnje.visionguard.receiver.BuildConfig
-
-/** 所有 WS 消息的原始容器；先按 type 字段决定具体类型 */
-data class RawWsMessage(
-    val type: String = ""
-)
 
 /** Android → 服务器：认证 */
 data class WsAuthMessage(
@@ -24,13 +18,6 @@ data class WsAuthMessage(
     val deviceId: String,
     val deviceName: String = "Android",
     val version: String = BuildConfig.VERSION_NAME
-)
-
-/** 服务器 → Android：认证结果 */
-data class WsAuthResult(
-    val type: String = "auth-result",
-    val success: Boolean = false,
-    val reason: String = ""
 )
 
 /** Android → 服务器：发送控制命令（pause / resume / stop-alarm） */

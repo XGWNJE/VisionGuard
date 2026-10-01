@@ -4,7 +4,7 @@
 
 ## 当前模型集合
 
-### 视觉检测（Windows） legacy 档（Win7 SP1 x64，YOLOv5）
+### VisionGuard 视觉节点 legacy 档（Win7 SP1 x64，YOLOv5）
 
 legacy 档的 ONNX Runtime 原生库是 1.1.0，算子覆盖不足以支撑 YOLO26，因此固定使用 YOLOv5 系列：
 
@@ -15,7 +15,7 @@ legacy 档的 ONNX Runtime 原生库是 1.1.0，算子覆盖不足以支撑 YOLO
 - `yolov5mu_320.onnx`
 - `yolov5mu_640.onnx`
 
-### 视觉检测（Windows） modern 档（Win10/11，YOLO26）
+### VisionGuard 视觉节点 modern 档（Win10/11，YOLO26）
 
 - `yolo26n_320.onnx`
 - `yolo26n_640.onnx`
@@ -56,7 +56,7 @@ legacy 档的 ONNX Runtime 原生库是 1.1.0，算子覆盖不足以支撑 YOLO
 
 | 端/档位 | 路径 | 管理类 |
 |---|---|---|
-| 视觉检测（Windows）（legacy 与 modern 两档共用同一缓存目录，清单按档位切换） | `%APPDATA%\VisionGuard\models\{modelKey}.onnx` | `Utils\ModelManager.cs` |
+| VisionGuard 视觉节点（legacy 与 modern 两档共用同一缓存目录，清单按档位切换） | `%APPDATA%\VisionGuard\models\{modelKey}.onnx` | `Utils\ModelManager.cs` |
 | Android | `filesDir/models/{modelName}_{inputSize}.onnx` | `OnnxInferenceEngine.kt` → 内置 asset（存在时）→ `downloadModel()` |
 
 ### 首次安装 / 旧版升级
@@ -71,14 +71,14 @@ legacy 档的 ONNX Runtime 原生库是 1.1.0，算子覆盖不足以支撑 YOLO
 
 ## 输出格式
 
-- 视觉检测（Windows） legacy 档 YOLOv5：`[1,84,N]`
-- 视觉检测（Windows） modern 档 YOLO26：`[1,300,6]`
+- VisionGuard 视觉节点 legacy 档 YOLOv5：`[1,84,N]`
+- VisionGuard 视觉节点 modern 档 YOLO26：`[1,300,6]`
 - 视觉检测（Android）：YOLO26 格式，解析逻辑在 `YoloOutputParser.kt`
 
 ## COCO 映射真相源
 
-- 视觉检测（Windows）：`detector/windows-wpf/Data/CocoClassMap.cs`
-- 视觉告警：`receiver/android/.../CocoClassMap.kt`
+- VisionGuard 视觉节点：`detector/windows-wpf/Data/CocoClassMap.cs`
+- VisionGuard 控制台：`receiver/android/.../CocoClassMap.kt`
 - 视觉检测（Android）：`YoloOutputParser.kt` 内维护标签数组
 
 ## 统一目标子集
@@ -95,7 +95,7 @@ legacy 档的 ONNX Runtime 原生库是 1.1.0，算子覆盖不足以支撑 YOLO
 ## 维护规则
 
 - 模型文件不入 git 版本控制（`.gitignore` 排除 Windows `Assets/*.onnx`；Android 当前没有模型 assets 目录）。
-- 视觉检测（Windows）项目文件显式将模型 `CopyToOutputDirectory=Never`；正式压缩阶段仍排除 `Assets/`，形成双重边界。
+- VisionGuard 视觉节点项目文件从构建项中排除 `Assets/`；目录仍可保存发布所需模型，正式压缩阶段也排除该目录。
 - 视觉检测（Android）不把模型放进 APK 的 assets；当前没有模型文件，首次启动下载到 `filesDir/models/`。
 - 类目中英文映射引用源码静态表，不手动复制文档
 - 导出脚本、模型文件名、输入尺寸只在源码已存在时写入说明

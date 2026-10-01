@@ -126,7 +126,7 @@ namespace VisionGuard.Detector.Windows.Services
             // net472 的 Index/Range 不可用，用显式下标取代 ^1。
             var fps = frames.Length < 2 ? 0 : (frames.Length - 1) / Math.Max(0.001, (frames[frames.Length - 1] - frames[0]).TotalSeconds);
 
-            // 性能看门狗：实测帧率连续低于目标帧率才算不足（容量基线机制已于 2026-09-20 移除）。
+            // 性能看门狗：实测帧率连续低于目标帧率才算不足。
             // 持续时间在这里累计：只要仍处于不足状态就保留起点，恢复正常即清零。
             double targetFps = Math.Max(1, runtime.Source.Config.TargetFps);
             bool belowTarget = PerformanceWatchdog.IsBelowTarget(fps, targetFps, runtime.Monitor.IsStarted);

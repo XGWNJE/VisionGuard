@@ -4,10 +4,10 @@
     <TargetFramework>net472</TargetFramework>
     <PlatformTarget>x64</PlatformTarget>
     <AssemblyName>VisionGuard.Detector.Windows</AssemblyName>
-    <Title>视觉检测</Title>
-    <AssemblyTitle>视觉检测</AssemblyTitle>
-    <Product>视觉检测</Product>
-    <Description>视觉检测统一启动入口</Description>
+    <Title>VisionGuard 视觉节点</Title>
+    <AssemblyTitle>VisionGuard 视觉节点</AssemblyTitle>
+    <Product>VisionGuard 视觉节点</Product>
+    <Description>VisionGuard 视觉节点统一启动入口</Description>
     <RootNamespace>VisionGuard.Detector.Windows.Launcher</RootNamespace>
     <StartupObject>VisionGuard.Detector.Windows.Launcher.Program</StartupObject>
     <ApplicationManifest>app.manifest</ApplicationManifest>

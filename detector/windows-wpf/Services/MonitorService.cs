@@ -4,7 +4,7 @@
 // │ 线程：Timer回调在 ThreadPool 执行，UI 更新通过事件      │
 // │ 依赖：OnnxInferenceEngine, AlertService, ImagePreprocessor│
 // │ 对外 API：Start(), Stop()                               │
-// │ 事件：FrameProcessed (每帧结果通知 Form1 更新 UI)       │
+// │ 事件：FrameProcessed (每帧结果通知来源 UI)       │
 // └─────────────────────────────────────────────────────────┘
 using System;
 using System.Collections.Generic;
@@ -33,7 +33,6 @@ namespace VisionGuard.Detector.Windows.Services
         private MonitorConfig        _config;
         private Timer                _timer;
         private int  _isRunning;   // 0=idle, 1=processing（Interlocked 防重入）
-        private int  _isPaused;    // 0=running, 1=paused（Interlocked 远控暂停）
         private bool _disposed;
         // 输出形态日志：只在形态变化时写一次，避免每帧刷屏；形态与档位不匹配是漏检头号根因，必须可诊断。
         private string _loggedOutputLayout;
@@ -41,22 +40,8 @@ namespace VisionGuard.Detector.Windows.Services
         private readonly ManualResetEvent _tickCompleted = new ManualResetEvent(true);
 
         public bool IsStarted => _timer != null;
-        public bool IsPaused => Interlocked.CompareExchange(ref _isPaused, 0, 0) == 1;
         public string ActiveBackend => _engine?.ActiveBackend.ToString() ?? "Unavailable";
         public string BackendFallbackReason => _engine?.BackendFallbackReason ?? string.Empty;
-
-        /// <summary>选区/窗口是否已设定（用于心跳同步给 Android 显示准备状态）</summary>
-        public bool IsReady
-        {
-            get
-            {
-                if (_config == null) return false;
-                if (_config.CaptureMode == CaptureMode.WindowHandle)
-                    return _config.TargetWindowHandle != IntPtr.Zero
-                        && (_config.WindowSubRegion == Rectangle.Empty || CaptureSizeConstraints.IsValid(_config.WindowSubRegion));
-                return CaptureSizeConstraints.IsValid(_config.CaptureRegion);
-            }
-        }
 
         public MonitorService(
             AlertService alertService,
@@ -125,31 +110,12 @@ namespace VisionGuard.Detector.Windows.Services
             _tickCompleted.Set();             // 恢复为已结束状态
         }
 
-        public void Pause()
-        {
-            Interlocked.Exchange(ref _isPaused, 1);
-        }
-
-        public void Resume()
-        {
-            Interlocked.Exchange(ref _isPaused, 0);
-        }
-
-        public void UpdateConfig(MonitorConfig config)
-        {
-            Volatile.Write(ref _config, config);
-        }
-
         // ── 每帧回调（ThreadPool 线程）──────────────────────────────
 
         private void OnTick(object state)
         {
             // 停止中：跳过本次Tick（Stop 已调用 WaitOne，这里直接返回）
             if (!_tickCompleted.WaitOne(0)) return;
-
-            // 远控暂停：跳过帧处理但不停止 Timer（保留心跳上报）
-            // 必须在 _isRunning 之前检查，否则暂停后 _isRunning 永远为 1，Resume 后也无法恢复
-            if (Interlocked.CompareExchange(ref _isPaused, 0, 0) == 1) return;
 
             // 防重入：若上一帧还在推理，跳过本帧
             if (Interlocked.CompareExchange(ref _isRunning, 1, 0) != 0) return;
@@ -183,8 +149,7 @@ namespace VisionGuard.Detector.Windows.Services
                     MaskApplier.ApplyMasks(frame, cfg.MaskRegions);
 
                 // 2. 预处理（等比缩放 + 居中黑边填充 + 转张量）。变换必须和张量一起传给解析器，
-                //    否则极端选区的检测框会按旧的拉伸比例漂移。
-                failureKind = MonitorFailureKind.Processing;
+                    failureKind = MonitorFailureKind.Processing;
                 int modelSize = _engine.ModelInputSize;
                 sw.Restart();
                 PreprocessedImage preprocessed = ImagePreprocessor.Prepare(frame, modelSize);

@@ -62,7 +62,6 @@ import com.xgwnje.visionguard.receiver.ui.theme.ReceiverAlertSoft
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverBackground
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverMuted
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverPrimary
-import com.xgwnje.visionguard.receiver.ui.theme.ReceiverPrimarySoft
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverSurface
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverSurfaceMuted
 import com.xgwnje.visionguard.receiver.ui.viewmodel.DeviceViewModel

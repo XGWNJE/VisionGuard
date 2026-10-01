@@ -96,8 +96,7 @@ test('publish-release.ps1 keeps GitHub optional and release deployment reproduci
   assert.match(script, /scripts\\check-docs\.js/);
   assert.match(script, /Preflight only complete/);
   assert.match(script, /VisionGuard-WPF-v\$Version\.zip/);
-  // 驻留程序由检测端构建复制进 bin\x64\<档位>\，发布只打包档位目录；
-  // 再额外合并驻留目录会触发 New-ZipPackage 的重复根名检查。
+  // 发布使用 windows-package 中的统一目录，驻留由组装脚本放入根目录。
   assert.doesNotMatch(script, /windows-resident\\bin\\Release\\net472/);
   assert.doesNotMatch(script, /windows-resident\\bin\\Release\\net9\.0-windows/);
   assert.match(script, /VisionGuard\.Resident\.Windows\.exe\.config/);

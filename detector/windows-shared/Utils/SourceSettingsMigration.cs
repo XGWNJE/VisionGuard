@@ -35,18 +35,5 @@ namespace VisionGuard.Detector.Windows.Utils
             return highest;
         }
 
-        /// <summary>
-        /// 迁移来源数量键；新键已存在时以新键为准，不覆盖用户当前的设置。
-        /// </summary>
-        public static int MigrateCount(SharedSettingsFile store, string oldKey, string newKey, int fallback)
-        {
-            if (store == null) throw new ArgumentNullException("store");
-            int existing = store.GetInt(newKey, -1);
-            if (existing >= 0) return existing;
-            int legacy = store.GetInt(oldKey, -1);
-            if (legacy < 0) return fallback;
-            store.Set(newKey, legacy.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            return legacy;
-        }
     }
 }

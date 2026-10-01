@@ -42,7 +42,7 @@ namespace VisionGuard.Detector.Windows.Launcher
             catch (Exception ex)
             {
                 WriteLog("fatal", ex.ToString());
-                MessageBox.Show("视觉检测启动失败：\n" + ex.Message, "视觉检测", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("VisionGuard 视觉节点启动失败：\n" + ex.Message, "VisionGuard 视觉节点", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return 1;
             }
         }
@@ -95,13 +95,13 @@ namespace VisionGuard.Detector.Windows.Launcher
                 catch (Exception ex)
                 {
                     WriteLog("update-check-failed", ex.ToString());
-                    if (interactive) MessageBox.Show("检查更新失败：\n" + ex.Message, "视觉检测更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    if (interactive) MessageBox.Show("检查更新失败：\n" + ex.Message, "VisionGuard 视觉节点更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return 1;
                 }
 
                 if (!info.HasUpdate)
                 {
-                    if (interactive) MessageBox.Show("当前已是最新版本。", "视觉检测更新", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    if (interactive) MessageBox.Show("当前已是最新版本。", "VisionGuard 视觉节点更新", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return 0;
                 }
                 if (string.IsNullOrWhiteSpace(info.LatestVersion) || string.IsNullOrWhiteSpace(info.DownloadUrl))
@@ -112,7 +112,7 @@ namespace VisionGuard.Detector.Windows.Launcher
                 var answer = MessageBox.Show(
                     "发现新版本 " + info.LatestVersion + "（当前 " + Version + "）。\n\n" +
                     "更新器会校验完整包、关闭检测端和驻留程序，并在失败时恢复旧版本。现在更新吗？",
-                    "视觉检测更新", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                    "VisionGuard 视觉节点更新", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
                 if (answer != DialogResult.Yes) return 0;
 
                 string updateRoot = Path.Combine(
@@ -298,7 +298,7 @@ namespace VisionGuard.Detector.Windows.Launcher
                 {
                     throw new AggregateException("更新失败且自动回滚失败。旧目录：" + backup, ex, rollbackError);
                 }
-                MessageBox.Show("更新失败，已经恢复旧版本：\n" + ex.Message, "视觉检测更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("更新失败，已经恢复旧版本：\n" + ex.Message, "VisionGuard 视觉节点更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return 1;
             }
             finally

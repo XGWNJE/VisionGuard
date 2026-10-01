@@ -7,7 +7,6 @@ package com.xgwnje.visionguard.detector.service
 // │ 约束：无实时 Preview，仅 ImageAnalysis；默认 2 FPS       │
 // └─────────────────────────────────────────────────────────┘
 
-import android.app.Notification
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -18,14 +17,11 @@ import android.os.PowerManager
 import android.util.Log
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageProxy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
-import androidx.lifecycle.lifecycleScope
-import com.xgwnje.visionguard.detector.AppConstants
 import com.xgwnje.visionguard.detector.data.model.AlertEvent
 import com.xgwnje.visionguard.detector.data.model.MonitorConfig
 import com.xgwnje.visionguard.detector.data.model.WsCommandMessage
@@ -56,7 +52,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import kotlin.math.max
 
 private const val TAG = "VG_Service"
 

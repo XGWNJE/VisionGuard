@@ -1,7 +1,7 @@
 // ┌─────────────────────────────────────────────────────────┐
 // │ MonitorConfig.cs                                        │
 // │ 角色：监控配置 DTO (捕获模式/阈值/FPS/类别等)           │
-// │ 用途：Form1 构建 → MonitorService.Start() 消费          │
+// │ 用途：SourceViewModel 构建 → MonitorService.Start() 消费          │
 // │ 包含：CaptureMode 枚举 (ScreenRegion / WindowHandle)    │
 // └─────────────────────────────────────────────────────────┘
 using System;
@@ -47,7 +47,7 @@ namespace VisionGuard.Detector.Windows.Models
         public Rectangle WindowSubRegion { get; set; } = Rectangle.Empty;
 
         /// <summary>
-        /// 运行时持有的目标窗口句柄（不持久化，每次启动时由 Form1 注入）。
+        /// 运行时持有的目标窗口句柄（不持久化，每次启动时由 SourceViewModel 注入）。
         /// </summary>
         [System.Xml.Serialization.XmlIgnore]
         public IntPtr TargetWindowHandle { get; set; } = IntPtr.Zero;

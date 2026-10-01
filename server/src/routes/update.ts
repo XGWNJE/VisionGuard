@@ -5,9 +5,7 @@ import fs from 'fs';
 const router = Router();
 
 /**
- * 平台类型映射。
- * 只保留迁移后的客户端标识：视觉检测（Windows）统一为单一 WPF 构建，
- * 旧标识 open/close-wpf|winforms 一并不再受理，客户端一律查询 `wpf`。
+ * 平台别名映射。Windows 统一查询 `wpf`，Android 控制台查询 `android`。
  */
 const PLATFORM_MAP: Record<string, string> = {
   'wpf': 'wpf',
@@ -17,16 +15,9 @@ const PLATFORM_MAP: Record<string, string> = {
 };
 
 /**
- * 解析请求要用的发布条目键。
- *
- * 视觉检测（Windows）由统一包的启动器按操作系统选择内部运行时，服务端只发布 `wpf`。
- * profile 参数保留在函数签名中只为旧调用方平滑升级，不再影响发布条目。
+ * 按平台解析发布条目；Windows 运行时由统一包的启动器选择。
  */
-export function resolveReleaseKey(
-  _releases: Record<string, unknown>,
-  platform: string,
-  _profile: string
-): string | null {
+export function resolveReleaseKey(platform: string): string {
   return PLATFORM_MAP[platform] || platform;
 }
 
@@ -36,7 +27,6 @@ export function resolveReleaseKey(
  */
 router.get('/api/update', (req, res) => {
   const platform = String(req.query.platform || '').toLowerCase();
-  const profile = String(req.query.profile || '').toLowerCase();
   const currentVersion = String(req.query.version || '');
 
   // 读取 releases.json
@@ -48,8 +38,7 @@ router.get('/api/update', (req, res) => {
     return res.status(500).json({ ok: false, error: 'releases config not found' });
   }
 
-  const mappedPlatform = resolveReleaseKey(releases, platform, profile);
-  const info = mappedPlatform ? releases[mappedPlatform] : undefined;
+  const info = releases[resolveReleaseKey(platform)];
   if (!info) {
     return res.status(404).json({ ok: false, error: `platform not found: ${platform}` });
   }

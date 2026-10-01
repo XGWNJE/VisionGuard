@@ -14,9 +14,6 @@ object InferenceDiagnostics {
 
     private const val TAG = "VG_Diag"
 
-    /** 采样数量上限（避免日志过长） */
-    private const val SAMPLE_MAX = 10
-
     // ═════════════════════════════════════════════════════════
     // 1. CameraX 输入诊断
     // ═════════════════════════════════════════════════════════

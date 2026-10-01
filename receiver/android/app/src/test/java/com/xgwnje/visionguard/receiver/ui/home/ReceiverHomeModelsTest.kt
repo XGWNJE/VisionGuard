@@ -6,7 +6,6 @@ import com.xgwnje.visionguard.receiver.data.model.Detection
 import com.xgwnje.visionguard.receiver.data.model.DeviceConfig
 import com.xgwnje.visionguard.receiver.data.model.DeviceInfo
 import com.google.gson.Gson
-import java.time.ZonedDateTime
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -450,24 +449,6 @@ class ReceiverHomeModelsTest {
     }
 
     @Test
-    fun updateFeedbackTextAlwaysIncludesCurrentVersion() {
-        val currentVersion = "4.2.1"
-
-        assertEquals(
-            "当前 4.2.1，已是最新",
-            buildUpdateFeedbackText(UpdateFeedback.NO_UPDATE, currentVersion)
-        )
-        assertEquals(
-            "当前 4.2.1，检查失败",
-            buildUpdateFeedbackText(UpdateFeedback.CHECK_FAILED, currentVersion)
-        )
-        assertEquals(
-            "最新 4.3.0\n当前 4.2.1\n\n是否更新？",
-            buildUpdateDialogText(latestVersion = "4.3.0", currentVersion = currentVersion)
-        )
-    }
-
-    @Test
     fun updateDialogModelUsesReceiverChromeCopy() {
         val model = buildUpdateDialogModel(latestVersion = "4.3.0", currentVersion = "4.2.1")
 
@@ -504,45 +485,6 @@ class ReceiverHomeModelsTest {
         assertEquals("知道了", model.primaryActionLabel)
         assertEquals(null, model.secondaryActionLabel)
         assertEquals(UpdateDialogTone.FAILED, model.tone)
-    }
-
-    @Test
-    fun summaryCountsTodayAlertsOnlineDevicesAndLatestAlertTime() {
-        val now = ZonedDateTime.parse("2026-07-07T10:30:00+08:00")
-        val alerts = listOf(
-            AlertMessage(
-                alertId = "a-latest",
-                deviceName = "Win-客厅摄像头",
-                timestamp = "2026-07-07T09:48:15.000+08:00"
-            ),
-            AlertMessage(
-                alertId = "a-yesterday",
-                deviceName = "Win-侧门监控",
-                timestamp = "2026-07-06T23:59:59.000+08:00"
-            )
-        )
-        val devices = listOf(
-            DeviceInfo("d1", "客厅", online = true, isMonitoring = true, isReady = true, lastSeen = ""),
-            DeviceInfo("d2", "仓库", online = false, isMonitoring = false, isReady = true, lastSeen = ""),
-            DeviceInfo("d3", "侧门", online = true, isMonitoring = false, isReady = true, lastSeen = "")
-        )
-
-        val summary = buildReceiverHomeSummary(alerts, devices, now)
-
-        assertEquals(1, summary.todayAlertCount)
-        assertEquals(2, summary.onlineDeviceCount)
-        assertEquals("09:48", summary.latestAlertTimeLabel)
-    }
-
-    @Test
-    fun summaryUsesEmptyLatestTimeWhenThereAreNoAlerts() {
-        val now = ZonedDateTime.parse("2026-07-07T10:30:00+08:00")
-
-        val summary = buildReceiverHomeSummary(emptyList(), emptyList(), now)
-
-        assertEquals(0, summary.todayAlertCount)
-        assertEquals(0, summary.onlineDeviceCount)
-        assertEquals("--:--", summary.latestAlertTimeLabel)
     }
 
     @Test

@@ -1,9 +1,9 @@
 // ┌─────────────────────────────────────────────────────────┐
 // │ ImagePreprocessor.cs                                    │
-// │ 角色：将 Bitmap 缩放并转换为 YOLOv5 输入张量            │
+// │ 角色：将 Bitmap 缩放并转换为 YOLO 输入张量            │
 // │ 线程：在 MonitorService 的 ThreadPool 回调中调用         │
 // │ 依赖：无                                                │
-// │ 对外 API：ToTensor(), InputShape, ModelInputSize         │
+// │ 对外 API：Prepare(), InputShape         │
 // └─────────────────────────────────────────────────────────┘
 using System;
 using System.Collections.Generic;
@@ -125,7 +125,7 @@ namespace VisionGuard.Detector.Windows.Inference
     }
 
     /// <summary>
-    /// 将 Bitmap 转换为 YOLOv5nu 所需的 float[1,3,H,W] CHW RGB 张量。
+    /// 将 Bitmap 转换为 YOLO 所需的 float[1,3,H,W] CHW RGB 张量。
     /// </summary>
     public static class ImagePreprocessor
     {
@@ -143,9 +143,6 @@ namespace VisionGuard.Detector.Windows.Inference
                 return new PreprocessedImage(ExtractCHW(resized), transform);
             }
         }
-
-        /// <summary>兼容旧调用方；生产代码应使用 <see cref="Prepare"/> 以保留坐标变换。</summary>
-        public static float[] ToTensor(Bitmap source, int modelSize) => Prepare(source, modelSize).Tensor;
 
         public static int[] InputShape(int modelSize) => new[] { 1, 3, modelSize, modelSize };
 

@@ -1,4 +1,4 @@
-# 视觉检测（Windows）与 视觉驻留
+# VisionGuard 视觉节点与 视觉驻留
 
 本文维护当前实现和必要约束。组件地图见[项目概览](10-project-overview.md)，命令见[运维](60-operations.md)，本轮验证和未覆盖项见[验证报告](90-verification-report.md)。
 
@@ -6,7 +6,7 @@
 
 | 入口 | 当前职责 |
 |---|---|
-| `detector/windows-launcher/` | 视觉检测（Windows）统一入口；选择内部运行时；整包下载、大小/SHA256 校验、安全解压、目录切换和失败回滚 |
+| `detector/windows-launcher/` | VisionGuard 视觉节点统一入口；选择内部运行时；整包下载、大小/SHA256 校验、安全解压、目录切换和失败回滚 |
 | `detector/windows-wpf/` | net472 WPF x64，同一份界面与检测链，按 `OrtProfile` 构建两个内部推理档位 |
 | `detector/windows-resident/` | 视觉驻留；net472 x64 当前用户后台进程，承接生命周期远控 |
 
@@ -37,8 +37,8 @@
 - 主界面为来源预览与右侧检查区；“当前来源”按采集目标、识别设置、检测参数排列，“全局设定”维护运行环境、模型、连接、身份、驻留和更新。
 - 实时预览最多四个来源，其他来源继续推理；全局来源视图选择预览对象。卡片由 `CardLayoutPlanner` 求网格，画面等比显示；最小窗口 1200×880。
 - 模型资源按档位显示下载清单；来源选择只列本机已下载模型。失败原因可读，长度不符删除临时文件重下。
-- 唯一设置入口 `Utils/SettingsStore.cs`，默认 `%APPDATA%VisionGuardsettings.ini`，可用 `VISIONGUARD_SETTINGS_PATH` 隔离。共享设置写入重读磁盘、合并改动、原子替换。
-- `%LOCALAPPDATA%VisionGuard` 下的 `detector-crash.log`、`inference-error.log`、`resident-launch.log` 用于诊断。
+- 唯一设置入口 `Utils/SettingsStore.cs`，默认 `%APPDATA%\VisionGuard\settings.ini`，可用 `VISIONGUARD_SETTINGS_PATH` 隔离。共享设置写入重读磁盘、合并改动、原子替换。
+- `%LOCALAPPDATA%\VisionGuard` 下的 `detector-crash.log`、`inference-error.log`、`resident-launch.log` 用于诊断。
 
 ## 视觉驻留
 

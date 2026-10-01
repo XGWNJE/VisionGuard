@@ -11,12 +11,6 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
 
-data class ReceiverHomeSummary(
-    val todayAlertCount: Int,
-    val onlineDeviceCount: Int,
-    val latestAlertTimeLabel: String
-)
-
 data class ReceiverMainTab(
     val route: String,
     val label: String
@@ -160,11 +154,6 @@ enum class DeviceConfigEditorPresentation {
 
 enum class DeviceConfigApplyMode {
     BATCH
-}
-
-enum class UpdateFeedback {
-    NO_UPDATE,
-    CHECK_FAILED
 }
 
 fun receiverMainTabs(): List<ReceiverMainTab> =
@@ -453,15 +442,6 @@ private fun parseIsoMillis(value: String?): Long? {
     }
 }
 
-fun buildUpdateFeedbackText(feedback: UpdateFeedback, currentVersion: String): String =
-    when (feedback) {
-        UpdateFeedback.NO_UPDATE -> "当前 $currentVersion，已是最新"
-        UpdateFeedback.CHECK_FAILED -> "当前 $currentVersion，检查失败"
-    }
-
-fun buildUpdateDialogText(latestVersion: String, currentVersion: String): String =
-    "最新 $latestVersion\n当前 $currentVersion\n\n是否更新？"
-
 fun buildUpdateDialogModel(latestVersion: String, currentVersion: String): UpdateDialogUiModel =
     UpdateDialogUiModel(
         title = "发现新版本",
@@ -494,25 +474,6 @@ fun buildUpdateFailedDialogModel(currentVersion: String): UpdateDialogUiModel =
         secondaryActionLabel = null,
         tone = UpdateDialogTone.FAILED
     )
-
-fun buildReceiverHomeSummary(
-    alerts: List<AlertMessage>,
-    devices: List<DeviceInfo>,
-    now: ZonedDateTime = ZonedDateTime.now()
-): ReceiverHomeSummary {
-    val today = now.toLocalDate()
-    val parsedAlerts = alerts.mapNotNull { alert ->
-        parseAlertTime(alert.timestamp, now.zone)?.let { alert to it }
-    }
-    val todayCount = parsedAlerts.count { (_, time) -> time.toLocalDate() == today }
-    val latestTime = parsedAlerts.maxByOrNull { (_, time) -> time.toInstant().toEpochMilli() }?.second
-
-    return ReceiverHomeSummary(
-        todayAlertCount = todayCount,
-        onlineDeviceCount = devices.count { it.online },
-        latestAlertTimeLabel = latestTime?.format(TimeFormatter) ?: "--:--"
-    )
-}
 
 fun buildAlertCardUiModel(alert: AlertMessage): AlertCardUiModel {
     val chips = alert.detections

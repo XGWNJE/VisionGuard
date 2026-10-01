@@ -44,14 +44,6 @@ namespace VisionGuard.Detector.Windows.Utils
             return bool.TryParse(GetString(key, null), out value) ? value : defaultValue;
         }
 
-        public HashSet<string> GetStringList(string key)
-        {
-            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string item in GetString(key, string.Empty).Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
-                result.Add(item.Trim());
-            return result;
-        }
-
         public void Set(string key, string value)
         {
             _data[key] = value ?? string.Empty;

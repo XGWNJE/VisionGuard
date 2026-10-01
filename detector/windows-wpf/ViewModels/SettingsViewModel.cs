@@ -1,7 +1,5 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Linq;
 using System.Threading.Tasks;
 using VisionGuard.Detector.Windows.Utils;
 using VisionGuard.Detector.Windows.Runtime;
@@ -75,41 +73,6 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
     public class SettingsViewModel : ViewModelBase
     {
-        private int _threshold = 45;
-        public int Threshold
-        {
-            get => _threshold;
-            set => SetProperty(ref _threshold, value);
-        }
-
-        private int _samplingRate = 3;
-        public int SamplingRate
-        {
-            get => _samplingRate;
-            set => SetProperty(ref _samplingRate, value);
-        }
-
-        private int _cooldown = 5;
-        public int Cooldown
-        {
-            get => _cooldown;
-            set => SetProperty(ref _cooldown, value);
-        }
-
-        private int _selectedModelIndex;
-        public int SelectedModelIndex
-        {
-            get => _selectedModelIndex;
-            set
-            {
-                if (SetProperty(ref _selectedModelIndex, value))
-                {
-                    OnPropertyChanged(nameof(SelectedModelName));
-                    OnPropertyChanged(nameof(HasUsableModel));
-                }
-            }
-        }
-
         private int _selectedBackendIndex;
         public int SelectedBackendIndex
         {
@@ -134,8 +97,6 @@ namespace VisionGuard.Detector.Windows.ViewModels
             }
         }
 
-        public RelayCommand DownloadModelCommand { get; }
-
         // ── 模型资源清单 ─────────────────────────────────────────────
 
         private readonly Func<string, bool> _isModelDownloaded;
@@ -158,168 +119,17 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
         public bool HasModelNotice => !string.IsNullOrEmpty(_modelDownloadProgress);
 
-        /// <summary>本机是否已有本档位的可用模型；没有时来源页的模型下拉必须不可用。</summary>
-        public bool HasUsableModel
-        {
-            get
-            {
-                var keys = ModelManager.ModelKeys;
-                for (int i = 0; i < keys.Length; i++)
-                    if (_isModelDownloaded(keys[i])) return true;
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// 把选中索引收敛到「本机确实存在」的模型上：优先保留原本的选择，
-        /// 否则落到第一个已下载模型；一个都没下载时保持 0（此时界面会提示去全局设定下载）。
-        /// </summary>
-        internal void EnsureSelectedModelAvailable()
-        {
-            var keys = ModelManager.ModelKeys;
-            int saved = Net472Compat.Clamp(SelectedModelIndex, 0, keys.Length - 1);
-            int firstDownloaded = -1;
-            for (int i = 0; i < keys.Length; i++)
-            {
-                if (!_isModelDownloaded(keys[i])) continue;
-                if (firstDownloaded < 0) firstDownloaded = i;
-                if (i == saved) return;
-            }
-            if (firstDownloaded >= 0) SelectedModelIndex = firstDownloaded;
-        }
-
-        // ── 监控目标（6 类，与旧代码行为对齐）────────────────────────
-        private bool _watchPerson = true;
-        public bool WatchPerson
-        {
-            get => _watchPerson;
-            set => SetProperty(ref _watchPerson, value);
-        }
-
-        private bool _watchBicycle;
-        public bool WatchBicycle
-        {
-            get => _watchBicycle;
-            set => SetProperty(ref _watchBicycle, value);
-        }
-
-        private bool _watchCar;
-        public bool WatchCar
-        {
-            get => _watchCar;
-            set => SetProperty(ref _watchCar, value);
-        }
-
-        private bool _watchMotorcycle;
-        public bool WatchMotorcycle
-        {
-            get => _watchMotorcycle;
-            set => SetProperty(ref _watchMotorcycle, value);
-        }
-
-        private bool _watchBus;
-        public bool WatchBus
-        {
-            get => _watchBus;
-            set => SetProperty(ref _watchBus, value);
-        }
-
-        private bool _watchTruck;
-        public bool WatchTruck
-        {
-            get => _watchTruck;
-            set => SetProperty(ref _watchTruck, value);
-        }
-
-        /// <summary>当前勾选的所有监控目标英文类名。</summary>
-        public List<string> GetWatchedClasses()
-        {
-            var list = new List<string>();
-            if (WatchPerson) list.Add("person");
-            if (WatchBicycle) list.Add("bicycle");
-            if (WatchCar) list.Add("car");
-            if (WatchMotorcycle) list.Add("motorcycle");
-            if (WatchBus) list.Add("bus");
-            if (WatchTruck) list.Add("truck");
-            return list;
-        }
-
-        /// <summary>远控设置监控目标（逗号分隔的类名，空字符串 = 全部）。</summary>
-        public void SetWatchedClasses(string csv)
-        {
-            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (!string.IsNullOrWhiteSpace(csv))
-                foreach (var cls in csv.Split(','))
-                {
-                    string t = cls.Trim();
-                    if (!string.IsNullOrEmpty(t)) set.Add(t);
-                }
-
-            bool all = set.Count == 0;
-            WatchPerson     = all || set.Contains("person");
-            WatchBicycle    = all || set.Contains("bicycle");
-            WatchCar        = all || set.Contains("car");
-            WatchMotorcycle = all || set.Contains("motorcycle");
-            WatchBus        = all || set.Contains("bus");
-            WatchTruck      = all || set.Contains("truck");
-        }
-
-        /// <summary>本档位可选的模型显示名（与 ModelManager.ModelKeys 一一对应）。</summary>
-        public string[] ModelDisplayNames => Utils.ModelManager.ModelDisplayNames;
-
-        /// <summary>当前选中的模型文件名；档位清单按运行环境决定（Win7 → yolov5，Win10+ → yolo26）。</summary>
-        public string SelectedModelName
-        {
-            get
-            {
-                var keys = Utils.ModelManager.ModelKeys;
-                int index = Net472Compat.Clamp(SelectedModelIndex, 0, keys.Length - 1);
-                return keys[index];
-            }
-        }
-
-        public string ThresholdText => $"{Threshold}%";
-        public string SamplingRateText => $"{SamplingRate} 次/秒";
-        public string CooldownText => $"{Cooldown} 秒";
-
         // ── 持久化 ───────────────────────────────────────────────────
 
         public void Load()
         {
-            Threshold        = SettingsStore.GetInt("ConfidenceThresholdPct", 45);
-            SamplingRate     = SettingsStore.GetInt("TargetFps", 3);
-            Cooldown         = SettingsStore.GetInt("AlertCooldownSeconds", 5);
-            // 索引必须落在本档位清单范围内：模型清单与后端清单都随档位变化。
-            SelectedModelIndex = Net472Compat.Clamp(SettingsStore.GetInt("SelectedModelIndex", 0), 0, Utils.ModelManager.ModelKeys.Length - 1);
             bool savedCpu = SettingsStore.GetInt("SelectedBackendIndex", 0) == 1;
             SelectedBackendIndex = Runtime.NativeLibrarySelector.SupportsDirectMl ? (savedCpu ? 1 : 0) : 0;
-
-            var watched = SettingsStore.GetStringList("WatchedClasses");
-            WatchPerson     = watched.Contains("person");
-            WatchBicycle    = watched.Contains("bicycle");
-            WatchCar        = watched.Contains("car");
-            WatchMotorcycle = watched.Contains("motorcycle");
-            WatchBus        = watched.Contains("bus");
-            WatchTruck      = watched.Contains("truck");
-
-            // 兼容旧数据：空集合时默认只选 "person"
-            if (watched.Count == 0)
-                WatchPerson = true;
-
-            // 选中项必须落在本机已有的模型上：否则来源页会拿着一个没下载的模型去启动。
-            EnsureSelectedModelAvailable();
         }
 
         public void Save()
         {
-            SettingsStore.Set("ConfidenceThresholdPct", Threshold);
-            SettingsStore.Set("TargetFps", SamplingRate);
-            SettingsStore.Set("AlertCooldownSeconds", Cooldown);
-            SettingsStore.Set("SelectedModelIndex", SelectedModelIndex);
             SettingsStore.Set("SelectedBackendIndex", SelectedBackendIndex);
-
-            var watched = GetWatchedClasses();
-            SettingsStore.Set("WatchedClasses", string.Join(",", watched));
 
             SettingsStore.Save();
         }
@@ -336,7 +146,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         /// 而不必每次都真的访问服务器。
         /// </param>
         /// <param name="onModelDownloaded">
-        /// 某个模型下载完成后的回调：本机可用模型集合发生变化，需要重新评估当前选中项与来源页下拉。
+        /// 某个模型下载完成后刷新来源页的可用模型集合。
         /// </param>
         public SettingsViewModel(
             Func<string, bool> isModelDownloaded,
@@ -347,16 +157,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             _downloadModel = downloadModel ?? ((key, progress) => Utils.ModelManager.DownloadModel(key, progress));
             _onModelDownloaded = onModelDownloaded;
 
-            PropertyChanged += (s, e) =>
-            {
-                if (e.PropertyName == nameof(Threshold)) OnPropertyChanged(nameof(ThresholdText));
-                if (e.PropertyName == nameof(SamplingRate)) OnPropertyChanged(nameof(SamplingRateText));
-                if (e.PropertyName == nameof(Cooldown)) OnPropertyChanged(nameof(CooldownText));
-            };
-
             BuildModelList();
-
-            DownloadModelCommand = new RelayCommand(async () => await DownloadAsync(Models.FirstOrDefault(m => m.Key == SelectedModelName)));
         }
 
         /// <summary>按本档位模型键构建清单；本机状态在构建时采一次，后续由下载动作自己维护。</summary>
@@ -371,15 +172,6 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 option.DownloadCommand = new RelayCommand(async () => await DownloadAsync(option), () => option.CanDownload);
                 Models.Add(option);
             }
-            OnPropertyChanged(nameof(HasUsableModel));
-        }
-
-        /// <summary>本机已下载模型的键列表，供来源页的模型下拉使用。</summary>
-        public string[] DownloadedModelKeys()
-        {
-            var downloaded = new List<string>();
-            foreach (var option in Models.Where(m => m.IsDownloaded)) downloaded.Add(option.Key);
-            return downloaded.ToArray();
         }
 
         /// <summary>下载单个模型；状态与进度都写在对应模型项上。</summary>
@@ -393,7 +185,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
             var progress = new Progress<int>(p =>
             {
-                // 进度回调是异步的：模型切换或重复触发时不能把进度写到别的项上。
+                // 进度只更新本次下载的模型项。
                 if (option.IsDownloading) option.Progress = p;
             });
 
@@ -414,9 +206,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             if (ok)
             {
                 ModelDownloadProgress = $"{option.Key} 已下载完成，可在此页或来源页选用";
-                // 可用模型集合变了：重新收敛选中项，并让来源页的模型下拉重新求值。
-                EnsureSelectedModelAvailable();
-                OnPropertyChanged(nameof(HasUsableModel));
+                // 可用模型集合变化后刷新来源页的模型下拉。
                 _onModelDownloaded?.Invoke();
             }
             else if (string.IsNullOrEmpty(ModelDownloadProgress))

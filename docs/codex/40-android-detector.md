@@ -1,8 +1,8 @@
 # 视觉检测（Android）
 
-`detector/android/` 是 视觉检测（Android），负责摄像头采集、推理、遮罩、告警和上传。
+`detector/android/` 是视觉检测（Android），负责摄像头采集、推理、遮罩、告警和上传。
 
-> **当前状态：暂缓**。本文以下内容是现有实现快照，不代表当前可用状态。本端认证消息缺少 `channel`，在当前视觉中继协议下无法认证；也未实现来源维度、逐来源命令和配置。本端不纳入当前交付结论。
+> **当前状态：暂缓**。整端源码保留，以下描述其当前实现，不代表已验收可用。本端认证消息缺少 `channel`，在当前视觉中继协议下无法认证；也未实现来源维度、逐来源命令和配置。本端不纳入当前交付结论。
 
 当前界面尚未作为交付方案验收。当前 Android UI 规范见[设计说明](../design/android-ui-guidelines.md)，该检测端尚未采用接收端界面方案。
 
@@ -13,7 +13,7 @@
 - 遮罩编辑与持久化
 - 告警生成
 - 与视觉中继的 WS 通信
-- 自动更新（Service 启动时发通知 + 设置页手动检查弹 AlertDialog）
+- 自动更新（Service 启动时发通知；控制台界面手动检查并弹 AlertDialog）
 - 模型按需下载（首次启动/切换时通过 OkHttp 从视觉中继下载到 `filesDir/models/`）
 
 ## 关键约束
@@ -31,6 +31,7 @@
 ## 关键文件
 
 - `detector/android/app/src/main/java/com/xgwnje/visionguard/detector/MainActivity.kt`
+- 界面与标定：`detector/android/app/src/main/java/com/xgwnje/visionguard/detector/ui/console/`
 - `detector/android/app/src/main/java/com/xgwnje/visionguard/detector/service/DetectorForegroundService.kt`
 - `detector/android/app/src/main/java/com/xgwnje/visionguard/detector/service/MonitorService.kt`
 - `detector/android/app/src/main/java/com/xgwnje/visionguard/detector/data/repository/SettingsRepository.kt`

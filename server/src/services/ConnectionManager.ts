@@ -8,7 +8,6 @@
 
 import WebSocket from 'ws';
 import fs from 'fs';
-import path from 'path';
 import { config } from '../config';
 import { validateApiKey } from '../middleware/auth';
 import { addAlert, getAlertById, markAlertScreenshot, type AddAlertResult } from '../services/AlertStore';
@@ -113,19 +112,6 @@ const MAX_COMPONENTS = 8;
 const DETECTOR_COMMANDS = new Set(['pause', 'resume', 'stop-alarm']);
 // Windows 只剩一个检测端，生命周期命令统一为 detector。
 const RESIDENT_COMMANDS = new Set(['open-detector', 'close-detector']);
-
-function validateDetection(d: any): boolean {
-  if (!d || typeof d !== 'object') return false;
-  if (typeof d.label !== 'string' || d.label.length > 64) return false;
-  if (typeof d.confidence !== 'number' || !isFinite(d.confidence) || d.confidence < 0 || d.confidence > 1) return false;
-  const b = d.bbox;
-  if (!b || typeof b !== 'object') return false;
-  if (typeof b.x !== 'number' || !isFinite(b.x)) return false;
-  if (typeof b.y !== 'number' || !isFinite(b.y)) return false;
-  if (typeof b.w !== 'number' || !isFinite(b.w) || b.w < 0) return false;
-  if (typeof b.h !== 'number' || !isFinite(b.h) || b.h < 0) return false;
-  return true;
-}
 
 function sanitizeHeartbeatCooldown(v: any): number | undefined {
   if (v === undefined || v === null) return undefined;
@@ -682,7 +668,6 @@ function handleAuth(
       sendJson(existing.ws, { type: 'kicked', reason: 'duplicate connection' });
       existing.ws.terminate();
     }
-    const pingDeviceId = msg.deviceId;
     const client: ReceiverClient = { ws, deviceId: msg.deviceId, lastSeen: new Date() };
     receiverClients.set(msg.deviceId, client);
 

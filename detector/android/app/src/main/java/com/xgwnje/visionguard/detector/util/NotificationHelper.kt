@@ -2,10 +2,9 @@ package com.xgwnje.visionguard.detector.util
 
 // ┌─────────────────────────────────────────────────────────┐
 // │ NotificationHelper.kt                                   │
-// │ 角色：通知渠道注册 + 报警通知构建                          │
+// │ 角色：通知渠道注册 + 前台服务通知构建                    │
 // │ 渠道：ALERT_CHANNEL（HIGH）+ FOREGROUND_CHANNEL（LOW）   │
-// │ 对外 API：createChannels(), buildAlertNotification(),    │
-// │           buildForegroundNotification()                  │
+// │ 对外 API：createChannels(), buildForegroundNotification() │
 // └─────────────────────────────────────────────────────────┘
 
 import android.app.Notification
@@ -15,21 +14,17 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import androidx.core.app.NotificationCompat
 import androidx.core.graphics.drawable.IconCompat
 import com.xgwnje.visionguard.detector.MainActivity
 import com.xgwnje.visionguard.detector.R
-import com.xgwnje.visionguard.detector.data.model.AlertEvent
-import com.xgwnje.visionguard.detector.data.model.Detection
 
 object NotificationHelper {
 
     const val ALERT_CHANNEL_ID      = "vg_alert"
     const val FOREGROUND_CHANNEL_ID = "vg_foreground"
     const val FOREGROUND_NOTIF_ID   = 1
-    const val ALERT_SUMMARY_NOTIF_ID = 999
 
     fun createChannels(context: Context) {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -55,71 +50,6 @@ object NotificationHelper {
         }
 
         nm.createNotificationChannels(listOf(alertChannel, fgChannel))
-    }
-
-    fun buildAlertNotification(
-        context: Context,
-        alert: AlertEvent,
-        notifId: Int,
-        largeIcon: Bitmap? = null
-    ): Notification {
-        val openIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-        val pi = PendingIntent.getActivity(
-            context, notifId, openIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        // 第一个检测目标作为标题
-        val topLabel = alert.detections.firstOrNull()?.let {
-            "${it.label} ${(it.confidence * 100).toInt()}%"
-        } ?: "检测到目标"
-
-        // 全屏 Intent：报警时点亮屏幕并显示通知内容
-        val fullScreenIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val fullScreenPi = PendingIntent.getActivity(
-            context, notifId + 10000, fullScreenIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val builder = NotificationCompat.Builder(context, ALERT_CHANNEL_ID)
-        setSmallAppIcon(builder, context)
-        builder.setContentTitle("⚠ 检测到目标：$topLabel")
-            .setContentText("${alert.detections.size} 个目标  ${formatTime(alert.timestamp)}")
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setAutoCancel(true)
-            .setContentIntent(pi)
-            .setFullScreenIntent(fullScreenPi, true)  // 亮屏显示通知
-            .setDefaults(NotificationCompat.DEFAULT_ALL)  // 声音+振动+呼吸灯
-
-        if (largeIcon != null) {
-            builder.setLargeIcon(largeIcon)
-            builder.setStyle(
-                NotificationCompat.BigPictureStyle()
-                    .bigPicture(largeIcon)
-                    .bigLargeIcon(null as Bitmap?)
-            )
-        }
-
-        builder.setGroup("vg_alerts")
-            .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
-
-        return builder.build()
-    }
-
-    fun buildAlertSummaryNotification(context: Context): Notification {
-        val builder = NotificationCompat.Builder(context, ALERT_CHANNEL_ID)
-        setSmallAppIcon(builder, context)
-        builder.setContentTitle(context.getString(R.string.app_name))
-            .setContentText("有新警报")
-            .setGroup("vg_alerts")
-            .setGroupSummary(true)
-            .setAutoCancel(true)
-        return builder.build()
     }
 
     fun buildForegroundNotification(context: Context, stateText: String): Notification {
@@ -173,11 +103,4 @@ object NotificationHelper {
         } catch (_: Exception) { null }
     }
 
-    /** 将时间戳解析为 HH:mm:ss 显示 */
-    private fun formatTime(timestamp: Long): String {
-        return try {
-            val sdf = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
-            sdf.format(java.util.Date(timestamp))
-        } catch (_: Exception) { "" }
-    }
 }

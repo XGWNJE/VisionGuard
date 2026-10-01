@@ -5,11 +5,11 @@
     <OutputType>WinExe</OutputType>
     <AssemblyName>VisionGuard.Detector.Windows</AssemblyName>
     <RootNamespace>VisionGuard.Detector.Windows</RootNamespace>
-    <Title>视觉检测</Title>
-    <AssemblyTitle>视觉检测</AssemblyTitle>
-    <Product>视觉检测</Product>
-    <Description>本地视觉检测应用</Description>
-    <!-- 视觉检测（Windows）统一为单一 net472 构建：Windows 7 SP1 x64 与 Windows 10/11 共用同一份
+    <Title>VisionGuard 视觉节点</Title>
+    <AssemblyTitle>VisionGuard 视觉节点</AssemblyTitle>
+    <Product>VisionGuard 视觉节点</Product>
+    <Description>VisionGuard 本地视觉检测节点</Description>
+    <!-- VisionGuard 视觉节点统一为单一 net472 构建：Windows 7 SP1 x64 与 Windows 10/11 共用同一份
          WPF 源码。两平台的差异只在推理档位（原生 ONNX Runtime 版本、是否启用 DirectML）
          与模型清单，由 Runtime/NativeLibrarySelector.cs 在启动时按运行环境选择。 -->
     <TargetFramework>net472</TargetFramework>
@@ -34,11 +34,7 @@
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
     <EnableDefaultPageItems>false</EnableDefaultPageItems>
-    <!--
-      net472 无法在程序集元数据里携带 nullable 注解，因此迁移前在 net9.0-windows 下不出现的
-      NRT 警告（CS8600/8602/8603/8604/8618/8625 等）会在每次构建时成批出现。这些警告对 net472
-      是结构性噪音，不能作为真实缺陷信号；真实缺陷仍由编译错误与运行期验证覆盖。
-    -->
+    <!-- net472 依赖缺少 nullable 元数据，屏蔽对应的结构性警告。 -->
     <NoWarn>$(NoWarn);CS8600;CS8602;CS8603;CS8604;CS8618;CS8625</NoWarn>
   </PropertyGroup>
 
@@ -54,7 +50,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
-    <PackageReference Include="$(OrtManagedPackage)" Version="$(OrtManagedVersion)" />    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <PackageReference Include="$(OrtManagedPackage)" Version="$(OrtManagedVersion)" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
     <PackageReference Include="System.Net.Http" Version="4.3.4" />
     <!--
       legacy 档原生 1.1.0 的唯一来源。只登记包、不引用其中任何资产（ExcludeAssets=all），
@@ -68,12 +65,9 @@
   </ItemGroup>
 
   <!--
-    驻留程序与检测端是配套软件，必须一起出现在每个档位的产物里：
-      - 检测端启动时会拉起同目录的 VisionGuard.Resident.Windows.exe，缺它就没有「远程重新打开检测端」的能力；
-      - 本地/离线分发时用户是整体拷贝 bin\x64\<档位>\ 的，驻留不在这里就等于没有配套。
-    发布脚本（publish-release.ps1）同样把驻留并入档位 ZIP 的根目录，两处都不得只放一半。
-    构建顺序上驻留先于检测端（build-all.ps1 先 WPF 后 WindowsResident），所以这里通常能直接取到；
-    取不到时给出明确警告，而不是让产物静默缺少驻留。
+    每个推理档位输出都包含驻留程序，以支持离线目录分发和远程重新打开检测端。
+    build-all.ps1 先构建驻留再构建 WPF；统一包由 assemble-windows-unified.js 汇集。
+    直接构建 WPF 时缺少驻留会给出警告。
   -->
   <PropertyGroup>
     <ResidentOutputDir>$(MSBuildThisFileDirectory)..\windows-resident\bin\Release\net472\</ResidentOutputDir>
@@ -89,7 +83,8 @@
   </Target>
 
   <ItemGroup>
-    <!-- WPF 项在 net472 下不能依赖 SDK 的隐式推导，必须显式声明。 -->    <Page Include="App.xaml" SubType="Designer" Generator="MSBuild:Compile" />
+    <!-- WPF 项在 net472 下不能依赖 SDK 的隐式推导，必须显式声明。 -->
+    <Page Include="App.xaml" SubType="Designer" Generator="MSBuild:Compile" />
     <Page Include="Themes\DarkTheme.xaml" SubType="Designer" Generator="MSBuild:Compile" />
     <Page Include="Views\MainWindow.xaml" SubType="Designer" Generator="MSBuild:Compile" />
     <Page Include="Views\MonitorPage.xaml" SubType="Designer" Generator="MSBuild:Compile" />
@@ -100,31 +95,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="Assets\yolo26n_320.onnx">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\yolo26n_640.onnx">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\yolo26s_320.onnx">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\yolo26s_640.onnx">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\yolo26m_320.onnx">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-    </Content>
-    <Content Include="Assets\yolo26m_640.onnx">
-      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-    </Content>
-    <!-- 导航图标嵌入程序集，发行包排除 Assets 目录后仍可通过 pack URI 加载。 -->
-    <Resource Include="Assets\capture.png" />
-    <Resource Include="Assets\settings.png" />
-    <Resource Include="Assets\server.png" />
+    <!-- 模型文件只作为发布输入，不进入应用构建项或输出。 -->
+    <None Remove="Assets\**" />
     <Resource Include="favico3n.ico" />
-    <Content Include="favicon.ico" />
-    <Content Include="VisionGuard.ico" />
     <None Include="app.manifest" />
   </ItemGroup>
 
@@ -137,30 +110,6 @@
     <Compile Include="..\windows-shared\Utils\SingleInstanceGuard.cs" Link="Utils\SingleInstanceGuard.cs" />
     <Compile Include="..\windows-shared\Services\RemoteControlEventArgs.cs" Link="Services\RemoteControlEventArgs.cs" />
     <Compile Include="..\windows-shared\Services\ResidentBridge.cs" Link="Services\ResidentBridge.cs" />
-    <Compile Update="Properties\Resources.Designer.cs">
-      <DesignTime>True</DesignTime>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>Resources.resx</DependentUpon>
-    </Compile>
-    <Compile Update="Properties\Settings.Designer.cs">
-      <DesignTimeSharedInput>True</DesignTimeSharedInput>
-      <AutoGen>True</AutoGen>
-      <DependentUpon>Settings.settings</DependentUpon>
-    </Compile>
-  </ItemGroup>
-
-  <ItemGroup>
-    <EmbeddedResource Update="Properties\Resources.resx">
-      <Generator>ResXFileCodeGenerator</Generator>
-      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
-    </EmbeddedResource>
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="Properties\Settings.settings">
-      <Generator>SettingsSingleFileGenerator</Generator>
-      <LastGenOutput>Settings.Designer.cs</LastGenOutput>
-    </None>
   </ItemGroup>
 
 </Project>

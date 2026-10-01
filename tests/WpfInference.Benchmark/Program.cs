@@ -798,7 +798,7 @@ var inputs = hasImageInputs
     ? imagePaths.Select(path =>
     {
         using var bitmap = new Bitmap(path);
-        return ImagePreprocessor.ToTensor(bitmap, inputSize);
+        return ImagePreprocessor.Prepare(bitmap, inputSize).Tensor;
     }).ToArray()
     : Enumerable.Range(0, streamCount).Select(_ =>
     {
@@ -870,7 +870,7 @@ var streamTasks = engines.Select((engine, streamIndex) => Task.Run(() =>
         if (hasImageInputs)
         {
             using var bitmap = new Bitmap(imagePaths[streamIndex]);
-            input = ImagePreprocessor.ToTensor(bitmap, inputSize);
+            input = ImagePreprocessor.Prepare(bitmap, inputSize).Tensor;
         }
         else
         {

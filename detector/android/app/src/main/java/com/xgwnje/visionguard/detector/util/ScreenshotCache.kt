@@ -104,10 +104,4 @@ class ScreenshotCache(private val context: Context) {
             Log.i(TAG, "缓存清理完成: 删除 ${deleted.size} 个文件")
         }
     }
-
-    /** 主动清理全部缓存 */
-    fun clearAll() {
-        cacheDir.listFiles()?.forEach { it.delete() }
-        Log.i(TAG, "缓存已清空")
-    }
 }

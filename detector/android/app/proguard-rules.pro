@@ -17,10 +17,6 @@
 -keep class androidx.camera.** { *; }
 -dontwarn androidx.camera.**
 
-# WebSocket (OkHttp-based)
--keep class org.java_websocket.** { *; }
--dontwarn org.java_websocket.**
-
 # Compose (must keep)
 -keep class androidx.compose.** { *; }
 -dontwarn androidx.compose.**

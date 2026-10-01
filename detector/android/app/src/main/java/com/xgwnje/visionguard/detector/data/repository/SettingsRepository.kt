@@ -74,11 +74,6 @@ class SettingsRepository(private val context: Context) {
         val digitalZoom: Float
     )
 
-    /** 读取设备 ID（首次启动时自动生成并持久化） */
-    val deviceIdFlow: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[Keys.DEVICE_ID] ?: ""
-    }
-
     /** 确保 deviceId 存在（首次启动生成），返回最终值 */
     suspend fun ensureDeviceId(): String {
         var id = ""
@@ -218,15 +213,6 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { prefs -> prefs[Keys.USE_HIGH_RESOLUTION] = v }
     }
 
-    suspend fun setMaskRegions(v: List<MaskRegion>) {
-        val json = gson.toJson(v)
-        context.dataStore.edit { prefs -> prefs[Keys.MASK_REGIONS] = json }
-    }
-
-    suspend fun setDigitalZoom(v: Float) {
-        context.dataStore.edit { prefs -> prefs[Keys.DIGITAL_ZOOM] = v }
-    }
-
     /** 批量保存 MonitorConfig（原子写入，减少文件 IO 次数） */
     suspend fun saveMonitorConfig(config: MonitorConfig) {
         context.dataStore.edit { prefs ->
@@ -261,11 +247,7 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { prefs -> prefs[Keys.DEPLOYMENT_ORIENTATION] = v.storageValue }
     }
 
-    suspend fun getDeploymentOrientation(): DeploymentOrientation? = deploymentOrientationFlow.first()
-
     suspend fun setCalibrationDone(v: Boolean) {
         context.dataStore.edit { prefs -> prefs[Keys.CALIBRATION_DONE] = v }
     }
-
-    suspend fun getCalibrationDone(): Boolean = calibrationDoneFlow.first()
 }

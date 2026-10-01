@@ -12,7 +12,6 @@ import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
-import com.xgwnje.visionguard.detector.data.model.DeviceInfo
 import com.xgwnje.visionguard.detector.data.model.WsAuthMessage
 import com.xgwnje.visionguard.detector.data.model.WsCommandAck
 import com.xgwnje.visionguard.detector.data.model.WsCommandMessage
@@ -41,7 +40,6 @@ import okhttp3.WebSocketListener
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
@@ -70,13 +68,7 @@ class WebSocketClient {
     private val _state = MutableStateFlow(WsState.DISCONNECTED)
     val connectionState: StateFlow<WsState> = _state.asStateFlow()
 
-    private val _onDeviceList = MutableStateFlow<List<DeviceInfo>>(emptyList())
-    val onDeviceList: StateFlow<List<DeviceInfo>> = _onDeviceList.asStateFlow()
-
-    private val _onCommandAck = MutableSharedFlow<Pair<String, Boolean>>(extraBufferCapacity = 8)
-    val onCommandAck: SharedFlow<Pair<String, Boolean>> = _onCommandAck
-
-    // detector 端新增：接收远程命令和配置变更
+    // 接收远程命令和配置变更
     private val _onCommand = MutableSharedFlow<WsCommandMessage>(extraBufferCapacity = 8)
     val onCommand: SharedFlow<WsCommandMessage> = _onCommand
 
@@ -210,18 +202,7 @@ class WebSocketClient {
         return s.sendNow(gson.toJson(hb))
     }
 
-    // ── receiver 端原有 API（detector 端作为命令接收方，通常不主动发送命令） ──
-    fun sendCommand(targetDeviceId: String, command: String) {
-        val msg = WsCommandMessage(targetDeviceId = targetDeviceId, command = command)
-        session?.ws?.send(gson.toJson(msg))
-    }
-
-    fun sendSetConfig(targetDeviceId: String, key: String, value: String) {
-        val msg = WsSetConfigMessage(targetDeviceId = targetDeviceId, key = key, value = value)
-        session?.ws?.send(gson.toJson(msg))
-    }
-
-    // ── detector 端新增 API ──────────────────────────────────
+    // ── 检测端消息发送 ──────────────────────────────────
 
     /** 发送命令回执 */
     fun sendCommandAck(command: String, success: Boolean, reason: String = "", requestId: String = ""): Boolean {
@@ -318,7 +299,6 @@ class WebSocketClient {
         session?.shutdown("user-close")
         session = null
         _state.value = WsState.DISCONNECTED
-        _onDeviceList.value = emptyList()
     }
 
     private fun onNetworkAvailableEvent() {
@@ -329,7 +309,6 @@ class WebSocketClient {
                 Log.i(TAG, "网络变化且当前已连接 → 强制断开旧连接并立即重连")
                 session?.shutdown("network-changed")
                 session = null
-                _onDeviceList.value = emptyList()
             }
             WsState.CONNECTING -> {
                 Log.i(TAG, "网络变化且正在连接 → 中断并在新网络上重试")
@@ -364,7 +343,6 @@ class WebSocketClient {
         } else {
             Log.w(TAG, "WS 认证失败: ${e.reason}")
             _state.value = WsState.AUTH_FAILED
-            _onDeviceList.value = emptyList()
             e.session.shutdown("auth-failed")
             session = null
             // 认证失败也继续重连（Key 可能临时错误）
@@ -378,7 +356,6 @@ class WebSocketClient {
         e.session.shutdown("failed")
         session = null
         _state.value = WsState.DISCONNECTED
-        _onDeviceList.value = emptyList()
         if (shouldReconnect) scheduleReconnect()
     }
 
@@ -388,7 +365,6 @@ class WebSocketClient {
         e.session.shutdown("ghost")
         session = null
         _state.value = WsState.DISCONNECTED
-        _onDeviceList.value = emptyList()
         if (shouldReconnect) scheduleReconnect()
     }
 
@@ -398,7 +374,6 @@ class WebSocketClient {
         e.session.shutdown("kicked")
         session = null
         _state.value = WsState.DISCONNECTED
-        _onDeviceList.value = emptyList()
         if (shouldReconnect) scheduleReconnect()
     }
 
@@ -411,7 +386,6 @@ class WebSocketClient {
         pendingBackoffJob?.cancel()
         pendingBackoffJob = null
         _state.value = WsState.DISCONNECTED
-        _onDeviceList.value = emptyList()
     }
 
     // ═════════════════════════════════════════════════════════
@@ -596,21 +570,7 @@ class WebSocketClient {
                     val reason = obj.get("reason")?.asString ?: "duplicate"
                     events.trySend(Event.Kicked(currentSession, reason))
                 }
-                "device-list" -> {
-                    val devicesArr = obj.getAsJsonArray("devices")
-                    val devices = devicesArr?.map { gson.fromJson(it, DeviceInfo::class.java) } ?: emptyList()
-                    _onDeviceList.value = devices
-                }
-                "command-ack" -> {
-                    val cmd = obj.get("command")?.asString ?: ""
-                    val success = obj.get("success")?.asBoolean ?: false
-                    val reason = obj.get("reason")?.asString ?: ""
-                    if (reason != "relayed") {
-                        val display = if (!success && reason.isNotEmpty()) "$cmd（$reason）" else cmd
-                        scope.launch { _onCommandAck.emit(Pair(display, success)) }
-                    }
-                }
-                // detector 端新增：接收远程命令和配置变更
+                // 接收远程命令和配置变更
                 "command" -> {
                     val command = gson.fromJson(text, WsCommandMessage::class.java)
                     scope.launch { _onCommand.emit(command) }

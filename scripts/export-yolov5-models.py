@@ -1,18 +1,19 @@
 """
-Export YOLOv5 models (n/s/m/l/x) to ONNX at 320 and 640 resolutions.
+Export the Windows legacy runtime's YOLOv5u models (n/s/m) at 320 and 640 resolutions.
 
 Requirements: pip install ultralytics onnx
-Output: D:\ObjectCode\YOLO\models\{variant}\onnx\{variant}_{size}.onnx
-        D:\ObjectCode\YOLO\models\{variant}\pt\{variant}.pt
+Output: .local/model-exports/{variant}/onnx/{variant}_{size}.onnx
+        .local/model-exports/{variant}/pt/{variant}.pt
 """
 
 import os
 import shutil
+from pathlib import Path
 from ultralytics import YOLO
 
-VARIANTS = ["yolov5n", "yolov5s", "yolov5m", "yolov5l", "yolov5x"]
+VARIANTS = ["yolov5nu", "yolov5su", "yolov5mu"]
 SIZES = [320, 640]
-OUTPUT_BASE = r"D:\ObjectCode\YOLO\models"
+OUTPUT_BASE = Path(__file__).resolve().parents[1] / ".local" / "model-exports"
 
 def export_one(variant: str, size: int):
     model_dir = os.path.join(OUTPUT_BASE, variant)
@@ -48,7 +49,7 @@ def export_one(variant: str, size: int):
 
 
 def main():
-    print("YOLOv5 ONNX Export (opset=16, simplify=True)")
+    print("YOLOv5u ONNX Export (opset=12, simplify=True)")
     print(f"Models: {VARIANTS}")
     print(f"Sizes:  {SIZES}")
     print(f"Output: {OUTPUT_BASE}")

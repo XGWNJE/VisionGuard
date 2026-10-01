@@ -97,7 +97,7 @@ namespace VisionGuard.Detector.Windows
                     e.Handled = true;
                     return;
                 }
-                MessageBox.Show($"发生未处理异常:\n{e.Exception.Message}", "视觉检测错误",
+                MessageBox.Show($"发生未处理异常:\n{e.Exception.Message}", "VisionGuard 视觉节点错误",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
             catch { }

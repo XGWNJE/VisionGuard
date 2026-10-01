@@ -2,7 +2,7 @@
 // │ AlertService.cs                                         │
 // │ 角色：报警判定（冷却逻辑）+ 截图本地缓存管理              │
 // │ 依赖：无（纯逻辑层）                                    │
-// │ 对外 API：Evaluate(), IsAlarming, GetSnapshotPath()      │
+// │ 对外 API：Evaluate(), GetSnapshotPath()      │
 // │ 缓存策略：1GB / 7天 / 5000张上限，LRU 清理               │
 // └─────────────────────────────────────────────────────────┘
 using System;
@@ -105,12 +105,6 @@ namespace VisionGuard.Detector.Windows.Services
             // 触发事件（传递本帧所有检测结果）
             AlertTriggered?.Invoke(this, new AlertEvent(alertId, detections.AsReadOnly(), snapshot, finalTimings, _sourceId, _sourceName));
         }
-
-        /// <summary>当前是否处于报警状态（始终 false，保留接口兼容）</summary>
-        public bool IsAlarming => false;
-
-        /// <summary>保留空方法（调用方兼容）</summary>
-        public void StopAlarm() { }
 
         // ── 截图缓存管理 ─────────────────────────────────────────────
 

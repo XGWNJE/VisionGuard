@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 
 namespace VisionGuard.Detector.Windows.Utils
@@ -31,7 +30,6 @@ namespace VisionGuard.Detector.Windows.Utils
         public static int GetInt(string key, int defaultValue) { return Store.GetInt(key, defaultValue); }
         public static bool GetBool(string key, bool defaultValue) { return Store.GetBool(key, defaultValue); }
         public static string GetString(string key, string defaultValue) { return Store.GetString(key, defaultValue); }
-        public static HashSet<string> GetStringList(string key) { return Store.GetStringList(key); }
         public static void Set(string key, int value) { Store.Set(key, value.ToString()); }
         public static void Set(string key, bool value) { Store.Set(key, value.ToString()); }
         public static void Set(string key, string value) { Store.Set(key, value); }

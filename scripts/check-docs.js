@@ -8,10 +8,10 @@ const DEFAULT_ROOT = path.resolve(__dirname, '..');
 const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 
 const COMPONENTS = [
-  { label: '视觉检测', platform: 'Windows', relativePath: 'detector/windows-wpf', source: 'detector/windows-wpf/App.xaml.cs' },
+  { label: 'VisionGuard 视觉节点', platform: 'Windows', relativePath: 'detector/windows-wpf', source: 'detector/windows-wpf/App.xaml.cs' },
   { label: '视觉驻留', platform: 'Windows', relativePath: 'detector/windows-resident', source: 'detector/windows-resident/Program.cs' },
   { label: '视觉检测', platform: 'Android', relativePath: 'detector/android', source: 'detector/android/app/build.gradle.kts' },
-  { label: '视觉告警', platform: 'Android', relativePath: 'receiver/android', source: 'receiver/android/app/build.gradle.kts' },
+  { label: 'VisionGuard 控制台', platform: 'Android', relativePath: 'receiver/android', source: 'receiver/android/app/build.gradle.kts' },
   { label: '视觉中继', platform: '服务端', relativePath: 'server', source: 'server/src/index.ts' }
 ];
 
@@ -299,7 +299,7 @@ function checkComponentContract(root, readme, overview, operations, errors) {
       .filter((line) => /^\|\s*[^|-].*\|\s*$/.test(line) && !/^\|\s*(?:组件|规范名称)\s*\|/.test(line));
   };
   const readmeRows = tableRows(readme, '## 当前组件');
-  const overviewRows = tableRows(overview, '## 当前实际组件与验证状态');
+  const overviewRows = tableRows(overview, '## 当前实际组件');
   if (readmeRows.length !== COMPONENTS.length) {
     errors.push(`[component] README.md current component table has ${readmeRows.length} data rows; expected ${COMPONENTS.length}`);
   }
@@ -348,7 +348,7 @@ function checkComponentContract(root, readme, overview, operations, errors) {
 
   for (const [directory, role, name, engineering] of [
     ['detector', 'detector', '视觉检测', 'VisionGuard.Detector.Android'],
-    ['receiver', 'receiver', '视觉告警', 'VisionGuard.Receiver.Android']
+    ['receiver', 'receiver', 'VisionGuard 控制台', 'VisionGuard.Receiver.Android']
   ]) {
     const base = directory + '/android';
     const packageName = 'com.xgwnje.visionguard.' + role;
@@ -365,8 +365,8 @@ function checkComponentContract(root, readme, overview, operations, errors) {
     requireText(overview, engineering, 'docs/codex/10-project-overview.md', 'the canonical engineering name', errors);
   }
   for (const [project, assembly, title] of [
-    ['detector/windows-wpf/VisionGuard.Detector.Windows.csproj', 'VisionGuard.Detector.Windows', '视觉检测'],
-    ['detector/windows-launcher/VisionGuard.Detector.Windows.Launcher.csproj', 'VisionGuard.Detector.Windows', '视觉检测'],
+    ['detector/windows-wpf/VisionGuard.Detector.Windows.csproj', 'VisionGuard.Detector.Windows', 'VisionGuard 视觉节点'],
+    ['detector/windows-launcher/VisionGuard.Detector.Windows.Launcher.csproj', 'VisionGuard.Detector.Windows', 'VisionGuard 视觉节点'],
     ['detector/windows-resident/VisionGuard.Resident.Windows.csproj', 'VisionGuard.Resident.Windows', '视觉驻留']
   ]) {
     const content = readUtf8(root, project, errors, { checkBom: false });
@@ -528,8 +528,6 @@ function checkProductContract(readme, overview, agents, errors) {
     ['docs/codex/10-project-overview.md', overview]
   ]) {
     requireText(content, '当前', relativePath, 'the current implementation summary', errors);
-    requirePattern(content, /(?:目前|当前)已(?:经)?实现的纯软件视觉方案[^\n]*免费版/, relativePath, 'the free software-visual edition summary', errors);
-    requirePattern(content, /接入检测硬件探测器[^\n]*付费版/, relativePath, 'the licensed hardware-use boundary', errors);
     requirePattern(content, /Win7[^\n]*legacy|legacy[^\n]*Win7/, relativePath, 'the Win7 legacy compatibility summary', errors);
     requireText(content, '所有公网业务数据统一通过视觉中继', relativePath, 'the relay-only transport summary', errors);
     requireText(content, '不使用 P2P、ICE、STUN 或 TURN', relativePath, 'the no-P2P boundary', errors);
@@ -557,53 +555,45 @@ function checkCancelledPlans(root, markdownFiles, contents, errors) {
 function checkLicenseTexts(texts, errors) {
   const {
     license,
-    legacyMit,
-    licenseHistory,
-    commercialLicense,
     contributing,
     readme,
+    overview,
     agents
   } = texts;
-  const cutoff = 'c43c0ff122043d477b442b7507d193b62ea321bb';
 
-  requireText(license, 'VisionGuard Source Available License 1.0', 'LICENSE', 'the VGSAL-1.0 title', errors);
-  requireText(license, 'This license is a source-available license. It is not an open-source license.', 'LICENSE', 'the non-open-source declaration', errors);
-  requireText(license, 'Pure Software Visual Use', 'LICENSE', 'the free software-visual definition', errors);
-  requireText(license, 'Hardware Detector Use', 'LICENSE', 'the paid hardware-detector definition', errors);
-  requireText(license, 'Commercial License Required', 'LICENSE', 'the commercial authorization boundary', errors);
-  requireText(license, 'LICENSE-HISTORY.md', 'LICENSE', 'the license-history pointer', errors);
-  requireText(license, 'LICENSE-MIT', 'LICENSE', 'the preserved MIT pointer', errors);
-
-  requirePattern(legacyMit, /^MIT License\r?\n/, 'LICENSE-MIT', 'the preserved MIT license text', errors);
-  requireText(legacyMit, 'Copyright (c) 2026 xgwnje', 'LICENSE-MIT', 'the historical copyright notice', errors);
-
-  requireText(licenseHistory, cutoff, 'LICENSE-HISTORY.md', 'the exact MIT cutoff commit', errors);
-  requireText(licenseHistory, '`v4.4.3`', 'LICENSE-HISTORY.md', 'the final MIT release tag', errors);
-  requireText(licenseHistory, '许可证切换不试图撤回或缩减上述历史版本已经授予的权限', 'LICENSE-HISTORY.md', 'the non-retroactive license statement', errors);
-
-  requireText(commercialLicense, '必须商业授权的范围', 'COMMERCIAL-LICENSE.md', 'the commercial authorization scope', errors);
-  requireText(commercialLicense, 'Edge Detector', 'COMMERCIAL-LICENSE.md', 'the hardware detector example', errors);
-  requireText(commercialLicense, cutoff, 'COMMERCIAL-LICENSE.md', 'the MIT cutoff pointer', errors);
+  requirePattern(license, /^MIT License\r?\n/, 'LICENSE', 'the MIT license title', errors);
+  requireText(license, 'Copyright (c) 2026 xgwnje', 'LICENSE', 'the copyright notice', errors);
+  requireText(license, 'Permission is hereby granted, free of charge', 'LICENSE', 'the MIT permission grant', errors);
+  requireText(license, 'to use, copy, modify, merge, publish, distribute, sublicense, and/or sell', 'LICENSE', 'the MIT permitted uses', errors);
+  requireText(license, 'The above copyright notice and this permission notice shall be included', 'LICENSE', 'the MIT notice condition', errors);
+  requireText(license, 'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND', 'LICENSE', 'the MIT warranty disclaimer', errors);
   requireText(contributing, '暂不接受外部代码、模型、素材或文档 Pull Request', 'CONTRIBUTING.md', 'the controlled contribution boundary', errors);
 
-  requireText(readme, 'badge/license-VGSAL--1.0-', 'README.md', 'the VGSAL-1.0 badge', errors);
-  requireText(readme, '这是源码可见许可证，不是开源许可证', 'README.md', 'the source-available license summary', errors);
-  requireText(readme, 'COMMERCIAL-LICENSE.md', 'README.md', 'the commercial license link', errors);
-  requireText(readme, 'LICENSE-HISTORY.md', 'README.md', 'the license history link', errors);
-  requireText(readme, 'LICENSE-MIT', 'README.md', 'the historical MIT link', errors);
-
-  requireText(agents, 'LICENSE-HISTORY.md', 'AGENTS.md', 'the immutable MIT cutoff pointer', errors);
+  requireText(readme, 'badge/license-MIT-', 'README.md', 'the MIT badge', errors);
+  requireText(readme, '[MIT License](./LICENSE)', 'README.md', 'the project license link', errors);
+  requireText(contributing, '[MIT License](LICENSE)', 'CONTRIBUTING.md', 'the project license link', errors);
+  requireText(overview, 'MIT License', 'docs/codex/10-project-overview.md', 'the MIT license summary', errors);
+  requireText(agents, '根目录 `LICENSE` 是唯一项目许可证入口', 'AGENTS.md', 'the canonical project license pointer', errors);
+  for (const [relativePath, content] of [
+    ['README.md', readme], ['CONTRIBUTING.md', contributing],
+    ['docs/codex/10-project-overview.md', overview], ['AGENTS.md', agents]
+  ]) {
+    requireText(content, '第三方', relativePath, 'the separate third-party license boundary', errors);
+  }
 }
 
-function checkLicenseContract(root, readme, agents, errors) {
+function checkLicenseContract(root, readme, overview, agents, errors) {
   checkLicenseTexts({
     license: readUtf8(root, 'LICENSE', errors),
-    legacyMit: readUtf8(root, 'LICENSE-MIT', errors),
-    licenseHistory: readUtf8(root, 'LICENSE-HISTORY.md', errors),
-    commercialLicense: readUtf8(root, 'COMMERCIAL-LICENSE.md', errors),
     contributing: readUtf8(root, 'CONTRIBUTING.md', errors),
-    readme,    agents
+    readme,    overview,
+    agents
   }, errors);
+  for (const relativePath of ['server/package.json', 'server/package-lock.json']) {
+    const metadata = JSON.parse(readUtf8(root, relativePath, errors));
+    const projectPackage = relativePath.endsWith('package-lock.json') ? metadata.packages[''] : metadata;
+    if (projectPackage.license !== 'MIT') errors.push(`[license] ${relativePath} must declare MIT for the project package`);
+  }
 }
 
 function checkDomainAlignment(root, operations, readme, overview, errors) {
@@ -634,9 +624,7 @@ function auditRepository(root = DEFAULT_ROOT) {
     'README.md',
     'AGENTS.md',
     'CODEX.md',
-    'COMMERCIAL-LICENSE.md',
     'CONTRIBUTING.md',
-    'LICENSE-HISTORY.md',
     ...docsFiles
   ])].sort();
   const contents = new Map();
@@ -666,7 +654,7 @@ function auditRepository(root = DEFAULT_ROOT) {
   }
   checkIndexCoverage(codexFiles, index, codexGuide, errors);
   checkProductContract(readme, overview, agents, errors);
-  checkLicenseContract(root, readme, agents, errors);
+  checkLicenseContract(root, readme, overview, agents, errors);
   checkDomainAlignment(root, operations, readme, overview, errors);
   checkComponentContract(root, readme, overview, operations, errors);
   checkSkillContract(root, errors);

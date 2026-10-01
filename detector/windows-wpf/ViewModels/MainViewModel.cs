@@ -13,7 +13,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         // 子 ViewModel（共享服务）
         public MultiSourceViewModel MultiSourceVm { get; }
 
-        /// <summary>「全局设定」页（原「运行环境」+「连接」两页合一）。</summary>
+        /// <summary>「全局设定」页。</summary>
         public GlobalSettingsViewModel GlobalSettingsVm { get; }
 
         private readonly ServerPushService _serverPushService;

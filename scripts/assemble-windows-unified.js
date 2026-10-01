@@ -89,4 +89,6 @@ const manifest = {
 fs.writeFileSync(path.join(destination, 'package-manifest.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8');
 
 console.log(`统一 Windows 包已生成: ${destination}`);
-console.log(`版本: ${version}; 文件数: ${fs.readdirSync(destination, { recursive: true }).length}`);
+const fileCount = fs.readdirSync(destination, { recursive: true })
+  .filter(relative => fs.statSync(path.join(destination, relative)).isFile()).length;
+console.log(`版本: ${version}; 文件数: ${fileCount}`);

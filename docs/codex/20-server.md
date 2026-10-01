@@ -1,8 +1,8 @@
 # 视觉中继
 
-`server/` 是 VisionGuard 当前 4.x 的视觉中继，负责 HTTP + WebSocket 入口、告警记录、截图下载和更新文件分发。
+`server/` 在架构中承担统一服务职责，沿用内部技术名称“视觉中继”（`VisionGuard.Relay`、npm 包 `visionguard-relay`）。当前实现连接、认证、状态、告警流转和控制转发，以及截图、模型和更新文件分发；职责划分见[项目概览](10-project-overview.md)。
 
-正式服务域名为 `https://visionguard.xgwnje.cn`，由 VPS 上的 Nginx SNI 架构转发到 VisionGuard Node 服务。根域 `https://xgwnje.cn` 留给个人主页，不再作为新客户端的 VisionGuard 服务地址。
+正式服务域名为 `https://visionguard.xgwnje.cn`，由 VPS 上的 Nginx SNI 架构转发到 VisionGuard Node 服务。根域 `https://xgwnje.cn` 用于个人主页，不能作为当前客户端的服务地址。
 
 当前线上路径：
 
@@ -22,6 +22,7 @@ visionguard.xgwnje.cn:443
 - 提供 `/models/*` 静态下载（模型文件，无需鉴权）
 - 维护 WebSocket 连接与角色认证
 - 聚合告警、维护设备在线状态并清理过期数据
+- 转发控制台的设备/来源控制与参数配置请求，并回传执行结果
 - 清理过期截图
 
 视觉中继只维护设备连接状态；`online=false` 不是独立的设备离线报警，也不能证明报警已送达。
@@ -33,7 +34,6 @@ visionguard.xgwnje.cn:443
 - `GET /releases/*`：Release 文件下载
 - `/ws`：WebSocket 中继入口
 - WS 角色：`windows`、`android`、`android-detector`、`windows-resident`
-- 当前 VPS 不使用仓库内旧式独立 `listen 443 ssl` 站点直接接管公网 443。
 - 公共 DNS、端口、Nginx SNI 结构维护在同级 `Server-infra` 仓库。
 
 ## 关键文件
@@ -61,8 +61,7 @@ visionguard.xgwnje.cn:443
 ## 实现事实
 
 - 连接上限当前由 `MAX_WS_CONNECTIONS` 控制，默认 100
-- 接收端幽灵阈值当前为 45s
-- 检测端幽灵阈值当前也按 45s 统一处理
+- 所有 WS 角色的连接幽灵清理阈值为 45 秒
 - 截图目录当前为 `data/screenshots/<alertId>.(png|jpg)`；服务端按图片魔数决定扩展名
 - WS 认证存在超时控制，当前实现为 5000ms
 - 检测端来源上限由 `MAX_SOURCES_PER_DETECTOR` 持有（默认 16、范围 1–16），并在 `auth-result` 与 `heartbeat-ack` 中下发 `maxSources`。默认值必须与检测端 `MultiSourceMonitorCoordinator.MaximumSourceLimit`（16）一致。心跳的 `sources` 数组超过上限时整组拒绝并回明确原因，不再静默截断——静默截断会让超出部分既不报警也不可见。逐来源命令与参数调整只接受最近一次心跳中存在的 `targetSourceId`。
@@ -72,13 +71,12 @@ visionguard.xgwnje.cn:443
 - 驻留连接与检测端、接收端一样参与幽灵清理（同为 45s 阈值）。只有驻留在线的设备仍算在线，因此对它的业务命令回“该设备当前没有检测端在线”，而不是“设备离线”。
 - 同一 `deviceId` 的 Windows 主检测端与驻留程序共用一个设备名称；主检测端认证或心跳中的自定义名称会同步到驻留连接记录，主检测端关闭并经过重连宽限后，驻留设备卡仍延续该名称。
 - `session-info` 只在 `android` 角色被接受，并且以认证身份为准，不使用消息自称的 `deviceId`。
-- 新协议视觉中继实例由 `VISIONGUARD_CHANNEL` 标识隔离域，认证消息必须携带完全一致的 `channel`；错误或缺失通道直接拒绝。测试实例使用独立端口、进程和 `VISIONGUARD_DATA_DIR`，因此连接表、报警、截图和广播不会与仍在线的旧版本混合。
+- `VISIONGUARD_CHANNEL` 标识实例隔离域，认证消息的 `channel` 必须完全一致；错误或缺失通道直接拒绝。测试实例使用独立端口、进程和 `VISIONGUARD_DATA_DIR`，连接表、报警、截图和广播与生产隔离。
 - WS 报警以 `alertId` 幂等入库：首次报警原子落盘并 `fsync` 后返回 `alert-ack/stored`，相同内容重试返回 `duplicate` 且不重复广播，同 ID 不同内容返回永久 `alert-id-conflict`；临时落盘失败返回 `storage-failed`，检测端保留队列继续重试。
-- `visionguard.xgwnje.cn` 当前用于 VisionGuard 服务，公网 443 由 Nginx stream 共享，HTTPS 虚拟主机监听 `127.0.0.1:9443`
 - 当前 VPS 使用共享证书目录 `/etc/letsencrypt/live/xgwnje.cn/`
 - 当前生产状态与完整报警链需要单独核验；本轮结果见[验证报告](90-verification-report.md)。
 - 根域 `/releases/*` 仅作为既有线上版本入口，新协议测试通道不使用该入口
 
 ## 操作与验证
 
-构建、隔离实例和发布授权见[运维](60-operations.md)；本轮检查与未覆盖项见[验证报告](90-verification-report.md)。生产网络与 TLS 配置由 `Server-infra` 管理，不通过旧站点脚本覆盖。
+构建、隔离实例和发布授权见[运维](60-operations.md)；本轮检查与未覆盖项见[验证报告](90-verification-report.md)。生产网络与 TLS 配置由 `Server-infra` 管理。

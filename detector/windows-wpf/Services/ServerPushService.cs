@@ -155,8 +155,6 @@ namespace VisionGuard.Detector.Windows.Services
             Post(() => OnConnect(url, key, did, dname));
         }
 
-        public void Disconnect() => Post(OnDisconnect);
-
         public void Reconnect()
         {
             Post(() => OnConnect(_serverUrl, _apiKey, _deviceId, _deviceName));
@@ -225,29 +223,6 @@ namespace VisionGuard.Detector.Windows.Services
             {
                 LogManager.StaticInfo($"[Server] 报警持久化已确认: alertId={alertId}, duplicate={duplicate}");
                 Task.Run(() => SendScreenshotData(alertId));
-            }
-        }
-
-        private static string EncodeScreenshotBase64(Bitmap bmp)
-        {
-            const int MaxW = 960;
-            using (var toSend = bmp.Width > MaxW
-                ? new Bitmap(bmp, new Size(MaxW, (int)(bmp.Height * (MaxW / (double)bmp.Width))))
-                : null)
-            {
-                var target = toSend ?? bmp;
-                using (var ms = new MemoryStream())
-                {
-                    var jpegParams = new EncoderParameters(1);
-                    jpegParams.Param[0] = new EncoderParameter(Encoder.Quality, 65L);
-                    var jpegCodec = ImageCodecInfo.GetImageEncoders()
-                        .FirstOrDefault(c => c.MimeType == "image/jpeg");
-                    if (jpegCodec != null)
-                        target.Save(ms, jpegCodec, jpegParams);
-                    else
-                        target.Save(ms, ImageFormat.Jpeg);
-                    return Convert.ToBase64String(ms.ToArray());
-                }
             }
         }
 
@@ -420,16 +395,6 @@ namespace VisionGuard.Detector.Windows.Services
 
             LogManager.StaticInfo($"[Server] connect → {_serverUrl} deviceId={_deviceId}");
             StartNewSession();
-        }
-
-        private void OnDisconnect()
-        {
-            LogManager.StaticInfo("[Server] disconnect 用户主动断开");
-            _shouldReconnect = false;
-            CancelBackoffTimer();
-            _session?.Shutdown("user-close");
-            _session = null;
-            SetState(WsState.Disconnected);
         }
 
         private void OnNetworkChanged()
