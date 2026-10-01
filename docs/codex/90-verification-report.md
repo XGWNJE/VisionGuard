@@ -10,11 +10,12 @@
 
 | 检查 | 当前结果 | 证据边界 |
 |---|---|---|
+| Windows 窗口采集链路（2026-10-02） | owner 确认实机验收通过 | 仅覆盖现有窗口来源链路；采集卡、视频源/视频流及手机摄像头公网输入属于未来规划 |
 | 内测迭代原则（2026-10-02） | 文档检查与 27 项相关测试通过 | README、项目概览、操作文档及 AGENTS 明确允许破坏性迭代；未修改运行代码或重置数据 |
 | 文档与脚本契约 | 35 项测试通过，文档检查通过 | 导航、编码、版本、名称、MIT 与发行入口一致；本 checkout 无 artifacts/，按规则跳过该目录的证据存在性校验 |
 | 视觉中继 | 19 项测试通过，维护构建脚本 Server 目标通过 | 编译及协议、控制、更新与安全回归；noUnusedLocals / noUnusedParameters 无错误，不证明生产状态 |
 | Windows Release | 启动器、驻留及 modern/legacy 均 0 警告 / 0 错误；统一目录实际 32 个文件 | 必要产物存在，输出无模型、Assets、PDB、LIB 或 DLL.config；目录统计仅计文件 |
-| Windows 来源自动保存 | 12 项契约检查通过 | 隔离配置下参数防抖落盘、采集目标重置；不证明真实窗口交互或检测 |
+| Windows 来源自动保存 | 12 项契约检查通过 | 隔离配置下参数防抖落盘、采集目标重置 |
 | Windows 辅助探针编译 | modern/legacy 均通过 | 调整后的预处理调用可编译；两档均保留 Net472Compat.cs 的既有 CS8603 警告 |
 | Android JVM 单测 | 检测端 14 项、控制台 57 项通过，无失败、错误或跳过 | 当前模型、协议和界面状态逻辑；删除的 3 项测试只覆盖已不可达的旧 helper |
 | Android Release 与签名 | 两端维护构建目标均通过，apksigner verify 均退出 0 | APK 可构建且签名有效，不证明安装、设备运行或认证 |
@@ -23,13 +24,12 @@
 
 日志、契约结果和瘦身统计在被忽略的 `.local/slimming-review/`。Android 完整构建出现既有原生库无法 strip 的提示；最终增量构建没有新警告。未改版本，未提交、发布、部署或操作生产服务。
 
-应用名称的现有目检证据在 `.local/architecture-naming-verification/`：可见 modern Release WPF 主窗口、全局设定和本地更新提示已检查；可见 Android 模拟器上的应用详情、权限提示和通知已检查。该 Android 名称检查使用本机地址的 Debug 包。瘦身后的构建未追加界面运行验收。
+应用名称的现有目检证据在 `.local/architecture-naming-verification/`：可见 modern Release WPF 主窗口、全局设定和本地更新提示已检查；可见 Android 模拟器上的应用详情、权限提示和通知已检查。该 Android 名称检查使用本机地址的 Debug 包。
 
 ## 待人工/真机验收与未覆盖项
 
-- 本轮人工回归：启动 Windows 视觉节点，检查全局模型列表与来源参数保存；打开 Android 控制台，检查设备参数页与报警详情。
+- Android 控制台的设备参数页与报警详情。
 - Windows 托盘名称、错误弹窗、启动器在线更新；Android 真机及 Release 安装运行；README 渲染效果。
-- 真实主程序的动态视频采集、逐路 person 与 FPS、异常隔离、持续运行和完整告警链。
 - Win7 实机安装、TLS/WSS、推理、驻留握手、登录启动、网络恢复和退出；跨版本更新、校验失败与回滚；其他 GPU、驱动、显示器与 DPI。
 - 视觉中继生产状态及真实设备控制、报警送达。
 
@@ -38,5 +38,4 @@
 - Android 检测端暂缓，认证缺少 channel，当前协议下不可用，也没有来源维度。
 - 视觉中继维护连接在线状态，未实现独立的设备离线报警。
 - Windows outbox 和中继幂等 ACK 不证明控制台离线可靠投递。
-- WpfPersonDetection 使用静态图片窗口，不能替代动态视频或真实 WPF 主程序验收。
 - NNAPI provider 命中不单独证明 GPU/NPU/DSP 硬件执行。
