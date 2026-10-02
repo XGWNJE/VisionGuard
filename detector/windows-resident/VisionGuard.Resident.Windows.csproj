@@ -4,10 +4,10 @@
     <TargetFramework>net472</TargetFramework>
     <LangVersion>7.3</LangVersion>
     <AssemblyName>VisionGuard.Resident.Windows</AssemblyName>
-    <Title>视觉驻留</Title>
-    <AssemblyTitle>视觉驻留</AssemblyTitle>
-    <Product>视觉驻留</Product>
-    <Description>视觉检测后台驻留程序</Description>
+    <Title>VisionGuard 视觉节点驻留程序</Title>
+    <AssemblyTitle>VisionGuard 视觉节点驻留程序</AssemblyTitle>
+    <Product>VisionGuard 视觉节点</Product>
+    <Description>VisionGuard 视觉节点内部后台驻留与生命周期控制</Description>
     <RootNamespace>VisionGuard.Resident.Windows</RootNamespace>
     <PlatformTarget>x64</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>

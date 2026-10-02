@@ -108,7 +108,7 @@
 
                 <!-- 驻留程序：独立进程，只表达状态；未运行时状态文本本身就是失败原因 -->
                 <StackPanel Margin="0,0,0,18">
-                    <TextBlock Text="视觉驻留" Style="{StaticResource SectionLabel}" Margin="0,0,0,7"/>
+                    <TextBlock Text="后台驻留" Style="{StaticResource SectionLabel}" Margin="0,0,0,7"/>
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <TextBlock Text="{Binding ResidentStatusText}" Style="{StaticResource BodyText}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>

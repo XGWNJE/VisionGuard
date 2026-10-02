@@ -9,14 +9,13 @@
 | 规范名称 | 英文名称 | 允许简称（中文 / 英文） | 平台 |
 |---|---|---|---|
 | VisionGuard 视觉节点 | VisionGuard Visual Node | 视觉节点 / Visual Node | Windows |
-| 视觉驻留 | VisionGuard Resident | 视觉驻留 / Resident | Windows |
 | VisionGuard 镜头推流 | VisionGuard Camera Streamer | 镜头推流 / Camera Streamer | Android |
 | VisionGuard 控制台 | VisionGuard Console | 控制台 / Console | Android |
 | VisionGuard 控制台 | VisionGuard Console | 控制台 / Console | Web |
 | VisionGuard 通知节点 | VisionGuard Notifier | 通知节点 / Notifier | Android |
 | VisionGuard 统一服务 | VisionGuard Server | 统一服务 / Server | 服务端 |
 
-共 6 类组件、7 个平台实现。Android 和 Web 控制台是同一产品的两个实现，区分时写“VisionGuard 控制台（Android）”和“VisionGuard 控制台（Web）”。视觉驻留沿用现有辅助程序显示名，随 Windows 视觉节点分发。启动器、modern / legacy 运行时是视觉节点的内部组成；共享库、测试探针和原 Vigil 不计为新的 VisionGuard 应用。不另设 VGD、VGR 等组件缩写。
+共 5 类组件、6 个平台实现。Android 和 Web 控制台是同一产品的两个实现，区分时写“VisionGuard 控制台（Android）”和“VisionGuard 控制台（Web）”。视觉节点包含启动器、modern / legacy 推理运行时和后台驻留程序，统一安装、更新和管理；驻留不单独命名为产品或计入组件清单。共享库、测试探针和原 Vigil 不计为新的 VisionGuard 应用。不另设 VGD、VGR 等组件缩写。
 
 ## 工程与安装身份
 
@@ -24,15 +23,16 @@
 
 | 组件与平台 | 源码目录 | 工程或 npm 标识 | 安装或运行入口 |
 |---|---|---|---|
-| 视觉节点（Windows） | `detector/windows-wpf/`、`detector/windows-launcher/` | `VisionGuard.Detector.Windows`；启动器工程 `VisionGuard.Detector.Windows.Launcher` | `VisionGuard.Detector.Windows.exe` |
-| 视觉驻留（Windows） | `detector/windows-resident/` | `VisionGuard.Resident.Windows` | `VisionGuard.Resident.Windows.exe` |
+| 视觉节点（Windows） | `detector/windows-wpf/`、`detector/windows-launcher/`、`detector/windows-resident/` | `VisionGuard.Detector.Windows`；启动器 `VisionGuard.Detector.Windows.Launcher`；内部驻留 `VisionGuard.Resident.Windows` | `VisionGuard.Detector.Windows.exe`；内部驻留 `VisionGuard.Resident.Windows.exe` |
 | 镜头推流（Android） | `detector/android/` | `VisionGuard.Detector.Android` | `com.xgwnje.visionguard.detector` |
 | 控制台（Android） | `receiver/android/` | `VisionGuard.Receiver.Android` | `com.xgwnje.visionguard.receiver` |
 | 控制台（Web） | `receiver/web/` | `visionguard-web-console` | 同源 `/console/` |
 | 通知节点（Android） | `notifier/android/` | `VisionGuard.Notifier.Android` | `com.xgwnje.visionguard.notifier` |
 | 统一服务（服务端） | `server/` | 内部工程标识 `VisionGuard.Relay`；npm `visionguard-relay` | `server/dist/index.js` |
 
-Android 工程标识对应 `rootProject.name`，包名同时对应 `namespace` 和 `applicationId`。Windows 主程序与驻留的 AssemblyName、RootNamespace 按工程标识；启动器的 RootNamespace 为 `VisionGuard.Detector.Windows.Launcher`，AssemblyName 为 `VisionGuard.Detector.Windows`，生成统一入口，与内部运行时分别位于不同目录。
+Android 工程标识对应 `rootProject.name`，包名同时对应 `namespace` 和 `applicationId`。Windows 主程序与内部驻留的 AssemblyName、RootNamespace 按各自工程标识；启动器的 RootNamespace 为 `VisionGuard.Detector.Windows.Launcher`，AssemblyName 为 `VisionGuard.Detector.Windows`，生成统一入口，与内部运行时分别位于不同目录。
+
+内部驻留文件的说明为“VisionGuard 视觉节点驻留程序”，Product 为“VisionGuard 视觉节点”；功能简称“后台驻留”，英文说明使用“Visual Node resident process”，不另设产品英文名。
 
 ## 登录组件与协议身份
 
@@ -41,13 +41,13 @@ Android 工程标识对应 `rootProject.name`，包名同时对应 `namespace` �
 | 组件与平台 | `component` | `role` | `nodeType` | `platform` |
 |---|---|---|---|---|
 | 视觉节点（Windows） | `windows-inference` | `detector` | `visual` | `windows` |
-| 视觉驻留（Windows） | `windows-resident` | `lifecycle` | `resident` | `windows` |
+| 视觉节点（驻留子进程） | `windows-resident` | `lifecycle` | `resident` | `windows` |
 | 镜头推流（Android） | `android-camera` | `detector` | `visual` | `android` |
 | 控制台（Android） | `android-console` | `console` | `console` | `android` |
 | 控制台（Web） | `web-console` | `console` | `console` | `web` |
 | 通知节点（Android） | `android-notifier` | `notifier` | `notification` | `android` |
 
-视觉驻留使用主视觉节点签发的子会话，与主程序共用设备 ID 和设备名称，不是需要单独配对的设备。统一服务本身不是客户端登录组件。`sensor` 类型已有统一协议契约，当前没有已交付的硬件应用名称。
+表中驻留子进程是视觉节点内部身份，使用主视觉节点签发的子会话，与主程序共用设备 ID 和设备名称。它随主程序启动，主界面关闭后继续运行，以支持远程重新打开；产品归属不改变进程与协议职责。统一服务本身不是客户端登录组件。`sensor` 类型已有统一协议契约，当前没有已交付的硬件应用名称。
 
 ## 构建与更新标识
 
@@ -56,7 +56,7 @@ Android 工程标识对应 `rootProject.name`，包名同时对应 `namespace` �
 | 组件与平台 | 构建目标 | 更新平台键 | 当前构建产物或入口 |
 |---|---|---|---|
 | 视觉节点（Windows） | `Windows` / `WPF`（均构建整套 Windows 目录） | `wpf` | `detector/windows-package/bin/Release/VisionGuard.Detector.Windows.exe` |
-| 视觉驻留（Windows） | `WindowsResident` | 随 `wpf` 整包分发 | `detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe` |
+| 视觉节点（驻留子进程） | `WindowsResident`（内部程序单独编译） | 随 `wpf` 整包分发 | `detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe` |
 | 镜头推流（Android） | `AndroidDetector` | `android-detector` | `detector/android/app/build/outputs/apk/release/app-release.apk` |
 | 控制台（Android） | `AndroidReceiver` | `android-receiver` | `receiver/android/app/build/outputs/apk/release/app-release.apk` |
 | 控制台（Web） | 随 `Server` 构建 | 随服务部署 | `server/dist/console/index.html` |

@@ -131,6 +131,16 @@ test('canonical component names cannot drift', () => {
   assert.ok(errors.some(message => message.includes('canonical component name VisionGuard 统一服务')));
 });
 
+test('the resident process cannot reappear as a standalone product', () => {
+  const read = p => fs.readFileSync(path.join(root, p), 'utf8');
+  const errors = [];
+  const readme = read('README.md').replace('## 当前组件', '## 当前组件\n\n| 视觉驻留 | Windows | 驻留 | `detector/windows-resident/` |');
+  const naming = read('docs/codex/15-component-naming.md').replace('## 规范名称', '## 规范名称\n\n| 视觉驻留 | VisionGuard Resident | 视觉驻留 / Resident | Windows |');
+  checkComponentContract(root, readme, read('docs/codex/10-project-overview.md'), read('docs/codex/60-operations.md'), errors, naming);
+  assert.ok(errors.some(message => message.includes('current component table has 7 data rows; expected 6')));
+  assert.ok(errors.some(message => message.includes('canonical Chinese, English, short names')));
+});
+
 test('English names and abbreviations cannot diverge between console platforms', () => {
   const read = p => fs.readFileSync(path.join(root, p), 'utf8');
   const errors = [];

@@ -10,7 +10,7 @@ owner 已手动走查提交 `9d587eb` 的基础操作链路；细项尚未逐项
 
 当前全组件使用账号登录及服务签发的设备身份。原 Android 检测端改为 **VisionGuard 镜头推流**，仍是视觉节点；真实 CameraX 画面经统一服务转发到 Windows 来源推理。独立通知节点位于 `notifier/android/`，原 Vigil 仓库未修改。
 
-本轮统一名称，服务正式名为 **VisionGuard 统一服务 / VisionGuard Server**，名称与技术标识以[命名规范](15-component-naming.md)为准。下方运行证据对应账号推流提交 `10bc0ae` 的测试组件；本轮文案调整不视为新增 UI 或 E2E 验收，独立公网服务与私有 APK 验收包未替换，Windows 验收脚本仍指向当前本机 Release 构建。
+当前对外为 5 类组件、6 个平台实现，后台驻留归入视觉节点内部；服务正式名为 **VisionGuard 统一服务 / VisionGuard Server**，名称与技术标识以[命名规范](15-component-naming.md)为准。下方运行证据对应账号推流提交 `10bc0ae` 的测试组件；本轮文案调整不视为新增 UI 或 E2E 验收，独立公网服务与私有 APK 验收包未替换，Windows 验收脚本仍指向当前本机 Release 构建。
 
 ## 自动化与构建证据
 
@@ -21,8 +21,8 @@ owner 已手动走查提交 `9d587eb` 的基础操作链路；细项尚未逐项
 | Windows Release | 启动器、驻留、modern/legacy 均 0 警告 / 0 错误，统一目录 32 个文件 | 实际运行使用 modern；Win7/legacy 仅构建证据 |
 | Windows 账号与媒体探针 | `AccountMedia.Probe` 通过 | 大消息/分片/ping/取消/边界、最新帧/重复/停止/单调过期、DPAPI/账号切换、驻留隔离、登出重登与解绑重新登记；实际子进程延迟刷新与退出/重登录竞争、实际 AlertService 保留远程帧诊断字段；不能替代真实 WPF 推理 |
 | Android 三端 | 镜头 8 项、控制台 71 项、通知 6 项 JVM 单测通过；三端 lintDebug 与 lintVitalRelease 无错误；签名 Release 与 apksigner verify 通过 | 共享真实 HTTP 迟到 401 条件清理；控制台离线身份、登记名单、迟到 GET/DELETE 隔离与解绑后刷新失败；名称、包名、版本 4.5.1 / code 4501 与共享签名核验；lintDebug 警告分别 27 / 27 / 114，含既有资源与 API 提示；不是物理设备证明 |
-| 文档与脚本 | 文档审核及 40 项命名/文档/发行/版本契约与账号 CLI 守卫测试通过 | 中英文名与简称、安装/工程身份、登录组件、构建/更新标识；导航、版本、授权、PowerShell 编码与不回显密码；已接现有 CI，尚未 push 或云端执行 |
-| 命名固化产物 | 服务/Web、Windows 双档与入口/驻留、镜头和 Android 控制台 Release 构建通过；控制台 71 项与 Web 14 项测试再次通过 | Windows 标题/产品名、两端 APK 显示名/包名/版本及签名已核验；Windows 0 警告/错误，统一目录仍为 32 文件；不包含本轮 UI、设备或公网运行验证 |
+| 文档与脚本 | 文档审核及 41 项命名/文档/发行/版本契约与账号 CLI 守卫测试通过 | 中英文名与简称、内部驻留不单列产品、安装/工程身份、登录组件、构建/更新标识；导航、版本、授权、PowerShell 编码与不回显密码；已接现有 CI，尚未 push 或云端执行 |
+| 命名固化产物 | 服务/Web、Windows 双档与入口/驻留、镜头和 Android 控制台 Release 构建通过；控制台 71 项与 Web 14 项测试再次通过 | Windows 标题/产品名、两端 APK 显示名/包名/版本及签名已核验；驻留文件说明为“VisionGuard 视觉节点驻留程序”，产品名归属“VisionGuard 视觉节点”；Windows 0 警告/错误，统一目录仍为 32 文件；不包含本轮 UI、设备或公网运行验证 |
 | CI | 新增 `.github/workflows/development.yml` | 服务/Web 测试构建、三个 Android Debug 单测/lint/构建、Windows 双档及媒体探针；对应检查在本机执行，未 push，尚无 GitHub 云端运行结果 |
 
 构建与测试报告保留在各工程 `build/reports/`、`build/test-results/` 及被忽略 `.local/`。三端签名 APK 为各自 `app/build/outputs/apk/release/app-release.apk`；私有签名配置、账号密码、会话与 SDK 配置不提交。
@@ -63,4 +63,4 @@ VPS 测试根目录 `/opt/visionguard-account-test`，systemd 单元 `visionguar
 - 首次摄像头权限返回后仍需再点一次开始；已在测试入口说明。控制台正常 UI 退出被既有旧包浮窗遮挡，本轮未计通过，仅停止本轮应用；旧应用与其通知未修改。
 - Win7、其他 GPU/DPI、Android 真机及生产验证单独安排；第 3 组硬件未准备，物理硬件驱动未实施。
 - 新通知节点正式发布流水线与发行更新仍未验收；本轮安装仅为隔离模拟器测试，没有正式上传、发布，不从 Vigil 获取更新。
-- 命名固化后的镜头服务提示、控制台节点空态和视觉节点启停文案，尚未运行目检；继续留待 owner 集中验收。
+- 命名固化后的镜头服务提示、控制台节点空态和视觉节点启停文案，以及 Windows“后台驻留”分区，尚未运行目检；继续留待 owner 集中验收。

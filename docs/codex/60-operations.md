@@ -16,13 +16,13 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scri
 
 可用目标为 `Server`、`WPF`、`WindowsResident`、`AndroidDetector`、`AndroidReceiver`、`AndroidNotifier`，也可使用组合目标 `Windows`、`Android`（包含通知节点）。脚本只编译并检查产物，不打包、不上传、不部署、不改版本。
 
-视觉驻留的生命周期命令以源码为准：`open-detector`、`close-detector`（驻留由检测端拉起并自行存活）。
+视觉节点内部驻留程序的生命周期命令以源码为准：`open-detector`、`close-detector`（随主程序启动，主界面关闭后继续运行）。
 
 构建结果必须按组件分别报告，并在完成后检查：
 
 - 统一服务及 Web：`server/dist/index.js`、`server/dist/console/index.html`；先分别运行 `npm --prefix server ci` 与 `npm --prefix receiver/web ci`，需要 Node.js 22.18 或以上
 - VisionGuard 视觉节点统一入口：`detector/windows-package/bin/Release/VisionGuard.Detector.Windows.exe`；内部运行时位于 `runtimes/modern/` 与 `runtimes/legacy/`，各自只保留匹配的 `native\modern\`、`native\legacy\`，包根目录不得残留 `onnxruntime.dll` 或 `DirectML.dll`
-- 视觉驻留：`detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe`
+- 视觉节点内部驻留程序：`detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe`
 - VisionGuard 镜头推流：`detector/android/app/build/outputs/apk/release/app-release.apk`
 - VisionGuard 控制台：`receiver/android/app/build/outputs/apk/release/app-release.apk`
 - VisionGuard 通知节点：`notifier/android/app/build/outputs/apk/release/app-release.apk`
@@ -35,7 +35,7 @@ Windows 发行输出不得包含 `.pdb`、`.lib`、`.dll.config`、`.onnx`、`As
 
 当前 Android 包名为 `com.xgwnje.visionguard.detector`、`com.xgwnje.visionguard.receiver` 和 `com.xgwnje.visionguard.notifier`。包名决定安装身份；不能覆盖其他包名的应用，Debug 与 Release 签名不同也不能直接覆盖。三端使用被忽略的共享 Release 签名配置，当前镜头改造保留原包名。
 
-Windows 当前构建从统一目录根启动 `VisionGuard.Detector.Windows.exe`，视觉驻留程序为 `VisionGuard.Resident.Windows.exe`。复制完整目录，再将桌面快捷方式指向该入口；已发布包的实际文件以对应发布说明为准。
+Windows 当前构建从统一目录根启动 `VisionGuard.Detector.Windows.exe`，内部驻留程序为 `VisionGuard.Resident.Windows.exe`，属于同一视觉节点。复制完整目录，再将桌面快捷方式指向主入口；已发布包的实际文件以对应发布说明为准。
 
 ## 运行与设备验证
 
@@ -121,7 +121,7 @@ Android 运行 smoke 使用 `-Mode AndroidDetectorSmoke` 或 `-Mode AndroidRecei
 - `WpfParserContract` 按推理档位各构建一次 `tests/WpfInference.Benchmark` 并对真实图片断言输出形态、形态与档位一致、未知长度被拒、原生 ONNX Runtime 来自档位目录、解析出预期业务目标（默认 `person`，置信度 ≥0.5）。不打开窗口、不依赖 GPU，只证明「模型 → 解析 → 检测框」。
 - `ResidentLaunch` 创建独立账号库并使用账号登录；它按 `-ResidentPort`（默认 3123，端口被占用会直接报错而不复用旧实例）启动隔离统一服务，对两个档位分别断言「检测端拉起同目录驻留 → 驻留在超时内进入单实例握手 → 服务端 device-list 报 `components.resident = running`」。它只会结束自己拉起的驻留（按驻留配置路径匹配），不使用真实 settings。不覆盖远程 `open-detector`/`close-detector` 实际动作、登录自启与重启恢复。
 - 真实窗口采集、真机 UI、完整报警链、持续运行和故障恢复分别记录为人工/真机/完整 E2E 结果。
-- 视觉驻留使用 .NET Framework 4.7.2 x64；构建和隔离链路 smoke 仍不能替代 Win7 SP1 x64 目标环境中的启动、WSS、登录重启和网络恢复验收。
+- 视觉节点内部驻留程序使用 .NET Framework 4.7.2 x64；构建和隔离链路 smoke 仍不能替代 Win7 SP1 x64 目标环境中的启动、WSS、登录重启和网络恢复验收。
 - Win7 SP1 x64 前置环境可在虚拟机共享目录中双击 `scripts/run-win7-prerequisites.cmd` 核验；它调用 `scripts/check-win7-prerequisites.ps1` 检查系统版本、KB4490628、KB4474419、KB3140245、WinHTTP TLS 1.2 注册表、KB4019990 与 .NET Framework 4.7.2，并把机器可读结果写入 `artifacts/e2e/win7-prerequisites.json`。共享目录必须临时允许虚拟机写入该报告，验收后可恢复只读。
 
 证据写入 `artifacts/e2e/<timestamp>/`。不要为了本地验证清除应用数据，除非任务明确要求；脚本启动的模拟器必须在结束时关闭。未明确要求时不操作生产服务。

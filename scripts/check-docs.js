@@ -9,7 +9,6 @@ const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 
 const COMPONENTS = [
   { label: 'VisionGuard 视觉节点', english: 'VisionGuard Visual Node', short: '视觉节点 / Visual Node', platform: 'Windows', relativePath: 'detector/windows-wpf', source: 'detector/windows-wpf/App.xaml.cs' },
-  { label: '视觉驻留', english: 'VisionGuard Resident', short: '视觉驻留 / Resident', platform: 'Windows', relativePath: 'detector/windows-resident', source: 'detector/windows-resident/Program.cs' },
   { label: 'VisionGuard 镜头推流', english: 'VisionGuard Camera Streamer', short: '镜头推流 / Camera Streamer', platform: 'Android', relativePath: 'detector/android', source: 'detector/android/app/build.gradle.kts' },
   { label: 'VisionGuard 控制台', english: 'VisionGuard Console', short: '控制台 / Console', platform: 'Android', relativePath: 'receiver/android', source: 'receiver/android/app/build.gradle.kts' },
   { label: 'VisionGuard 控制台', english: 'VisionGuard Console', short: '控制台 / Console', platform: 'Web', relativePath: 'receiver/web', source: 'receiver/web/src/main.tsx' },
@@ -315,7 +314,7 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
   const protocolRows = tableRows(naming, '## 登录组件与协议身份').slice(1).map(cells);
   const expectedProtocol = [
     ['视觉节点（Windows）', 'windows-inference', 'detector', 'visual', 'windows'],
-    ['视觉驻留（Windows）', 'windows-resident', 'lifecycle', 'resident', 'windows'],
+    ['视觉节点（驻留子进程）', 'windows-resident', 'lifecycle', 'resident', 'windows'],
     ['镜头推流（Android）', 'android-camera', 'detector', 'visual', 'android'],
     ['控制台（Android）', 'android-console', 'console', 'console', 'android'],
     ['控制台（Web）', 'web-console', 'console', 'console', 'web'],
@@ -328,7 +327,7 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
   const buildRows = tableRows(naming, '## 构建与更新标识').slice(1).map(rawCells);
   const expectedBuild = [
     ['视觉节点（Windows）', ['Windows', 'WPF'], ['wpf'], 'detector/windows-package/bin/Release/VisionGuard.Detector.Windows.exe'],
-    ['视觉驻留（Windows）', ['WindowsResident'], ['wpf'], 'detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe'],
+    ['视觉节点（驻留子进程）', ['WindowsResident'], ['wpf'], 'detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe'],
     ['镜头推流（Android）', ['AndroidDetector'], ['android-detector'], 'detector/android/app/build/outputs/apk/release/app-release.apk'],
     ['控制台（Android）', ['AndroidReceiver'], ['android-receiver'], 'receiver/android/app/build/outputs/apk/release/app-release.apk'],
     ['控制台（Web）', ['Server'], [], 'server/dist/console/index.html'],
@@ -382,6 +381,9 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
   }
 
   const residentProgram = readUtf8(root, 'detector/windows-resident/Program.cs', errors, { checkBom: false });
+  for (const [relativePath, content] of [['README.md', readme], ['docs/codex/10-project-overview.md', overview]]) {
+    requireText(content, 'detector/windows-resident/', relativePath, 'the visual node internal resident source entry', errors);
+  }
   // Windows 只剩一个检测端，生命周期命令统一为 detector。
   for (const command of ['open-detector', 'close-detector']) {
     requireText(residentProgram, `"${command}"`, 'detector/windows-resident/Program.cs', `the resident command ${command}`, errors);
@@ -408,10 +410,10 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
     requireText(row.join('|'), packageName, namingPath, 'the Android package mapped to ' + name, errors);
     requireText(row.join('|'), engineering, namingPath, 'the engineering name mapped to ' + name, errors);
   }
-  for (const [project, assembly, title] of [
-    ['detector/windows-wpf/VisionGuard.Detector.Windows.csproj', 'VisionGuard.Detector.Windows', 'VisionGuard 视觉节点'],
-    ['detector/windows-launcher/VisionGuard.Detector.Windows.Launcher.csproj', 'VisionGuard.Detector.Windows', 'VisionGuard 视觉节点'],
-    ['detector/windows-resident/VisionGuard.Resident.Windows.csproj', 'VisionGuard.Resident.Windows', '视觉驻留']
+  for (const [project, assembly, title, product] of [
+    ['detector/windows-wpf/VisionGuard.Detector.Windows.csproj', 'VisionGuard.Detector.Windows', 'VisionGuard 视觉节点', 'VisionGuard 视觉节点'],
+    ['detector/windows-launcher/VisionGuard.Detector.Windows.Launcher.csproj', 'VisionGuard.Detector.Windows', 'VisionGuard 视觉节点', 'VisionGuard 视觉节点'],
+    ['detector/windows-resident/VisionGuard.Resident.Windows.csproj', 'VisionGuard.Resident.Windows', 'VisionGuard 视觉节点驻留程序', 'VisionGuard 视觉节点']
   ]) {
     const content = readUtf8(root, project, errors, { checkBom: false });
     requireText(content, '<AssemblyName>' + assembly + '</AssemblyName>', project, 'the canonical executable identity', errors);
@@ -419,9 +421,8 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
     requireText(content, '<RootNamespace>' + rootNamespace + '</RootNamespace>', project, 'the canonical Windows namespace', errors);
     requireText(content, '<Title>' + title + '</Title>', project, 'the application title', errors);
     requireText(content, '<AssemblyTitle>' + title + '</AssemblyTitle>', project, 'the Windows file description', errors);
-    requireText(content, '<Product>' + title + '</Product>', project, 'the Windows product name', errors);
-    const rowName = project.includes('windows-resident') ? '视觉驻留（Windows）' : '视觉节点（Windows）';
-    const row = engineeringRows.find(cells => cells[0] === rowName) || [];
+    requireText(content, '<Product>' + product + '</Product>', project, 'the Windows product name', errors);
+    const row = engineeringRows.find(cells => cells[0] === '视觉节点（Windows）') || [];
     for (const identifier of [rootNamespace, assembly + '.exe']) {
       requireText(row.join('|'), identifier, namingPath, 'the Windows engineering identity mapped to ' + title, errors);
     }

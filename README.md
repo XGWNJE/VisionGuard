@@ -55,8 +55,7 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scri
 
 | 组件 | 平台 | 当前范围 | 源码入口 |
 |---|---|---|---|
-| VisionGuard 视觉节点 | Windows | 本地画面及远程镜头推理；统一入口和 modern / legacy 内部运行时 | [启动器](./detector/windows-launcher/) · [WPF 运行时](./detector/windows-wpf/) |
-| 视觉驻留 | Windows | 随 VisionGuard 视觉节点运行，处理受控打开、关闭和状态上报 | [`detector/windows-resident/`](./detector/windows-resident/) |
+| VisionGuard 视觉节点 | Windows | 本地画面及远程镜头推理；统一入口、modern / legacy 运行时与内部后台驻留 | [启动器](./detector/windows-launcher/) · [WPF 运行时](./detector/windows-wpf/) · [内部驻留](./detector/windows-resident/) |
 | VisionGuard 镜头推流 | Android | 前台摄像头推流，最高 720P；通过统一服务接入 Windows 推理来源 | [`detector/android/`](./detector/android/) |
 | VisionGuard 控制台 | Android | 查看告警、截图和设备状态；逐来源控制与参数配置 | [`receiver/android/`](./receiver/android/) |
 | VisionGuard 控制台 | Web | 节点/来源管理、当前参数、事件与通知范围；跟随系统浅色/深色 | [`receiver/web/`](./receiver/web/) |
