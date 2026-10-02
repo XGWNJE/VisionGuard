@@ -5,7 +5,7 @@ description: Build and verify one or more VisionGuard targets without packaging,
 
 # VisionGuard Build
 
-Compile the requested targets through the maintained project script and verify the expected artifacts exist. 组件名称统一为 VisionGuard 视觉节点、视觉驻留、VisionGuard 镜头推流、VisionGuard 控制台、VisionGuard 通知节点、视觉中继。
+Compile the requested targets through the maintained project script and verify the expected artifacts exist. 组件名与构建目标的对应关系见 [命名规范](../../../../docs/codex/15-component-naming.md)。
 
 ## Boundaries
 
@@ -37,7 +37,7 @@ The script currently accepts `All`, `Server`, `Windows`, `WPF`, `WindowsResident
 
 ## Expected Artifacts
 
-- 视觉中继及 Web： `server/dist/index.js`、`server/dist/console/index.html`；构建前分别安装 `server/` 与 `receiver/web/` 的 npm 依赖。
+- 统一服务及 Web： `server/dist/index.js`、`server/dist/console/index.html`；构建前分别安装 `server/` 与 `receiver/web/` 的 npm 依赖。
 - Windows unified package: `detector/windows-package/bin/Release/VisionGuard.Detector.Windows.exe`
 - Internal modern runtime: `detector/windows-package/bin/Release/runtimes/modern/VisionGuard.Detector.Windows.exe`
 - Internal legacy runtime: `detector/windows-package/bin/Release/runtimes/legacy/VisionGuard.Detector.Windows.exe`

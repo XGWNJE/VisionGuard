@@ -1,6 +1,6 @@
 # VisionGuard Android UI 规范
 
-三个 Android 组件的账号界面和基础主题统一使用 [`android-shared/`](../../android-shared/) 的现代简约青色方案，与当前 Web 控制台、通知节点保持一致。控制台保留现有警报与设备布局；镜头推流、通知节点分别保留各自的主任务。Windows 视觉推理节点暂不重做整体外观。
+三个 Android 组件的账号界面和基础主题统一使用 [`android-shared/`](../../android-shared/) 的现代简约青色方案，与当前 Web 控制台、通知节点保持一致。控制台保留现有警报与设备布局；镜头推流、通知节点分别保留各自的主任务。Windows 视觉节点暂不重做整体外观。
 
 ## 风格与颜色
 

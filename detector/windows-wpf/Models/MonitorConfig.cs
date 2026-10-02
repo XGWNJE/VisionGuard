@@ -57,7 +57,7 @@ namespace VisionGuard.Detector.Windows.Models
         /// <summary>
         /// 遮罩区域列表（相对于捕获后的 Bitmap，X/Y/Width/Height ∈ [0,1]）。
         /// 由 MaskApplier 在推理前 in-place 涂黑，同时影响推理与报警截图。
-        /// 与 视觉检测（Android）保持一致：仅本地配置，不通过 set-config 远程同步。
+        /// 仅本地配置，不通过 set-config 远程同步。
         /// </summary>
         public List<RectangleF> MaskRegions { get; set; } = new List<RectangleF>();
     }

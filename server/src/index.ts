@@ -112,11 +112,11 @@ cleanupScreenshots();
 startCleanupTimer();
 
 server.listen(config.port, config.host, () => {
-  console.log(`[server] VisionGuard 视觉中继 v4.5.1 已启动`);
+  console.log(`[server] VisionGuard 统一服务 v4.5.1 已启动`);
   console.log(`[server] 隔离通道: ${config.channelId} / 数据目录: ${config.dataDir}`);
   console.log(`[server] HTTP + WS 监听地址: ${config.host}:${config.port}`);
   console.log(`[server] 截图模式: WebSocket 独立推送并备份；HTTP 上传${config.enableHttpScreenshotUpload ? '开启' : '关闭'}`);
   console.log(`[server] 报警记录 TTL: ${config.alertTtlHours} 小时`);
   console.log(`[server] WS 最大连接数: ${config.maxWsConnections}`);
-  console.log(`[server] 检测端幽灵阈值: ${config.deviceOfflineMs / 1000}s / 接收端: ${config.receiverGhostThresholdMs / 1000}s`);
+  console.log(`[server] 检测节点幽灵阈值: ${config.deviceOfflineMs / 1000}s / 控制台: ${config.receiverGhostThresholdMs / 1000}s`);
 });

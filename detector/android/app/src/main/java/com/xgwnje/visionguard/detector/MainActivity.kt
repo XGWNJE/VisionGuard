@@ -185,6 +185,6 @@ private fun CameraHome(state: PublisherState, preview: Bitmap?, streaming: Boole
         Row { Text("省电暗色界面", Modifier.weight(1f)); Switch(dim, onDim) }
         Row { Text("收起画面预览", Modifier.weight(1f)); Switch(hidden, onHidePreview) }
         Text("画面发送 ${state.sentFrames} · 服务确认 ${state.acknowledgedFrames} · 丢弃 ${state.droppedFrames}", style = MaterialTheme.typography.bodySmall)
-        Text("服务确认表示视频已送达中继；检测结果请在控制台查看。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("服务确认表示视频已送达统一服务；检测结果请在控制台查看。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

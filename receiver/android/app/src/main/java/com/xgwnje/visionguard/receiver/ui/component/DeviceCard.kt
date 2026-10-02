@@ -357,7 +357,7 @@ private fun DeviceCardActions(
         model.detectorLifecycleCommand?.let { command ->
             Row(horizontalArrangement = Arrangement.spacedBy(chrome.columnGapDp.dp)) {
                 DeviceActionButton(
-                    label = if (command.startsWith("open")) "打开检测端" else "关闭检测端",
+                    label = if (command.startsWith("open")) "打开视觉节点" else "关闭视觉节点",
                     icon = if (command.startsWith("open")) Icons.Default.PlayArrow else Icons.Default.Pause,
                     enabled = model.lifecycleControlsEnabled, emphasized = command.startsWith("open"), danger = false,
                     heightDp = chrome.actionButtonHeightDp, contentHorizontalPaddingDp = 8,

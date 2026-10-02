@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!-- 验证 target 与 detector/windows-wpf 一致：视觉检测（Windows）统一为 net472。 -->
+    <!-- 验证 target 与 detector/windows-wpf 一致：视觉节点（Windows）统一为 net472。 -->
     <OutputType>Exe</OutputType>
     <TargetFramework>net472</TargetFramework>
     <UseWPF>true</UseWPF>

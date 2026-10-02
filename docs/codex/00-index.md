@@ -4,8 +4,9 @@
 
 ## 文档分工
 
-- [10-project-overview.md](10-project-overview.md) - 检测节点、统一服务与控制台的职责，组件命名和当前实现边界
-- [20-server.md](20-server.md) - 视觉中继当前职责、接口、运行参数和协议角色
+- [10-project-overview.md](10-project-overview.md) - 检测节点、统一服务与控制台的职责，目录地图和当前实现边界
+- [15-component-naming.md](15-component-naming.md) - 组件中文名、英文名、简称及工程、安装、协议、构建更新标识的唯一对照
+- [20-server.md](20-server.md) - 统一服务当前职责、接口、运行参数和协议角色
 - [30-windows-detector.md](30-windows-detector.md) - 统一启动器、WPF 两套内部运行时和驻留程序的实现事实
 - [35-model-assets.md](35-model-assets.md) - ONNX 模型、COCO 类别、目标子集和资源维护约束
 - [40-android-detector.md](40-android-detector.md) - VisionGuard 镜头推流的前台摄像头采集、账号与实时媒体 WS

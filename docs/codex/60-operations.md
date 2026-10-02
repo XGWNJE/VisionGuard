@@ -20,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scri
 
 构建结果必须按组件分别报告，并在完成后检查：
 
-- 视觉中继及 Web：`server/dist/index.js`、`server/dist/console/index.html`；先分别运行 `npm --prefix server ci` 与 `npm --prefix receiver/web ci`，需要 Node.js 22.18 或以上
+- 统一服务及 Web：`server/dist/index.js`、`server/dist/console/index.html`；先分别运行 `npm --prefix server ci` 与 `npm --prefix receiver/web ci`，需要 Node.js 22.18 或以上
 - VisionGuard 视觉节点统一入口：`detector/windows-package/bin/Release/VisionGuard.Detector.Windows.exe`；内部运行时位于 `runtimes/modern/` 与 `runtimes/legacy/`，各自只保留匹配的 `native\modern\`、`native\legacy\`，包根目录不得残留 `onnxruntime.dll` 或 `DirectML.dll`
 - 视觉驻留：`detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe`
 - VisionGuard 镜头推流：`detector/android/app/build/outputs/apk/release/app-release.apk`
@@ -31,7 +31,7 @@ Windows 发行输出不得包含 `.pdb`、`.lib`、`.dll.config`、`.onnx`、`As
 
 ## 应用名称与安装身份
 
-名称及工程/包名的对应关系见[项目概览](10-project-overview.md#组件名称与技术标识)。显示名分别为“VisionGuard 镜头推流”、“VisionGuard 控制台”和“VisionGuard 通知节点”。
+名称、英文名、简称及工程/包名的唯一对应关系见[命名规范](15-component-naming.md)。
 
 当前 Android 包名为 `com.xgwnje.visionguard.detector`、`com.xgwnje.visionguard.receiver` 和 `com.xgwnje.visionguard.notifier`。包名决定安装身份；不能覆盖其他包名的应用，Debug 与 Release 签名不同也不能直接覆盖。三端使用被忽略的共享 Release 签名配置，当前镜头改造保留原包名。
 
@@ -115,11 +115,11 @@ Android 运行 smoke 使用 `-Mode AndroidDetectorSmoke` 或 `-Mode AndroidRecei
 结果分类不能合并：
 
 - `ServerBuild` 只验证 TypeScript 编译和 `server/dist/index.js` 产物；兼容别名 `ServerSmoke` 也只做同一件事，不是 HTTP/WS 运行测试。
-- Android 启动 smoke 只验证安装、启动、前台服务/进程状态和观测窗口内无崩溃，不验证检测端→视觉中继→接收端报警链。
+- Android 启动 smoke 只验证安装、启动、前台服务/进程状态和观测窗口内无崩溃，不验证视觉节点→统一服务→通知节点完整报警链。
 - `WpfPersonDetection` 按 `-WpfSourceCount`（默认 4）由脚本内的 `Start-WpfFixtureWindows` 创建可见 WinForms 静态图片窗口，经 `WindowHandle` 捕获后逐路验证 `person`、FPS 和来源隔离；夹具图片数量不得少于来源数。它是类库推理补充证据，不能替代真实 WPF 主程序、动态视频、报警链或 UI 目检。
 - 纯计算契约（不开窗口、不建推理会话）：`CardLayoutPlan` 驱动 `CardLayoutPlanner`，断言卡片比例夹紧、1/2/4 张网格排得下、画面短边回归线与退化输入；`PerformanceWatchdog` 驱动 `PerformanceWatchdog`，断言性能提示的判定边界（实测 < 目标×80%）、30 秒持续时间、提示文案与三个口径常量。两者都只证明数学与口径，不证明真实界面观感或实机帧率。
 - `WpfParserContract` 按推理档位各构建一次 `tests/WpfInference.Benchmark` 并对真实图片断言输出形态、形态与档位一致、未知长度被拒、原生 ONNX Runtime 来自档位目录、解析出预期业务目标（默认 `person`，置信度 ≥0.5）。不打开窗口、不依赖 GPU，只证明「模型 → 解析 → 检测框」。
-- `ResidentLaunch` 创建独立账号库并使用账号登录；它按 `-ResidentPort`（默认 3123，端口被占用会直接报错而不复用旧实例）启动隔离视觉中继，对两个档位分别断言「检测端拉起同目录驻留 → 驻留在超时内进入单实例握手 → 服务端 device-list 报 `components.resident = running`」。它只会结束自己拉起的驻留（按驻留配置路径匹配），不使用真实 settings。不覆盖远程 `open-detector`/`close-detector` 实际动作、登录自启与重启恢复。
+- `ResidentLaunch` 创建独立账号库并使用账号登录；它按 `-ResidentPort`（默认 3123，端口被占用会直接报错而不复用旧实例）启动隔离统一服务，对两个档位分别断言「检测端拉起同目录驻留 → 驻留在超时内进入单实例握手 → 服务端 device-list 报 `components.resident = running`」。它只会结束自己拉起的驻留（按驻留配置路径匹配），不使用真实 settings。不覆盖远程 `open-detector`/`close-detector` 实际动作、登录自启与重启恢复。
 - 真实窗口采集、真机 UI、完整报警链、持续运行和故障恢复分别记录为人工/真机/完整 E2E 结果。
 - 视觉驻留使用 .NET Framework 4.7.2 x64；构建和隔离链路 smoke 仍不能替代 Win7 SP1 x64 目标环境中的启动、WSS、登录重启和网络恢复验收。
 - Win7 SP1 x64 前置环境可在虚拟机共享目录中双击 `scripts/run-win7-prerequisites.cmd` 核验；它调用 `scripts/check-win7-prerequisites.ps1` 检查系统版本、KB4490628、KB4474419、KB3140245、WinHTTP TLS 1.2 注册表、KB4019990 与 .NET Framework 4.7.2，并把机器可读结果写入 `artifacts/e2e/win7-prerequisites.json`。共享目录必须临时允许虚拟机写入该报告，验收后可恢复只读。
@@ -134,7 +134,7 @@ Android 运行 smoke 使用 `-Mode AndroidDetectorSmoke` 或 `-Mode AndroidRecei
 powershell -ExecutionPolicy Bypass -File .\scripts\publish-release.ps1 -Version <version> -Target All -UploadVps
 ```
 
-该命令会同步版本、构建、准备签名包、更新 release 元数据、按目标上传并可部署视觉中继；每一步都需要明确发布授权。仅检查前置条件时使用 `-PreflightOnly`，明确只发客户端时使用 `-SkipServerDeploy`。GitHub push、tag 和 Release 仍需显式开关。
+该命令会同步版本、构建、准备签名包、更新 release 元数据、按目标上传并可部署统一服务；每一步都需要明确发布授权。仅检查前置条件时使用 `-PreflightOnly`，明确只发客户端时使用 `-SkipServerDeploy`。GitHub push、tag 和 Release 仍需显式开关。
 
 发布前必须确认 Android 签名材料、Windows ZIP 清洁度、元数据大小和目标范围；发布后才可执行公网 `/health`、`/api/update`、`HEAD 200` 和 byte-range `206` 验证。发布脚本是唯一的正式打包/部署实现。
 
@@ -142,7 +142,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish-release.ps1 -Version 
 
 ## 配置与服务边界
 
-- 视觉中继真实账号库、会话、TLS 私钥及生产配置使用独立私有目录或部署环境变量，不能提交。
+- 统一服务真实账号库、会话、TLS 私钥及生产配置使用独立私有目录或部署环境变量，不能提交。
 - 各端只要求服务地址和账号密码；设备、组件与驻留身份由服务签发，不注入 API key、设备 ID 或通道。`VISIONGUARD_SERVER_URL` 可设置 Windows 和构建默认服务地址；客户端仍可在登录页更改地址。
 - 本地签名配置位于被忽略的 `.local/` 和 Android `local.properties`，不与账号配置混用；移工作区时按需额外备份签名材料，不能提交到 Git。
 - 服务默认 HTTP；配置 `VISIONGUARD_TLS_CERT_FILE` 与 `VISIONGUARD_TLS_KEY_FILE` 可启动独立 HTTPS/WSS 测试实例。测试需独立进程、端口、数据目录和账号库，不覆盖线上目录、监听或代理配置。

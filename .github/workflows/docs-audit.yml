@@ -26,7 +26,7 @@ jobs:
           node-version: 24
           package-manager-cache: false
 
-      - name: Audit canonical documentation
+      - name: Audit component naming and canonical documentation
         run: node scripts/check-docs.js
 
       - name: Test documentation guardrails

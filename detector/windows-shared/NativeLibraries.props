@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  ONNX Runtime 推理档位的唯一定义（视觉检测（Windows）与其验证工程共用）。
+  ONNX Runtime 推理档位的唯一定义（视觉节点（Windows）与其验证工程共用）。
 
   档位：
     modern（默认）= Windows 10 及以上：托管 ONNX Runtime 1.19.0 + 原生 1.19.0 + DirectML，模型 YOLO26。

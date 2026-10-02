@@ -1,6 +1,6 @@
 # VisionGuard 镜头推流
 
-`detector/android/` 是 Android 摄像推流组件，仍属于视觉节点。它在前台采集摄像头画面，经统一服务转发给账号内的 Windows 视觉推理节点；本机不加载模型、不执行目标推理或生成视觉报警。
+`detector/android/` 是 **VisionGuard 镜头推流**，属于视觉节点类型（`visual`）。它在前台采集摄像头画面，经统一服务转发给账号内的 Windows 视觉节点；本机不加载模型、不执行目标推理或生成视觉报警。应用名与安装身份见[命名规范](15-component-naming.md)。
 
 ## 当前职责
 

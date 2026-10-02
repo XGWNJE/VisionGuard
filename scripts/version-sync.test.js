@@ -34,7 +34,7 @@ test('releases.json 的 url 与 releaseFileName 一致', () => {
   const keys = Object.keys(releases);
   assert.ok(keys.length > 0, 'releases.json 不应为空');
   assert.ok(!keys.includes('winforms'), 'WinForms 检测端已退役，条目不得再留在发布元数据里');
-  assert.ok(!keys.includes('wpf-legacy'), '视觉检测（Windows）不得再拆分发布条目');
+  assert.ok(!keys.includes('wpf-legacy'), '视觉节点（Windows）不得再拆分发布条目');
   for (const [key, entry] of Object.entries(releases)) {
     assert.equal(
       entry.url,

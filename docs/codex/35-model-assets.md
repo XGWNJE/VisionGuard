@@ -1,6 +1,6 @@
 # Model Assets
 
-模型文件（.onnx）不入版本控制，不随发行包分发。客户端首次启动或切换模型时从视觉中继按需下载，本地缓存复用。
+模型文件（.onnx）不入版本控制，不随发行包分发。客户端首次启动或切换模型时从统一服务按需下载，本地缓存复用。
 
 ## 当前模型集合
 
@@ -28,7 +28,7 @@ Android 镜头推流不加载模型、不在手机推理；模型只由 Windows 
 
 ## 模型按需下载
 
-### 视觉中继端点
+### 统一服务端点
 
 - 路由：`/models/{filename}.onnx`，express.static，无需鉴权
 - 源文件：`server/data/models/`（由 `scripts/publish-release.ps1` 从 `detector\windows-wpf\Assets\` 收集）

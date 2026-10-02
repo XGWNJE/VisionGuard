@@ -159,13 +159,13 @@ class ReceiverHomeModelsTest {
 
         assertEquals(DeviceCardFirstRowLayout.BALANCED_TWO_COLUMN, windowsModel.firstRowLayout)
         assertEquals(DeviceCardIllustration.WINDOWS_DESKTOP, windowsModel.illustration)
-        assertEquals("Windows识别端", windowsModel.typeLabel)
+        assertEquals("视觉节点（Windows）", windowsModel.typeLabel)
 
         assertEquals(DeviceCardIllustration.ANDROID_CAMERA, androidModel.illustration)
         assertEquals("镜头推流", androidModel.typeLabel)
 
         assertEquals(DeviceCardIllustration.GENERIC_VIEWFINDER, unknownModel.illustration)
-        assertEquals("识别端", unknownModel.typeLabel)
+        assertEquals("节点", unknownModel.typeLabel)
     }
 
     @Test

@@ -272,7 +272,7 @@ function createDetectorClient(
   };
 }
 
-// ── 接收端 Session 追踪 ─────────────────────────────────────
+// ── 控制台 Session 追踪 ─────────────────────────────────────
 interface AndroidSession {
   connectedAt: number;
   lastSessionEndReason: string;
@@ -299,7 +299,7 @@ function scheduleBroadcast(): void {
   _broadcastTimer.unref();
 }
 
-// ── 截图推送队列 (协议分离: 截图独立异步,按接收端串行 500ms stagger) ──
+// ── 截图推送队列 (协议分离: 截图独立异步,按控制台串行 500ms stagger) ──
 const screenshotQueues = new Map<string, Array<{ alertId: string; payload: WsScreenshotDataPush }>>();
 const screenshotProcessing = new Map<string, boolean>();
 
@@ -569,7 +569,7 @@ function handleConnection(ws: WebSocket): void {
         if (role === 'console') handleDisconnectReason(msg as WsDisconnectReason, role, deviceId);
         break;
       case 'session-info':
-        // 会话信息只对接收端有意义，且必须绑定认证身份，不能由消息自称 deviceId。
+        // 会话信息只对控制台有意义，且必须绑定认证身份，不能由消息自称 deviceId。
         if (role === 'console' && deviceId) handleSessionInfo(msg as WsSessionInfo, deviceId);
         break;
     }
@@ -593,9 +593,9 @@ function handleConnection(ws: WebSocket): void {
             session.lastSessionDurationMs = Date.now() - session.connectedAt;
           }
           receiverClients.delete(deviceId);
-          console.log(`[ws][${ts2}] 接收端 断开: ${deviceId} code=${code}(${codeName}) 推断原因=${endReason} 接收端在线=${receiverClients.size}`);
+          console.log(`[ws][${ts2}] 控制台 断开: ${deviceId} code=${code}(${codeName}) 推断原因=${endReason} 控制台在线=${receiverClients.size}`);
         } else {
-          console.log(`[ws][${ts2}] 接收端 旧连接关闭: ${deviceId} code=${code}(${codeName})`);
+          console.log(`[ws][${ts2}] 控制台 旧连接关闭: ${deviceId} code=${code}(${codeName})`);
         }
       } else if (role === 'notifier') {
         if (notifierClients.get(deviceId)?.ws === ws) notifierClients.delete(deviceId);
@@ -631,18 +631,18 @@ function broadcastAlert(alert: WsAlertPush): void {
   alert.serverRelayedAt = new Date().toISOString();
   // 协议分离: alert 元数据 <1KB,永远并行广播,不入串行队列
   const result = broadcastToReceivers(alert, `alert:${alert.alertId}`);
-  console.log(`[ws][${new Date().toISOString()}] 报警广播: alertId=${alert.alertId} 接收端=${receiverClients.size} 成功=${result.success}/${result.success + result.failed}`);
+  console.log(`[ws][${new Date().toISOString()}] 报警广播: alertId=${alert.alertId} 控制台=${receiverClients.size} 成功=${result.success}/${result.success + result.failed}`);
 }
 
 /**
- * 截图独立异步广播 — 走 500ms 串行队列,防止多接收端并发下行拥塞。
+ * 截图独立异步广播 — 走 500ms 串行队列,防止多控制台并发下行拥塞。
  * 协议分离后,alert 已先行送达,本函数仅负责补传 BigPicture。
  */
 function broadcastScreenshotData(payload: WsScreenshotDataPush): void {
   for (const [rid] of receiverClients) {
     enqueueScreenshotPush(rid, payload.alertId, payload);
   }
-  console.log(`[ws][${new Date().toISOString()}] 截图广播入队: alertId=${payload.alertId} 接收端=${receiverClients.size}`);
+  console.log(`[ws][${new Date().toISOString()}] 截图广播入队: alertId=${payload.alertId} 控制台=${receiverClients.size}`);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -721,7 +721,7 @@ function handleHeartbeat(msg: WsHeartbeat): void {
 
   const sanitizedSources = msg.sources === undefined ? undefined : sanitizeSources(msg.sources);
   const sourcesRejected = msg.sources !== undefined && sanitizedSources === undefined;
-  // 超限会让 sources 整组被拒、客户端保留旧快照，因此必须把这个状态也告诉接收端。
+  // 超限会让 sources 整组被拒、客户端保留旧快照，因此必须把这个状态也告诉控制台。
   const sourceOverLimit = Array.isArray(msg.sources) && msg.sources.length > config.maxSourcesPerDetector;
   const sourceLimitChanged = msg.sources !== undefined && client.sourceLimitExceeded !== sourceOverLimit;
   const changed =
@@ -761,7 +761,7 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   _heartbeatCounter.set(msg.deviceId, count % 60 === 0 ? 0 : count);
   if (count === 1 || count % 60 === 0) {
     const silentSec = Math.round((Date.now() - client.lastSeen.getTime()) / 1000);
-    const roleLabel = client.identity.component === 'android-camera' ? '镜头推流（Android）' : client.identity.nodeType === 'sensor' ? '传感器节点' : '视觉检测（Windows）';
+    const roleLabel = client.identity.component === 'android-camera' ? '镜头推流（Android）' : client.identity.nodeType === 'sensor' ? '传感器节点' : '视觉节点（Windows）';
     console.log(`[ws][${new Date().toISOString()}] ${roleLabel} 心跳: ${client.deviceName} (${msg.deviceId}) monitoring=${msg.isMonitoring} 静默${silentSec}s`);
   }
 
@@ -780,7 +780,7 @@ function handleHeartbeat(msg: WsHeartbeat): void {
 function handleHeartbeatReceiver(msg: WsHeartbeatAndroid): void {
   const client = receiverClients.get(msg.deviceId);
   if (!client) {
-    console.warn(`[ws][${new Date().toISOString()}] 接收端心跳但客户端不存在: deviceId=${msg.deviceId}`);
+    console.warn(`[ws][${new Date().toISOString()}] 控制台心跳但客户端不存在: deviceId=${msg.deviceId}`);
     return;
   }
   client.lastSeen = new Date();
@@ -811,7 +811,7 @@ function handleSessionInfo(msg: WsSessionInfo, authenticatedDeviceId: string): v
   const ts = new Date().toISOString();
   const durationSec = msg.lastSessionDurationMs >= 0 ? `${Math.round(msg.lastSessionDurationMs / 1000)}s` : '未知';
   const reasonDesc = SessionEndReasonNames[msg.lastSessionEndReason] ?? msg.lastSessionEndReason;
-  console.log(`[ws][${ts}] 接收端 Session 上报: deviceId=${authenticatedDeviceId} isReconnect=${msg.isReconnect} 上次结束原因=${reasonDesc} 上次持续=${durationSec}`);
+  console.log(`[ws][${ts}] 控制台 Session 上报: deviceId=${authenticatedDeviceId} isReconnect=${msg.isReconnect} 上次结束原因=${reasonDesc} 上次持续=${durationSec}`);
   const session = androidSessions.get(authenticatedDeviceId);
   if (session) {
     session.lastSessionEndReason = msg.lastSessionEndReason;
@@ -1259,11 +1259,11 @@ const maintenanceTimer = setInterval(() => {
   const receiverDeadline = now - config.receiverGhostThresholdMs;
   let detectorCleaned = false;
 
-  // 接收端幽灵清理（阈值更长，容忍移动网络抖动）
+  // 控制台幽灵清理（阈值更长，容忍移动网络抖动）
   for (const [id, client] of receiverClients) {
     if (client.lastSeen.getTime() <= receiverDeadline) {
       const silentSec = Math.round((now - client.lastSeen.getTime()) / 1000);
-      console.log(`[ws][${ts}] 接收端幽灵清理: ${id} (静默 ${silentSec}s 阈值 ${config.receiverGhostThresholdMs / 1000}s)`);
+      console.log(`[ws][${ts}] 控制台幽灵清理: ${id} (静默 ${silentSec}s 阈值 ${config.receiverGhostThresholdMs / 1000}s)`);
       client.ws.terminate();
       receiverClients.delete(id);
       screenshotQueues.delete(id);
@@ -1276,7 +1276,7 @@ const maintenanceTimer = setInterval(() => {
     for (const [id, client] of clients) {
       if (client.lastSeen.getTime() <= detectorDeadline) {
         const silentSec = Math.round((now - client.lastSeen.getTime()) / 1000);
-        const roleLabel = client.identity.component === 'android-camera' ? '镜头推流（Android）' : client.identity.nodeType === 'sensor' ? '传感器节点' : '视觉检测（Windows）';
+        const roleLabel = client.identity.component === 'android-camera' ? '镜头推流（Android）' : client.identity.nodeType === 'sensor' ? '传感器节点' : '视觉节点（Windows）';
         console.log(`[ws][${ts}] ${roleLabel} 幽灵清理: ${client.deviceName} (${id}) 静默 ${silentSec}s 阈值 ${config.deviceOfflineMs / 1000}s`);
         client.ws.terminate();
         emitFault(client, 'connection-lost');
@@ -1288,7 +1288,7 @@ const maintenanceTimer = setInterval(() => {
   }
 
   // 驻留程序幽灵清理：驻留条目会被合并进同设备检测端的 components，
-  // 不清理就会让接收端一直显示"驻留运行中"，并给出必然失败的开/关按钮。
+  // 不清理就会让控制台一直显示"驻留运行中"，并给出必然失败的开/关按钮。
   for (const [id, client] of residentWindowsClients) {
     if (client.lastSeen.getTime() <= detectorDeadline) {
       const silentSec = Math.round((now - client.lastSeen.getTime()) / 1000);

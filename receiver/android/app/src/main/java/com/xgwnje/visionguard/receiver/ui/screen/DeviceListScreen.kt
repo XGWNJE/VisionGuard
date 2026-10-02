@@ -219,7 +219,7 @@ private fun DeviceListHeader(
                 fontWeight = FontWeight.Black
             )
             Text(
-                text = if (totalCount > 0) "$onlineCount 台在线 / 共 $totalCount 台" else "等待检测端上线",
+                text = if (totalCount > 0) "$onlineCount 台在线 / 共 $totalCount 台" else "暂无已登记节点",
                 style = MaterialTheme.typography.labelLarge,
                 color = ReceiverMuted,
                 maxLines = 1,
@@ -256,14 +256,14 @@ private fun EmptyDeviceState(connected: Boolean) {
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = if (connected) "暂无设备在线" else "等待连接",
+                text = if (connected) "暂无已登记节点" else "等待连接",
                 style = MaterialTheme.typography.titleMedium,
                 color = ReceiverPrimary,
                 fontWeight = FontWeight.Black
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = if (connected) "检测端上线后会显示在这里" else "接收端重连后自动刷新设备",
+                text = if (connected) "本账号登记的节点会显示在这里" else "控制台重连后自动刷新设备",
                 style = MaterialTheme.typography.labelLarge,
                 color = ReceiverMuted
             )

@@ -5,7 +5,8 @@
 ## 专题文档
 
 - [项目概览](docs/codex/10-project-overview.md)：检测节点、统一服务与控制台的职责，仓库组件、独立通知节点与当前实现边界
-- [视觉中继](docs/codex/20-server.md)：视觉中继当前职责、接口和协议角色
+- [命名规范](docs/codex/15-component-naming.md)：中文名、英文名、简称、工程/包名、登录组件与构建更新标识
+- [统一服务](docs/codex/20-server.md)：统一服务当前职责、接口和协议角色
 - [Windows](docs/codex/30-windows-detector.md)：统一启动器、WPF 运行时和驻留程序
 - [模型资源](docs/codex/35-model-assets.md)：模型、类别映射和打包边界
 - [VisionGuard 镜头推流](docs/codex/40-android-detector.md)：前台摄像头与实时画面发送

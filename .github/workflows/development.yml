@@ -33,7 +33,7 @@ jobs:
         run: npm --prefix receiver/web test
       - name: Build service and console
         run: npm --prefix server run build
-      - name: Documentation and scripts
+      - name: Naming, documentation and scripts
         run: |
           node scripts/check-docs.js
           node --test scripts/check-docs.test.js scripts/check-powershell-encoding.test.js scripts/release-workflow.test.js scripts/provision-account.test.js

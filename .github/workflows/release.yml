@@ -31,7 +31,7 @@ jobs:
           mkdir release-assets
           published=""
           skipped=""
-          # 视觉检测（Windows）只有一个统一包，启动器在机器上选择内部推理运行时。
+          # 视觉节点（Windows）只有一个统一包，启动器在机器上选择内部推理运行时。
           #
           # 分端上线：某个平台可能没有随本版发布（releases.json 里标了 heldBack、版本停留在上一版）。
           # 这时只跳过并给出 warning，不再整轮失败——否则「只发部分端」的发布永远走不了这个入口。

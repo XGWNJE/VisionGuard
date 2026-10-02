@@ -267,9 +267,9 @@ private fun deviceCardIllustrationOf(clientType: String): DeviceCardIllustration
 
 private fun deviceTypeLabelOf(clientType: String): String =
     when (clientType.lowercase(Locale.US)) {
-        "windows" -> "Windows识别端"
+        "windows" -> "视觉节点（Windows）"
         "android-camera" -> "镜头推流"
-        else -> "识别端"
+        else -> "节点"
     }
 
 fun buildDeviceConfigEditorUiModel(
