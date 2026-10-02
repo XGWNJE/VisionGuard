@@ -79,6 +79,9 @@ export type AddAlertResult = 'stored' | 'duplicate' | 'conflict';
 
 function isSameAlert(existing: AlertRecord, incoming: AlertRecord): boolean {
   return existing.deviceId === incoming.deviceId
+    && existing.eventKind === incoming.eventKind
+    && existing.expiresAt === incoming.expiresAt
+    && existing.summary === incoming.summary
     && existing.sourceId === incoming.sourceId
     && existing.timestamp === incoming.timestamp
     && JSON.stringify(existing.detections) === JSON.stringify(incoming.detections);

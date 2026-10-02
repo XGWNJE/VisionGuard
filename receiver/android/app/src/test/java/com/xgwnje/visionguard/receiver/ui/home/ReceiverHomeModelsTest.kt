@@ -110,7 +110,8 @@ class ReceiverHomeModelsTest {
             isMonitoring = true,
             isReady = true,
             lastSeen = "",
-            clientType = "android-detector"
+            clientType = "android-detector",
+            capabilities = listOf("monitor-control")
         )
         val offline = monitoring.copy(online = false, isMonitoring = false)
 

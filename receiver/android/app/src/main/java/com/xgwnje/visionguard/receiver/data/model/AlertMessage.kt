@@ -24,7 +24,7 @@ data class AlertMessage(
     val deviceId: String = "",
     val deviceName: String = "",
     /**
-     * 稳定来源身份；旧检测端不发送时保持空值，由接收端按默认单来源处理。
+     * 视觉来源身份；传感器和设备级故障事件不带来源。
      * sourceId 是稳定身份，sourceName 仅是事件发生时的名称快照。
      */
     val sourceId: String = "",
@@ -42,8 +42,25 @@ data class AlertMessage(
     val screenshotBase64: String? = null,  // v4.0.0: 检测端内嵌截图 (Base64 JPEG)
     val capturedAt: String? = null,         // v4.0.0: 检测端捕获帧 NTP 时间戳
     var receivedAt: Long? = null,
-    var notifiedAt: Long? = null
+    var notifiedAt: Long? = null,
+    val eventKind: String = "visual-detection",
+    val nodeType: String = "visual",
+    val expiresAt: String = "",
+    val summary: String = ""
 )
+
+fun AlertMessage.eventLabel(): String = summary.ifBlank {
+    when (eventKind) {
+        "connection-lost" -> "节点连接中断"
+        "detection-interrupted" -> "检测运行中断"
+        "sensor-detection" -> "传感器检测告警"
+        else -> "视觉检测告警"
+    }
+}
+
+fun AlertMessage.isRealtime(now: Long): Boolean = runCatching {
+    java.time.Instant.parse(expiresAt).toEpochMilli() > now
+}.getOrDefault(false)
 
 data class ScreenshotData(
     val alertId: String,

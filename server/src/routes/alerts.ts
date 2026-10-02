@@ -30,6 +30,7 @@ router.get('/api/alerts', httpAuth, (req: Request, res: Response) => {
       const screenshotExists = !!a.screenshotPath && fs.existsSync(a.screenshotPath);
       const screenshotName = screenshotExists ? path.basename(a.screenshotPath!) : '';
       return {
+        eventKind: a.eventKind, expiresAt: a.expiresAt, summary: a.summary, nodeType: a.nodeType,
         alertId: a.alertId,
         deviceId: a.deviceId,
         deviceName: a.deviceName,

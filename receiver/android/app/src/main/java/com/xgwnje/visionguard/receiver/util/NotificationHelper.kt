@@ -21,6 +21,7 @@ import androidx.core.graphics.drawable.IconCompat
 import com.xgwnje.visionguard.receiver.MainActivity
 import com.xgwnje.visionguard.receiver.R
 import com.xgwnje.visionguard.receiver.data.model.AlertMessage
+import com.xgwnje.visionguard.receiver.data.model.eventLabel
 
 object NotificationHelper {
 
@@ -74,7 +75,7 @@ object NotificationHelper {
         // 第一个检测目标作为标题
         val topLabel = alert.detections.firstOrNull()?.let {
             "${it.label} ${(it.confidence * 100).toInt()}%"
-        } ?: "检测到目标"
+        } ?: alert.eventLabel()
 
         // 全屏 Intent：报警时点亮屏幕并显示通知内容
         val fullScreenIntent = Intent(context, MainActivity::class.java).apply {
@@ -89,7 +90,7 @@ object NotificationHelper {
         val builder = NotificationCompat.Builder(context, ALERT_CHANNEL_ID)
         setSmallAppIcon(builder, context)
         builder.setContentTitle("⚠ ${alert.deviceName}：$topLabel")
-            .setContentText("${alert.detections.size} 个目标  ${formatTime(alert.timestamp)}")
+            .setContentText(if (alert.eventKind == "visual-detection") "${alert.detections.size} 个目标  ${formatTime(alert.timestamp)}" else "${alert.eventLabel()}  ${formatTime(alert.timestamp)}")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setAutoCancel(true)

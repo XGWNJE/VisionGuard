@@ -9,7 +9,7 @@
 - [30-windows-detector.md](30-windows-detector.md) - 统一启动器、WPF 两套内部运行时和驻留程序的实现事实
 - [35-model-assets.md](35-model-assets.md) - ONNX 模型、COCO 类别、目标子集和资源维护约束
 - [40-android-detector.md](40-android-detector.md) - 视觉检测（Android）的采集、推理、前台服务和 WS
-- [50-android-receiver.md](50-android-receiver.md) - VisionGuard 控制台的设备列表、告警、前台服务和 WS
+- [50-android-receiver.md](50-android-receiver.md) - Web 管理、通知节点接入及保留的 Android 控制台
 - [60-operations.md](60-operations.md) - 构建、验证、发布授权边界和常见风险
 - [90-verification-report.md](90-verification-report.md) - 可追溯验证证据、状态判定和未覆盖项
 - [../design/README.md](../design/README.md) - 当前设计规范入口

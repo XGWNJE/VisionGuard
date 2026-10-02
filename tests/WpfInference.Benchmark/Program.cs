@@ -28,6 +28,24 @@ var modelPath = Path.GetFullPath(args[0]);
 // legacy 档会以无诊断信息的进程终止失败。
 NativeLibrarySelector.Initialize();
 
+if (args.Length >= 2 && args[1].Equals("--monitor-stop-contract", StringComparison.OrdinalIgnoreCase))
+{
+    var idleStopWatch = Stopwatch.StartNew();
+    for (int sourceIndex = 0; sourceIndex < 4; sourceIndex++)
+    {
+        using var idleAlerts = new AlertService("idle-" + sourceIndex, "Idle");
+        using var idleMonitor = new MonitorService(idleAlerts);
+        idleMonitor.Stop();
+        idleMonitor.Stop();
+    }
+    idleStopWatch.Stop();
+    var stopReport = new { passed = idleStopWatch.ElapsedMilliseconds < 1000, idleStops = 12, elapsedMs = idleStopWatch.ElapsedMilliseconds };
+    var stopJson = JsonSerializer.Serialize(stopReport, new JsonSerializerOptions { WriteIndented = true });
+    Console.WriteLine(stopJson);
+    if (args.Length == 3) File.WriteAllText(Path.GetFullPath(args[2]), stopJson, new System.Text.UTF8Encoding(false));
+    return stopReport.passed ? 0 : 1;
+}
+
 // ── 解析契约探针 ───────────────────────────────────────────────────────────
 // 目的：证明「所选模型 + 真实图片」经 YoloOutputParser 真的能出目标。
 // 2026-09 的 Win7 漏检根因就是 legacy 档用 YOLOv5 [1,84,N] 模型却按 YOLO26 [1,300,6]

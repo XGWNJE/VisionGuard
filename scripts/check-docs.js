@@ -12,13 +12,15 @@ const COMPONENTS = [
   { label: '视觉驻留', platform: 'Windows', relativePath: 'detector/windows-resident', source: 'detector/windows-resident/Program.cs' },
   { label: '视觉检测', platform: 'Android', relativePath: 'detector/android', source: 'detector/android/app/build.gradle.kts' },
   { label: 'VisionGuard 控制台', platform: 'Android', relativePath: 'receiver/android', source: 'receiver/android/app/build.gradle.kts' },
+  { label: 'VisionGuard 控制台', platform: 'Web', relativePath: 'receiver/web', source: 'receiver/web/src/main.tsx' },
+  { label: 'VisionGuard 通知节点', platform: 'Android', relativePath: 'notifier/android', source: 'notifier/android/app/build.gradle.kts' },
   { label: '视觉中继', platform: '服务端', relativePath: 'server', source: 'server/src/index.ts' }
 ];
 
-const WS_ROLES = ['windows', 'android', 'android-detector', 'windows-resident'];
+const WS_ROLES = ['detector', 'console', 'notifier', 'lifecycle'];
 
 const RETAINED_SKILLS = [
-  { name: 'visionguard-build', script: '.agents/skills/visionguard-build/scripts/build-all.ps1', modes: ['All', 'Server', 'Windows', 'WPF', 'WindowsResident', 'Android', 'AndroidDetector', 'AndroidReceiver'] },
+  { name: 'visionguard-build', script: '.agents/skills/visionguard-build/scripts/build-all.ps1', modes: ['All', 'Server', 'Windows', 'WPF', 'WindowsResident', 'Android', 'AndroidDetector', 'AndroidReceiver', 'AndroidNotifier'] },
   { name: 'visionguard-e2e', script: '.agents/skills/visionguard-e2e/scripts/e2e-smoke.ps1', modes: ['Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WpfPersonDetection', 'WpfParserContract', 'ResidentLaunch', 'ModelDownload', 'SourceAutoSave', 'CardLayoutPlan', 'PerformanceWatchdog'] },
   { name: 'visionguard-release', script: 'scripts/publish-release.ps1', modes: ['-PreflightOnly', '-SkipServerDeploy', '-UploadVps'] }
 ];
@@ -315,7 +317,7 @@ function checkComponentContract(root, readme, overview, operations, errors) {
       errors.push(`[component] ${relativePath} must list the canonical platforms separately from application names`);
     }
     if (JSON.stringify(names) !== JSON.stringify(expectedNames)) {
-      errors.push(`[component] ${relativePath} must use the five canonical component names in order: ${expectedNames.join(', ')}`);
+      errors.push(`[component] ${relativePath} must use the canonical component names in order: ${expectedNames.join(', ')}`);
     }
   }
 
@@ -348,7 +350,8 @@ function checkComponentContract(root, readme, overview, operations, errors) {
 
   for (const [directory, role, name, engineering] of [
     ['detector', 'detector', '视觉检测', 'VisionGuard.Detector.Android'],
-    ['receiver', 'receiver', 'VisionGuard 控制台', 'VisionGuard.Receiver.Android']
+    ['receiver', 'receiver', 'VisionGuard 控制台', 'VisionGuard.Receiver.Android'],
+    ['notifier', 'notifier', 'VisionGuard 通知节点', 'VisionGuard.Notifier.Android']
   ]) {
     const base = directory + '/android';
     const packageName = 'com.xgwnje.visionguard.' + role;
@@ -412,7 +415,7 @@ function checkSkillContract(root, errors) {
   }
 
   const buildScript = readUtf8(root, RETAINED_SKILLS[0].script, errors, { checkBom: false });
-  requirePattern(buildScript, /ValidateSet\("All".*"AndroidReceiver"\)/s, RETAINED_SKILLS[0].script, 'the complete build target contract', errors);
+  requirePattern(buildScript, /ValidateSet\("All".*"AndroidNotifier"\)/s, RETAINED_SKILLS[0].script, 'the complete build target contract', errors);
   requireText(buildScript, 'Windows Resident', RETAINED_SKILLS[0].script, 'the Windows Resident build target', errors);
 
   const e2eScript = readUtf8(root, RETAINED_SKILLS[1].script, errors, { checkBom: false });
@@ -532,9 +535,9 @@ function checkProductContract(readme, overview, agents, errors) {
     requireText(content, '所有公网业务数据统一通过视觉中继', relativePath, 'the relay-only transport summary', errors);
     requireText(content, '不使用 P2P、ICE、STUN 或 TURN', relativePath, 'the no-P2P boundary', errors);
     requirePattern(content, /漏报风险[^\n]*最高优先级/, relativePath, 'the missed-detection priority summary', errors);
-    requirePattern(content, /(?:尚未实现|不等于)[^\n]*设备离线报警/, relativePath, 'the not-delivered offline-alert boundary', errors);
+    requirePattern(content, /通知收件确认不等于声音播放/, relativePath, 'the receipt-playback boundary', errors);
   }
-  requireText(agents, '未实现独立的设备离线报警', 'AGENTS.md', 'the evidence anti-overclaim boundary', errors);
+  requireText(agents, '通知收件确认不等于声音播放', 'AGENTS.md', 'the evidence anti-overclaim boundary', errors);
 }
 
 function checkCancelledPlans(root, markdownFiles, contents, errors) {
@@ -586,7 +589,8 @@ function checkLicenseContract(root, readme, overview, agents, errors) {
   checkLicenseTexts({
     license: readUtf8(root, 'LICENSE', errors),
     contributing: readUtf8(root, 'CONTRIBUTING.md', errors),
-    readme,    overview,
+    readme,
+    overview,
     agents
   }, errors);
   for (const relativePath of ['server/package.json', 'server/package-lock.json']) {
@@ -608,7 +612,7 @@ function checkDomainAlignment(root, operations, readme, overview, errors) {
     ['README.md', readme],
     ['docs/codex/10-project-overview.md', overview],
     ['detector/windows-wpf/Utils/AppConfig.cs', readUtf8(root, 'detector/windows-wpf/Utils/AppConfig.cs', errors, { checkBom: false })],
-    ['detector/android/app/src/main/java/com/xgwnje/visionguard/detector/AppConstants.kt', readUtf8(root, 'detector/android/app/src/main/java/com/xgwnje/visionguard/detector/AppConstants.kt', errors, { checkBom: false })],
+    ['detector/android/app/build.gradle.kts', readUtf8(root, 'detector/android/app/build.gradle.kts', errors, { checkBom: false })],
     ['receiver/android/app/src/main/java/com/xgwnje/visionguard/receiver/AppConstants.kt', readUtf8(root, 'receiver/android/app/src/main/java/com/xgwnje/visionguard/receiver/AppConstants.kt', errors, { checkBom: false })]
   ]) {
     requireText(content, domain, relativePath, 'the canonical service domain', errors);
@@ -691,7 +695,7 @@ function main() {
     return;
   }
 
-  console.log('Documentation audit passed: navigation, links, encoding, versions, five components, four WS roles, retained Skills, evidence paths, domain, license and product boundaries are aligned.');
+  console.log('Documentation audit passed: navigation, links, encoding, versions, components, four WS roles, retained Skills, evidence paths, domain, license and product boundaries are aligned.');
 }
 
 if (require.main === module) {

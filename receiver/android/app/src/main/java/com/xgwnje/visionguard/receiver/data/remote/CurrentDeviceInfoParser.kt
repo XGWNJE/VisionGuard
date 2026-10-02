@@ -22,7 +22,7 @@ internal fun parseCurrentDeviceInfo(element: JsonElement, gson: Gson): DeviceInf
 }
 
 private val CURRENT_STRING_FIELDS = listOf(
-    "deviceId", "deviceName", "lastSeen", "targets", "modelKey", "clientType"
+    "deviceId", "deviceName", "lastSeen", "targets", "modelKey", "clientType", "role", "nodeType", "platform"
 )
 
 private val CURRENT_BOOLEAN_FIELDS = listOf(

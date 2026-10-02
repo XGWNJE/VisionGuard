@@ -148,6 +148,9 @@ class ServerPushService(
                 "deviceId" to deviceId,
                 "deviceName" to deviceName,
                 "timestamp" to timestamp,
+                "eventKind" to "visual-detection", "summary" to "视觉检测告警",
+                "sourceId" to "camera", "sourceName" to "摄像头",
+                "expiresAt" to isoFormat(timestampMs + 30_000),
                 "detections" to gson.fromJson(gson.toJson(meta.detections), List::class.java),
                 "timings" to timings,
                 "capturedAt" to isoFormat(NtpSync.now())

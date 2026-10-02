@@ -37,7 +37,10 @@ fun quotedBuildConfigString(value: String): String {
     return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 }
 
-val visionguardApiKey = secretProperty("VISIONGUARD_API_KEY")
+val visionguardChannel = secretProperty("VISIONGUARD_CHANNEL").ifBlank { "vnext" }
+val visionguardServerUrl = secretProperty("VISIONGUARD_SERVER_URL").ifBlank { "https://visionguard.xgwnje.cn" }
+val visionguardDeviceId = secretProperty("VISIONGUARD_DEVICE_ID")
+val visionguardApiKey = secretProperty("VISIONGUARD_DETECTOR_API_KEY")
 
 fun signingProperty(environmentName: String, legacyName: String): String {
     return System.getenv(environmentName)?.takeIf { it.isNotBlank() }
@@ -103,6 +106,9 @@ android {
         versionCode = 4501
         versionName = "4.5.1"
 
+        buildConfigField("String", "CHANNEL", quotedBuildConfigString(visionguardChannel))
+        buildConfigField("String", "SERVER_URL", quotedBuildConfigString(visionguardServerUrl))
+        buildConfigField("String", "DEVICE_ID", quotedBuildConfigString(visionguardDeviceId))
         buildConfigField("String", "API_KEY", quotedBuildConfigString(visionguardApiKey))
 
         ndk {

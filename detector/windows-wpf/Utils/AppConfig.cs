@@ -15,6 +15,8 @@ namespace VisionGuard.Detector.Windows.Utils
         {
             get
             {
+                string configured = System.Environment.GetEnvironmentVariable("VISIONGUARD_DEVICE_ID") ?? "";
+                if (!string.IsNullOrWhiteSpace(configured)) return configured.Trim();
                 string id = SettingsStore.GetString("DeviceId", string.Empty);
                 if (string.IsNullOrEmpty(id))
                 {

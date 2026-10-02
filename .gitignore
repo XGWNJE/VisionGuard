@@ -58,6 +58,7 @@ detector/android/app/*.jks
 detector/android/.key/det
 
 # ===== Android 接收端 =====
+receiver/web/node_modules/
 receiver/android/*.iml
 receiver/android/.gradle/
 receiver/android/.idea/
@@ -80,3 +81,16 @@ receiver/android/app/*.jks
 *.apk
 *.psd
 
+
+# ===== Android 通知节点 =====
+notifier/android/.gradle/
+notifier/android/.idea/
+notifier/android/.kotlin/
+notifier/android/local.properties
+notifier/android/build/
+notifier/android/app/build/
+notifier/android/app/release/
+notifier/android/keystore.properties
+notifier/android/key/
+notifier/android/keystore/
+notifier/android/**/*.jks

@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet("All", "Server", "Windows", "WPF", "WindowsResident", "Android", "AndroidDetector", "AndroidReceiver")]
+    [ValidateSet("All", "Server", "Windows", "WPF", "WindowsResident", "Android", "AndroidDetector", "AndroidReceiver", "AndroidNotifier")]
     [string]$Target = "All"
 )
 
@@ -86,7 +86,12 @@ try {
             -Name "Server" `
             -CommandText "npm --prefix server run build" `
             -Artifact "server/dist/index.js" `
-            -Script { npm --prefix server run build }
+            -Script {
+                npm --prefix server run build
+                if ($LASTEXITCODE -ne 0) { throw "Server/Web build failed" }
+                if (-not (Test-Path -LiteralPath (Join-Path $repoRoot "server/dist/console/index.html"))) { throw "Web console artifact is missing" }
+                Get-ChildItem -LiteralPath (Join-Path $repoRoot "server/dist/console") -Recurse
+            }
     }
 
     if (Should-Run @("Windows", "WindowsResident", "WPF")) {
@@ -156,6 +161,19 @@ try {
                 finally { Pop-Location }
             }
     }
+    if (Should-Run @("Android", "AndroidNotifier")) {
+        Set-CommandJavaHome
+        Invoke-Step `
+            -Name "Android Notification Node" `
+            -CommandText "notifier\android\gradlew.bat assembleRelease" `
+            -Artifact "notifier/android/app/build/outputs/apk/release/app-release.apk" `
+            -Script {
+                Push-Location "notifier\android"
+                try { .\gradlew.bat assembleRelease }
+                finally { Pop-Location }
+            }
+    }
+
 }
 finally {
     Write-Host ""

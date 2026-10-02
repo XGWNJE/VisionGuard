@@ -33,6 +33,8 @@ class SettingsRepository(private val context: Context) {
 
     /** 确保 deviceId 存在（首次启动生成），返回最终值 */
     suspend fun ensureDeviceId(): String {
+        val configured = com.xgwnje.visionguard.receiver.BuildConfig.DEVICE_ID
+        if (configured.isNotBlank()) return configured
         var id = ""
         context.dataStore.edit { prefs ->
             if (prefs[Keys.DEVICE_ID].isNullOrEmpty()) {

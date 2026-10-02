@@ -294,7 +294,7 @@ namespace VisionGuard.Detector.Windows.Runtime
         }
 
         /// <summary>
-        /// 写驻留配置：与检测端共享服务地址、通道、设备身份与 API Key。
+        /// 写驻留配置：与检测端共享服务地址、通道和设备身份，使用独立驻留凭据。
         ///
         /// 必须用 JSON 序列化器生成，不能手写字符串拼接：
         /// Windows 路径里的单个反斜杠在 JSON 里是非法转义序列，用 XML 转义（`\` → `\`）写出来
@@ -312,7 +312,7 @@ namespace VisionGuard.Detector.Windows.Runtime
             var payload = new Dictionary<string, string>
             {
                 ["serverUrl"] = AppConfig.ServerUrl ?? string.Empty,
-                ["apiKey"] = AppConfig.ApiKey ?? string.Empty,
+                ["apiKey"] = Environment.GetEnvironmentVariable("VISIONGUARD_RESIDENT_API_KEY") ?? string.Empty,
                 ["deviceId"] = AppConfig.DeviceId ?? string.Empty,
                 // 自定义名称是设备名称的唯一来源；驻留不得另行上报电脑名。
                 ["deviceName"] = SettingsStore.GetString("DeviceName", Environment.MachineName),

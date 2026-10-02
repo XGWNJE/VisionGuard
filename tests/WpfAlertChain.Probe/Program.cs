@@ -7,8 +7,26 @@ using System.Threading;
 using VisionGuard.Detector.Windows.Models;
 using VisionGuard.Detector.Windows.Services;
 
-if (args.Length != 2)
-    throw new ArgumentException("Usage: WpfAlertChain.Probe <server-url> <api-key>");
+if (args.Length == 2 && args[0] == "--outbox-contract")
+{
+    var path = Path.GetFullPath(args[1]);
+    if (File.Exists(path)) throw new InvalidOperationException("Use a fresh isolated outbox path");
+    var outbox = new AlertOutbox(path);
+    var now = DateTime.UtcNow;
+    outbox.Enqueue("expired", System.Text.Json.JsonSerializer.Serialize(new { expiresAt = now.AddSeconds(-1) }));
+    outbox.Enqueue("live", System.Text.Json.JsonSerializer.Serialize(new { expiresAt = now.AddSeconds(30) }));
+    outbox.Enqueue("missing-deadline", "{}");
+    if (outbox.Snapshot().Count != 1 || outbox.Snapshot()[0].AlertId != "live")
+        throw new InvalidOperationException("Expired events must leave the retry queue");
+    var restored = new AlertOutbox(path);
+    if (restored.Snapshot().Count != 1 || !restored.Acknowledge("live") || new AlertOutbox(path).Snapshot().Count != 0)
+        throw new InvalidOperationException("Retry pruning and acknowledgement must persist across restart");
+    Console.WriteLine("PASS: live-only persistent outbox and acknowledgement");
+    return;
+}
+
+if (args.Length != 1)
+    throw new ArgumentException("Usage: WpfAlertChain.Probe <server-url>; set VISIONGUARD_DETECTOR_API_KEY");
 
 var alertId = Guid.NewGuid().ToString();
 var alertsDirectory = Path.Combine(AppContext.BaseDirectory, "alerts");
@@ -24,11 +42,14 @@ using (var screenshot = new Bitmap(320, 240))
 }
 
 using var service = new ServerPushService();
-service.Configure(args[0], args[1], "wpf-alert-chain-probe", "WPF Alert Chain Probe");
+service.Configure(args[0], Environment.GetEnvironmentVariable("VISIONGUARD_DETECTOR_API_KEY") ?? "", "wpf-alert-chain-probe", "WPF Alert Chain Probe");
 var deadline = DateTime.UtcNow.AddSeconds(15);
 while (!service.IsConnected && DateTime.UtcNow < deadline) Thread.Sleep(100);
 if (!service.IsConnected) throw new TimeoutException("WPF ServerPushService did not authenticate in 15 seconds");
 
+service.UpdateHeartbeatParams(true, true, 5, 0.45f, "person", sources: new object[] {
+    new Dictionary<string, object> { ["sourceId"] = "probe-source", ["sourceName"] = "隔离链路探针", ["isMonitoring"] = true, ["isReady"] = true, ["modelKey"] = "", ["monitoringExpected"] = true, ["lastProgressAt"] = DateTime.UtcNow.ToString("o") } });
+service.SendHeartbeatNow();
 using var snapshot = new Bitmap(screenshotPath);
 service.PushAlert(new AlertEvent(
     alertId,

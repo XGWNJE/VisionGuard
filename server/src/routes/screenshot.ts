@@ -2,6 +2,7 @@ import { Router } from 'express';
 import path from 'path';
 import fs from 'fs';
 import { config } from '../config';
+import { httpAuth } from '../middleware/auth';
 
 const router = Router();
 
@@ -9,13 +10,11 @@ const router = Router();
  * GET /screenshots/:filename
  * 通过 HTTP 下载报警截图（需 X-API-Key）
  */
-router.get('/screenshots/:filename', (req, res) => {
-  const apiKey = req.headers['x-api-key'];
-  if (apiKey !== config.apiKey) {
-    res.status(401).json({ ok: false, error: 'invalid api key' });
+router.get('/screenshots/:filename', httpAuth, (req, res) => {
+  if (typeof req.params.filename !== 'string') {
+    res.status(400).json({ ok: false, error: 'invalid filename' });
     return;
   }
-
   const filename = path.basename(req.params.filename);
   const filePath = path.join(config.screenshotDir, filename);
 
@@ -36,6 +35,7 @@ router.get('/screenshots/:filename', (req, res) => {
   const ext = path.extname(filename).toLowerCase();
   const contentType = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : 'image/png';
   res.setHeader('Content-Type', contentType);
+  res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
   const stream = fs.createReadStream(filePath);
   stream.pipe(res);

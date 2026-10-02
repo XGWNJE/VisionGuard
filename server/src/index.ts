@@ -19,6 +19,7 @@ import { handleConnection } from './services/ConnectionManager';
 import { cleanupExpiredAlerts } from './services/AlertStore';
 import screenshotRouter from './routes/screenshot';
 import updateRouter from './routes/update';
+import testConsoleRouter from './routes/testConsole';
 import { startCleanupTimer, cleanupScreenshots } from './services/ScreenshotCleanup';
 import path from 'path';
 
@@ -55,6 +56,17 @@ app.use(alertRouter);
 app.use(alertsQueryRouter);
 app.use(screenshotRouter);
 app.use(updateRouter);
+app.use(testConsoleRouter);
+
+// The console shares this service and origin; credentials stay in browser memory.
+app.use('/console', express.static(path.resolve(__dirname, 'console'), {
+  setHeaders: res => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+  },
+}));
 
 // 更新包静态文件下载
 app.use('/releases', express.static(path.resolve(__dirname, '..', 'data', 'releases')));

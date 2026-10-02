@@ -49,7 +49,7 @@ namespace VisionGuard.Resident.Windows
 
                 ResidentConfig config = Json.Deserialize<ResidentConfig>(File.ReadAllText(args[1]));
                 Validate(config);
-                string apiKey = Environment.GetEnvironmentVariable("VISIONGUARD_API_KEY") ?? config.ApiKey;
+                string apiKey = Environment.GetEnvironmentVariable("VISIONGUARD_RESIDENT_API_KEY") ?? config.ApiKey;
                 bool createdNew;
                 using (var mutex = new Mutex(true, @"Local\VisionGuard.Resident.SingleInstance", out createdNew))
                 {
@@ -199,7 +199,7 @@ namespace VisionGuard.Resident.Windows
                 {
                     ["type"] = "auth",
                     ["channel"] = Environment.GetEnvironmentVariable("VISIONGUARD_CHANNEL") ?? config.Channel ?? "vnext",
-                    ["role"] = "windows-resident", ["apiKey"] = apiKey,
+                    ["role"] = "lifecycle", ["nodeType"] = "resident", ["platform"] = "windows", ["apiKey"] = apiKey,
                     ["deviceId"] = config.DeviceId, ["deviceName"] = config.DeviceName
                 });
 
@@ -328,7 +328,7 @@ namespace VisionGuard.Resident.Windows
             Uri uri;
             if (config == null) throw new InvalidDataException("Invalid resident config.");
             if (!Uri.TryCreate(config.ServerUrl, UriKind.Absolute, out uri) || (uri.Scheme != "https" && uri.Scheme != "http")) throw new InvalidDataException("ServerUrl must be HTTP(S).");
-            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("VISIONGUARD_API_KEY")) && string.IsNullOrWhiteSpace(config.ApiKey)) throw new InvalidDataException("VISIONGUARD_API_KEY or config ApiKey is required.");
+            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("VISIONGUARD_RESIDENT_API_KEY")) && string.IsNullOrWhiteSpace(config.ApiKey)) throw new InvalidDataException("VISIONGUARD_RESIDENT_API_KEY or config ApiKey is required.");
             if (string.IsNullOrWhiteSpace(config.DeviceId)) throw new InvalidDataException("DeviceId is required.");
             if (string.IsNullOrWhiteSpace(config.DeviceName)) config.DeviceName = Environment.MachineName;
             if (string.IsNullOrWhiteSpace(config.DetectorPath)) throw new InvalidDataException("DetectorPath is required.");

@@ -20,6 +20,7 @@ import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.xgwnje.visionguard.receiver.AppConstants
 import com.xgwnje.visionguard.receiver.data.model.AlertMessage
+import com.xgwnje.visionguard.receiver.data.model.isRealtime
 import com.xgwnje.visionguard.receiver.data.model.CommandResult
 import com.xgwnje.visionguard.receiver.data.model.DeviceInfo
 import com.xgwnje.visionguard.receiver.data.model.RemovedDevice
@@ -196,6 +197,7 @@ class AlertForegroundService : LifecycleService() {
         // 订阅报警 (协议分离: alert 元数据,立即通知,截图由独立 screenshot-data 异步补传)
         lifecycleScope.launch {
             wsClient.onAlert.collect { alert ->
+                val alreadyReceived = _alerts.value.any { it.alertId == alert.alertId }
                 Log.i(TAG, "收到报警: ${alert.deviceName} - ${alert.detections.size} 个目标")
 
                 var alertForStorage = alert
@@ -216,7 +218,7 @@ class AlertForegroundService : LifecycleService() {
 
                 _alerts.value = mergeSortAlerts(_alerts.value, listOf(alertForStorage))
                 persistAlerts()
-                sendAlertNotification(alertForStorage)
+                if (!alreadyReceived) sendAlertNotification(alertForStorage)
             }
         }
 
@@ -455,6 +457,7 @@ class AlertForegroundService : LifecycleService() {
     // ── 通知发送 ──────────────────────────────────────────────
 
     private fun sendAlertNotification(alert: AlertMessage) {
+        if (!alert.isRealtime(com.xgwnje.visionguard.receiver.util.NtpSync.now())) return
         if (!shouldNotifyForAlert(alert, _mutedAlertSources.value)) {
             Log.i(TAG, "报警无效或来源已静音，保留有效记录但跳过通知: ${alert.sourcePreferenceKey()}")
             return

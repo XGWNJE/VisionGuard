@@ -14,7 +14,9 @@ data class WsAuthMessage(
     val type: String = "auth",
     val channel: String = AppConstants.CHANNEL,
     val apiKey: String,
-    val role: String = "android",
+    val role: String = "console",
+    val nodeType: String = "console",
+    val platform: String = "android",
     val deviceId: String,
     val deviceName: String = "Android",
     val version: String = BuildConfig.VERSION_NAME

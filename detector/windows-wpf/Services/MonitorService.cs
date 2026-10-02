@@ -38,6 +38,7 @@ namespace VisionGuard.Detector.Windows.Services
         private string _loggedOutputLayout;
         // 停止同步：确保 OnTick 完全结束（包括 finally）后才能安全 Dispose _engine
         private readonly ManualResetEvent _tickCompleted = new ManualResetEvent(true);
+        private readonly object _tickSync = new object();
 
         public bool IsStarted => _timer != null;
         public string ActiveBackend => _engine?.ActiveBackend.ToString() ?? "Unavailable";
@@ -59,6 +60,7 @@ namespace VisionGuard.Detector.Windows.Services
         {
             if (_disposed) throw new ObjectDisposedException(nameof(MonitorService));
             if (_timer != null) return;
+            if (_engine != null) Stop();
 
             if (config.CaptureMode == CaptureMode.ScreenRegion && !CaptureSizeConstraints.IsValid(config.CaptureRegion))
                 throw new InvalidOperationException("屏幕选区宽度和高度必须都大于 100 像素。");
@@ -88,40 +90,34 @@ namespace VisionGuard.Detector.Windows.Services
             }
 
             int intervalMs = 1000 / Math.Max(1, config.TargetFps);
-            _timer = new Timer(OnTick, null, 0, intervalMs);
+            lock (_tickSync) _timer = new Timer(OnTick, null, 0, intervalMs);
         }
 
         public void Stop()
         {
-            // 阻止新 OnTick 进入，并等待正在执行的 Tick 完全结束
-            _tickCompleted.Reset();           // 未完成信号
-            _timer?.Dispose();
-            _timer = null;
-            _tickCompleted.WaitOne(2000);     // 最多等2秒让 OnTick 退出
-            // 超时保护：若 OnTick 仍未退出，等待 _isRunning 清零（再给 1 秒）
-            if (Interlocked.CompareExchange(ref _isRunning, 0, 0) != 0)
+            // 与帧入口同步：关闭定时器后，排队的回调不能再使用推理引擎。
+            lock (_tickSync)
             {
-                for (int i = 0; i < 10 && Interlocked.CompareExchange(ref _isRunning, 0, 0) != 0; i++)
-                    Thread.Sleep(100);
+                _timer?.Dispose();
+                _timer = null;
             }
+            // 空闲时信号已经置位，立即返回；只有实际正在处理的帧才需要等待。
+            if (!_tickCompleted.WaitOne(2000))
+                throw new TimeoutException("当前帧仍在处理，暂停未完成，请稍后重试。");
             _engine?.Dispose();
             _engine = null;
-            _isRunning = 0;
-            _tickCompleted.Set();             // 恢复为已结束状态
         }
 
         // ── 每帧回调（ThreadPool 线程）──────────────────────────────
 
         private void OnTick(object state)
         {
-            // 停止中：跳过本次Tick（Stop 已调用 WaitOne，这里直接返回）
-            if (!_tickCompleted.WaitOne(0)) return;
-
-            // 防重入：若上一帧还在推理，跳过本帧
-            if (Interlocked.CompareExchange(ref _isRunning, 1, 0) != 0) return;
-
-            // 标记 Tick 开始执行（Stop 会等待此信号）
-            _tickCompleted.Reset();
+            lock (_tickSync)
+            {
+                if (_timer == null || _isRunning != 0) return;
+                _isRunning = 1;
+                _tickCompleted.Reset();
+            }
 
             MonitorConfig cfg = Volatile.Read(ref _config);
             Bitmap frame    = null;
@@ -199,10 +195,12 @@ namespace VisionGuard.Detector.Windows.Services
             }
             finally
             {
-                // 标记 Tick 结束：Stop() 可以安全 Dispose _engine
-                _tickCompleted.Set();
                 frame?.Dispose();
-                Interlocked.Exchange(ref _isRunning, 0);
+                lock (_tickSync)
+                {
+                    _isRunning = 0;
+                    _tickCompleted.Set();
+                }
             }
         }
 

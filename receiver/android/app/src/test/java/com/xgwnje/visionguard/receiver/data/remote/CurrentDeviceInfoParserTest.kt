@@ -54,6 +54,7 @@ class CurrentDeviceInfoParserTest {
 
     private fun currentDeviceJson(): String = """
         {
+          "role":"detector","nodeType":"visual","platform":"android",
           "deviceId":"device-1",
           "deviceName":"Detector",
           "online":true,

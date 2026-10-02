@@ -4,8 +4,8 @@ namespace VisionGuard.Detector.Windows.Utils
 {
     public static class ApiKeyProvider
     {
-        public const string EnvironmentVariableName = "VISIONGUARD_API_KEY";
-        public const string DefaultApiKey = "XG-VisionGuard-2024";
+        public const string EnvironmentVariableName = "VISIONGUARD_DETECTOR_API_KEY";
+        public const string DefaultApiKey = "";
 
         public static string ResolveFromEnvironment()
         {

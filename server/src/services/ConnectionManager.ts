@@ -9,7 +9,11 @@
 import WebSocket from 'ws';
 import fs from 'fs';
 import { config } from '../config';
-import { validateApiKey } from '../middleware/auth';
+import crypto from 'node:crypto';
+import path from 'node:path';
+import { NotificationScopeStore, parseNotificationScope, scopeAccepts } from './NotificationScopeStore';
+import { TimeStandardStore, validAlarmTimeZone } from './TimeStandardStore';
+import { authenticateNode, clientType, allowedCapabilities, validateEvent, registeredNodes, REALTIME_TTL_MS, DETECTION_STALL_MS, type NodeIdentity, type NodeRole } from './NodeProtocol';
 import { addAlert, getAlertById, markAlertScreenshot, type AddAlertResult } from '../services/AlertStore';
 import { isValidSetConfigKey, validateSetConfigValue } from '../services/ControlProtocol';
 import { getSafeScreenshotPath, isSafeAlertId, validateAlertMeta, validateImageMagic } from '../utils/security';
@@ -21,9 +25,9 @@ import type {
   AlertRecord, SourceStatus,
 } from '../models/types';
 
-// ── 四角色独立 Map ─────────────────────────────────────────
-const detectorWindowsClients = new Map<string, DetectorClient>();
-const detectorAndroidClients = new Map<string, DetectorClient>();
+// Roles route by responsibility; platform and node type stay on the registered identity.
+const detectorClients = new Map<string, DetectorClient>();
+const notifierClients = new Map<string, ReceiverClient>();
 const receiverClients = new Map<string, ReceiverClient>();
 const residentWindowsClients = new Map<string, ResidentClient>();
 const pendingDetectorRemoval = new Map<string, NodeJS.Timeout>();
@@ -33,6 +37,7 @@ const COMPLETED_REQUEST_TTL_MS = 60_000;
 
 interface PendingControlRequest {
   senderWs: WebSocket;
+  targetWs: WebSocket;
   targetDeviceId: string;
   command: string;
   targetSourceId?: string;
@@ -41,6 +46,8 @@ interface PendingControlRequest {
 
 const pendingControlRequests = new Map<string, PendingControlRequest>();
 const completedControlRequests = new Map<string, number>();
+const notificationScopes = new NotificationScopeStore(path.join(config.dataDir, 'notification-scopes.json'));
+const timeStandard = new TimeStandardStore(path.join(config.dataDir, 'time-standard.json'));
 
 function rememberCompletedRequest(requestId: string): void {
   const now = Date.now();
@@ -67,7 +74,7 @@ export function associateScreenshotPayload(
 }
 
 export function getConnectionCount(): number {
-  return detectorWindowsClients.size + detectorAndroidClients.size + residentWindowsClients.size + receiverClients.size;
+  return detectorClients.size + notifierClients.size + residentWindowsClients.size + receiverClients.size;
 }
 
 function detectorRemovalKey(clientType: string, deviceId: string): string {
@@ -84,7 +91,7 @@ function clearPendingDetectorRemoval(clientType: string, deviceId: string): void
 
 function scheduleDetectorRemoval(
   clients: Map<string, DetectorClient>,
-  clientType: 'windows' | 'android-detector',
+  clientType: string,
   deviceId: string,
   ws: WebSocket,
 ): void {
@@ -93,6 +100,7 @@ function scheduleDetectorRemoval(
     pendingDetectorRemoval.delete(detectorRemovalKey(clientType, deviceId));
     const existing = clients.get(deviceId);
     if (!existing || existing.ws !== ws) return;
+    emitFault(existing, 'connection-lost');
     clients.delete(deviceId);
     _heartbeatCounter.delete(deviceId);
     scheduleBroadcast();
@@ -103,11 +111,9 @@ function scheduleDetectorRemoval(
 
 // ── 输入校验 ────────────────────────────────────────────────
 
-const MAX_DEVICE_ID_LENGTH = 128;
 const MAX_DEVICE_NAME_LENGTH = 64;
 const MAX_TARGETS_LENGTH = 500;
 const MAX_MODEL_OPTIONS = 16;
-const MAX_CAPABILITIES = 32;
 const MAX_COMPONENTS = 8;
 const DETECTOR_COMMANDS = new Set(['pause', 'resume', 'stop-alarm']);
 // Windows 只剩一个检测端，生命周期命令统一为 detector。
@@ -155,13 +161,6 @@ function sanitizeModelOptions(v: any): string[] | undefined {
   return Array.from(new Set(options)).slice(0, MAX_MODEL_OPTIONS);
 }
 
-function sanitizeCapabilities(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  return Array.from(new Set(value
-    .filter((item): item is string => typeof item === 'string' && /^[a-z0-9-]{1,48}$/.test(item))))
-    .slice(0, MAX_CAPABILITIES);
-}
-
 function sanitizeComponents(value: unknown): Record<string, string> | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const result: Record<string, string> = {};
@@ -201,6 +200,8 @@ function sanitizeSources(value: unknown): SourceStatus[] | undefined {
     const targetSamplingRate = typeof item.targetSamplingRate === 'number' && Number.isInteger(item.targetSamplingRate)
       ? Math.max(1, Math.min(5, item.targetSamplingRate)) : undefined;
     sources.push({
+      monitoringExpected: typeof item.monitoringExpected === 'boolean' ? item.monitoringExpected : undefined,
+      lastProgressAt: validProgress(item.lastProgressAt) ? item.lastProgressAt : undefined,
       sourceId, sourceName, isMonitoring: !!item.isMonitoring, isReady: !!item.isReady,
       modelKey: sanitizeModelKey(item.modelKey) ?? '', actualFps, error, activeBackend, performanceWarning,
       cooldown, confidence, targets, targetSamplingRate,
@@ -235,16 +236,18 @@ function registerPendingControlRequest(
     }, 'command-timeout->sender');
   }, COMMAND_TIMEOUT_MS);
   timer.unref();
-  pendingControlRequests.set(requestId, { senderWs, targetDeviceId, command, targetSourceId, timer });
+  const targetWs = (RESIDENT_COMMANDS.has(command) ? residentWindowsClients.get(targetDeviceId) : findDetector(targetDeviceId))!.ws;
+  pendingControlRequests.set(requestId, { senderWs, targetWs, targetDeviceId, command, targetSourceId, timer });
   return true;
 }
 
 function createDetectorClient(
   ws: WebSocket,
   msg: WsAuthMessage,
-  clientType: 'windows' | 'android-detector',
+  clientType: string,
 ): DetectorClient {
   return {
+    identity: { deviceId: msg.deviceId, role: msg.role, nodeType: msg.nodeType, platform: msg.platform },
     ws,
     deviceId: msg.deviceId,
     deviceName: msg.deviceName,
@@ -377,9 +380,9 @@ function closeCodeToSessionEndReason(code: number, deviceId: string): string {
   return 'unknown';
 }
 
-// ── 辅助：查找检测端（双 Map） ─────────────────────────────
+// ── 辅助：查找检测节点 ─────────────────────────────────────
 function findDetector(deviceId: string): DetectorClient | undefined {
-  return detectorWindowsClients.get(deviceId) ?? detectorAndroidClients.get(deviceId);
+  return detectorClients.get(deviceId);
 }
 
 // ════════════════════════════════════════════════════════════
@@ -388,7 +391,8 @@ function findDetector(deviceId: string): DetectorClient | undefined {
 
 export function handleConnection(ws: WebSocket): void {
   let authenticated = false;
-  let role: 'windows' | 'android' | 'android-detector' | 'windows-resident' | null = null;
+  let role: NodeRole | null = null;
+  let identity: NodeIdentity | undefined;
   let deviceId: string | null = null;
   const ts = new Date().toISOString();
   const remoteIp = (ws as any).socket?.remoteAddress ?? 'unknown';
@@ -406,12 +410,14 @@ export function handleConnection(ws: WebSocket): void {
   ws.on('message', (raw) => {
     let msg: any;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
+    if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return;
 
     if (!authenticated) {
       if (msg.type === 'auth') {
         handleAuth(ws, msg as WsAuthMessage, authTimer, (r, d) => {
           authenticated = true;
           role = r;
+          identity = authenticateNode(msg);
           deviceId = d;
         });
       }
@@ -419,25 +425,42 @@ export function handleConnection(ws: WebSocket): void {
     }
     const authenticatedDeviceId = deviceId;
     if (!authenticatedDeviceId) return;
+    const owner = role === 'detector' ? detectorClients.get(authenticatedDeviceId) : role === 'lifecycle' ? residentWindowsClients.get(authenticatedDeviceId) : role === 'notifier' ? notifierClients.get(authenticatedDeviceId) : receiverClients.get(authenticatedDeviceId);
+    if (owner?.ws !== ws) return;
 
     switch (msg.type) {
       case 'heartbeat':
-        if (role === 'windows' || role === 'android-detector') {
+        if (role === 'detector') {
           handleHeartbeat({ ...(msg as WsHeartbeat), deviceId: authenticatedDeviceId });
         }
         break;
-      case 'heartbeat-android':
-        if (role === 'android') handleHeartbeatReceiver({ ...(msg as WsHeartbeatAndroid), deviceId: authenticatedDeviceId });
+      case 'heartbeat-console':
+        if (role === 'console') handleHeartbeatReceiver({ ...(msg as WsHeartbeatAndroid), deviceId: authenticatedDeviceId });
+        break;
+      case 'heartbeat-notifier':
+        if (role === 'notifier') {
+          const client = notifierClients.get(authenticatedDeviceId);
+          if (client?.ws === ws) { client.lastSeen = new Date(); sendJson(ws, { type: 'heartbeat-ack', serverTime: new Date().toISOString() }); }
+        }
+        break;
+      case 'notification-receipt':
+        if (role === 'notifier') acknowledgeDelivery(authenticatedDeviceId, msg.alertId);
         break;
       case 'resident-heartbeat':
-        if (role === 'windows-resident') handleResidentHeartbeat(authenticatedDeviceId, msg as WsResidentHeartbeat);
+        if (role === 'lifecycle') handleResidentHeartbeat(authenticatedDeviceId, msg as WsResidentHeartbeat);
         break;
       case 'alert':
-        if (role === 'windows' || role === 'android-detector') {
-          const alert = msg as WsAlertPush;
+        if (role === 'detector') {
+          let alert = msg as WsAlertPush;
           if (!isSafeAlertId(alert.alertId)) break;
           const client = findDetector(authenticatedDeviceId);
+          const event = identity && validateEvent(alert, identity);
+          if (!event) { sendJson(ws, { type: 'alert-ack', alertId: alert.alertId, accepted: false, reason: 'invalid-or-expired-event' }); break; }
+          if (identity?.nodeType === 'visual' && !client?.sources.some(source => source.sourceId === alert.sourceId)) {
+            sendJson(ws, { type: 'alert-ack', alertId: alert.alertId, accepted: false, reason: 'unknown-source' }); break;
+          }
           const metaResult = validateAlertMeta({
+            ...event,
             deviceId: authenticatedDeviceId,
             deviceName: client?.deviceName || alert.deviceName || authenticatedDeviceId,
             sourceId: alert.sourceId,
@@ -445,16 +468,24 @@ export function handleConnection(ws: WebSocket): void {
             timestamp: alert.timestamp,
             detections: alert.detections,
           });
-          if (!metaResult.ok || !metaResult.value) break;
-          alert.deviceId = metaResult.value.deviceId;
-          alert.deviceName = metaResult.value.deviceName;
-          alert.detections = metaResult.value.detections;
+          if (!metaResult.ok || !metaResult.value) {
+            sendJson(ws, { type: 'alert-ack', alertId: alert.alertId, accepted: false, reason: 'invalid-or-expired-event' }); break;
+          }
+          const source = client?.sources.find(item => item.sourceId === alert.sourceId);
+          alert = { type: 'alert', alertId: alert.alertId, ...event, nodeType: identity!.nodeType,
+            deviceId: metaResult.value.deviceId, deviceName: metaResult.value.deviceName,
+            timestamp: metaResult.value.timestamp, detections: metaResult.value.detections,
+            sourceId: source?.sourceId, sourceName: source?.sourceName,
+            capturedAt: typeof alert.capturedAt === 'string' && validProgress(alert.capturedAt) ? alert.capturedAt : undefined,
+            timings: alert.timings && typeof alert.timings === 'object' && !Array.isArray(alert.timings)
+              ? Object.fromEntries(Object.entries(alert.timings).slice(0, 32).filter(([key, value]) => /^[A-Za-z0-9_-]{1,64}$/.test(key) && typeof value === 'number' && Number.isFinite(value) && value >= 0)) : undefined };
           const createdAt = Date.now();
           alert.serverReceivedAt = new Date(createdAt).toISOString();
           alert.createdAt = createdAt;
           let insertResult: AddAlertResult;
           try {
             insertResult = addAlert({
+              ...event, nodeType: identity!.nodeType,
               alertId: alert.alertId,
               deviceId: alert.deviceId,
               deviceName: alert.deviceName,
@@ -488,9 +519,9 @@ export function handleConnection(ws: WebSocket): void {
         }
         break;
       case 'screenshot-data':
-        if (role === 'windows' || role === 'android-detector') {
+        if (role === 'detector') {
           const payload = msg as WsScreenshotDataPush;
-          if (!isSafeAlertId(payload.alertId) || !payload.imageBase64) break;
+          if (identity?.nodeType !== 'visual' || !isSafeAlertId(payload.alertId) || typeof payload.imageBase64 !== 'string') break;
           const associatedPayload = associateScreenshotPayload(payload, authenticatedDeviceId, getAlertById(payload.alertId));
           if (!associatedPayload) {
             console.warn(`[ws] screenshot rejected: alertId=${payload.alertId} reason=alert-device-mismatch-or-missing`);
@@ -501,23 +532,38 @@ export function handleConnection(ws: WebSocket): void {
         }
         break;
       case 'command':
-        if (role === 'android') handleCommand(ws, msg as WsCommand);
+        if (role === 'console') handleCommand(ws, msg as WsCommand);
         break;
       case 'set-config':
-        if (role === 'android') handleSetConfig(ws, msg as WsSetConfig);
+        if (role === 'console') handleSetConfig(ws, msg as WsSetConfig);
+        break;
+      case 'get-devices':
+        if (role === 'console') sendJson(ws, { type: 'device-list', devices: buildDeviceList() });
+        break;
+      case 'get-notification-scopes':
+        if (role === 'console') sendJson(ws, notificationScopeList());
+        break;
+      case 'set-notification-scope':
+        if (role === 'console') handleNotificationScope(ws, msg);
+        break;
+      case 'get-time-standard':
+        if (role === 'console') sendJson(ws, { type: 'time-standard', ...timeStandard.get() });
+        break;
+      case 'set-time-standard':
+        if (role === 'console') handleTimeStandard(ws, msg);
         break;
       case 'request-screenshot':
-        if (role === 'android') handleRequestScreenshot(ws, msg);
+        if (role === 'console') handleRequestScreenshot(ws, msg);
         break;
       case 'command-ack':
-        if (role === 'windows' || role === 'android-detector' || role === 'windows-resident') handleCommandAck(msg as WsCommandAck, deviceId!);
+        if (role === 'detector' || role === 'lifecycle') handleCommandAck(msg as WsCommandAck, deviceId!, ws);
         break;
       case 'disconnect-reason':
-        if (role === 'android') handleDisconnectReason(msg as WsDisconnectReason, role, deviceId);
+        if (role === 'console') handleDisconnectReason(msg as WsDisconnectReason, role, deviceId);
         break;
       case 'session-info':
         // 会话信息只对接收端有意义，且必须绑定认证身份，不能由消息自称 deviceId。
-        if (role === 'android' && deviceId) handleSessionInfo(msg as WsSessionInfo, deviceId);
+        if (role === 'console' && deviceId) handleSessionInfo(msg as WsSessionInfo, deviceId);
         break;
     }
   });
@@ -527,23 +573,10 @@ export function handleConnection(ws: WebSocket): void {
     const ts2 = new Date().toISOString();
     const codeName = getCloseCodeName(code);
     if (deviceId) {
-      if (role === 'windows') {
-        const existing = detectorWindowsClients.get(deviceId);
-        if (existing && existing.ws === ws) {
-          console.log(`[ws][${ts2}] 视觉检测（Windows） 断开: ${deviceId} code=${code}(${codeName}) 视觉检测（Windows）在线=${detectorWindowsClients.size}`);
-          scheduleDetectorRemoval(detectorWindowsClients, 'windows', deviceId, ws);
-        } else {
-          console.log(`[ws][${ts2}] 视觉检测（Windows） 旧连接关闭（已被新连接替代）: ${deviceId} code=${code}(${codeName})`);
-        }
-      } else if (role === 'android-detector') {
-        const existing = detectorAndroidClients.get(deviceId);
-        if (existing && existing.ws === ws) {
-          console.log(`[ws][${ts2}] 视觉检测（Android） 断开: ${deviceId} code=${code}(${codeName}) 视觉检测（Android）在线=${detectorAndroidClients.size}`);
-          scheduleDetectorRemoval(detectorAndroidClients, 'android-detector', deviceId, ws);
-        } else {
-          console.log(`[ws][${ts2}] 视觉检测（Android） 旧连接关闭: ${deviceId} code=${code}(${codeName})`);
-        }
-      } else if (role === 'android') {
+      if (role === 'detector') {
+        const existing = detectorClients.get(deviceId);
+        if (existing?.ws === ws) scheduleDetectorRemoval(detectorClients, existing.clientType, deviceId, ws);
+      } else if (role === 'console') {
         const existing = receiverClients.get(deviceId);
         if (existing && existing.ws === ws) {
           const endReason = closeCodeToSessionEndReason(code, deviceId);
@@ -557,7 +590,10 @@ export function handleConnection(ws: WebSocket): void {
         } else {
           console.log(`[ws][${ts2}] 接收端 旧连接关闭: ${deviceId} code=${code}(${codeName})`);
         }
-      } else if (role === 'windows-resident') {
+      } else if (role === 'notifier') {
+        if (notifierClients.get(deviceId)?.ws === ws) notifierClients.delete(deviceId);
+        dropDeliveries(deviceId, ws);
+      } else if (role === 'lifecycle') {
         const existing = residentWindowsClients.get(deviceId);
         if (existing?.ws === ws) {
           residentWindowsClients.delete(deviceId);
@@ -577,6 +613,14 @@ export function handleConnection(ws: WebSocket): void {
 }
 
 export function broadcastAlert(alert: WsAlertPush): void {
+  if (!alert.expiresAt || Date.parse(alert.expiresAt) <= Date.now()) return;
+  for (const [id, client] of notifierClients) {
+    if (!scopeAccepts(notificationScopes.get(id), alert)) continue;
+    const key = `${id}:${alert.alertId}`;
+    if (deliveries.has(key)) continue;
+    deliveries.set(key, { notifierId: id, ws: client.ws, alert, lastSent: Date.now() });
+    sendJson(client.ws, alert, 'notification-delivery');
+  }
   alert.serverRelayedAt = new Date().toISOString();
   // 协议分离: alert 元数据 <1KB,永远并行广播,不入串行队列
   const result = broadcastToReceivers(alert, `alert:${alert.alertId}`);
@@ -599,124 +643,43 @@ export function broadcastScreenshotData(payload: WsScreenshotDataPush): void {
 // ════════════════════════════════════════════════════════════
 
 function handleAuth(
-  ws: WebSocket,
-  msg: WsAuthMessage,
-  authTimer: NodeJS.Timeout,
-  onSuccess: (role: 'windows' | 'android' | 'android-detector' | 'windows-resident', deviceId: string) => void,
+  ws: WebSocket, msg: WsAuthMessage, authTimer: NodeJS.Timeout,
+  onSuccess: (role: NodeRole, deviceId: string) => void,
 ): void {
   clearTimeout(authTimer);
-  const ts = new Date().toISOString();
-
-  if (msg.channel !== config.channelId) {
-    console.log(`[ws][${ts}] 认证失败: 通道不匹配 expected=${config.channelId} actual=${msg.channel || '<missing>'}`);
-    sendJson(ws, { type: 'auth-result', success: false, reason: 'channel mismatch' });
-    ws.close();
-    return;
+  const identity = msg.channel === config.channelId ? authenticateNode(msg) : undefined;
+  if (!identity || typeof msg.deviceName !== 'string' || !msg.deviceName.trim() || msg.deviceName.length > MAX_DEVICE_NAME_LENGTH) {
+    sendJson(ws, { type: 'auth-result', success: false, reason: 'invalid identity or channel' });
+    ws.close(); return;
   }
-
-  if (!validateApiKey(msg.apiKey)) {
-    console.log(`[ws][${ts}] 认证失败: API Key 无效 role=${msg.role} deviceId=${msg.deviceId}`);
-    sendJson(ws, { type: 'auth-result', success: false, reason: 'invalid api key' });
-    ws.close();
-    return;
-  }
-
-  if (!msg.deviceId || msg.deviceId.length > MAX_DEVICE_ID_LENGTH) {
-    console.log(`[ws][${ts}] 认证失败: deviceId 无效 role=${msg.role}`);
-    sendJson(ws, { type: 'auth-result', success: false, reason: 'invalid deviceId' });
-    ws.close();
-    return;
-  }
-  if (msg.deviceName && msg.deviceName.length > MAX_DEVICE_NAME_LENGTH) {
-    console.log(`[ws][${ts}] 认证失败: deviceName 过长 role=${msg.role} deviceId=${msg.deviceId}`);
-    sendJson(ws, { type: 'auth-result', success: false, reason: 'deviceName too long' });
-    ws.close();
-    return;
-  }
-
-  if (msg.role === 'windows') {
-    clearPendingDetectorRemoval('windows', msg.deviceId);
-    const existing = detectorWindowsClients.get(msg.deviceId);
-    if (existing) {
-      console.log(`[ws][${ts}] 视觉检测（Windows） 重复连接: ${msg.deviceName} (${msg.deviceId}) 踢掉旧连接`);
-      detectorWindowsClients.delete(msg.deviceId);
-      sendJson(existing.ws, { type: 'kicked', reason: 'duplicate connection' });
-      existing.ws.terminate();
-    }
-    const client = createDetectorClient(ws, msg, 'windows');
-    detectorWindowsClients.set(msg.deviceId, client);
+  const map = identity.role === 'detector' ? detectorClients : identity.role === 'console' ? receiverClients
+    : identity.role === 'notifier' ? notifierClients : residentWindowsClients;
+  const existing = map.get(msg.deviceId);
+  if (existing) { map.delete(msg.deviceId); sendJson(existing.ws, { type: 'kicked', reason: 'duplicate connection' }); existing.ws.terminate(); }
+  if (identity.role === 'detector') {
+    clearPendingDetectorRemoval(clientType(identity), msg.deviceId);
+    const client = createDetectorClient(ws, msg, clientType(identity));
+    client.identity = identity;
+    detectorClients.set(msg.deviceId, client);
     const resident = residentWindowsClients.get(msg.deviceId);
-    if (resident) resident.deviceName = client.deviceName;
-    console.log(`[ws][${ts}] 视觉检测（Windows） 上线: ${msg.deviceName} (${msg.deviceId}) | Win:${detectorWindowsClients.size} AdrDet:${detectorAndroidClients.size} Recv:${receiverClients.size}`);
-  } else if (msg.role === 'android-detector') {
-    clearPendingDetectorRemoval('android-detector', msg.deviceId);
-    const existing = detectorAndroidClients.get(msg.deviceId);
-    if (existing) {
-      console.log(`[ws][${ts}] 视觉检测（Android） 重复连接: ${msg.deviceName} (${msg.deviceId}) 踢掉旧连接`);
-      detectorAndroidClients.delete(msg.deviceId);
-      sendJson(existing.ws, { type: 'kicked', reason: 'duplicate connection' });
-      existing.ws.terminate();
-    }
-    const client = createDetectorClient(ws, msg, 'android-detector');
-    detectorAndroidClients.set(msg.deviceId, client);
-    console.log(`[ws][${ts}] 视觉检测（Android） 上线: ${msg.deviceName} (${msg.deviceId}) | Win:${detectorWindowsClients.size} AdrDet:${detectorAndroidClients.size} Recv:${receiverClients.size}`);
-  } else if (msg.role === 'android') {
-    const existing = receiverClients.get(msg.deviceId);
-    if (existing) {
-      console.log(`[ws][${ts}] 接收端 重复连接: ${msg.deviceId} 踢掉旧连接`);
-      receiverClients.delete(msg.deviceId);
-      sendJson(existing.ws, { type: 'kicked', reason: 'duplicate connection' });
-      existing.ws.terminate();
-    }
-    const client: ReceiverClient = { ws, deviceId: msg.deviceId, lastSeen: new Date() };
-    receiverClients.set(msg.deviceId, client);
-
-    const prevSession = androidSessions.get(msg.deviceId);
-    const now = Date.now();
-    const session: AndroidSession = {
-      connectedAt: now,
-      lastSessionEndReason: prevSession?.lastSessionEndReason ?? 'unknown',
-      lastSessionDurationMs: prevSession ? now - prevSession.connectedAt : -1,
-    };
-    androidSessions.set(msg.deviceId, session);
-
-    if (prevSession) {
-      const durationSec = Math.round((now - prevSession.connectedAt) / 1000);
-      const reasonDesc = SessionEndReasonNames[prevSession.lastSessionEndReason] ?? `code=${prevSession.lastSessionEndReason}`;
-      console.log(`[ws][${ts}] 接收端 重连诊断: deviceId=${msg.deviceId} 上次持续${durationSec}s | 结束原因: ${reasonDesc} | 接收端在线=${receiverClients.size}`);
-    } else {
-      console.log(`[ws][${ts}] 接收端 首次连接: ${msg.deviceId} | 接收端在线=${receiverClients.size}`);
-    }
-
-    console.log(`[ws][${ts}] 接收端 上线: ${msg.deviceId}`);
-  } else if (msg.role === 'windows-resident') {
-    const existing = residentWindowsClients.get(msg.deviceId);
-    if (existing) {
-      residentWindowsClients.delete(msg.deviceId);
-      sendJson(existing.ws, { type: 'kicked', reason: 'duplicate connection' });
-      existing.ws.terminate();
-    }
-    residentWindowsClients.set(msg.deviceId, {
-      ws, deviceId: msg.deviceId,
-      // 同一设备的主检测端名称具有权威性；驻留只延续这份身份。
-      deviceName: detectorWindowsClients.get(msg.deviceId)?.deviceName || msg.deviceName || msg.deviceId,
-      lastSeen: new Date(), components: { resident: 'running', detectorApp: 'stopped' },
-    });
-    console.log(`[ws][${ts}] 视觉驻留 上线: ${msg.deviceName} (${msg.deviceId})`);
+    if (resident) resident.deviceName = msg.deviceName;
+  } else if (identity.role === 'lifecycle') {
+    residentWindowsClients.set(msg.deviceId, { ws, deviceId: msg.deviceId,
+      deviceName: detectorClients.get(msg.deviceId)?.deviceName || msg.deviceName,
+      lastSeen: new Date(), components: { resident: 'running', detectorApp: 'stopped' } });
   } else {
-    console.log(`[ws][${ts}] 认证失败: 无效 role=${msg.role}`);
-    sendJson(ws, { type: 'auth-result', success: false, reason: 'invalid role' });
-    ws.close();
-    return;
+    (identity.role === 'console' ? receiverClients : notifierClients).set(msg.deviceId, { ws, deviceId: msg.deviceId, deviceName: msg.deviceName, identity, lastSeen: new Date() });
   }
-
-  console.log(`[ws][${ts}] 认证成功: role=${msg.role} deviceId=${msg.deviceId} deviceName=${msg.deviceName ?? 'n/a'}`);
-  sendJson(ws, { type: 'auth-result', success: true, maxSources: config.maxSourcesPerDetector });
-  onSuccess(msg.role, msg.deviceId);
-  sendJson(ws, { type: 'device-list', devices: buildDeviceList() });
-  if (msg.role === 'windows' || msg.role === 'android-detector' || msg.role === 'windows-resident') {
-    scheduleBroadcast();
+  sendJson(ws, { type: 'auth-result', success: true, identity, maxSources: config.maxSourcesPerDetector,
+    timeStandard: timeStandard.get(),
+    ...(identity.role === 'notifier' ? { notificationScope: notificationScopes.get(identity.deviceId) } : {}),
+    realtimeTtlMs: REALTIME_TTL_MS, heartbeatIntervalMs: identity.role === 'console' ? 30_000 : 3000, connectionTimeoutMs: 45_000 });
+  onSuccess(identity.role, identity.deviceId);
+  if (identity.role === 'console') {
+    sendJson(ws, { type: 'device-list', devices: buildDeviceList() });
+    sendJson(ws, notificationScopeList());
   }
+  scheduleBroadcast();
 }
 
 function handleResidentHeartbeat(deviceId: string, msg: WsResidentHeartbeat): void {
@@ -741,6 +704,9 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   if (!client) {
     console.warn(`[ws][${new Date().toISOString()}] 心跳但客户端不存在: deviceId=${msg.deviceId}`);
     return;
+  }
+  if (typeof msg.isMonitoring !== 'boolean' || typeof msg.isReady !== 'boolean') {
+    sendJson(client.ws, { type: 'heartbeat-ack', accepted: false, reason: 'invalid-state' }); return;
   }
 
   const sanitizedSources = msg.sources === undefined ? undefined : sanitizeSources(msg.sources);
@@ -776,11 +742,13 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   if (msg.modelOptions !== undefined) client.modelOptions = sanitizeModelOptions(msg.modelOptions) ?? client.modelOptions;
   if (msg.canSwitchModelWhileMonitoring !== undefined) client.canSwitchModelWhileMonitoring = !!msg.canSwitchModelWhileMonitoring;
   if (msg.hasPendingConfigChanges !== undefined) client.hasPendingConfigChanges = !!msg.hasPendingConfigChanges;
-  if (msg.capabilities !== undefined) client.capabilities = sanitizeCapabilities(msg.capabilities) ?? client.capabilities;
+  if (msg.capabilities !== undefined) client.capabilities = allowedCapabilities(client.identity, msg.capabilities) ?? client.capabilities;
   if (msg.components !== undefined) client.components = sanitizeComponents(msg.components) ?? client.components;
+  if (typeof msg.monitoringExpected === 'boolean') client.monitoringExpected = msg.monitoringExpected;
+  if (validProgress(msg.lastProgressAt)) client.lastProgressAt = msg.lastProgressAt;
   if (sanitizedSources !== undefined) client.sources = sanitizedSources;
   if (msg.sources !== undefined) client.sourceLimitExceeded = sourceOverLimit;
-  if (nameChanged) {
+  if (nameChanged && typeof msg.deviceName === 'string' && msg.deviceName.trim() && msg.deviceName.length <= MAX_DEVICE_NAME_LENGTH) {
     client.deviceName = msg.deviceName!;
     if (client.clientType === 'windows') {
       const resident = residentWindowsClients.get(msg.deviceId);
@@ -793,7 +761,7 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   _heartbeatCounter.set(msg.deviceId, count % 60 === 0 ? 0 : count);
   if (count === 1 || count % 60 === 0) {
     const silentSec = Math.round((Date.now() - client.lastSeen.getTime()) / 1000);
-    const roleLabel = client.clientType === 'android-detector' ? '视觉检测（Android）' : '视觉检测（Windows）';
+    const roleLabel = client.identity.nodeType === 'sensor' ? '传感器节点' : client.clientType === 'android-detector' ? '视觉检测（Android）' : '视觉检测（Windows）';
     console.log(`[ws][${new Date().toISOString()}] ${roleLabel} 心跳: ${client.deviceName} (${msg.deviceId}) monitoring=${msg.isMonitoring} 静默${silentSec}s`);
   }
 
@@ -830,7 +798,7 @@ function handleHeartbeatReceiver(msg: WsHeartbeatAndroid): void {
 function handleDisconnectReason(msg: WsDisconnectReason, role: string | null, deviceId: string | null): void {
   const ts = new Date().toISOString();
   console.log(`[ws][${ts}] 客户端断开原因报告: deviceId=${deviceId ?? '?'} role=${role ?? '?'} reason=${msg.reason} detail=${msg.detail ?? 'n/a'}`);
-  if (deviceId && role === 'android') {
+  if (deviceId && role === 'console') {
     const session = androidSessions.get(deviceId);
     if (session) {
       session.lastSessionEndReason = msg.reason;
@@ -869,11 +837,11 @@ function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
   const target = residentCommand ? residentWindowsClients.get(msg.targetDeviceId) : findDetector(msg.targetDeviceId);
 
   const ack: WsCommandAck = {
-    type: 'command-ack', targetDeviceId: msg.targetDeviceId,
-    targetSourceId: msg.targetSourceId, requestId: msg.requestId, command: msg.command, success: false, reason: '',
+    type: 'command-ack', requestId: msg.requestId, phase: 'completed', targetDeviceId: msg.targetDeviceId,
+    targetSourceId: msg.targetSourceId, command: msg.command, success: false, reason: '',
   };
 
-  if (msg.requestId !== undefined && !isValidRequestId(msg.requestId)) {
+  if (!isValidRequestId(msg.requestId)) {
     ack.phase = 'completed';
     ack.reason = '无效的 requestId';
     sendJson(senderWs, ack, 'command-ack->sender');
@@ -887,6 +855,11 @@ function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
     sendJson(senderWs, ack, 'command-ack->sender');
     console.warn(`[ws][${new Date().toISOString()}] 命令路由失败: target=${msg.targetDeviceId} command=${msg.command} reason=${ack.reason}`);
     return;
+  }
+
+  if (detectorCommand && !(target as DetectorClient).capabilities.includes('monitor-control')) {
+    ack.phase = 'completed'; ack.reason = '目标不支持监控控制';
+    sendJson(senderWs, ack); return;
   }
 
   if (msg.targetSourceId !== undefined && !/^[A-Za-z0-9_-]{1,64}$/.test(msg.targetSourceId)) {
@@ -919,7 +892,7 @@ function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
 }
 
 function handleSetConfig(senderWs: WebSocket, msg: WsSetConfig): void {
-  if (msg.requestId !== undefined && !isValidRequestId(msg.requestId)) {
+  if (!isValidRequestId(msg.requestId)) {
     sendJson(senderWs, {
       type: 'command-ack', requestId: msg.requestId, phase: 'completed', targetDeviceId: msg.targetDeviceId,
       command: `set-config:${msg.key}`, success: false, reason: '无效的 requestId',
@@ -928,7 +901,7 @@ function handleSetConfig(senderWs: WebSocket, msg: WsSetConfig): void {
   }
   if (!isValidSetConfigKey(msg.key)) {
     sendJson(senderWs, {
-      type: 'command-ack', targetDeviceId: msg.targetDeviceId,
+      type: 'command-ack', requestId: msg.requestId, phase: 'completed', targetDeviceId: msg.targetDeviceId,
       command: `set-config:${msg.key}`, success: false, reason: `无效的配置项: ${msg.key}`,
     }, 'set-config-ack->sender');
     console.warn(`[ws][${new Date().toISOString()}] 配置更新拒绝: target=${msg.targetDeviceId} key=${msg.key} reason=invalid-key`);
@@ -937,14 +910,19 @@ function handleSetConfig(senderWs: WebSocket, msg: WsSetConfig): void {
 
   const target = findDetector(msg.targetDeviceId);
   if (!target || target.ws.readyState !== WebSocket.OPEN) {
-    sendJson(senderWs, { type: 'command-ack', targetDeviceId: msg.targetDeviceId, command: `set-config:${msg.key}`, success: false, reason: '设备离线' }, 'set-config-ack->sender');
+    sendJson(senderWs, { type: 'command-ack', requestId: msg.requestId, phase: 'completed', targetDeviceId: msg.targetDeviceId, command: `set-config:${msg.key}`, success: false, reason: '设备离线' }, 'set-config-ack->sender');
     console.warn(`[ws][${new Date().toISOString()}] 配置更新路由失败: target=${msg.targetDeviceId} key=${msg.key} reason=设备离线`);
     return;
   }
 
+  if (!target.capabilities.includes('config-control') || (target.identity.nodeType === 'sensor' && !['cooldown', 'confidence'].includes(msg.key))) {
+    sendJson(senderWs, { type: 'command-ack', requestId: msg.requestId, phase: 'completed', targetDeviceId: msg.targetDeviceId,
+      command: `set-config:${msg.key}`, success: false, reason: '目标不支持该配置' }); return;
+  }
+
   const validation = validateSetConfigValue(msg.key, msg.value, target.modelOptions);
   if (!validation.ok) {
-    sendJson(senderWs, { type: 'command-ack', targetDeviceId: msg.targetDeviceId, command: `set-config:${msg.key}`, success: false, reason: validation.reason }, 'set-config-ack->sender');
+    sendJson(senderWs, { type: 'command-ack', requestId: msg.requestId, phase: 'completed', targetDeviceId: msg.targetDeviceId, command: `set-config:${msg.key}`, success: false, reason: validation.reason }, 'set-config-ack->sender');
     return;
   }
 
@@ -1007,6 +985,11 @@ function handleRequestScreenshot(senderWs: WebSocket, msg: any): void {
     return;
   }
 
+  if (target.identity.nodeType !== 'visual' || !target.capabilities.includes('screenshot-on-demand')) {
+    sendJson(senderWs, { type: 'command-ack', requestId, phase: 'completed', targetDeviceId,
+      command: 'request-screenshot', success: false, reason: '目标不支持截图' }); return;
+  }
+
   sendJson(target.ws, {
     type: 'request-screenshot',
     alertId,
@@ -1014,11 +997,11 @@ function handleRequestScreenshot(senderWs: WebSocket, msg: any): void {
   }, `request-screenshot->${targetDeviceId}`);
 }
 
-function handleCommandAck(ack: WsCommandAck, detectorDeviceId: string): void {
+function handleCommandAck(ack: WsCommandAck, detectorDeviceId: string, ws: WebSocket): void {
   const enriched = { ...ack, targetDeviceId: detectorDeviceId };
   if (ack.requestId) {
     const pending = pendingControlRequests.get(ack.requestId);
-    if (!pending || pending.targetDeviceId !== detectorDeviceId || pending.command !== ack.command || pending.targetSourceId !== ack.targetSourceId) {
+    if (!pending || pending.targetWs !== ws || pending.targetDeviceId !== detectorDeviceId || pending.command !== ack.command || pending.targetSourceId !== ack.targetSourceId || ack.phase !== 'completed' || typeof ack.success !== 'boolean') {
       console.warn(`[ws][${new Date().toISOString()}] 忽略无法关联的命令回执: requestId=${ack.requestId} target=${detectorDeviceId} command=${ack.command}`);
       return;
     }
@@ -1029,19 +1012,7 @@ function handleCommandAck(ack: WsCommandAck, detectorDeviceId: string): void {
     return;
   }
 
-  // 旧 Windows 客户端不会回显 requestId。仅当目标和命令恰好匹配一个
-  // 待处理请求时安全关联；有歧义时维持旧广播行为并让新请求按超时收敛。
-  const legacyMatches = Array.from(pendingControlRequests.entries())
-    .filter(([, pending]) => pending.targetDeviceId === detectorDeviceId && pending.command === ack.command);
-  if (legacyMatches.length === 1) {
-    const [requestId, pending] = legacyMatches[0];
-    clearTimeout(pending.timer);
-    pendingControlRequests.delete(requestId);
-    rememberCompletedRequest(requestId);
-    sendJson(pending.senderWs, { ...enriched, requestId, phase: 'completed' }, `legacy-command-ack:${ack.command}->requester`);
-    return;
-  }
-  broadcastToReceivers(enriched, `command-ack:${ack.command}`);
+
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1061,17 +1032,19 @@ function broadcastDeviceList(): void {
   lastDeviceListSignature = signature;
   const msg = { type: 'device-list', devices: list };
   broadcastToReceivers(msg, 'device-list');
+  broadcastToReceivers(notificationScopeList());
 }
 
 function buildDeviceList(): DeviceStatus[] {
   const now = Date.now();
   const devices: DeviceStatus[] = [];
-  for (const clients of [detectorWindowsClients, detectorAndroidClients]) {
+  for (const clients of [detectorClients]) {
     for (const c of clients.values()) {
       devices.push({
+        role: c.identity.role, nodeType: c.identity.nodeType, platform: c.identity.platform,
         deviceId: c.deviceId,
         deviceName: c.deviceName,
-        online: (now - c.lastSeen.getTime()) < config.deviceOfflineMs,
+        online: c.ws.readyState === WebSocket.OPEN && (now - c.lastSeen.getTime()) < config.deviceOfflineMs,
         isMonitoring: c.isMonitoring,
         isReady: c.isReady,
         lastSeen: c.lastSeen.toISOString(),
@@ -1097,6 +1070,7 @@ function buildDeviceList(): DeviceStatus[] {
   for (const r of residentWindowsClients.values()) {
     if (devices.some(d => d.deviceId === r.deviceId)) continue;
     devices.push({
+      role: 'detector', nodeType: 'visual', platform: 'windows',
       deviceId: r.deviceId, deviceName: r.deviceName,
       online: (now - r.lastSeen.getTime()) < config.deviceOfflineMs,
       isMonitoring: false, isReady: false, lastSeen: r.lastSeen.toISOString(),
@@ -1108,6 +1082,14 @@ function buildDeviceList(): DeviceStatus[] {
       maxSources: config.maxSourcesPerDetector,
       sourceLimitExceeded: false,
     });
+  }
+  for (const client of notifierClients.values()) {
+    devices.push({ role: 'notifier', nodeType: 'notification', platform: client.identity!.platform,
+      deviceId: client.deviceId, deviceName: client.deviceName!, online: client.ws.readyState === WebSocket.OPEN,
+      isMonitoring: false, isReady: true, lastSeen: client.lastSeen.toISOString(), cooldown: 5, confidence: 0.45,
+      targets: '', targetSamplingRate: 3, modelKey: '', modelOptions: [], canSwitchModelWhileMonitoring: false,
+      hasPendingConfigChanges: false, clientType: 'notification', capabilities: ['notification-receipt', 'connection-watchdog'],
+      components: {}, sources: [], maxSources: 0, sourceLimitExceeded: false });
   }
   return devices;
 }
@@ -1135,12 +1117,137 @@ function broadcastToReceivers(msg: object, context?: string): { success: number;
   return { success, failed };
 }
 
+function validProgress(value: unknown): value is string {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value)) && Date.parse(value) <= Date.now() + 5000;
+}
+
+interface Delivery { notifierId: string; ws: WebSocket; alert: WsAlertPush; lastSent: number }
+const deliveries = new Map<string, Delivery>();
+const activeFaults = new Set<string>();
+const unhealthySince = new Map<string, number>();
+const faultOutbox = new Map<string, WsAlertPush>();
+
+function acknowledgeDelivery(notifierId: string, alertId: unknown): void {
+  if (typeof alertId !== 'string') return;
+  const key = `${notifierId}:${alertId}`;
+  const delivery = deliveries.get(key);
+  if (!delivery || delivery.ws !== notifierClients.get(notifierId)?.ws) return;
+  deliveries.delete(key);
+  // Receipt proves application acceptance, never playback or that a human heard it.
+  broadcastToReceivers({ type: 'notification-receipt', notifierId, alertId, receivedAt: new Date().toISOString() });
+}
+
+function dropDeliveries(notifierId: string, ws?: WebSocket): void {
+  for (const [key, delivery] of deliveries) if (delivery.notifierId === notifierId && (!ws || delivery.ws === ws)) deliveries.delete(key);
+}
+
+function notificationScopeList(): object {
+  return { type: 'notification-scopes', detectors: registeredNodes('detector'), notifiers: registeredNodes('notifier').map(identity => ({
+    ...identity, deviceName: notifierClients.get(identity.deviceId)?.deviceName ?? identity.deviceId,
+    online: notifierClients.get(identity.deviceId)?.ws.readyState === WebSocket.OPEN,
+    scope: notificationScopes.get(identity.deviceId),
+  })) };
+}
+
+function handleNotificationScope(ws: WebSocket, msg: any): void {
+  const scope = parseNotificationScope(msg.scope);
+  const requestId = typeof msg.requestId === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(msg.requestId) ? msg.requestId : undefined;
+  const target = registeredNodes('notifier').find(identity => identity.deviceId === msg.targetNotifierId);
+  const detectors = registeredNodes('detector');
+  const invalidTarget = scope?.targets.some(item => {
+    const identity = detectors.find(node => node.deviceId === item.deviceId);
+    return !identity || (item.sourceId !== undefined && (identity.nodeType !== 'visual'
+      || (detectorClients.has(item.deviceId) && !detectorClients.get(item.deviceId)!.sources.some(source => source.sourceId === item.sourceId))));
+  });
+  if (!scope || !requestId || !target || invalidTarget) {
+    sendJson(ws, { type: 'notification-scope-result', requestId, success: false, reason: '无效的通知节点或接收范围' }); return;
+  }
+  try { notificationScopes.set(target.deviceId, scope); }
+  catch { sendJson(ws, { type: 'notification-scope-result', requestId, success: false, reason: '接收范围保存失败' }); return; }
+  // Remove pending retries outside the new scope immediately.
+  for (const [key, delivery] of deliveries) {
+    if (delivery.notifierId === target.deviceId && !scopeAccepts(scope, delivery.alert)) deliveries.delete(key);
+  }
+  const notifier = notifierClients.get(target.deviceId);
+  if (notifier) sendJson(notifier.ws, { type: 'notification-scope', scope });
+  sendJson(ws, { type: 'notification-scope-result', requestId, success: true });
+  broadcastToReceivers(notificationScopeList());
+}
+
+function handleTimeStandard(ws: WebSocket, msg: any): void {
+  const result = { type: 'time-standard-result', requestId: msg.requestId, command: '统一时间', phase: 'completed', success: false, reason: '' };
+  if (!isValidRequestId(msg.requestId) || !validAlarmTimeZone(msg.timeZone)) {
+    sendJson(ws, { ...result, reason: '无效的时间标准' }); return;
+  }
+  try { timeStandard.set(msg.timeZone); }
+  catch { sendJson(ws, { ...result, reason: '时间标准保存失败' }); return; }
+  sendJson(ws, { ...result, success: true, reason: '已保存' });
+  const update = { type: 'time-standard', ...timeStandard.get() };
+  broadcastToReceivers(update);
+  for (const notifier of notifierClients.values()) sendJson(notifier.ws, update);
+}
+
+function emitFault(client: DetectorClient, eventKind: 'connection-lost' | 'detection-interrupted', source?: SourceStatus): void {
+  const key = `${client.deviceId}:${source?.sourceId ?? ''}:${eventKind}`;
+  if (activeFaults.has(key)) return;
+  const now = Date.now();
+  const alert: WsAlertPush = { type: 'alert', alertId: crypto.randomUUID(), deviceId: client.deviceId,
+    deviceName: client.deviceName, nodeType: client.identity.nodeType,
+    sourceId: source?.sourceId, sourceName: source?.sourceName, eventKind,
+    timestamp: new Date(now).toISOString(), expiresAt: new Date(now + REALTIME_TTL_MS).toISOString(),
+    summary: eventKind === 'connection-lost' ? '节点连接中断' : '检测运行中断', detections: [], createdAt: now };
+  activeFaults.add(key);
+  faultOutbox.set(alert.alertId, alert);
+  flushFaultOutbox(now);
+}
+
+function flushFaultOutbox(now: number): void {
+  for (const [id, alert] of faultOutbox) {
+    if (Date.parse(alert.expiresAt!) <= now) { faultOutbox.delete(id); continue; }
+    try {
+      const result = addAlert({ ...alert, createdAt: alert.createdAt! });
+      faultOutbox.delete(id);
+      if (result === 'stored') broadcastAlert(alert);
+    } catch { /* Retry temporary storage failure within the original event deadline. */ }
+  }
+}
+
+/** Clock argument makes outage thresholds testable without long-running device operations. */
+export function maintainRealtime(now = Date.now()): void {
+  flushFaultOutbox(now);
+  for (const [key, delivery] of deliveries) {
+    if (Date.parse(delivery.alert.expiresAt ?? '') <= now || notifierClients.get(delivery.notifierId)?.ws !== delivery.ws) {
+      deliveries.delete(key); continue;
+    }
+    if (now - delivery.lastSent >= 3000) { sendJson(delivery.ws, delivery.alert); delivery.lastSent = now; }
+  }
+  for (const client of detectorClients.values()) {
+    const online = client.ws.readyState === WebSocket.OPEN && now - client.lastSeen.getTime() < config.deviceOfflineMs;
+    if (!online) continue;
+    activeFaults.delete(`${client.deviceId}::connection-lost`);
+    const states = client.identity.nodeType === 'visual' ? client.sources : [{ sourceId: '', sourceName: '', modelKey: '',
+      isMonitoring: client.isMonitoring, isReady: client.isReady, monitoringExpected: client.monitoringExpected, lastProgressAt: client.lastProgressAt }];
+    for (const source of states) {
+      const key = `${client.deviceId}:${source.sourceId}:detection-interrupted`;
+      const unhealthy = source.monitoringExpected === true && (!source.isMonitoring || !source.lastProgressAt || now - Date.parse(source.lastProgressAt) >= DETECTION_STALL_MS);
+      if (!unhealthy) { unhealthySince.delete(key); activeFaults.delete(key); continue; }
+      const since = unhealthySince.get(key) ?? (source.lastProgressAt ? Math.min(now, Date.parse(source.lastProgressAt)) : now);
+      unhealthySince.set(key, since);
+      if (now - since >= DETECTION_STALL_MS) emitFault(client, 'detection-interrupted', source.sourceId ? source : undefined);
+    }
+  }
+  for (const [id, client] of notifierClients) {
+    if (now - client.lastSeen.getTime() >= config.deviceOfflineMs) { client.ws.terminate(); notifierClients.delete(id); dropDeliveries(id); }
+  }
+}
+
 // ════════════════════════════════════════════════════════════
-// 定时维护：每 30s
+// 定时维护：每 3s
 // ════════════════════════════════════════════════════════════
 
 const maintenanceTimer = setInterval(() => {
   const now = Date.now();
+  maintainRealtime(now);
   const ts = new Date().toISOString();
   const detectorDeadline = now - config.deviceOfflineMs;
   const receiverDeadline = now - config.receiverGhostThresholdMs;
@@ -1159,13 +1266,14 @@ const maintenanceTimer = setInterval(() => {
   }
 
   // 检测端幽灵清理
-  for (const clients of [detectorWindowsClients, detectorAndroidClients]) {
+  for (const clients of [detectorClients]) {
     for (const [id, client] of clients) {
       if (client.lastSeen.getTime() <= detectorDeadline) {
         const silentSec = Math.round((now - client.lastSeen.getTime()) / 1000);
-        const roleLabel = client.clientType === 'android-detector' ? '视觉检测（Android）' : '视觉检测（Windows）';
+        const roleLabel = client.identity.nodeType === 'sensor' ? '传感器节点' : client.clientType === 'android-detector' ? '视觉检测（Android）' : '视觉检测（Windows）';
         console.log(`[ws][${ts}] ${roleLabel} 幽灵清理: ${client.deviceName} (${id}) 静默 ${silentSec}s 阈值 ${config.deviceOfflineMs / 1000}s`);
         client.ws.terminate();
+        emitFault(client, 'connection-lost');
         clients.delete(id);
         _heartbeatCounter.delete(id);
         detectorCleaned = true;
@@ -1185,9 +1293,9 @@ const maintenanceTimer = setInterval(() => {
     }
   }
 
-  if (detectorCleaned && (receiverClients.size > 0 || detectorWindowsClients.size > 0 || detectorAndroidClients.size > 0)) {
+  if (detectorCleaned && (receiverClients.size > 0 || detectorClients.size > 0 || detectorClients.size > 0)) {
     broadcastDeviceList();
-    console.log(`[ws][${ts}] 设备清理后推送 → 接收端:${receiverClients.size} / 视觉检测（Windows）:${detectorWindowsClients.size} / 视觉检测（Android）:${detectorAndroidClients.size}`);
+    console.log(`[ws][${ts}] 设备清理后推送 → 控制台:${receiverClients.size} / 检测节点:${detectorClients.size} / 通知节点:${notifierClients.size}`);
   }
-}, 30_000);
+}, 3000);
 maintenanceTimer.unref();

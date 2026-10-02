@@ -10,14 +10,15 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $serverRoot = Join-Path $repoRoot 'server'
 $dataRoot = Join-Path $repoRoot ".local\e2e-server\$Channel"
 
-if ([string]::IsNullOrWhiteSpace($env:VISIONGUARD_API_KEY)) {
-    throw 'Set VISIONGUARD_API_KEY in the current process before starting the isolated test server.'
+if (-not $env:VISIONGUARD_IDENTITIES_FILE -or -not (Test-Path -LiteralPath $env:VISIONGUARD_IDENTITIES_FILE)) {
+    throw 'Set VISIONGUARD_IDENTITIES_FILE to a private provisioned registry before starting the isolated server.'
 }
+if (-not $env:VISIONGUARD_CONSOLE_API_KEY) { throw 'Set VISIONGUARD_CONSOLE_API_KEY for HTTP administration.' }
 
 New-Item -ItemType Directory -Force -Path $dataRoot | Out-Null
 $env:BIND_HOST = '0.0.0.0'
 $env:PORT = $Port.ToString()
-$env:API_KEY = $env:VISIONGUARD_API_KEY
+$env:API_KEY = $env:VISIONGUARD_CONSOLE_API_KEY
 $env:VISIONGUARD_CHANNEL = $Channel
 $env:VISIONGUARD_DATA_DIR = $dataRoot
 

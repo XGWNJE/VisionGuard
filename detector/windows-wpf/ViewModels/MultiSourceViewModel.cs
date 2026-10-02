@@ -172,11 +172,6 @@ namespace VisionGuard.Detector.Windows.ViewModels
             if (_server != null)
             {
                 _server.SourceLimitReceived += (_, limit) => Application.Current.Dispatcher.Invoke(() => ApplySourceLimit(limit));
-                _server.CommandReceived += (_, cmd) =>
-                {
-                    Application.Current.Dispatcher.BeginInvoke(() =>
-                        HandleCommand(cmd.TargetSourceId, cmd.Command, cmd.RequestId));
-                };
             }
 
             // 状态/帧事件可能在来源已被移除之后才送达（重建来源就是在 Remove 之后 Add，
@@ -293,9 +288,12 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
         internal void Rename(SourceViewModel slot) => _coordinator.Rename(slot.SourceId, slot.SourceName);
 
+        private bool IsRunning(SourceViewModel slot) =>
+            _coordinator.Statuses.Any(status => status.SourceId == slot.SourceId && status.IsMonitoring);
+
         internal void Reconfigure(SourceViewModel slot)
         {
-            if (slot.IsMonitoring) throw new InvalidOperationException("请先停止该来源再修改配置。");
+            if (IsRunning(slot)) throw new InvalidOperationException("请先停止该来源再修改配置。");
             _coordinator.Remove(slot.SourceId);
             _coordinator.Add(slot.BuildSource());
             slot.ApplyStatus(_coordinator.Statuses.First(s => s.SourceId == slot.SourceId));
@@ -304,6 +302,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
         internal void Start(SourceViewModel slot)
         {
+            if (IsRunning(slot)) return;
             // 先做不会改变运行时状态的前置检查。若模型不存在，不能先重建来源：
             // 重建时排队的“就绪”状态会在异常提示之后送达，从而把实际错误伪装成“无响应”。
             var modelPath = ModelManager.GetModelPath(slot.ModelKey);
@@ -330,7 +329,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             {
                 try
                 {
-                    if (command == "resume") StartConfigured();
+                    if (command == "resume") StartConfigured(throwOnError: true);
                     else if (command == "pause") StopAll();
                     else { _server.SendCommandAck(command, false, "设备不支持该命令", requestId); return false; }
                     _server.SendCommandAck(command, true, requestId: requestId);
@@ -363,7 +362,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             if (slot == null) { _server.SendCommandAck(command, false, "来源不存在", requestId, ackSourceId); return false; }
             try
             {
-                if (slot.IsMonitoring) throw new InvalidOperationException("请先停止该来源再修改配置。");
+                if (IsRunning(slot)) throw new InvalidOperationException("请先停止该来源再修改配置。");
                 switch (key)
                 {
                     case "cooldown" when int.TryParse(value, out var cooldown) && cooldown is >= 1 and <= 300: slot.Cooldown = cooldown; break;
@@ -573,19 +572,25 @@ namespace VisionGuard.Detector.Windows.ViewModels
             RefreshSummary();
         }
 
-        private void StartConfigured()
+        private void StartConfigured(bool throwOnError = false)
         {
-            foreach (var slot in Sources.Where(s => s.CanStart).ToArray())
+            // 运行状态以协调器为准，界面上的 IsMonitoring 可能还在等待 Dispatcher 刷新。
+            foreach (var slot in Sources.Where(s => s.IsReady).ToArray())
             {
                 try { Start(slot); }
-                catch (Exception ex) { slot.SetError(ex.Message); break; }
+                catch (Exception ex)
+                {
+                    slot.SetError(ex.Message);
+                    if (throwOnError) throw;
+                    break;
+                }
             }
             RefreshSummary();
         }
 
         private void StopAll()
         {
-            foreach (var slot in Sources.Where(s => s.IsMonitoring).ToArray()) Stop(slot);
+            foreach (var slot in Sources.ToArray()) Stop(slot);
             RefreshSummary();
         }
 

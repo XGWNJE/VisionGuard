@@ -1,9 +1,10 @@
 # VisionGuard Design
 
-这个目录维护当前采用的设计规范；实现依据以 VisionGuard 控制台 Compose 源码为准。
+这个目录维护当前采用的设计规范；Web 与通知节点 采用统一浅深色规范，保留的 Android 控制台按其 Compose 规范维护。
 
 ## 当前入口
 
+- [unified-ui.md](./unified-ui.md)：Web 控制台与通知节点的统一颜色、布局、控件和浅深色规范。
 - [android-ui-guidelines.md](./android-ui-guidelines.md)：Android UI 通用规范。当前只有控制台 Compose 实现采用本规范；视觉检测（Android）与 VisionGuard 视觉节点当前未采用本规范。
 
 ## 维护约定

@@ -32,7 +32,10 @@ data class DeviceInfo(
     /** 服务端持有的来源上限；旧服务端不下发时为 null。 */
     val maxSources: Int? = null,
     /** 最近一次心跳的来源数超过上限而被整组拒绝：此时 sources 是旧快照，必须在界面上说明。 */
-    val sourceLimitExceeded: Boolean = false
+    val sourceLimitExceeded: Boolean = false,
+    val role: String = "detector",
+    val nodeType: String = "visual",
+    val platform: String = "windows"
 )
 
 @Immutable
@@ -47,7 +50,9 @@ data class SourceInfo(
     val cooldown: Int? = null,
     val confidence: Double? = null,
     val targets: String? = null,
-    val targetSamplingRate: Int? = null
+    val targetSamplingRate: Int? = null,
+    val monitoringExpected: Boolean = false,
+    val lastProgressAt: String? = null
 )
 
 /** 记录每台设备最后下发的参数配置（Android 端本地缓存） */

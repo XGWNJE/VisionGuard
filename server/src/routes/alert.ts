@@ -8,15 +8,15 @@
 
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
-import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { config } from '../config';
-import { httpAuth } from '../middleware/auth';
-import { addAlert } from '../services/AlertStore';
+import { detectorHttpAuth } from '../middleware/auth';
+import { validateEvent } from '../services/NodeProtocol';
+import { addAlert, getAlertById } from '../services/AlertStore';
 import { broadcastAlert } from '../services/ConnectionManager';
 import type { AlertMeta, WsAlertPush } from '../models/types';
-import { getSafeScreenshotPath, validateAlertMeta, validateImageMagic } from '../utils/security';
+import { getSafeScreenshotPath, isSafeAlertId, validateAlertMeta, validateImageMagic } from '../utils/security';
 
 const router = Router();
 
@@ -62,12 +62,13 @@ const upload = multer({
  */
 router.post(
   '/api/alert',
-  httpAuth,
+  detectorHttpAuth,
   upload.single('screenshot'),
   (req: Request, res: Response) => {
     try {
       const metaRaw = req.body?.meta;
       if (!metaRaw) {
+        removeTempUpload(req);
         res.status(400).json({ ok: false, error: 'missing meta field' });
         return;
       }
@@ -81,18 +82,29 @@ router.post(
         return;
       }
 
-      const metaResult = validateAlertMeta(parsedMeta);
+      const identity = res.locals.identity;
+      const incoming = parsedMeta as any;
+      const event = validateEvent(incoming, identity);
+      if (identity.nodeType === 'sensor' && req.file) { removeTempUpload(req); res.status(400).json({ ok: false, error: 'sensor events have no screenshot' }); return; }
+      if (!event || !isSafeAlertId(incoming.alertId)) {
+        removeTempUpload(req); res.status(400).json({ ok: false, error: 'invalid-or-expired-event' }); return;
+      }
+      const metaResult = validateAlertMeta({ ...incoming, ...event, deviceId: identity.deviceId });
       if (!metaResult.ok || !metaResult.value) {
         removeTempUpload(req);
         res.status(400).json({ ok: false, error: metaResult.error || 'invalid meta' });
         return;
       }
       const meta: AlertMeta = metaResult.value;
-      const alertId = crypto.randomUUID();
+      const alertId = incoming.alertId;
 
       // 截图处理：仅在开启上传开关且收到文件时保存
-      let screenshotPath: string | undefined;
-      if (config.enableHttpScreenshotUpload && req.file) {
+      const existing = getAlertById(alertId);
+      let screenshotPath: string | undefined = existing?.screenshotPath;
+      if (existing && req.file) {
+        // A retry or conflicting ID must never overwrite an existing event's picture.
+        removeTempUpload(req);
+      } else if (config.enableHttpScreenshotUpload && req.file) {
         const head = fs.readFileSync(req.file.path, { flag: 'r' }).subarray(0, 16);
         const contentType = validateImageMagic(head);
         const target = contentType ? getSafeScreenshotPath(config.screenshotDir, alertId, contentType) : null;
@@ -108,7 +120,8 @@ router.post(
         removeTempUpload(req);
       }
 
-      addAlert({
+      const result = addAlert({
+        ...event, nodeType: identity.nodeType,
         alertId,
         deviceId: meta.deviceId,
         deviceName: meta.deviceName,
@@ -119,9 +132,11 @@ router.post(
         screenshotPath,
         createdAt: Date.now(),
       });
+      if (result === 'conflict') { res.status(409).json({ ok: false, error: 'alert-id-conflict' }); return; }
 
-      // 广播给所有 Android 客户端
+      // 首次入库后广播给控制台与在线通知节点
       const push: WsAlertPush = {
+        ...event, nodeType: identity.nodeType,
         type: 'alert',
         alertId,
         deviceId: meta.deviceId,
@@ -133,7 +148,7 @@ router.post(
         screenshotUrl: screenshotPath ? `/screenshots/${path.basename(screenshotPath)}` : '',
         ...(parsedMeta as any).timings ? { timings: (parsedMeta as any).timings } : {},
       };
-      broadcastAlert(push);
+      if (result === 'stored') broadcastAlert(push);
 
       console.log(`[alert] 报警已接收: ${meta.deviceName} → ${meta.detections.length} 个目标 (${alertId}) screenshot=${screenshotPath ? 'saved' : 'detector-local'}`);
       res.json({ ok: true, alertId });

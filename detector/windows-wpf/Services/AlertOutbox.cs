@@ -33,7 +33,23 @@ namespace VisionGuard.Detector.Windows.Services
 
         public IReadOnlyList<AlertOutboxEntry> Snapshot()
         {
-            lock (_sync) return _entries.Select(entry => entry with { }).ToArray();
+            lock (_sync)
+            {
+                var removed = _entries.RemoveAll(entry => !IsLive(entry.PayloadJson, DateTime.UtcNow));
+                if (removed > 0) Save();
+                return _entries.Select(entry => entry with { }).ToArray();
+            }
+        }
+
+        public static bool IsLive(string payloadJson, DateTime now)
+        {
+            try
+            {
+                using var payload = JsonDocument.Parse(payloadJson);
+                return payload.RootElement.TryGetProperty("expiresAt", out var value)
+                    && value.TryGetDateTime(out var expiresAt) && expiresAt.ToUniversalTime() > now.ToUniversalTime();
+            }
+            catch { return false; }
         }
 
         public void Enqueue(string alertId, string payloadJson)

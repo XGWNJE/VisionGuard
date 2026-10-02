@@ -128,6 +128,8 @@ namespace VisionGuard.Detector.Windows.ViewModels
                     {
                         ["sourceId"] = x.SourceId, ["sourceName"] = x.SourceName,
                         ["isMonitoring"] = x.IsMonitoring, ["isReady"] = x.IsReady,
+                        ["monitoringExpected"] = x.MonitoringExpected,
+                        ["lastProgressAt"] = x.LastProgressAt?.ToString("o") ?? "",
                         ["modelKey"] = x.ModelKey, ["actualFps"] = x.ActualFps,
                         ["error"] = x.Error, ["cooldown"] = slot.Cooldown,
                         ["confidence"] = slot.ThresholdPercent / 100d, ["targets"] = slot.Targets,

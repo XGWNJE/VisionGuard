@@ -11,7 +11,8 @@ object AppConstants {
     const val VERSION = "4.5.1"
 
     /** 服务器地址（不含末尾斜杠） */
-    const val SERVER_URL = "https://visionguard.xgwnje.cn"
+    val SERVER_URL: String = BuildConfig.SERVER_URL
+    val CHANNEL: String = BuildConfig.CHANNEL
 
     /** API key injected by Gradle BuildConfig. */
     val API_KEY: String = BuildConfig.API_KEY

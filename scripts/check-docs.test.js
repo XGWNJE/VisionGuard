@@ -92,12 +92,12 @@ test('current relay and offline-state boundaries cannot silently drift', () => {
   const errors = [];
   checkProductContract(
     read('README.md').replaceAll('不使用 P2P、ICE、STUN 或 TURN', '使用 P2P')
-      .replaceAll('尚未实现独立的设备离线报警', '已实现独立的设备离线报警')
+      .replaceAll('通知收件确认不等于声音播放', '通知收件确认等于声音播放')
       .replaceAll('漏报风险是检测效果与故障处置的最高优先级', '误报与漏报同等处理'),
     read('docs/codex/10-project-overview.md'), read('AGENTS.md'), errors
   );
   assert.ok(errors.some(message => message.includes('no-P2P boundary')));
-  assert.ok(errors.some(message => message.includes('not-delivered offline-alert boundary')));
+  assert.ok(errors.some(message => message.includes('receipt-playback boundary')));
   assert.ok(errors.some(message => message.includes('missed-detection priority')));
 });
 
@@ -121,7 +121,7 @@ test('cancelled plans cannot return as active documents or references', () => {
   }
 });
 
-test('five canonical component names cannot drift', () => {
+test('canonical component names cannot drift', () => {
   const read = p => fs.readFileSync(path.join(root, p), 'utf8');
   const errors = [];
   checkComponentContract(root,

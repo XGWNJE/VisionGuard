@@ -462,7 +462,7 @@ class WebSocketClient {
                     }
 
                     // 发送应用层心跳（补充 OkHttp ping）
-                    val hb = mapOf("type" to "heartbeat-android", "deviceId" to deviceId)
+                    val hb = mapOf("type" to "heartbeat-console", "deviceId" to deviceId)
                     val sent = ws.send(gson.toJson(hb))
                     if (!sent) {
                         Log.w(TAG, "心跳发送失败 → 连接已死")

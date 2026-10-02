@@ -1,12 +1,14 @@
 // 接收端侧断言：服务端是否真的看到了这台设备的驻留组件（components.resident === 'running'）。
-// 用法：node scripts/assert-resident-visible.js <ws-url> <channel> <apiKey> <deviceId>
+// 用法：node scripts/assert-resident-visible.js <ws-url> <channel> <deviceId>
 // 退出码 0 = 可见；1 = 超时或接收端错误；2 = 参数缺失。
 // 用于「检测端 -> 同目录驻留 -> Server」这一段是否真的贯通，服务端视角而不是本地进程视角。
 const WebSocket = require('../server/node_modules/ws');
 
-const [url, channel, apiKey, deviceId] = process.argv.slice(2);
-if (!url || !channel || !apiKey || !deviceId) {
-  console.error('usage: node scripts/assert-resident-visible.js <ws-url> <channel> <apiKey> <deviceId>');
+const [url, channel, deviceId] = process.argv.slice(2);
+const apiKey = process.env.VISIONGUARD_CONSOLE_API_KEY;
+const consoleId = process.env.VISIONGUARD_CONSOLE_DEVICE_ID;
+if (!url || !channel || !apiKey || !deviceId || !consoleId) {
+  console.error('usage: node scripts/assert-resident-visible.js <ws-url> <channel> <deviceId>');
   process.exit(2);
 }
 
@@ -24,7 +26,7 @@ function finish(visible, detail) {
 
 receiver.on('open', () => {
   receiver.send(JSON.stringify({
-    type: 'auth', channel, apiKey, role: 'android', deviceId: `resident-visibility-${process.pid}`,
+    type: 'auth', channel, apiKey, role: 'console', nodeType: 'console', platform: 'test', deviceId: consoleId, deviceName: 'Resident visibility',
   }));
 });
 

@@ -8,6 +8,9 @@
 
 /** POST /api/alert 的 meta 字段 JSON 结构 */
 export interface AlertMeta {
+  eventKind?: import('../services/NodeProtocol').EventKind;
+  expiresAt?: string;
+  summary?: string;
   deviceId: string;
   deviceName: string;
   /** Stable source identity and event-time display-name snapshot. */
@@ -25,6 +28,10 @@ export interface Detection {
 
 /** 存储在 AlertStore 中的完整报警记录 */
 export interface AlertRecord {
+  eventKind?: import('../services/NodeProtocol').EventKind;
+  expiresAt?: string;
+  summary?: string;
+  nodeType?: import('../services/NodeProtocol').NodeType;
   alertId: string;
   deviceId: string;
   deviceName: string;
@@ -43,7 +50,9 @@ export interface WsAuthMessage {
   type: 'auth';
   channel: string;
   apiKey: string;
-  role: 'windows' | 'android' | 'android-detector' | 'windows-resident';
+  role: import('../services/NodeProtocol').NodeRole;
+  nodeType: import('../services/NodeProtocol').NodeType;
+  platform: string;
   deviceId: string;
   deviceName: string;
   version?: string;
@@ -67,11 +76,13 @@ export interface WsHeartbeat {
   capabilities?: string[];
   components?: Record<string, string>;
   sources?: SourceStatus[];
+  monitoringExpected?: boolean;
+  lastProgressAt?: string;
 }
 
 /** 控制台 → 服务器：心跳 (每 30 秒) */
 export interface WsHeartbeatAndroid {
-  type: 'heartbeat-android';
+  type: 'heartbeat-console';
   deviceId: string;
 }
 
@@ -94,10 +105,16 @@ export interface SourceStatus {
   confidence?: number;
   targets?: string;
   targetSamplingRate?: number;
+  monitoringExpected?: boolean;
+  lastProgressAt?: string;
 }
 
 /** 服务器 → 控制台：报警元数据；截图走独立 screenshot-data 消息。 */
 export interface WsAlertPush {
+  eventKind?: import('../services/NodeProtocol').EventKind;
+  expiresAt?: string;
+  summary?: string;
+  nodeType?: import('../services/NodeProtocol').NodeType;
   type: 'alert';
   alertId: string;
   deviceId: string;
@@ -133,6 +150,9 @@ export interface WsScreenshotDataPush {
 }
 
 export interface DeviceStatus {
+  role: import('../services/NodeProtocol').NodeRole;
+  nodeType: import('../services/NodeProtocol').NodeType;
+  platform: string;
   deviceId: string;
   deviceName: string;
   online: boolean;
@@ -228,6 +248,7 @@ export interface WsCommandAck {
 import type WebSocket from 'ws';
 
 export interface DetectorClient {
+  identity: import('../services/NodeProtocol').NodeIdentity;
   ws: WebSocket;
   deviceId: string;
   deviceName: string;
@@ -248,12 +269,16 @@ export interface DetectorClient {
   sources: SourceStatus[];
   /** 最近一次心跳的 sources 因超过服务端上限被整组拒绝。 */
   sourceLimitExceeded: boolean;
+  monitoringExpected?: boolean;
+  lastProgressAt?: string;
 }
 
 export interface ReceiverClient {
   ws: WebSocket;
   deviceId: string;
   lastSeen: Date;
+  identity?: import('../services/NodeProtocol').NodeIdentity;
+  deviceName?: string;
 }
 
 export interface ResidentClient {

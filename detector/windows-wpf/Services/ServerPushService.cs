@@ -190,6 +190,8 @@ namespace VisionGuard.Detector.Windows.Services
                 ["deviceId"] = _deviceId, ["deviceName"] = _deviceName,
                 ["sourceId"] = alert.SourceId, ["sourceName"] = alert.SourceName,
                 ["timestamp"] = alert.Timestamp.ToString("o"),
+                ["eventKind"] = "visual-detection", ["summary"] = "视觉检测告警",
+                ["expiresAt"] = alert.Timestamp.AddSeconds(30).ToString("o"),
                 ["detections"] = BuildDetectionsPayload(alert.Detections),
                 ["timings"] = alert.Timings, ["capturedAt"] = NtpSync.UtcNow.ToString("o"),
             };
@@ -211,7 +213,7 @@ namespace VisionGuard.Detector.Windows.Services
             if (session != _session || string.IsNullOrWhiteSpace(alertId)) return;
             if (!accepted)
             {
-                if (reason == "alert-id-conflict")
+                if (reason == "alert-id-conflict" || reason == "invalid-or-expired-event" || reason == "unknown-source")
                 {
                     _alertOutbox.Acknowledge(alertId);
                     LogManager.StaticWarn($"[Server] 报警 ID 冲突并移出发件箱: alertId={alertId}");
@@ -235,6 +237,7 @@ namespace VisionGuard.Detector.Windows.Services
                 ["success"] = success,
                 ["reason"] = reason ?? "",
             };
+            message["phase"] = "completed";
             if (!string.IsNullOrWhiteSpace(requestId)) message["requestId"] = requestId;
             if (!string.IsNullOrWhiteSpace(targetSourceId)) message["targetSourceId"] = targetSourceId;
             _session?.SendJson(message);
@@ -438,7 +441,7 @@ namespace VisionGuard.Detector.Windows.Services
                 ["type"] = "auth",
                 ["channel"] = AppConfig.Channel,
                 ["apiKey"] = _apiKey,
-                ["role"] = "windows",
+                ["role"] = "detector", ["nodeType"] = "visual", ["platform"] = "windows",
                 ["deviceId"] = _deviceId,
                 ["deviceName"] = _deviceName,
                 ["version"] = AppConfig.Version,
@@ -697,44 +700,7 @@ namespace VisionGuard.Detector.Windows.Services
                         return;
                     }
 
-                    bool isMonitoring, isReady;
-                    int cooldown;
-                    float confidence;
-                    string targets;
-                    int targetSamplingRate;
-                    string modelKey;
-                    string[] modelOptions;
-                    bool canSwitchModelWhileMonitoring;
-                    lock (_parent._hbParamsLock)
-                    {
-                        isMonitoring = _parent._hbIsMonitoring;
-                        isReady = _parent._hbIsReady;
-                        cooldown = _parent._hbCooldown;
-                        confidence = _parent._hbConfidence;
-                        targets = _parent._hbTargets;
-                        targetSamplingRate = _parent._hbTargetSamplingRate;
-                        modelKey = _parent._hbModelKey;
-                        modelOptions = (string[])_parent._hbModelOptions.Clone();
-                        canSwitchModelWhileMonitoring = _parent._hbCanSwitchModelWhileMonitoring;
-                    }
-
-                    SendJson(new Dictionary<string, object>
-                    {
-                        ["type"] = "heartbeat",
-                        ["deviceId"] = _parent._deviceId,
-                        ["deviceName"] = _parent._deviceName,
-                        ["isMonitoring"] = isMonitoring,
-                        ["isReady"] = isReady,
-                        ["cooldown"] = cooldown,
-                        ["confidence"] = confidence,
-                        ["targets"] = targets,
-                        ["targetSamplingRate"] = targetSamplingRate,
-                        ["modelKey"] = modelKey,
-                        ["modelOptions"] = modelOptions,
-                        ["canSwitchModelWhileMonitoring"] = canSwitchModelWhileMonitoring,
-                        ["capabilities"] = Runtime.DetectorCapabilities.Build(),
-                        ["components"] = new Dictionary<string, object> { ["detectorApp"] = "running" },
-                    });
+                    _parent.SendHeartbeatNow();
                     // 注意：发送心跳后绝不更新 _lastMessageAtTicks
                 }
             }

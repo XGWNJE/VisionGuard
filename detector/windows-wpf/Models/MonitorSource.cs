@@ -29,6 +29,8 @@ namespace VisionGuard.Detector.Windows.Models
         public string SourceName { get; init; } = "";
         public string ModelKey { get; init; } = "";
         public bool IsMonitoring { get; init; }
+        public bool MonitoringExpected { get; init; }
+        public DateTime? LastProgressAt { get; init; }
         public bool IsReady { get; init; }
         public string ActiveBackend { get; init; } = "Unavailable";
         public double ActualFps { get; init; }

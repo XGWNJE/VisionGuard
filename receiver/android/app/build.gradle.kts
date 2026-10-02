@@ -37,7 +37,8 @@ fun quotedBuildConfigString(value: String): String {
     return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 }
 
-val visionguardApiKey = secretProperty("VISIONGUARD_API_KEY")
+val visionguardDeviceId = secretProperty("VISIONGUARD_DEVICE_ID")
+val visionguardApiKey = secretProperty("VISIONGUARD_CONSOLE_API_KEY")
 val visionguardServerUrl = secretProperty("VISIONGUARD_SERVER_URL")
     .ifBlank { "https://visionguard.xgwnje.cn" }
 val visionguardChannel = secretProperty("VISIONGUARD_CHANNEL").ifBlank { "vnext" }
@@ -106,6 +107,7 @@ android {
         versionCode = 4501
         versionName = "4.5.1"
 
+        buildConfigField("String", "DEVICE_ID", quotedBuildConfigString(visionguardDeviceId))
         buildConfigField("String", "API_KEY", quotedBuildConfigString(visionguardApiKey))
         buildConfigField("String", "SERVER_URL", quotedBuildConfigString(visionguardServerUrl))
         buildConfigField("String", "CHANNEL", quotedBuildConfigString(visionguardChannel))

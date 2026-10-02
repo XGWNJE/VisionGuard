@@ -512,7 +512,15 @@ function Run-ResidentLaunch {
     # 为什么需要它：驻留是独立进程，检测端本地只能证明互斥体出现了，无法证明它真的连上了服务端；
     # 而 Win7 上的历史事实是「驻留没起来，界面上与接收端都毫无提示」，必须从服务端视角取证。
     # 两档产物都要跑：legacy 档是 Win7 包，是这条链路真正要服务的环境。
-    $apiKey = if ($env:VISIONGUARD_API_KEY) { $env:VISIONGUARD_API_KEY } else { 'vg-e2e-resident-launch' }
+    $profiles = @('modern', 'legacy')
+    $testIdentities = @()
+    foreach ($profile in $profiles) {
+        $testIdentities += [ordered]@{ deviceId = "e2e-resident-$profile"; role = 'detector'; nodeType = 'visual'; platform = 'windows'; apiKey = ([Guid]::NewGuid().ToString('N')) }
+        $testIdentities += [ordered]@{ deviceId = "e2e-resident-$profile"; role = 'lifecycle'; nodeType = 'resident'; platform = 'windows'; apiKey = ([Guid]::NewGuid().ToString('N')) }
+    }
+    $testIdentities += [ordered]@{ deviceId = 'e2e-resident-console'; role = 'console'; nodeType = 'console'; platform = 'test'; apiKey = ([Guid]::NewGuid().ToString('N')) }
+    $identitiesPath = Join-Path $artifactRoot 'node-identities.json'
+    [System.IO.File]::WriteAllText($identitiesPath, ($testIdentities | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
     $serverScript = Join-Path $repoRoot 'scripts\start-isolated-test-server.ps1'
     $assertScript = Join-Path $repoRoot 'scripts\assert-resident-visible.js'
     if (-not (Test-Path -LiteralPath $serverScript)) { throw "隔离 Server 脚本不存在：$serverScript" }
@@ -530,8 +538,11 @@ function Run-ResidentLaunch {
         throw "端口 $ResidentPort 已被占用（PID: $owners）。请先结束该监听进程再运行本模式。"
     }
     try {
-        $previousApiKey = $env:VISIONGUARD_API_KEY
-        $env:VISIONGUARD_API_KEY = $apiKey
+        $previousNodeEnvironment = @{}
+        foreach ($name in @('VISIONGUARD_IDENTITIES_FILE', 'VISIONGUARD_CONSOLE_API_KEY', 'VISIONGUARD_CONSOLE_DEVICE_ID', 'VISIONGUARD_DETECTOR_API_KEY', 'VISIONGUARD_RESIDENT_API_KEY', 'VISIONGUARD_DEVICE_ID', 'VISIONGUARD_CHANNEL', 'VISIONGUARD_SERVER_URL', 'VISIONGUARD_SETTINGS_PATH')) { $previousNodeEnvironment[$name] = [Environment]::GetEnvironmentVariable($name) }
+        $env:VISIONGUARD_IDENTITIES_FILE = $identitiesPath
+        $env:VISIONGUARD_CONSOLE_API_KEY = $testIdentities[-1].apiKey
+        $env:VISIONGUARD_CONSOLE_DEVICE_ID = 'e2e-resident-console'
         $server = Start-Process -FilePath 'powershell' `
             -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $serverScript, '-Port', $ResidentPort.ToString(), '-Channel', $ResidentChannel) `
             -RedirectStandardOutput $serverLog -RedirectStandardError $serverErrorLog -WindowStyle Hidden -PassThru
@@ -567,9 +578,12 @@ function Run-ResidentLaunch {
             # 否则服务端会把驻留当成另一台设备，而清理时又可能误杀用户真实运行的驻留。
             # 探针启动时会读取（不覆盖）这个文件，因此这里写入的 DeviceId 就是两端共同身份。
             [System.IO.File]::WriteAllText($settingsPath,
-                "# VisionGuard 用户设置（E2E 隔离文件）`r`nDeviceId=$('e2e-resident-' + [Guid]::NewGuid().ToString('N').Substring(0, 12))`r`n",
+                "# VisionGuard 用户设置（E2E 隔离文件）`r`nDeviceId=$("e2e-resident-$profile")`r`n",
                 (New-Object System.Text.UTF8Encoding($false)))
 
+            $env:VISIONGUARD_DETECTOR_API_KEY = ($testIdentities | Where-Object { $_.deviceId -eq "e2e-resident-$profile" -and $_.role -eq 'detector' }).apiKey
+            $env:VISIONGUARD_RESIDENT_API_KEY = ($testIdentities | Where-Object { $_.deviceId -eq "e2e-resident-$profile" -and $_.role -eq 'lifecycle' }).apiKey
+            $env:VISIONGUARD_DEVICE_ID = "e2e-resident-$profile"
             $env:VISIONGUARD_CHANNEL = $ResidentChannel
             $env:VISIONGUARD_SERVER_URL = "http://127.0.0.1:$ResidentPort"
             $env:VISIONGUARD_SETTINGS_PATH = $settingsPath
@@ -596,7 +610,7 @@ function Run-ResidentLaunch {
                 Select-String -Pattern '^DeviceId=(.+)$').Matches[0].Groups[1].Value).Trim()
             if (-not $deviceId) { throw "$profile 档隔离 settings 中没有 DeviceId：$settingsPath" }
 
-            $visibleOutput = & node $assertScript "ws://127.0.0.1:$ResidentPort" $ResidentChannel $apiKey $deviceId 2>&1
+            $visibleOutput = & node $assertScript "ws://127.0.0.1:$ResidentPort" $ResidentChannel $deviceId 2>&1
             $visibleExit = $LASTEXITCODE
             $visiblePath = Join-Path $artifactRoot "resident-visibility-$profile.json"
             ($visibleOutput | Out-String).Trim() | Set-Content -Encoding UTF8 $visiblePath
@@ -616,9 +630,10 @@ function Run-ResidentLaunch {
             foreach ($process in $ours) { try { Stop-Process -Id $process.ProcessId -Force } catch { } }
         }
 
-        $env:VISIONGUARD_API_KEY = $previousApiKey
+
     }
     finally {
+        if ($previousNodeEnvironment) { foreach ($name in $previousNodeEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $previousNodeEnvironment[$name]) } }
         # 本模式只清理自己拉起的驻留：按驻留自身配置路径匹配，绝不按进程名清空，
         # 以免杀掉用户真实运行中的驻留（那会让接收端的「打开/关闭检测端」静默失效）。
         try {

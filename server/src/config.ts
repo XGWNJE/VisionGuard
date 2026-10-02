@@ -6,6 +6,7 @@
 
 import path from 'path';
 import { parsePositiveIntEnv } from './utils/security';
+import { hasNodeCredentials } from './services/NodeProtocol';
 
 export function parseBindHost(value: string | undefined): string {
   return value?.trim() || '127.0.0.1';
@@ -21,10 +22,13 @@ export const config = {
   /** HTTP/WS bind address; defaults to loopback to prevent direct public exposure. */
   host: parseBindHost(process.env.BIND_HOST),
 
+  /** Explicit opt-in for automatic LAN console login in an isolated test service. */
+  testConsoleAutoLogin: process.env.VISIONGUARD_TEST_CONSOLE_AUTOLOGIN === 'true',
+
   /** HTTP/WS 监听端口 */
   port: parsePositiveIntEnv('PORT', 3000, 1, 65535),
 
-  /** 共享 API Key (所有端使用同一个) */
+  /** HTTP 管理读取凭据；WS 使用逐节点登记凭据。 */
   apiKey: process.env.API_KEY || '',
 
   /** 截图存储目录 */
@@ -71,6 +75,15 @@ export const config = {
 } as const;
 
 export function validateConfig(): void {
+  if (config.testConsoleAutoLogin && (!process.env.VISIONGUARD_DATA_DIR?.trim()
+    || config.dataDir === path.resolve(__dirname, '..', 'data'))) {
+    console.error('[config] 测试控制台自动登录必须使用独立 VISIONGUARD_DATA_DIR');
+    process.exit(1);
+  }
+  if (!hasNodeCredentials) {
+    console.error('[config] VISIONGUARD_IDENTITIES_FILE 必须指向非空节点凭据文件');
+    process.exit(1);
+  }
   if (!config.apiKey) {
     console.error('[config] ❌ API_KEY 未设置，服务器拒绝启动。请在 .env 中配置 API_KEY');
     process.exit(1);

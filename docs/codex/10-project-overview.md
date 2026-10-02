@@ -8,33 +8,36 @@
 
 VisionGuard 按检测节点、统一服务和控制台划分职责：检测节点采集、判断并上报检测事件；统一服务负责连接、认证、状态、告警流转和控制转发；控制台统一查看、配置和管理各类节点。
 
-当前 Windows 检测节点的应用名为 **VisionGuard 视觉节点**，Android 控制台的应用名为 **VisionGuard 控制台**。统一服务沿用内部技术名称“视觉中继”（`VisionGuard.Relay`）。视觉驻留是 Windows 节点的生命周期辅助组件。
+当前 Windows 检测节点的应用名为 **VisionGuard 视觉节点**，Web 与保留的 Android 控制台的应用名为 **VisionGuard 控制台**。统一服务沿用内部技术名称“视觉中继”（`VisionGuard.Relay`）。视觉驻留是 Windows 节点的生命周期辅助组件。
 
-后续能力通过扩展节点类型接入同一套服务和控制台，避免按硬件另建系统。这是架构方向，当前未实现通用节点类型扩展或新的硬件接入；现有协议仍使用既有角色标识。
+后续能力通过扩展节点类型接入同一套服务和控制台，避免按硬件另建系统。当前已实现统一接入基础：登记角色、节点类型与平台，支持视觉/传感器事件、控制回执、通知收件确认及中断监测。VisionGuard 通知节点已接入后台通知与声音，Web 已承担跨端管理和通知范围配置；硬件驱动尚未接入；契约见[视觉中继](20-server.md#统一接入契约)。
 
 本项目采用 MIT License，以根目录 [LICENSE](../../LICENSE) 为准；第三方依赖、模型和素材遵循各自许可证。Windows 对外只交付一个统一包，由 Win7 兼容启动器按系统选择两个内部 WPF 推理运行时。
 
 ## 当前实际组件
 
-仓库保留以下五个组件。表格只描述实现范围，验收状态见[验证报告](90-verification-report.md)。
+仓库维护以下七个组件；原 Vigil 是独立应用，不作为 VG 的外部源码依赖。表格只描述实现范围，验收状态见[验证报告](90-verification-report.md)。
 
 | 规范名称 | 平台 | 路径 | 当前实现范围 |
 |---|---|---|---|
 | VisionGuard 视觉节点 | Windows | `detector/windows-launcher/`、`detector/windows-wpf/` | 多来源检测；统一包与入口；启动器按系统选择 legacy / modern，负责整包更新与失败回滚 |
 | 视觉驻留 | Windows | `detector/windows-resident/` | net472 x64 后台进程；独立 WS 身份、单实例握手与生命周期控制 |
-| 视觉检测 | Android | `detector/android/` | 整端保留、暂缓维护；认证缺少 `channel`，当前服务下无法认证，未实现来源维度 |
-| VisionGuard 控制台 | Android | `receiver/android/` | 设备/来源查看、告警详情、逐来源控制和参数配置；通用节点管理待扩展 |
+| 视觉检测 | Android | `detector/android/` | 整端保留、暂缓维护；同步当前认证与固定摄像头来源契约，运行验收仍暂缓 |
+| VisionGuard 控制台 | Android | `receiver/android/` | 设备/来源查看、告警详情、逐来源控制和参数配置；识别通用身份和无图事件；保留当前实现，跨端管理由 Web 承担 |
+| VisionGuard 控制台 | Web | `receiver/web/` | 同源管理节点/来源、事件、当前参数及每个通知节点的接收范围 |
+| VisionGuard 通知节点 | Android | `notifier/android/` | 后台接警、持久化报警队列、有限次数播放、记录、统一时间；无本机通知关键词监听 |
 | 视觉中继 | 服务端 | `server/` | 连接、认证、状态、告警流转、控制转发与文件分发 |
 
 ### 当前链路
 
 ```text
-VisionGuard 视觉节点 ──检测事件、状态──▶ 视觉中继 ──告警、状态──▶ VisionGuard 控制台
-VisionGuard 视觉节点 ◀──控制、配置── 视觉中继 ◀──控制、配置── VisionGuard 控制台
+VisionGuard 视觉节点 ──检测事件、状态──▶ 视觉中继 ──事件、状态──▶ Web 控制台
+视觉中继 ──实时报警──▶ VisionGuard 通知节点（保存后确认收件、进入声音队列）
+VisionGuard 视觉节点 ◀──控制、配置── 视觉中继 ◀──控制、配置、通知范围── Web 控制台
 视觉驻留 ──生命周期状态、控制──▶ 视觉中继
 ```
 
-视觉检测（Android）源码保留但当前暂缓，缺少通道字段，不能把它画成当前协议下可用的链路。
+视觉检测（Android）源码保留但当前暂缓，尚未做当前契约的运行验收，不能把它画成已验收的链路。
 
 ## 组件名称与技术标识
 
@@ -42,13 +45,15 @@ Windows 检测节点与 Android 控制台使用上述完整应用显示名；And
 
 | 组件名称 | 工程标识 | 技术标识 |
 |---|---|---|
-| VisionGuard 视觉节点 | `VisionGuard.Detector.Windows`；启动器 `VisionGuard.Detector.Windows.Launcher` | WS 角色 `windows`；更新平台 `wpf`；运行时 `modern` / `legacy` |
-| 视觉驻留 | `VisionGuard.Resident.Windows` | WS 角色 `windows-resident`；程序 `VisionGuard.Resident.Windows.exe` |
-| 视觉检测（Android） | `VisionGuard.Detector.Android` | WS 角色/更新平台 `android-detector`；包名 `com.xgwnje.visionguard.detector` |
-| VisionGuard 控制台 | `VisionGuard.Receiver.Android` | WS 角色 `android`；更新平台 `android-receiver`；包名 `com.xgwnje.visionguard.receiver` |
+| VisionGuard 视觉节点 | `VisionGuard.Detector.Windows`；启动器 `VisionGuard.Detector.Windows.Launcher` | WS `detector` / `visual` / `windows`；更新平台 `wpf`；运行时 `modern` / `legacy` |
+| 视觉驻留 | `VisionGuard.Resident.Windows` | WS `lifecycle` / `resident` / `windows`；程序 `VisionGuard.Resident.Windows.exe` |
+| 视觉检测（Android） | `VisionGuard.Detector.Android` | WS `detector` / `visual` / `android`；更新平台 `android-detector`；包名 `com.xgwnje.visionguard.detector` |
+| VisionGuard 控制台 | `VisionGuard.Receiver.Android` | WS `console` / `console` / `android`；更新平台 `android-receiver`；包名 `com.xgwnje.visionguard.receiver` |
+| VisionGuard 控制台（Web） | `visionguard-web-console` | WS `console` / `console` / `web`；同源 `/console/` |
+| VisionGuard 通知节点 | `VisionGuard.Notifier.Android` | WS `notifier` / `notification` / `android`；包名 `com.xgwnje.visionguard.notifier` |
 | 视觉中继 | `VisionGuard.Relay` | 源码目录 `server/`；构建目标 `Server`；npm 包名 `visionguard-relay` |
 
-视觉中继当前实现连接认证、心跳、告警广播、截图/更新路由和设备在线状态；连接列表中的离线状态不等于独立的设备离线报警。完整报警链的覆盖边界见[验证报告](90-verification-report.md)。
+视觉中继当前实现连接认证、心跳、告警广播、截图/更新路由和设备在线状态；连接状态不等于通知收件确认，通知收件确认不等于声音播放。完整报警链的覆盖边界见[验证报告](90-verification-report.md)。
 
 ## 目录职责
 
@@ -62,6 +67,8 @@ Windows 检测节点与 Android 控制台使用上述完整应用显示名；And
 | `detector/windows-wpf-smoke/` | 人员检测 smoke 工具，按配置的来源数量取证；用独立 net472 窗口承载来源，legacy 档因此也能在 Win7 上运行 |
 | `detector/android/` | 视觉检测（Android） |
 | `receiver/android/` | VisionGuard 控制台 |
+| `notifier/android/` | VisionGuard 通知节点；独立安装身份与本地数据 |
+| `receiver/web/` | Web 控制台；构建到 `server/dist/console/` |
 | `server/` | HTTP / WebSocket 视觉中继 |
 | `scripts/` | 版本、构建、验证、发行和模型导出脚本 |
 | `tests/` | 跨模块约束、WPF 报警链与推理辅助探针 |
@@ -76,11 +83,11 @@ Windows 检测节点与 Android 控制台使用上述完整应用显示名；And
 
 - 推理链：`Capture -> MaskApply -> Preprocess -> ONNX Inference -> Parse -> AlertDecision -> Push`。
 - 遮罩使用相对坐标 `[0,1]`，推理前涂黑，同时影响识别结果和报警截图。
-- 视觉中继 WS 角色当前为 `windows`、`android`、`android-detector` 和 `windows-resident`；其中 `windows` 代表 VisionGuard 视觉节点，`android` 代表 VisionGuard 控制台。
+- 视觉中继 WS 角色当前为 `detector`、`console`、`notifier`、`lifecycle`；节点类型和平台独立于角色。
 - 正式服务域名为 `https://visionguard.xgwnje.cn`；根域 `https://xgwnje.cn` 不是新客户端的 VisionGuard 服务地址。
 - `VERSION` 是唯一权威版本源，构建、修复和提交不得自动 bump。
 - `server/` 与 Android 端协议强耦合；协议变化必须联动源码、测试和专题文档。
-- 当前心跳实现为检测端 3 秒、接收端 30 秒、视觉中继幽灵阈值 45 秒；这只代表在线状态判定，不代表离线报警已经实现。
+- 当前心跳实现为检测端 3 秒、保留的 Android 控制台 30 秒、Web 与通知节点 3 秒、视觉中继幽灵阈值 45 秒；连接超时会生成中断事件；检测中断与通知节点本地服务中断监测按统一契约分别处理。
 - Windows 启动器、WPF 运行时和视觉驻留均为 .NET Framework 4.7.2 x64；legacy / modern 的系统和推理组合见[Windows 专题](30-windows-detector.md#入口与运行时)。Android 和视觉中继不承担 Win7 兼容义务。
 - 所有公网业务数据统一通过视觉中继转发；不使用 P2P、ICE、STUN 或 TURN。
 - 允许可管理的误报，漏报风险是检测效果与故障处置的最高优先级。

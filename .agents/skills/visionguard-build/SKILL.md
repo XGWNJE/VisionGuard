@@ -5,7 +5,7 @@ description: Build and verify one or more VisionGuard targets without packaging,
 
 # VisionGuard Build
 
-Compile the requested targets through the maintained project script and verify the expected artifacts exist. 组件名称统一为 VisionGuard 视觉节点、视觉驻留、视觉检测（Android）、VisionGuard 控制台、视觉中继；脚本目标标识保持原值。
+Compile the requested targets through the maintained project script and verify the expected artifacts exist. 组件名称统一为 VisionGuard 视觉节点、视觉驻留、视觉检测（Android）、VisionGuard 控制台、VisionGuard 通知节点、视觉中继。
 
 ## Boundaries
 
@@ -33,17 +33,18 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scri
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scripts\build-all.ps1 -Target WindowsResident
 ```
 
-The script currently accepts `All`, `Server`, `Windows`, `WPF`, `WindowsResident`, `Android`, `AndroidDetector`, and `AndroidReceiver`.
+The script currently accepts `All`, `Server`, `Windows`, `WPF`, `WindowsResident`, `Android`, `AndroidDetector`, `AndroidReceiver`, and `AndroidNotifier`. `Android` includes all three Android projects.
 
 ## Expected Artifacts
 
-- 视觉中继： `server/dist/index.js`
+- 视觉中继及 Web： `server/dist/index.js`、`server/dist/console/index.html`；构建前分别安装 `server/` 与 `receiver/web/` 的 npm 依赖。
 - Windows unified package: `detector/windows-package/bin/Release/VisionGuard.Detector.Windows.exe`
 - Internal modern runtime: `detector/windows-package/bin/Release/runtimes/modern/VisionGuard.Detector.Windows.exe`
 - Internal legacy runtime: `detector/windows-package/bin/Release/runtimes/legacy/VisionGuard.Detector.Windows.exe`
 - 视觉驻留： `detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe`
 - 视觉检测（Android）： `detector/android/app/build/outputs/apk/release/app-release.apk`
 - VisionGuard 控制台： `receiver/android/app/build/outputs/apk/release/app-release.apk`
+- VisionGuard 通知节点： `notifier/android/app/build/outputs/apk/release/app-release.apk`
 
 Report the command, per-target result, artifact paths, important warnings, and any skipped target. State explicitly that no version, release, deployment, commit, or push action occurred unless the user requested it.
 

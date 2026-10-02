@@ -16,6 +16,11 @@ process.env.ALERT_STORE_PATH = alertStorePath;
 test.after(() => { try { fs.rmSync(alertStorePath, { force: true }); } catch {} });
 test.after(() => { try { fs.rmSync(`${alertStorePath}.tmp`, { force: true }); } catch {} });
 
+const identitiesPath = path.join(os.tmpdir(), `visionguard-identities-${process.pid}.json`);
+fs.writeFileSync(identitiesPath, JSON.stringify([{"deviceId": "foreign-channel-receiver", "role": "console", "nodeType": "console", "platform": "android", "apiKey": "test-console-foreign-channel-receiver-credential"}, {"deviceId": "alert-retry-detector", "role": "detector", "nodeType": "visual", "platform": "windows", "apiKey": "test-detector-alert-retry-detector-credential"}, {"deviceId": "alert-retry-receiver", "role": "console", "nodeType": "console", "platform": "android", "apiKey": "test-console-alert-retry-receiver-credential"}, {"deviceId": "detector-control-test", "role": "detector", "nodeType": "visual", "platform": "android", "apiKey": "test-detector-detector-control-test-credential"}, {"deviceId": "receiver-control-test", "role": "console", "nodeType": "console", "platform": "android", "apiKey": "test-console-receiver-control-test-credential"}, {"deviceId": "other-receiver-control-test", "role": "console", "nodeType": "console", "platform": "android", "apiKey": "test-console-other-receiver-control-test-credential"}, {"deviceId": "resident-control-test", "role": "lifecycle", "nodeType": "resident", "platform": "windows", "apiKey": "test-lifecycle-resident-control-test-credential"}, {"deviceId": "resident-receiver-test", "role": "console", "nodeType": "console", "platform": "android", "apiKey": "test-console-resident-receiver-test-credential"}, {"deviceId": "resident-name-test", "role": "lifecycle", "nodeType": "resident", "platform": "windows", "apiKey": "test-lifecycle-resident-name-test-credential"}, {"deviceId": "resident-name-test", "role": "detector", "nodeType": "visual", "platform": "windows", "apiKey": "test-detector-resident-name-test-credential"}, {"deviceId": "resident-name-receiver", "role": "console", "nodeType": "console", "platform": "android", "apiKey": "test-console-resident-name-receiver-credential"}]));
+process.env.VISIONGUARD_IDENTITIES_FILE = identitiesPath;
+test.after(() => fs.rmSync(identitiesPath, { force: true }));
+
 const { associateScreenshotPayload, handleConnection } = require('../src/services/ConnectionManager') as typeof import('../src/services/ConnectionManager');
 
 test('associates screenshot identity from the authoritative alert record', () => {
@@ -49,28 +54,31 @@ test('acknowledges durable alerts and suppresses retry duplicates', async (t) =>
 
   const foreignAuth = waitForMessage(foreign, msg => msg.type === 'auth-result');
   foreign.send(JSON.stringify({
-    type: 'auth', channel: 'legacy-live', apiKey: process.env.API_KEY, role: 'android',
+    type: 'auth', channel: 'legacy-live', apiKey: 'test-console-foreign-channel-receiver-credential', role: 'console', nodeType: 'console', platform: 'android',
     deviceId: 'foreign-channel-receiver', deviceName: 'Foreign Receiver',
   }));
-  assert.deepEqual(await foreignAuth, { type: 'auth-result', success: false, reason: 'channel mismatch' });
+  assert.deepEqual(await foreignAuth, { type: 'auth-result', success: false, reason: 'invalid identity or channel' });
 
   const detectorAuth = waitForMessage(detector, msg => msg.type === 'auth-result');
   detector.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY, role: 'windows',
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-detector-alert-retry-detector-credential', role: 'detector', nodeType: 'visual', platform: 'windows',
     deviceId: 'alert-retry-detector', deviceName: 'Alert Retry Detector',
   }));
   assert.equal((await detectorAuth).success, true);
 
   const receiverAuth = waitForMessage(receiver, msg => msg.type === 'auth-result');
   receiver.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY, role: 'android',
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-console-alert-retry-receiver-credential', role: 'console', nodeType: 'console', platform: 'android',
     deviceId: 'alert-retry-receiver', deviceName: 'Alert Retry Receiver',
   }));
   assert.equal((await receiverAuth).success, true);
 
+  const sourceAck = waitForMessage(detector, msg => msg.type === 'heartbeat-ack');
+  detector.send(JSON.stringify({ type: 'heartbeat', isMonitoring: true, isReady: true, sources: [{ sourceId: 'front', sourceName: 'Front', isMonitoring: true, isReady: true, modelKey: '' }] }));
+  await sourceAck;
   const alertId = crypto.randomUUID();
   const alert = {
-    type: 'alert', alertId, deviceId: 'spoofed', deviceName: 'Spoofed',
+    type: 'alert', alertId, eventKind: 'visual-detection', summary: 'Person detected', expiresAt: new Date(Date.now() + 30_000).toISOString(), deviceId: 'spoofed', deviceName: 'Spoofed',
     sourceId: 'front', sourceName: 'Front', timestamp: new Date().toISOString(),
     detections: [{ label: 'person', confidence: 0.9, bbox: { x: 1, y: 2, w: 3, h: 4 } }],
   };
@@ -164,21 +172,21 @@ test('correlates detector completion with the requesting receiver', async (t) =>
 
   const detectorAuth = waitForMessage(detector, msg => msg.type === 'auth-result');
   detector.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY, role: 'android-detector',
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-detector-detector-control-test-credential', role: 'detector', nodeType: 'visual', platform: 'android',
     deviceId: 'detector-control-test', deviceName: 'Detector', version: '4.4.4',
   }));
   assert.equal((await detectorAuth).success, true);
 
   const receiverAuth = waitForMessage(receiver, msg => msg.type === 'auth-result');
   receiver.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY, role: 'android',
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-console-receiver-control-test-credential', role: 'console', nodeType: 'console', platform: 'android',
     deviceId: 'receiver-control-test', deviceName: 'Receiver', version: '4.4.4',
   }));
   assert.equal((await receiverAuth).success, true);
 
   const otherReceiverAuth = waitForMessage(otherReceiver, msg => msg.type === 'auth-result');
   otherReceiver.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY, role: 'android',
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-console-other-receiver-control-test-credential', role: 'console', nodeType: 'console', platform: 'android',
     deviceId: 'other-receiver-control-test', deviceName: 'Other Receiver', version: '4.4.4',
   }));
   assert.equal((await otherReceiverAuth).success, true);
@@ -189,7 +197,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   detector.send(JSON.stringify({
     type: 'heartbeat', deviceId: 'detector-control-test', deviceName: 'Detector',
     isMonitoring: false, isReady: true,
-    capabilities: ['monitor-control', 'request-correlation', 'source-control'],
+    capabilities: ['monitor-control', 'config-control', 'screenshot-on-demand', 'monitor-control', 'request-correlation', 'source-control'],
     components: { detectorApp: 'running', invalidComponent: 'invented-state' },
     sources: [
       { sourceId: 'front', sourceName: 'Front Door', isMonitoring: true, isReady: true, modelKey: 'yolo26n_320', actualFps: 3.2,
@@ -202,7 +210,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   }));
   const capabilityDevice = (await capabilityListPromise).devices
     .find((device: any) => device.deviceId === 'detector-control-test');
-  assert.deepEqual(capabilityDevice.capabilities, ['monitor-control', 'request-correlation', 'source-control']);
+  assert.deepEqual(capabilityDevice.capabilities, ['monitor-control', 'config-control', 'screenshot-on-demand', 'request-correlation', 'source-control']);
   assert.deepEqual(capabilityDevice.components, { detectorApp: 'running' });
   // 接收端必须能解释“来源为什么只有这些”，因此上限与超限状态都要下发。
   assert.equal(capabilityDevice.maxSources, 4);
@@ -229,7 +237,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
 
   const completedPromise = waitForMessage(receiver, msg => msg.type === 'command-ack' && msg.phase === 'completed');
   detector.send(JSON.stringify({
-    type: 'command-ack', requestId, targetDeviceId: 'detector-control-test',
+    type: 'command-ack', phase: 'completed', requestId, targetDeviceId: 'detector-control-test',
     command: 'pause', success: true, reason: '监控已停止',
   }));
 
@@ -248,11 +256,11 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const sourceCompletedPromise = waitForMessage(receiver, msg =>
     msg.type === 'command-ack' && msg.phase === 'completed' && msg.requestId === sourceRequestId);
   detector.send(JSON.stringify({
-    type: 'command-ack', requestId: sourceRequestId, targetDeviceId: 'detector-control-test',
+    type: 'command-ack', phase: 'completed', requestId: sourceRequestId, targetDeviceId: 'detector-control-test',
     targetSourceId: 'wrong-source', command: 'pause', success: true, reason: '错误来源回执',
   }));
   detector.send(JSON.stringify({
-    type: 'command-ack', requestId: sourceRequestId, targetDeviceId: 'detector-control-test',
+    type: 'command-ack', phase: 'completed', requestId: sourceRequestId, targetDeviceId: 'detector-control-test',
     targetSourceId: 'front', command: 'pause', success: true, reason: '正确来源回执',
   }));
   const sourceCompleted = await sourceCompletedPromise;
@@ -273,7 +281,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const fourthCompletedPromise = waitForMessage(receiver, msg =>
     msg.type === 'command-ack' && msg.phase === 'completed' && msg.requestId === fourthRequestId);
   detector.send(JSON.stringify({
-    type: 'command-ack', requestId: fourthRequestId, targetDeviceId: 'detector-control-test',
+    type: 'command-ack', phase: 'completed', requestId: fourthRequestId, targetDeviceId: 'detector-control-test',
     targetSourceId: 'fourth', command: 'resume', success: true, reason: '第四路已启动',
   }));
   assert.equal((await fourthCompletedPromise).reason, '第四路已启动');
@@ -338,7 +346,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const configCompletedPromise = waitForMessage(receiver, msg =>
     msg.type === 'command-ack' && msg.phase === 'completed' && msg.requestId === configRequestId);
   detector.send(JSON.stringify({
-    type: 'command-ack', requestId: configRequestId, targetDeviceId: 'detector-control-test',
+    type: 'command-ack', phase: 'completed', requestId: configRequestId, targetDeviceId: 'detector-control-test',
     targetSourceId: 'front', command: 'set-config:confidence', success: true, reason: '已更新',
   }));
   const configCompleted = await configCompletedPromise;
@@ -401,7 +409,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   detector.send(JSON.stringify({
     type: 'heartbeat', deviceId: 'detector-control-test', deviceName: 'Detector',
     isMonitoring: false, isReady: true,
-    capabilities: ['monitor-control', 'request-correlation', 'source-control'],
+    capabilities: ['monitor-control', 'config-control', 'screenshot-on-demand', 'monitor-control', 'request-correlation', 'source-control'],
     sources: [
       { sourceId: 's1', sourceName: 'S1', isMonitoring: false, isReady: true, modelKey: 'yolo26n_320' },
       { sourceId: 's2', sourceName: 'S2', isMonitoring: false, isReady: true, modelKey: 'yolo26n_320' },
@@ -424,7 +432,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   detector.send(JSON.stringify({
     type: 'heartbeat', deviceId: 'detector-control-test', deviceName: 'Detector',
     isMonitoring: false, isReady: true,
-    capabilities: ['monitor-control', 'request-correlation', 'source-control'],
+    capabilities: ['monitor-control', 'config-control', 'screenshot-on-demand', 'monitor-control', 'request-correlation', 'source-control'],
     sources: [{ sourceId: 'front', sourceName: 'Front Door', isMonitoring: false, isReady: true, modelKey: 'yolo26n_320' }],
   }));
   assert.equal((await recoveredListPromise).devices
@@ -443,14 +451,14 @@ test('keeps resident identity separate and routes lifecycle commands only to it'
 
   const residentAuth = waitForMessage(resident, msg => msg.type === 'auth-result');
   resident.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY, role: 'windows-resident',
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-lifecycle-resident-control-test-credential', role: 'lifecycle', nodeType: 'resident', platform: 'windows',
     deviceId: 'resident-control-test', deviceName: 'Resident PC',
   }));
   assert.equal((await residentAuth).success, true);
 
   const receiverAuth = waitForMessage(receiver, msg => msg.type === 'auth-result');
   receiver.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY, role: 'android',
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-console-resident-receiver-test-credential', role: 'console', nodeType: 'console', platform: 'android',
     deviceId: 'resident-receiver-test', deviceName: 'Receiver',
   }));
   assert.equal((await receiverAuth).success, true);
@@ -497,15 +505,15 @@ test('keeps the detector custom name after only the Windows resident remains onl
 
   const residentAuth = waitForMessage(resident, msg => msg.type === 'auth-result');
   resident.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY,
-    role: 'windows-resident', deviceId: 'resident-name-test', deviceName: 'DESKTOP-MACHINE',
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-lifecycle-resident-name-test-credential',
+    role: 'lifecycle', nodeType: 'resident', platform: 'windows', deviceId: 'resident-name-test', deviceName: 'DESKTOP-MACHINE',
   }));
   assert.equal((await residentAuth).success, true);
 
   const detectorAuth = waitForMessage(detector, msg => msg.type === 'auth-result');
   detector.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY,
-    role: 'windows', deviceId: 'resident-name-test', deviceName: '客厅检测端',
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-detector-resident-name-test-credential',
+    role: 'detector', nodeType: 'visual', platform: 'windows', deviceId: 'resident-name-test', deviceName: '客厅检测端',
   }));
   assert.equal((await detectorAuth).success, true);
 
@@ -513,8 +521,8 @@ test('keeps the detector custom name after only the Windows resident remains onl
     msg.devices?.some((d: any) => d.deviceId === 'resident-name-test' && d.deviceName === '门口检测端'));
   const receiverAuth = waitForMessage(receiver, msg => msg.type === 'auth-result');
   receiver.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: process.env.API_KEY,
-    role: 'android', deviceId: 'resident-name-receiver', deviceName: 'Receiver',
+    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-console-resident-name-receiver-credential',
+    role: 'console', nodeType: 'console', platform: 'android', deviceId: 'resident-name-receiver', deviceName: 'Receiver',
   }));
   assert.equal((await receiverAuth).success, true);
 

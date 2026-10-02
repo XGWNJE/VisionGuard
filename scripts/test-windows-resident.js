@@ -7,10 +7,13 @@ const WebSocket = require('../server/node_modules/ws');
 
 const root = path.resolve(__dirname, '..');
 const exe = path.join(root, 'detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe');
-const apiKey = process.env.VISIONGUARD_API_KEY;
+const apiKey = process.env.VISIONGUARD_RESIDENT_API_KEY;
+const consoleApiKey = process.env.VISIONGUARD_CONSOLE_API_KEY;
+const consoleId = process.env.VISIONGUARD_CONSOLE_DEVICE_ID;
+assert(consoleApiKey && consoleId, 'Provisioned console identity is required');
 const channel = process.env.VISIONGUARD_CHANNEL || 'vnext-e2e';
 const serverUrl = process.env.VISIONGUARD_SERVER_URL || 'http://127.0.0.1:3100';
-assert(apiKey, 'VISIONGUARD_API_KEY is required');
+assert(apiKey, 'VISIONGUARD_RESIDENT_API_KEY is required');
 assert(fs.existsSync(exe), `Resident artifact not found: ${exe}`);
 
 const configPath = path.join(os.tmpdir(), `visionguard-resident-smoke-${process.pid}.json`);
@@ -23,6 +26,7 @@ fs.writeFileSync(configPath, JSON.stringify({
   // 这里给一个不存在的路径，用于断言失败原因，不干扰当前人工验收窗口。
   DetectorPath: 'C:/missing/VisionGuard.Detector.Windows.exe',
   AppId: 'Detector',
+  Channel: channel,
 }), 'utf8');
 
 const resident = spawn(exe, ['--config', configPath], {
@@ -50,7 +54,7 @@ resident.once('error', finish);
 resident.once('exit', code => { if (!finished) finish(new Error(`Resident exited early with code ${code}`)); });
 receiver.once('error', finish);
 receiver.once('open', () => receiver.send(JSON.stringify({
-  type: 'auth', channel, apiKey, role: 'android', deviceId: `resident-smoke-receiver-${process.pid}`,
+  type: 'auth', channel, apiKey: consoleApiKey, role: 'console', nodeType: 'console', platform: 'test', deviceId: consoleId, deviceName: 'Resident smoke',
 })));
 receiver.on('message', data => {
   const message = JSON.parse(data.toString());

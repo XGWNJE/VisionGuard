@@ -80,6 +80,8 @@ namespace VisionGuard.Detector.Windows.Services
 
             try
             {
+                runtime.MonitoringExpected = true;
+                runtime.LastProgressAt = null;
                 runtime.Error = "";
                 runtime.Monitor.Start(modelPath, runtime.Source.Config, runtime.Source.PreferredBackend);
             }
@@ -96,6 +98,7 @@ namespace VisionGuard.Detector.Windows.Services
         {
             Runtime runtime;
             lock (_sync) runtime = Get(sourceId);
+            runtime.MonitoringExpected = false;
             runtime.Monitor.Stop();
             RaiseStatus(runtime);
         }
@@ -106,6 +109,7 @@ namespace VisionGuard.Detector.Windows.Services
             lock (_sync)
             {
                 if (!frame.HasError) runtime.FrameTimes.Enqueue(now);
+                if (!frame.HasError) runtime.LastProgressAt = now;
                 while (runtime.FrameTimes.Count > 0 && (now - runtime.FrameTimes.Peek()).TotalSeconds > 10) runtime.FrameTimes.Dequeue();
                 runtime.Error = frame.HasError ? frame.Error?.Message ?? "捕获或推理失败" : "";
             }
@@ -146,6 +150,7 @@ namespace VisionGuard.Detector.Windows.Services
             {
                 SourceId = runtime.Source.SourceId, SourceName = runtime.Source.SourceName,
                 ModelKey = runtime.Source.ModelKey, IsMonitoring = runtime.Monitor.IsStarted,
+                MonitoringExpected = runtime.MonitoringExpected, LastProgressAt = runtime.LastProgressAt,
                 IsReady = IsConfigured(runtime.Source.Config), ActiveBackend = runtime.Monitor.ActiveBackend,
                 ActualFps = Math.Round(fps, 2), TargetFps = targetFps,
                 SecondsBelowTarget = Math.Round(secondsBelowTarget, 1),
@@ -185,6 +190,8 @@ namespace VisionGuard.Detector.Windows.Services
             public MonitorService Monitor { get; }
             public Queue<DateTime> FrameTimes { get; } = new();
             public string Error { get; set; } = "";
+            public bool MonitoringExpected { get; set; }
+            public DateTime? LastProgressAt { get; set; }
 
             /// <summary>实测帧率开始低于目标的时刻；恢复正常时清空。用于累计“持续不足”的时长。</summary>
             public DateTime? BelowTargetSince { get; set; }

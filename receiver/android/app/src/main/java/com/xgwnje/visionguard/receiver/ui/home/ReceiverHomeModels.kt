@@ -1,6 +1,7 @@
 package com.xgwnje.visionguard.receiver.ui.home
 
 import com.xgwnje.visionguard.receiver.data.model.AlertMessage
+import com.xgwnje.visionguard.receiver.data.model.eventLabel
 import com.xgwnje.visionguard.receiver.data.model.DeviceConfig
 import com.xgwnje.visionguard.receiver.data.model.DeviceInfo
 import java.time.Instant
@@ -193,7 +194,7 @@ fun buildDeviceCardUiModel(device: DeviceInfo): DeviceCardUiModel {
     }
     val allSourcesRunning = totalSourceCount > 0 && runningSources == totalSourceCount
     val hasSourceControls = "source-control" in device.capabilities
-    val showLegacyControls = !hasSourceControls && device.clientType.lowercase(Locale.US) != "windows"
+    val showLegacyControls = !hasSourceControls && "monitor-control" in device.capabilities
     val statusTone = when {
         !device.online -> DeviceStatusTone.OFFLINE
         device.components["resident"] == "running" && device.components["detectorApp"] != "running" -> DeviceStatusTone.RESIDENT_ONLY
@@ -225,7 +226,11 @@ fun buildDeviceCardUiModel(device: DeviceInfo): DeviceCardUiModel {
         lifecycleControlsEnabled = device.online && device.components["resident"] == "running",
         firstRowLayout = DeviceCardFirstRowLayout.BALANCED_TWO_COLUMN,
         illustration = deviceCardIllustrationOf(device.clientType),
-        typeLabel = deviceTypeLabelOf(device.clientType),
+        typeLabel = when (device.nodeType) {
+            "sensor" -> "传感器节点"
+            "notification" -> "通知节点"
+            else -> deviceTypeLabelOf(device.clientType)
+        },
         detectorLifecycleCommand = lifecycleCommand(device, "detectorApp", "detector")
     )
 }
@@ -489,7 +494,7 @@ fun buildAlertCardUiModel(alert: AlertMessage): AlertCardUiModel {
         .ifEmpty {
             listOf(
                 DetectionChipUiModel(
-                    label = "未知目标",
+                    label = if (alert.eventKind == "visual-detection") "未知目标" else alert.eventLabel(),
                     confidencePercent = 0,
                     target = DetectionTarget.UNKNOWN
                 )

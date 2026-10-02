@@ -12,7 +12,10 @@ import com.xgwnje.visionguard.detector.BuildConfig
 data class WsAuthMessage(
     val type: String = "auth",
     val apiKey: String,
-    val role: String = "android-detector",
+    val channel: String = com.xgwnje.visionguard.detector.AppConstants.CHANNEL,
+    val role: String = "detector",
+    val nodeType: String = "visual",
+    val platform: String = "android",
     val deviceId: String,
     val deviceName: String = "Android-Detector",
     val version: String = BuildConfig.VERSION_NAME
@@ -66,7 +69,11 @@ data class WsHeartbeatMessage(
     val capabilities: List<String> = listOf(
         "monitor-control", "config-control", "request-correlation", "screenshot-on-demand"
     ),
-    val components: Map<String, String> = mapOf("detectorApp" to "running")
+    val components: Map<String, String> = mapOf("detectorApp" to "running"),
+    val sources: List<Map<String, Any>> = listOf(mapOf(
+        "sourceId" to "camera", "sourceName" to "摄像头", "isMonitoring" to isMonitoring,
+        "isReady" to isReady, "modelKey" to modelKey
+    ))
 )
 
 /** Android-detector → 服务器：日志上报 */

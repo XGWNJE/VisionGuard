@@ -1,4 +1,5 @@
 package com.xgwnje.visionguard.receiver.ui.screen
+import com.xgwnje.visionguard.receiver.data.model.eventLabel
 
 import android.Manifest
 import android.content.ContentValues
@@ -127,6 +128,7 @@ fun AlertDetailScreen(
     }
 
     LaunchedEffect(alertId, alert?.screenshotUrl, alert?.hasScreenshot) {
+        if (alert != null && alert.eventKind != "visual-detection") return@LaunchedEffect
         screenshotBitmap = null
         screenshotFailed = false
         if (alert == null) {
@@ -195,7 +197,9 @@ fun AlertDetailScreen(
             .fillMaxSize()
             .background(ReceiverBackground)
     ) {
-        ScreenshotViewport(
+        if (alert != null && alert.eventKind != "visual-detection") {
+            Text(alert.eventLabel(), modifier = Modifier.align(Alignment.Center).padding(32.dp), style = MaterialTheme.typography.headlineSmall)
+        } else ScreenshotViewport(
             bitmap = screenshotBitmap,
             isLoading = alert != null && !screenshotFailed && screenshotBitmap == null,
             hasFailed = screenshotFailed

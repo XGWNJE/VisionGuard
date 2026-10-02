@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <exclude domain="sharedpref" path="relay_credentials.xml" />
+    <exclude domain="sharedpref" path="vg_notifier_prefs.xml" />
+    <exclude domain="file" path="logs/" />
+</full-backup-content>

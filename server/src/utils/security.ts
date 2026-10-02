@@ -76,7 +76,7 @@ export function validateAlertMeta(input: unknown): ValidationResult<AlertMeta> {
   if (typeof meta.timestamp !== 'string' || meta.timestamp.length === 0 || meta.timestamp.length > 64) {
     return { ok: false, error: 'invalid timestamp' };
   }
-  if (!Array.isArray(meta.detections) || meta.detections.length === 0 || meta.detections.length > 100) {
+  if (!Array.isArray(meta.detections) || (meta.detections.length === 0 && meta.eventKind !== 'sensor-detection') || meta.detections.length > 100) {
     return { ok: false, error: 'invalid detections' };
   }
   if (!meta.detections.every(validateDetection)) {
@@ -86,6 +86,7 @@ export function validateAlertMeta(input: unknown): ValidationResult<AlertMeta> {
   return {
     ok: true,
     value: {
+      eventKind: meta.eventKind, expiresAt: meta.expiresAt, summary: meta.summary,
       deviceId: meta.deviceId,
       deviceName: meta.deviceName,
       ...(meta.sourceId ? { sourceId: meta.sourceId } : {}),
