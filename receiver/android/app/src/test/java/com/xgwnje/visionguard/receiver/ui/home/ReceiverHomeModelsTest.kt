@@ -9,6 +9,7 @@ import com.google.gson.Gson
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.TimeZone
 
 class ReceiverHomeModelsTest {
 
@@ -493,7 +494,7 @@ class ReceiverHomeModelsTest {
         val alert = AlertMessage(
             alertId = "a1",
             deviceName = "Android-仓库门口",
-            timestamp = "2026-07-07T12:48:00.000+08:00",
+            timestamp = "2026-07-07T00:48:00.000+08:00",
             hasScreenshot = true,
             detections = listOf(
                 detection("person", 0.914),
@@ -503,17 +504,30 @@ class ReceiverHomeModelsTest {
             )
         )
 
-        val model = buildAlertCardUiModel(alert)
+        val originalTimeZone = TimeZone.getDefault()
+        try {
+            // 显示跟随设备时区；固定输入与独立预期同时覆盖云端 UTC 和跨日期转换。
+            listOf(
+                Triple("Asia/Shanghai", "00:48", "2026.07.07 00:48"),
+                Triple("UTC", "16:48", "2026.07.06 16:48"),
+                Triple("America/New_York", "12:48", "2026.07.06 12:48")
+            ).forEach { (timeZone, expectedTime, expectedDateTime) ->
+                TimeZone.setDefault(TimeZone.getTimeZone(timeZone))
+                val model = buildAlertCardUiModel(alert)
 
-        assertEquals("Android-仓库门口", model.deviceName)
-        assertEquals("12:48", model.timeLabel)
-        assertEquals("2026.07.07 12:48", model.dateTimeLabel)
-        assertEquals("查看详情", model.detailIconContentDescription)
-        assertEquals(ScreenshotState.SYNCED, model.screenshotState)
-        assertEquals(3, model.targetChips.size)
-        assertEquals("人员", model.targetChips[0].label)
-        assertEquals(91, model.targetChips[0].confidencePercent)
-        assertEquals(DetectionTarget.PERSON, model.targetChips[0].target)
+                assertEquals("Android-仓库门口", model.deviceName)
+                assertEquals(timeZone, expectedTime, model.timeLabel)
+                assertEquals(timeZone, expectedDateTime, model.dateTimeLabel)
+                assertEquals("查看详情", model.detailIconContentDescription)
+                assertEquals(ScreenshotState.SYNCED, model.screenshotState)
+                assertEquals(3, model.targetChips.size)
+                assertEquals("人员", model.targetChips[0].label)
+                assertEquals(91, model.targetChips[0].confidencePercent)
+                assertEquals(DetectionTarget.PERSON, model.targetChips[0].target)
+            }
+        } finally {
+            TimeZone.setDefault(originalTimeZone)
+        }
     }
 
     @Test

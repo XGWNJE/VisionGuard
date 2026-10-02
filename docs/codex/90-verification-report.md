@@ -24,6 +24,7 @@ owner 已手动走查提交 `9d587eb` 的基础操作链路；细项尚未逐项
 | 文档与脚本 | 文档审核及 44 项命名/文档/发行/版本契约与账号 CLI 守卫测试通过 | 中英文名与简称、内部驻留不单列产品、安装/工程身份、登录组件、构建/更新标识；0.x 全组件同步、已有下载包保留及版本漂移回归；导航、授权、PowerShell 编码与不回显密码；已接现有 CI |
 | 命名固化产物 | 服务/Web、Windows 双档与入口/驻留、镜头和 Android 控制台 Release 构建通过；控制台 71 项与 Web 14 项测试再次通过 | Windows 标题/产品名、两端 APK 显示名/包名/版本及签名已核验；驻留文件说明为“VisionGuard 视觉节点驻留程序”，产品名归属“VisionGuard 视觉节点”；Windows 0 警告/错误，统一目录仍为 32 文件；不包含本轮 UI、设备或公网运行验证 |
 | 0.x 版本构建 | 服务/Web、完整 Windows 与三个 Android 签名 Release 构建通过；Windows 0 警告 / 0 错误、统一目录 32 文件 | 启动器、modern/legacy 与驻留实际 ProductVersion 均为 0.5.1；三端实际 APK 均为 0.5.1 / code 501，包名及 apksigner verify 通过；服务启动文案、服务/Web package 与锁文件、README 对齐根 VERSION；本轮未运行 UI 或 E2E |
+| 控制台 CI 时区回归 | `JAVA_TOOL_OPTIONS=-Duser.timezone=UTC` 下控制台 71 项 JVM 单测、lintDebug 与 Debug 构建通过 | 时间卡片使用固定输入及独立预期，覆盖北京时间、UTC、纽约与跨日期转换，测试结束恢复原 JVM 时区；只调整测试，不改变应用显示行为；不是 UI 或真机验收 |
 | CI | `.github/workflows/development.yml` 已覆盖版本同步回归 | 服务/Web 测试构建、三个 Android Debug 单测/lint/构建、Windows 双档及媒体探针；云端执行结果以当前分支对应 GitHub Actions 为准，不能用本机构建代替 |
 
 构建与测试报告保留在各工程 `build/reports/`、`build/test-results/` 及被忽略 `.local/`。三端签名 APK 为各自 `app/build/outputs/apk/release/app-release.apk`；私有签名配置、账号密码、会话与 SDK 配置不提交。
