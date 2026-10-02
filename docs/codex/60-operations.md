@@ -128,6 +128,14 @@ Android 运行 smoke 使用 `-Mode AndroidDetectorSmoke` 或 `-Mode AndroidRecei
 
 ## 发布授权
 
+内测源码使用 `0.x.y`，根 `VERSION` 仍是唯一权威版本源。owner 只授权调整源码版本时使用：
+
+```powershell
+node scripts/sync-version.js <version> --source-only
+```
+
+它同步 Windows 入口、运行时及驻留、Android 三端、服务、Web 与 README；通知节点直接读取根版本。已有测试下载包的 `server/data/releases.json` 保留实际版本、文件名和大小，不指向未生成的 0.x 发行包。Android 版本重置后 versionCode 也降低，已有 4.x 安装不能直接覆盖安装当前 0.x 包；需在独立测试设备中重新安装。本机私有验收包和已运行测试服务不随源码同步自动更新。
+
 正式发布唯一入口：
 
 ```powershell

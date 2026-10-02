@@ -36,7 +36,7 @@ jobs:
       - name: Naming, documentation and scripts
         run: |
           node scripts/check-docs.js
-          node --test scripts/check-docs.test.js scripts/check-powershell-encoding.test.js scripts/release-workflow.test.js scripts/provision-account.test.js
+          node --test scripts/check-docs.test.js scripts/check-powershell-encoding.test.js scripts/release-workflow.test.js scripts/version-sync.test.js scripts/provision-account.test.js
 
   android:
     runs-on: ubuntu-latest

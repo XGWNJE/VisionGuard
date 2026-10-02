@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { TextDecoder } = require('node:util');
+const { releaseFileName } = require('./sync-version');
 
 const DEFAULT_ROOT = path.resolve(__dirname, '..');
 const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
@@ -100,6 +101,7 @@ function checkVersionSources(root, version, errors) {
     ['detector/windows-wpf/VisionGuard.Detector.Windows.csproj', `<Version>${version}</Version>`],
     ['detector/windows-wpf/VisionGuard.Detector.Windows.csproj', `<FileVersion>${version}</FileVersion>`],
     ['detector/windows-wpf/VisionGuard.Detector.Windows.csproj', `<AssemblyVersion>${version}</AssemblyVersion>`],
+    ['detector/windows-launcher/Program.cs', `private const string Version = "${version}"`],
     ['detector/android/app/build.gradle.kts', `versionName = "${version}"`],
     ['detector/android/app/build.gradle.kts', `versionCode = ${versionCode}`],
     ['detector/android/app/src/main/java/com/xgwnje/visionguard/detector/AppConstants.kt', `VERSION = "${version}"`],
@@ -108,6 +110,20 @@ function checkVersionSources(root, version, errors) {
     ['receiver/android/app/src/main/java/com/xgwnje/visionguard/receiver/AppConstants.kt', `VERSION = "${version}"`],
     ['server/src/index.ts', `VisionGuard 统一服务 v${version} 已启动`]
   ];
+  for (const project of [
+    'detector/windows-launcher/VisionGuard.Detector.Windows.Launcher.csproj',
+    'detector/windows-resident/VisionGuard.Resident.Windows.csproj'
+  ]) {
+    for (const element of ['Version', 'FileVersion', 'AssemblyVersion']) {
+      exactChecks.push([project, `<${element}>${version}</${element}>`]);
+    }
+  }
+  for (const expected of [
+    'repositoryRoot.resolve("VERSION").readText().trim()',
+    'versionCode = notificationVersionCode', 'versionName = notificationVersion'
+  ]) {
+    exactChecks.push(['notifier/android/app/build.gradle.kts', expected]);
+  }
 
   const cache = new Map();
   for (const [relativePath, expected] of exactChecks) {
@@ -117,7 +133,7 @@ function checkVersionSources(root, version, errors) {
     requireText(cache.get(relativePath), expected, relativePath, 'the VERSION-aligned value', errors);
   }
 
-  for (const relativePath of ['server/package.json', 'server/package-lock.json', 'server/data/releases.json']) {
+  for (const relativePath of ['server/package.json', 'server/package-lock.json', 'receiver/web/package.json', 'receiver/web/package-lock.json', 'server/data/releases.json']) {
     const content = readUtf8(root, relativePath, errors, { checkBom: false });
     if (!content) {
       continue;
@@ -134,6 +150,12 @@ function checkVersionSources(root, version, errors) {
       }
       if (relativePath.endsWith('releases.json')) {
         for (const [platform, release] of Object.entries(data)) {
+          if (!VERSION_PATTERN.test(release.version) || release.url !== `/releases/${releaseFileName(platform, release.version)}`) {
+            errors.push(`[version] ${relativePath} entry ${platform} has invalid package metadata`);
+          }
+          // 0.x 源码处于内测，已有下载包的版本独立于当前开发版本。
+          // 正式发布仍由 publish-release.ps1 校验目标版本、产物名与大小。
+          if (major === 0) continue;
           // 分端上线：显式标记 heldBack 的平台本次不发布，允许它停留在上一个已发布版本
           // （必须继续指向真实存在的文件，否则客户端会拿到 404 的更新提示）。
           // 标记只能写在该平台条目**内部**：顶层加键会被当成一个新平台，从而破坏下面的对齐检查与 server 的解析。
@@ -791,6 +813,7 @@ module.exports = {
   checkProductContract,
   checkCancelledPlans,
   checkReadmeVersion,
+  checkVersionSources,
   checkSkillContract,
   checkValidationContract,
   checkVerificationVersionClaims

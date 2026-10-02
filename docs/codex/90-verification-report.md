@@ -4,13 +4,13 @@
 
 ## 当前状态
 
-核验日期：2026-10-03。开发分支为 `codex/roadmap-next`，保持独立，不合并。根 `VERSION` 为 `4.5.1`，未改版本、push、tag、GitHub Release 或正式发布。仅部署 owner 明确授权的独立公网测试服务，正式业务服务、目录、Nginx 和发布元数据未修改。
+核验日期：2026-10-03。开发分支为 `codex/roadmap-next`，保持独立，不合并。根 `VERSION` 为 `0.5.1`，当前为未达到正式版要求的 `0.x` 内测；此前分发的 4.x 包也属于测试版本。本轮 owner 授权调整源码版本并推送该分支，不包含 tag、GitHub Release 或部署。此前独立公网测试服务继续保留，正式业务服务、目录、Nginx 和已有下载包发布元数据未修改。
 
 owner 已手动走查提交 `9d587eb` 的基础操作链路；细项尚未逐项验收。原有待人工/真机验收项继续保留，本轮新增项继续累积，待 owner 有时间集中验收；基础走查与模拟器结果不作为这些细项的人工完成证据。
 
 当前全组件使用账号登录及服务签发的设备身份。原 Android 检测端改为 **VisionGuard 镜头推流**，仍是视觉节点；真实 CameraX 画面经统一服务转发到 Windows 来源推理。独立通知节点位于 `notifier/android/`，原 Vigil 仓库未修改。
 
-当前对外为 5 类组件、6 个平台实现，后台驻留归入视觉节点内部；服务正式名为 **VisionGuard 统一服务 / VisionGuard Server**，名称与技术标识以[命名规范](15-component-naming.md)为准。下方运行证据对应账号推流提交 `10bc0ae` 的测试组件；本轮文案调整不视为新增 UI 或 E2E 验收，独立公网服务与私有 APK 验收包未替换，Windows 验收脚本仍指向当前本机 Release 构建。
+当前对外为 5 类组件、6 个平台实现，后台驻留归入视觉节点内部；服务正式名为 **VisionGuard 统一服务 / VisionGuard Server**，名称与技术标识以[命名规范](15-component-naming.md)为准。下方运行证据对应账号推流提交 `10bc0ae` 的 4.5.1 测试组件；命名与版本调整不视为新增 UI 或 E2E 验收，独立公网服务与私有 APK 验收包未替换，Windows 验收脚本仍指向当前本机 Release 构建。
 
 ## 自动化与构建证据
 
@@ -20,10 +20,11 @@ owner 已手动走查提交 `9d587eb` 的基础操作链路；细项尚未逐项
 | Web | 14 项测试、TypeScript 与 Vite 构建通过 | 登录、刷新并发、旧账号迟到请求、隔离缓存、鉴权截图、设备关联及时间格式；UI 另行运行检查 |
 | Windows Release | 启动器、驻留、modern/legacy 均 0 警告 / 0 错误，统一目录 32 个文件 | 实际运行使用 modern；Win7/legacy 仅构建证据 |
 | Windows 账号与媒体探针 | `AccountMedia.Probe` 通过 | 大消息/分片/ping/取消/边界、最新帧/重复/停止/单调过期、DPAPI/账号切换、驻留隔离、登出重登与解绑重新登记；实际子进程延迟刷新与退出/重登录竞争、实际 AlertService 保留远程帧诊断字段；不能替代真实 WPF 推理 |
-| Android 三端 | 镜头 8 项、控制台 71 项、通知 6 项 JVM 单测通过；三端 lintDebug 与 lintVitalRelease 无错误；签名 Release 与 apksigner verify 通过 | 共享真实 HTTP 迟到 401 条件清理；控制台离线身份、登记名单、迟到 GET/DELETE 隔离与解绑后刷新失败；名称、包名、版本 4.5.1 / code 4501 与共享签名核验；lintDebug 警告分别 27 / 27 / 114，含既有资源与 API 提示；不是物理设备证明 |
-| 文档与脚本 | 文档审核及 41 项命名/文档/发行/版本契约与账号 CLI 守卫测试通过 | 中英文名与简称、内部驻留不单列产品、安装/工程身份、登录组件、构建/更新标识；导航、版本、授权、PowerShell 编码与不回显密码；已接现有 CI，尚未 push 或云端执行 |
+| Android 三端 | 镜头 8 项、控制台 71 项、通知 6 项 JVM 单测通过；三端 lintDebug 与 lintVitalRelease 无错误；签名 Release 与 apksigner verify 通过 | 共享真实 HTTP 迟到 401 条件清理；控制台离线身份、登记名单、迟到 GET/DELETE 隔离与解绑后刷新失败；运行取证时版本 4.5.1 / code 4501 与共享签名核验；lintDebug 警告分别 27 / 27 / 114，含既有资源与 API 提示；不是物理设备证明 |
+| 文档与脚本 | 文档审核及 44 项命名/文档/发行/版本契约与账号 CLI 守卫测试通过 | 中英文名与简称、内部驻留不单列产品、安装/工程身份、登录组件、构建/更新标识；0.x 全组件同步、已有下载包保留及版本漂移回归；导航、授权、PowerShell 编码与不回显密码；已接现有 CI |
 | 命名固化产物 | 服务/Web、Windows 双档与入口/驻留、镜头和 Android 控制台 Release 构建通过；控制台 71 项与 Web 14 项测试再次通过 | Windows 标题/产品名、两端 APK 显示名/包名/版本及签名已核验；驻留文件说明为“VisionGuard 视觉节点驻留程序”，产品名归属“VisionGuard 视觉节点”；Windows 0 警告/错误，统一目录仍为 32 文件；不包含本轮 UI、设备或公网运行验证 |
-| CI | 新增 `.github/workflows/development.yml` | 服务/Web 测试构建、三个 Android Debug 单测/lint/构建、Windows 双档及媒体探针；对应检查在本机执行，未 push，尚无 GitHub 云端运行结果 |
+| 0.x 版本构建 | 服务/Web、完整 Windows 与三个 Android 签名 Release 构建通过；Windows 0 警告 / 0 错误、统一目录 32 文件 | 启动器、modern/legacy 与驻留实际 ProductVersion 均为 0.5.1；三端实际 APK 均为 0.5.1 / code 501，包名及 apksigner verify 通过；服务启动文案、服务/Web package 与锁文件、README 对齐根 VERSION；本轮未运行 UI 或 E2E |
+| CI | `.github/workflows/development.yml` 已覆盖版本同步回归 | 服务/Web 测试构建、三个 Android Debug 单测/lint/构建、Windows 双档及媒体探针；云端执行结果以当前分支对应 GitHub Actions 为准，不能用本机构建代替 |
 
 构建与测试报告保留在各工程 `build/reports/`、`build/test-results/` 及被忽略 `.local/`。三端签名 APK 为各自 `app/build/outputs/apk/release/app-release.apk`；私有签名配置、账号密码、会话与 SDK 配置不提交。
 

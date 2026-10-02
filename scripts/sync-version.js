@@ -2,7 +2,7 @@
 // ┌─────────────────────────────────────────────────────────┐
 // │ sync-version.js                                         │
 // │ 角色：版本号统一同步脚本                                 │
-// │ 用法：node scripts/sync-version.js [new-version]        │
+// │ 用法：node scripts/sync-version.js [version] [--source-only] │
 // └─────────────────────────────────────────────────────────┘
 
 const fs = require('fs');
@@ -24,8 +24,11 @@ function releaseFileName(key, version) {
 }
 
 function main() {
-  const newVersion = process.argv[2] || readRootVersion();
-  if (!/^\d+\.\d+\.\d+$/.test(newVersion)) {
+  const args = process.argv.slice(2);
+  const sourceOnly = args.includes('--source-only');
+  const versions = args.filter(arg => arg !== '--source-only');
+  const newVersion = versions[0] || readRootVersion();
+  if (versions.length > 1 || !/^\d+\.\d+\.\d+$/.test(newVersion)) {
     console.error('❌ 版本号格式错误，应为 x.y.z');
     process.exit(1);
   }
@@ -63,13 +66,6 @@ function main() {
     `VERSION = "${newVersion}"`
   );
 
-  // 5. 镜头推流（Android） AutoUpdater.kt
-  replaceInFile(
-    path.join(ROOT, 'detector', 'android', 'app', 'src', 'main', 'java', 'com', 'xgwnje', 'visionguard', 'detector', 'util', 'AutoUpdater.kt'),
-    /CURRENT_VERSION = "[\d.]+"/,
-    `CURRENT_VERSION = "${newVersion}"`
-  );
-
   // 6. VisionGuard 控制台 build.gradle.kts
   replaceInFile(
     path.join(ROOT, 'receiver', 'android', 'app', 'build.gradle.kts'),
@@ -89,22 +85,17 @@ function main() {
     `VERSION = "${newVersion}"`
   );
 
-  // 8. Server package.json
-  const pkgPath = path.join(ROOT, 'server', 'package.json');
-  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-  pkg.version = newVersion;
-  fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
-
-  // 8.1 Server package-lock.json
-  const lockPath = path.join(ROOT, 'server', 'package-lock.json');
-  if (fs.existsSync(lockPath)) {
-    const lock = JSON.parse(fs.readFileSync(lockPath, 'utf-8'));
-    lock.version = newVersion;
-    if (lock.packages && lock.packages['']) {
-      lock.packages[''].version = newVersion;
+  // Server 与 Web 的工程及锁文件版本。
+  for (const directory of ['server', 'receiver/web']) {
+    for (const fileName of ['package.json', 'package-lock.json']) {
+      const filePath = path.join(ROOT, directory, fileName);
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      data.version = newVersion;
+      if (fileName === 'package-lock.json' && data.packages?.['']) {
+        data.packages[''].version = newVersion;
+      }
+      writeFile(filePath, JSON.stringify(data, null, 2) + '\n');
     }
-    fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
-    console.log(`  ✓ ${path.relative(ROOT, lockPath)}`);
   }
 
   // 9. Server index.ts 硬编码版本
@@ -138,16 +129,24 @@ function main() {
     `private const string Version = "${newVersion}"`
   );
   for (const element of ['Version', 'FileVersion', 'AssemblyVersion']) {
-    replaceInFile(
-      path.join(ROOT, 'detector', 'windows-launcher', 'VisionGuard.Detector.Windows.Launcher.csproj'),
-      new RegExp(`<${element}>[\\d.]+<\\/${element}>`),
-      `<${element}>${newVersion}</${element}>`
-    );
+    for (const [directory, project] of [
+      ['windows-launcher', 'VisionGuard.Detector.Windows.Launcher.csproj'],
+      ['windows-resident', 'VisionGuard.Resident.Windows.csproj']
+    ]) {
+      replaceInFile(
+        path.join(ROOT, 'detector', directory, project),
+        new RegExp(`<${element}>[\\d.]+<\\/${element}>`),
+        `<${element}>${newVersion}</${element}>`
+      );
+    }
   }
+
+  // 通知节点直接从 VERSION 计算 versionName / versionCode，无硬编码字段。
+  replaceInFile(path.join(ROOT, 'README.md'), /badge\/version-[\d.]+-/, `badge/version-${newVersion}-`);
 
   // 11. Server releases.json
   const releasesPath = path.join(ROOT, 'server', 'data', 'releases.json');
-  if (fs.existsSync(releasesPath)) {
+  if (!sourceOnly && fs.existsSync(releasesPath)) {
     const releases = JSON.parse(fs.readFileSync(releasesPath, 'utf-8'));
     for (const key of Object.keys(releases)) {
       // 被明确搁置的端必须继续指向最后一个已发布包。若在统一版本同步时改写，
@@ -162,12 +161,7 @@ function main() {
     fs.writeFileSync(releasesPath, JSON.stringify(releases, null, 2) + '\n');
   }
 
-  // 12. 视觉节点（Windows） ServerPushService.cs 硬编码版本
-  replaceInFile(
-    path.join(ROOT, 'detector', 'windows-wpf', 'Services', 'ServerPushService.cs'),
-    /\["version"\] = "[\d.]+"/,
-    `["version"] = "${newVersion}"`
-  );
+  if (sourceOnly) console.log('  ↷ source-only: preserving existing release metadata');
 
   console.log('✅ 版本号同步完成');
 }

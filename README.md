@@ -8,27 +8,27 @@ VisionGuard 由检测节点、统一服务和控制台协作。当前用 VisionG
 
 [使用方式](#使用方式) · [快速开始](#快速开始) · [当前组件](#当前组件) · [路线规划](#路线规划) · [文档与许可](#文档与许可)
 
-[![Version](https://img.shields.io/badge/version-4.5.1-1f6feb)](./VERSION) [![License](https://img.shields.io/badge/license-MIT-7c3aed)](./LICENSE)
+[![Version](https://img.shields.io/badge/version-0.5.1-1f6feb)](./VERSION) [![License](https://img.shields.io/badge/license-MIT-7c3aed)](./LICENSE)
 
 </div>
 
 ## 使用方式
 
-项目目前处于**内测开发**，迭代允许破坏性更新，不承诺旧版本的协议、配置或数据兼容；测试环境可能需要重新配置或重建。当前定位见[项目概览](./docs/codex/10-project-overview.md#产品定位)。
+项目目前处于**0.x 内测开发**，尚未达到正式版要求；此前分发的 4.x 包也属于测试版本。迭代允许破坏性更新，不承诺旧版本的协议、配置或数据兼容；测试环境可能需要重新配置或重建。当前定位见[项目概览](./docs/codex/10-project-overview.md#产品定位)。
 
 **适合**需要在自己的设备上运行视觉检测，并在手机、平板或电脑上管理节点，在 Android 通知节点中接警的个人或团队。
 
-**当前边界**：当前源码加入基础账号与实时镜头推流，尚未发布；设备、视频、控制和事件按账号隔离。连接状态不等于通知收件确认，通知收件确认不等于声音播放。漏报风险是检测效果与故障处置的最高优先级，人员检测以 `person` 类验证。已发布 v4.5.1 的范围见[发布说明](./docs/releases/v4.5.1.md)。
+**当前边界**：当前源码加入基础账号与实时镜头推流，尚未发布；设备、视频、控制和事件按账号隔离。连接状态不等于通知收件确认，通知收件确认不等于声音播放。漏报风险是检测效果与故障处置的最高优先级，人员检测以 `person` 类验证。既有 v4.5.1 测试包的范围见[分发说明](./docs/releases/v4.5.1.md)。
 
 1. 各组件登录同一账号后自动登记和匹配；VisionGuard 镜头推流以前台摄像头采集画面，经服务交给 Windows 视觉节点推理，也可继续使用本地屏幕或窗口来源。
 2. 视觉节点把告警、截图和状态发往统一服务；所有公网业务数据统一通过统一服务转发，不使用 P2P、ICE、STUN 或 TURN。正式服务地址为 `https://visionguard.xgwnje.cn`。
 3. Web 控制台展示事件、截图和设备状态，按能力提供节点/来源启停与参数配置，并分配各通知节点的全部或指定接收范围。通知节点保存实时报警后确认收件，再进入本地声音队列。
 
-当前源码构建统一 Windows 目录：从目录根启动 `VisionGuard.Detector.Windows.exe`，Win7 SP1 x64 选择 legacy 内部运行时，Windows 10/11 选择 modern。已发布包的安装与升级以[发布说明](./docs/releases/v4.5.1.md)为准；当前构建与实机覆盖见[验证报告](./docs/codex/90-verification-report.md)。
+当前源码构建统一 Windows 目录：从目录根启动 `VisionGuard.Detector.Windows.exe`，Win7 SP1 x64 选择 legacy 内部运行时，Windows 10/11 选择 modern。既有测试包的安装与升级以[分发说明](./docs/releases/v4.5.1.md)为准；当前构建与实机覆盖见[验证报告](./docs/codex/90-verification-report.md)。
 
 ## 快速开始
 
-使用已发布版本时先阅读 [v4.5.1 发布说明](./docs/releases/v4.5.1.md)，确认该版本的范围与升级提示。
+验收当前分支时使用当前源码构建及[隔离测试入口](./docs/codex/90-verification-report.md#测试环境)。使用既有 v4.5.1 测试包时先阅读[分发说明](./docs/releases/v4.5.1.md)，确认该版本的范围与升级提示。
 
 以下命令从仓库根目录运行，用于验证源码和构建产物。需要 Windows、PowerShell、Node.js 22.18 或以上及 npm；构建 Windows 端还需支持 C# 12 的 .NET SDK。客户端服务配置见[运维文档](./docs/codex/60-operations.md#配置与服务边界)。
 
@@ -66,7 +66,7 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scri
 
 统一接入基础（第 1 组）已实现：角色、节点类型与平台分开登记，复用能力、配置、控制和事件链；支持无图传感器事件、实时重试、通知节点收件确认与本地服务中断监测。通知节点后台接警、Web 控制台和通知范围已接入当前源码；硬件驱动待后续实施。通知节点源码在 `notifier/android/`，专用于 VG 接警；独立包名与数据目录，可和原 Vigil 分开安装。当前分支尚未发布。契约见[统一服务](./docs/codex/20-server.md#统一接入契约)。
 
-上述应用名对应当前源码构建；已发布包的显示名以该版本产物为准。
+上述应用名对应当前源码构建；既有测试包的显示名以该版本产物为准。
 
 ## 路线规划
 
