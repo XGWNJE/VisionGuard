@@ -10,7 +10,8 @@ namespace VisionGuard.Detector.Windows.Utils
     /// </summary>
     internal static class SettingsStore
     {
-        private static readonly SharedSettingsFile Store = new SharedSettingsFile(ResolveSettingsPath());
+        private static SharedSettingsFile Store = new SharedSettingsFile(ResolveSettingsPath());
+        public static void SwitchAccount() { Store.Save(); Store = new SharedSettingsFile(ResolveSettingsPath()); Store.Load(); }
 
         /// <summary>
         /// 允许用 VISIONGUARD_SETTINGS_PATH 指向隔离配置，便于自动化验证互不干扰。
@@ -18,9 +19,13 @@ namespace VisionGuard.Detector.Windows.Utils
         private static string ResolveSettingsPath()
         {
             string overridePath = Environment.GetEnvironmentVariable("VISIONGUARD_SETTINGS_PATH");
-            if (!string.IsNullOrWhiteSpace(overridePath)) return Path.GetFullPath(overridePath.Trim());
+            if (!string.IsNullOrWhiteSpace(overridePath))
+            {
+                var full = Path.GetFullPath(overridePath.Trim());
+                return AccountSession.Current == null ? full : Path.Combine(Path.GetDirectoryName(full), "accounts", AccountSession.ScopeKey, Path.GetFileName(full));
+            }
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "VisionGuard", "settings.ini");
+                "VisionGuard", "accounts", AccountSession.ScopeKey, "settings.ini");
         }
 
         public static void Load() { Store.Load(); }

@@ -52,11 +52,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         updateSelectedRingtoneName()
         loadRingtoneLibrary()
     }
-    override fun onCleared() {
+    fun disposeAccount() {
         sharedPreferencesHelper.prefs.unregisterOnSharedPreferenceChangeListener(historyListener)
         RingtoneLibrary.stopPreview()
-        super.onCleared()
     }
+    override fun onCleared() { disposeAccount(); super.onCleared() }
     val isRecording: Boolean get() = RingtoneLibrary.isRecording
     val previewingFileName: String? get() = RingtoneLibrary.previewingFileName
     fun onDefaultLoopCountSelected(count: Int) {

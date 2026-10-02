@@ -9,7 +9,6 @@ package com.xgwnje.visionguard.receiver.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.xgwnje.visionguard.receiver.data.model.DeviceInfo
-import com.xgwnje.visionguard.receiver.data.model.RemovedDevice
 import com.xgwnje.visionguard.receiver.service.AlertForegroundService
 import com.xgwnje.visionguard.receiver.data.model.CommandResult
 import kotlinx.coroutines.flow.SharedFlow
@@ -33,12 +32,7 @@ class DeviceViewModel(private val service: AlertForegroundService) : ViewModel()
         service.moveDevice(fromIndex, toIndex)
     }
 
-    fun removeOfflineDevice(deviceId: String): RemovedDevice? =
-        service.removeOfflineDevice(deviceId)
-
-    fun restoreDevice(removed: RemovedDevice) {
-        service.restoreDevice(removed)
-    }
+    suspend fun unbindDevice(deviceId: String): Boolean = service.unbindDevice(deviceId)
 
     class Factory(private val service: AlertForegroundService) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

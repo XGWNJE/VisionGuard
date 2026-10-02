@@ -11,6 +11,7 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import { config } from '../config';
+import { accountDirectory } from '../services/AccountStore';
 import { detectorHttpAuth } from '../middleware/auth';
 import { validateEvent } from '../services/NodeProtocol';
 import { addAlert, getAlertById } from '../services/AlertStore';
@@ -27,9 +28,10 @@ function removeTempUpload(req: Request): void {
 
 // multer 配置：截图存到 data/screenshots/<alertId>.png
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    fs.mkdirSync(config.screenshotDir, { recursive: true });
-    cb(null, config.screenshotDir);
+  destination: (req, _file, cb) => {
+    const directory = path.join(accountDirectory(req.res!.locals.identity.accountId), 'screenshots');
+    fs.mkdirSync(directory, { recursive: true });
+    cb(null, directory);
   },
   filename: (_req, _file, cb) => {
     const tempName = `tmp_${Date.now()}_${Math.random().toString(36).slice(2)}${path.extname(_file.originalname) || '.png'}`;
@@ -99,7 +101,7 @@ router.post(
       const alertId = incoming.alertId;
 
       // 截图处理：仅在开启上传开关且收到文件时保存
-      const existing = getAlertById(alertId);
+      const existing = getAlertById(identity.accountId, alertId);
       let screenshotPath: string | undefined = existing?.screenshotPath;
       if (existing && req.file) {
         // A retry or conflicting ID must never overwrite an existing event's picture.
@@ -107,7 +109,7 @@ router.post(
       } else if (config.enableHttpScreenshotUpload && req.file) {
         const head = fs.readFileSync(req.file.path, { flag: 'r' }).subarray(0, 16);
         const contentType = validateImageMagic(head);
-        const target = contentType ? getSafeScreenshotPath(config.screenshotDir, alertId, contentType) : null;
+        const target = contentType ? getSafeScreenshotPath(path.join(accountDirectory(identity.accountId), 'screenshots'), alertId, contentType) : null;
         if (!target) {
           removeTempUpload(req);
           res.status(400).json({ ok: false, error: 'invalid screenshot' });
@@ -120,7 +122,7 @@ router.post(
         removeTempUpload(req);
       }
 
-      const result = addAlert({
+      const result = addAlert(identity.accountId, {
         ...event, nodeType: identity.nodeType,
         alertId,
         deviceId: meta.deviceId,
@@ -148,7 +150,7 @@ router.post(
         screenshotUrl: screenshotPath ? `/screenshots/${path.basename(screenshotPath)}` : '',
         ...(parsedMeta as any).timings ? { timings: (parsedMeta as any).timings } : {},
       };
-      if (result === 'stored') broadcastAlert(push);
+      if (result === 'stored') broadcastAlert(identity.accountId, push);
 
       console.log(`[alert] 报警已接收: ${meta.deviceName} → ${meta.detections.length} 个目标 (${alertId}) screenshot=${screenshotPath ? 'saved' : 'detector-local'}`);
       res.json({ ok: true, alertId });

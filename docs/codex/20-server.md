@@ -1,137 +1,90 @@
 # 视觉中继
 
-`server/` 在架构中承担统一服务职责，沿用内部技术名称“视觉中继”（`VisionGuard.Relay`、npm 包 `visionguard-relay`）。当前实现连接、认证、状态、告警流转和控制转发，以及截图、模型和更新文件分发；职责划分见[项目概览](10-project-overview.md)。
+`server/` 承担统一服务职责，沿用内部技术名称 `VisionGuard.Relay` 和 npm 包名 `visionguard-relay`。它提供账号登录、节点身份、实时媒体转发、状态、事件、控制、截图及公共模型和更新文件分发；组件分工见[项目概览](10-project-overview.md)。
 
-正式服务域名为 `https://visionguard.xgwnje.cn`，由 VPS 上的 Nginx SNI 架构转发到 VisionGuard Node 服务。根域 `https://xgwnje.cn` 用于个人主页，不能作为当前客户端的服务地址。
-
-当前线上路径：
-
-```text
-visionguard.xgwnje.cn:443
-  -> Nginx stream SNI
-  -> 127.0.0.1:9443 HTTPS virtual host
-  -> proxy_pass http://127.0.0.1:3000
-  -> /opt/visionguard-server
-```
-
-## 当前职责
-
-- 处理 `/health`
-- 提供 `/api/*` 路由
-- 提供 `/releases/*` 静态下载（客户端更新包）
-- 提供 `/models/*` 静态下载（模型文件，无需鉴权）
-- 维护 WebSocket 连接与角色认证
-- 聚合告警、维护设备在线状态并清理过期数据
-- 转发控制台的设备/来源控制与参数配置请求，并回传执行结果
-- 清理过期截图
-
-视觉中继生成节点连接中断和持续检测中断事件。连接状态不等于通知收件确认，通知收件确认不等于声音播放；本机与真机证据分别见[验证报告](90-verification-report.md)。
+正式地址为 `https://visionguard.xgwnje.cn`。既有生产入口由 Nginx SNI 经 `127.0.0.1:9443` 转发至 `127.0.0.1:3000`，服务目录为 `/opt/visionguard-server`；根域 `https://xgwnje.cn` 是个人主页。源码更新不代表生产服务已升级，当前测试和生产证据见[验证报告](90-verification-report.md)。
 
 ## 统一接入契约
 
-### 身份与权限
+### 账号与身份
 
-认证消息携带 `channel`、`apiKey`、`deviceId`、`deviceName`、`role`、`nodeType`、`platform`。`VISIONGUARD_IDENTITIES_FILE` 指向私有 JSON 数组，每条登记 `deviceId/role/nodeType/platform/apiKey`；凭据、身份及通道必须全部匹配，不能自称其他节点或角色。服务启动时加载登记，调整后重启；登记方法见[运维](60-operations.md#节点登记)。
+一套账号对应一套系统链路。所有组件使用账号密码登录，设备 ID、所属账号、角色、平台及随机会话凭据由服务端确定。客户端无需填写节点凭据或手动匹配通道；认证只使用本实例签发的会话。
 
-| 角色 | 节点类型 | 权限 |
+| 登录组件 | 角色 / 类型 / 平台 | 职责 |
 |---|---|---|
-| `detector` | `visual` / `sensor` | 上报自己的事件、状态与能力，回传自己的控制执行结果 |
-| `console` | `console` | 查看节点与事件，按目标能力下发控制和配置 |
-| `notifier` | `notification` | 接收实时事件，确认自己已收件，上报连接心跳 |
-| `lifecycle` | `resident` | 上报驻留状态，执行打开/关闭视觉程序 |
+| `web-console` | `console / console / web` | Web 控制台 |
+| `android-console` | `console / console / android` | Android 控制台 |
+| `android-notifier` | `notifier / notification / android` | 独立通知节点 |
+| `android-camera` | `detector / visual / android` | VisionGuard 镜头推流，仅采集和推流 |
+| `windows-inference` | `detector / visual / windows` | 视觉推理及现有窗口采集 |
 
-平台只描述运行环境，不决定权限。视觉主程序与驻留可共用设备 ID，但使用独立凭据；同一角色与 ID 的新连接替换旧连接，旧连接不能继续更改状态或回传结果。`clientType` 是现有控制台的显示投影，不参与认证或权限判定。`API_KEY` 仅保留 HTTP 管理读取权限；HTTP 告警上传必须使用登记的检测节点凭据并绑定其设备 ID。
+Windows 登录自动获得同设备 ID 的 `windows-resident` 子会话，角色为 `lifecycle / resident / windows`。主会话退出、轮换、到期或设备解绑同时使子会话失效；独立刷新子会话仍保留主会话约束。平台是身份信息，权限由服务端组件映射决定。
 
-### 事件与送达
+账号通过根目录 `scripts/provision-account.js <username>` 创建，无公开注册入口。必须指定私有 `VISIONGUARD_DATA_DIR`；密码只通过 `VISIONGUARD_ACCOUNT_PASSWORD` 临时环境变量或标准输入传入。CLI 与服务共用单进程 JSON 存储，应停止对应服务后创建账号再启动，操作入口见[运维](60-operations.md)。密码使用随机盐与 scrypt，磁盘会话只保存 token 哈希；有效期为 30 天。
 
-- `alert` 使用稳定 UUID `alertId` 去重，公共字段为 `eventKind`、`timestamp`、`expiresAt`、`summary`、设备身份；实时有效期最多 30 秒，过期事件拒绝入库与重试。
-- `visual-detection` 保留已上报来源的 `sourceId/sourceName` 和检测框；截图经同一 `alertId` 的独立消息关联。`sensor-detection` 不要求图片、检测框或虚构视觉来源，`detections=[]`。
-- `connection-lost` 与 `detection-interrupted` 由服务生成，同样经事件入库和实时通知链流转。设备连接中断事件不带来源；逐视觉来源检测中断事件保留来源身份。
-- 服务生成的故障事件遇到临时落盘失败时，在原有效期内每 3 秒重试，不延长事件期限；服务进程重启后的故障重新依据当前连接和状态判断。
-- `alert-ack/stored` 证明事件已原子写入并 `fsync`；相同事件重试返回 `duplicate`，不重复广播，同 ID 不同内容返回 `alert-id-conflict`。入库与通知收件是两个阶段。
-- 服务对当前在线通知节点每 3 秒重试未确认事件，截止 `expiresAt`；`notification-receipt` 只确认该通知节点的待收件事件，并向控制台广播收件事实。断开或替换会话后丢弃其待投递项，重连不补发旧会话告警。事件历史仍可查看，但不会作为重新响铃的依据。
-- `NotificationNodeClient` 提供通知节点的最小 WS 客户端和接收回调；`NotificationSession` 在本地使用单调时钟监测服务响应，启动后或最近有效响应后 45 秒无响应便触发一次中断回调，重连尝试与发送心跳不会延长该期限。恢复响应后允许监测下一次中断。按事件 ID 去重，接收回调成功后才回收件确认；回调失败可在有效期内重试。通知节点的后台入口与声音策略见[控制台与通知节点](50-android-receiver.md#visionguard-通知节点)。
+HTTP 使用 `Authorization: Bearer <token>`；`/ws` 的首条消息为 `{type:'auth',token}`。认证结果包含账号、设备身份、组件、`maxSources` 和账号的 `timeStandard`。客户端自称的身份字段不参与权限判断，同角色同设备的新连接替换旧连接。
 
-### 通知范围
+设备名称以服务端登记值为准。`PATCH /api/devices/:deviceId` 更新主节点及驻留名，并向对应现存连接推送 `device-updated`、向控制台刷新设备列表；旧客户端心跳不能覆盖登记名。退出、改密、解绑立即撤销相关控制和媒体连接及待处理项。
 
-`get-notification-scopes` 返回已登记检测和通知身份，包含离线节点与当前范围，不包含凭据。控制台发送 `set-notification-scope`，字段为 `requestId`、`targetNotifierId`、`scope`；成功保存后返回 `notification-scope-result`，广播新的 `notification-scopes`，并向在线通知节点推送 `notification-scope`。通知认证结果携带 `notificationScope`。
+## 账号隔离与数据
 
-范围格式为 `{mode: "all" | "selected", targets: [{deviceId, sourceId?}]}`，最多 100 项；默认全部，指定空集合不收件。目标必须是已登记检测身份，sourceId 仅适用于视觉节点；在线来源必须是当前上报来源，离线来源可按稳定 ID 配置。指定设备包括其所有来源；指定来源仍接收父设备连接中断事件。修改范围时丢弃已不匹配的待投递项，扩大范围不补发历史。通知节点自身监测的服务中断不受服务器范围过滤。
+设备列表、媒体绑定、画面、事件、截图、控制请求、通知范围及显示时区均限定在当前账号。跨账号目标按不存在处理；截图必须关联当前账号中已保存的事件。HTTP 历史和截图仅控制台可读取，HTTP 事件上传仅推理组件可调用，镜头推流不能上报推理事件。
 
-`NotificationScopeStore` 在数据目录 `notification-scopes.json` 使用临时文件加原子替换保存；写入失败保留原有效范围，不回成功。服务重启读取持久化配置。
+```text
+VISIONGUARD_DATA_DIR/
+  accounts.json
+  accounts/<accountId>/
+    alerts.json
+    screenshots/<alertId>.(png|jpg)
+    notification-scopes.json
+    time-standard.json
+    streams.json
+```
 
-### 状态、配置与控制
+存储使用临时文件、`fsync` 和原子替换，操作落盘后才确认成功。截图默认保留 72 小时，事件默认 7 天，每设备最多 200 条。独立测试实例使用单独端口、进程和数据目录；`VISIONGUARD_CHANNEL` 只描述实例，不是用户需要填写的匹配凭据。
 
-- 检测节点每 3 秒上报 `heartbeat`，保留的 Android 控制台每 30 秒、Web 每 3 秒上报 `heartbeat-console`，通知节点每 3 秒上报 `heartbeat-notifier`；驻留使用 `resident-heartbeat`。服务响应 `heartbeat-ack`，45 秒无心跳清理连接，维护周期 3 秒。
-- 已关闭的检测连接保留 10 秒重连宽限；仍未重连则生成一次连接中断事件。服务进程停机由通知节点本地监测，不能依赖停机的服务发送故障通知。
-- 检测状态分开实际运行 `isMonitoring/isReady`、运行意图 `monitoringExpected` 和最后成功处理时间 `lastProgressAt`。持续预期运行却 15 秒无成功处理，或持续 15 秒未实际运行，生成一次中断事件；恢复后重新监测。主动暂停不产生检测中断。视觉状态按来源判断，传感器按节点判断。
-- 能力上报受到节点类型限制：传感器不能宣称视觉来源控制或截图能力。`command`、`set-config` 继续复用 `requestId` 去重及 `forwarded/completed` 两阶段回执；执行完成必须由实际目标连接确认，不能把已转发称为执行成功。
-- 首期保留已有配置键与校验。视觉支持冷却、置信度、目标、采样率和已有模型切换；传感器基础只接受冷却、置信度，且必须声明 `config-control`。具体传感器设置与配置模板待实际硬件需求细化。
+## 实时媒体
 
-### 统一告警时间
+`/media/ws` 与控制 socket 分开。首条消息为 `{type:'media-auth',token,direction:'publish'|'subscribe'}`，只有镜头推流可发布，只有 Windows 推理节点可订阅。每个摄像设备有独立 `streamId`；同账号只有一个兼容推理设备时自动绑定，多个时由控制台选择。`sourceId` 与绑定保存，重新连接使用新的媒体 `sessionId`，缓冲随连接或绑定变化清空。
 
-服务通道持有一个告警显示标准，默认 `Asia/Shanghai`（北京时间 UTC+8），也可设为 `UTC`。控制台发送 `set-time-standard`，携带 `requestId` 和 `timeZone`；只有已认证控制台可修改。服务先将标准原子写入并 `fsync` 到数据目录 `time-standard.json`，成功后回 `time-standard-result`，向在线控制台和通知节点广播 `time-standard`；失败保留原标准。认证结果携带 `timeStandard`，重连时重新同步，控制台可用 `get-time-standard` 读取。
+二进制帧为 4 字节大端 JSON 头长度、UTF-8 头和 JPEG。头包含 `streamId/sessionId/sequence/capturedAt/width/height/rotation`；转发时增加服务端 `receivedAt` 毫秒时间用于观测。JSON 头最多 4096 字节、JPEG 最多 2 MiB，分辨率最长边不超过 1280、短边不超过 720，服务检查 JPEG 声明尺寸与帧元数据一致。接收端仍须实际解码，错误帧不能算推理进展。
 
-`timeStandard` / `time-standard` 包含 `timeZone` 和 UTC ISO 8601 `serverTime`。Web 节点响应时间、事件列表和详情采用该时区；通知节点持久化所收标准，告警列表与弹窗立即重绘。事件中的 ISO 时间与有效期保留原发生瞬间，切换显示标准不改变事件有效期、补发行为或设备系统时钟；此设置不提供节点时钟漂移校准。
+发布端等待 `media-ready`，每次最多一帧未确认，服务用 `frame-ack` 授予下一帧额度。订阅端用 `frame-received` 确认接收/解码；服务每路保留一帧在途和一帧最新候选，候选年龄超过 2.5 秒丢弃，消费者 5 秒不确认即关闭。服务缓存年龄用单调时钟判断，相机时间只作相对变化检查，不要求各设备墙钟同步。WS 入口同时限制整条消息、分片数量及缓冲块数量。
+
+首帧接收、持续推流、接收确认和推理完成是不同事实。发布 2.5 秒无新帧标记 `frame-stalled`；异常连接断开标记 `connection-lost`。显式 `stream-stop` 的 `user/background/locked` 原因是正常停止。推理端不能反复处理同一缓存帧来刷新 `lastProgressAt`。
+
+镜头控制连接关闭或空闲不会生成推理故障报警，包括用户停止、后台和锁屏退出。真实媒体异常仍通过绑定的 Windows 来源状态产生检测中断；只有推理节点自身断开才产生其节点连接中断。这个边界由服务签发的组件身份决定，客户端自报断开原因不能绕过推理节点故障判断。
+
+服务推送 `stream-list` 到本账号控制台和视觉节点；控制 WS `get-streams` 或 HTTP `GET /api/streams` 可主动读取。`POST /api/streams/bind` 接受 `publisherDeviceId/targetDeviceId`，仅允许同账号控制台或发布端绑定自己的镜头。
+
+## 事件、通知与控制
+
+- `alert` 以稳定 UUID `alertId` 去重，实时有效期最多 30 秒。首次落盘回 `alert-ack/stored`，同内容重试回 `duplicate`，同 ID 不同内容回 `alert-id-conflict`；临时落盘失败回 `storage-failed`，不延长事件有效期。
+- `visual-detection` 保留当前来源身份与检测框，截图通过同一 `alertId` 的独立消息关联。服务生成 `connection-lost` 和逐来源 `detection-interrupted`，落盘临时失败在原有效期内每 3 秒重试。
+- 在线通知节点每 3 秒收到未确认事件的重试，截止 `expiresAt`。`notification-receipt` 仅证明对应通知节点已收件；连接状态、入库、收件和声音播放不能互相代替。旧会话待投递项在断开或替换时丢弃，重连不重放旧报警。
+- `get-notification-scopes` 和 `set-notification-scope` 仅操作本账号登记设备。范围为 `{mode:'all'|'selected',targets:[{deviceId,sourceId?}]}`，最多 100 项，默认全部；指定空集合不收件。调整范围不会补发历史，指定来源仍接收父设备连接中断事件。
+- 节点实际运行 `isMonitoring/isReady`、运行意图 `monitoringExpected` 和 `lastProgressAt` 分开。持续预期运行但 15 秒无成功处理或未实际运行产生一次故障，恢复后重新监测；主动暂停不产生该故障。
+- 检测、通知和驻留节点通常每 3 秒心跳，控制台心跳可为 30 秒；控制连接 45 秒无响应清理，检测连接保留 10 秒重连宽限。服务停机由通知节点本地 45 秒响应看门狗监测。
+- 来源上限由 `MAX_SOURCES_PER_DETECTOR` 下发，默认 16、范围 1–16。超限心跳整组拒绝，列表携带 `sourceLimitExceeded`；来源控制只接受最近成功心跳中存在的来源。
+- 业务命令为 `pause/resume/stop-alarm`，驻留命令为 `open-detector/close-detector`。`command/set-config` 用 `requestId` 关联 `forwarded/completed` 两阶段结果，不能把已转发称为已执行。镜头组件不能声明推理、截图或模型配置权限。
+- `request-screenshot` 成功时以 `screenshot-data` 异步返回，请求者按 `alertId` 关联；失败回结构化 `command-ack`。
+
+每账号的告警显示时区默认 `Asia/Shanghai`，可由控制台设置为 `UTC`。`set-time-standard` 先持久化再回结果，并广播给本账号控制台和通知节点；认证和重连同步标准。ISO 时间和事件有效期保留原发生瞬间，显示时区不校准节点时钟、不改变重试或补发策略。
 
 ## 对外入口
 
-- `GET /console/`：同源 Web 控制台静态入口，构建产物位于 `server/dist/console/`；凭据在内存，HTTP 事件和截图仍需认证
-- `POST /console/test-session`：默认关闭；显式开启隔离测试自动登录时，仅为回环或私有 IPv4 客户端生成临时 `console/console/web` 身份，不返回管理密钥或既有节点凭据。同源浏览器每次打开获得独立身份，重启服务或 24 小时后失效
-- `GET /health`：健康检查
-- `GET /api/update`：客户端更新查询
-- `GET /releases/*`：Release 文件下载
-- `/ws`：WebSocket 中继入口
-- WS 角色：`detector`、`console`、`notifier`、`lifecycle`
-- 公共 DNS、端口、Nginx SNI 结构维护在同级 `Server-infra` 仓库。
+- `/console/`：同源 Web 控制台，需要真实账号登录。
+- `/api/account/login`、`session`、`refresh`、`logout`、`password`：登录、读取会话、轮换、退出、改密。
+- `/api/devices` 及 `/:deviceId`：账号设备列表、改名、解绑。
+- `/api/streams` 和 `/api/streams/bind`：账号媒体列表与绑定。
+- `/api/alerts`、`/api/alert`、`/screenshots/*`：鉴权历史、可选上传和截图。
+- `/ws`、`/media/ws`：控制和媒体 WS。
+- `/health`、`/api/update`、`/releases/*`、`/models/*`：公共健康检查、更新查询和公共文件分发。
 
-## 关键文件
+## 关键文件与配置
 
-- `server/src/index.ts` - 服务入口，挂载路由、WS、TTL 清理
-- `server/src/config.ts` - 环境变量与运行参数
-- `server/src/services/ConnectionManager.ts` - WS 认证、心跳、广播、角色路由
-- `server/src/services/NodeProtocol.ts` - 登记身份、角色权限和实时事件校验
-- `server/src/services/NotificationNodeClient.ts` / `NotificationSession.ts` - 通知接入与本地中断监测
-- `server/src/services/NotificationScopeStore.ts` - 通知范围验证、匹配与持久化
-- `server/src/services/TimeStandardStore.ts` - 通道告警时区与原子持久化
-- `server/src/services/AlertStore.ts` - 告警缓存与持久化
-- `server/src/services/ScreenshotCleanup.ts` - 截图 TTL 清理
-- `server/src/routes/update.ts` - 更新查询
-- `server/src/routes/screenshot.ts` - 截图下载
+入口和参数为 `server/src/index.ts`、`config.ts`；账号为 `services/AccountStore.ts` 和 `routes/account.ts`；控制为 `ConnectionManager.ts`、`NodeProtocol.ts`；媒体为 `MediaRelay.ts`、`WebSocketLimits.ts` 和 `routes/streams.ts`；事件、通知范围和时区分别由 `AlertStore.ts`、`NotificationScopeStore.ts`、`TimeStandardStore.ts` 保存，截图清理由 `ScreenshotCleanup.ts` 完成。
 
-## 运行参数
+主要环境变量见 `server/.env.example`：`BIND_HOST` 默认 `127.0.0.1`、`PORT` 默认 3000、`VISIONGUARD_DATA_DIR`、`VISIONGUARD_CHANNEL`，以及 TTL、上传、连接和来源限制。默认 HTTP 可放在现有代理后；直接 HTTPS 的隔离测试入口同时设置 `VISIONGUARD_TLS_CERT_FILE` 与 `VISIONGUARD_TLS_KEY_FILE`，使用同一服务器的 HTTP 和 WS 路径。
 
-- `BIND_HOST`（默认 `127.0.0.1`；仅在明确需要直接对外监听时覆盖）
-- `PORT`
-- `API_KEY`
-- `VISIONGUARD_IDENTITIES_FILE`（必填，私有节点凭据登记文件）
-- `VISIONGUARD_TEST_CONSOLE_AUTOLOGIN`（默认 `false`；开启必须设置与默认数据目录不同的 `VISIONGUARD_DATA_DIR`，仅用于隔离测试）
-- `SCREENSHOT_TTL_HOURS`
-- `ALERT_TTL_HOURS`
-- `MAX_UPLOAD_BYTES`
-- `ENABLE_HTTP_SCREENSHOT_UPLOAD`
-- `MAX_WS_CONNECTIONS`
-- `MAX_SOURCES_PER_DETECTOR`（默认 16，允许 1–16；随 `auth-result`/`heartbeat-ack` 下发）
-
-## 实现事实
-
-- 连接上限当前由 `MAX_WS_CONNECTIONS` 控制，默认 100
-- 所有 WS 角色的连接幽灵清理阈值为 45 秒
-- 截图目录当前为 `data/screenshots/<alertId>.(png|jpg)`；服务端按图片魔数决定扩展名
-- WS 认证存在超时控制，当前实现为 5000ms
-- 检测端来源上限由 `MAX_SOURCES_PER_DETECTOR` 持有（默认 16、范围 1–16），并在 `auth-result` 与 `heartbeat-ack` 中下发 `maxSources`。默认值必须与检测端 `MultiSourceMonitorCoordinator.MaximumSourceLimit`（16）一致。心跳的 `sources` 数组超过上限时整组拒绝并回明确原因，不再静默截断——静默截断会让超出部分既不报警也不可见。逐来源命令与参数调整只接受最近一次心跳中存在的 `targetSourceId`。
-- `device-list` 的每个设备条目携带 `maxSources` 与 `sourceLimitExceeded`：后者表示最近一次心跳的来源数组因超限被整组拒绝（此时条目里的 `sources` 是上一次成功上报的快照），正常心跳会清除该标记。接收端据此解释“来源为什么只有这些”，不需要猜。
-- 业务控制命令只允许 `pause`、`resume`、`stop-alarm`；驻留生命周期只允许 `open-detector` / `close-detector`。无效命令或来源不会占用 `requestId`。无 `targetSourceId` 的命令按设备级中继，由检测端解释为“全部来源”；服务端不把设备级命令改写成某个具体来源。
-- `request-screenshot` 没有成功回执：检测端把截图作为 `screenshot-data` 异步广播，请求者按 `alertId` 关联；失败路径回带 `requestId` 与 `phase=completed` 的结构化 `command-ack`。
-- 驻留连接与检测端、接收端一样参与幽灵清理（同为 45s 阈值）。只有驻留在线的设备仍算在线，因此对它的业务命令回“该设备当前没有检测端在线”，而不是“设备离线”。
-- 同一 `deviceId` 的 Windows 主检测端与驻留程序共用一个设备名称；主检测端认证或心跳中的自定义名称会同步到驻留连接记录，主检测端关闭并经过重连宽限后，驻留设备卡仍延续该名称。
-- `session-info` 只在 `console` 角色被接受，并且以认证身份为准，不使用消息自称的 `deviceId`。
-- `VISIONGUARD_CHANNEL` 标识实例隔离域，认证消息的 `channel` 必须完全一致；错误或缺失通道直接拒绝。测试实例使用独立端口、进程和 `VISIONGUARD_DATA_DIR`，连接表、报警、截图和广播与生产隔离。
-- WS 报警以 `alertId` 幂等入库：首次报警原子落盘并 `fsync` 后返回 `alert-ack/stored`，相同内容重试返回 `duplicate` 且不重复广播，同 ID 不同内容返回永久 `alert-id-conflict`；临时落盘失败返回 `storage-failed`，检测端保留队列继续重试。
-- 当前 VPS 使用共享证书目录 `/etc/letsencrypt/live/xgwnje.cn/`
-- 当前生产状态与完整报警链需要单独核验；本轮结果见[验证报告](90-verification-report.md)。
-- 根域 `/releases/*` 仅作为既有线上版本入口，新协议测试通道不使用该入口
-
-## 操作与验证
-
-构建、隔离实例和发布授权见[运维](60-operations.md)；本轮检查与未覆盖项见[验证报告](90-verification-report.md)。生产网络与 TLS 配置由 `Server-infra` 管理。
+构建、隔离运行和发布授权见[运维](60-operations.md)；当前检查和未覆盖项只维护于[验证报告](90-verification-report.md)。生产网络和证书配置由同级 `Server-infra` 管理。

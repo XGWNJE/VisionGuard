@@ -1,7 +1,3 @@
-# ONNX Runtime
--keep class ai.onnxruntime.** { *; }
--dontwarn ai.onnxruntime.**
-
 # OkHttp
 -keep class okhttp3.** { *; }
 -dontwarn okhttp3.**

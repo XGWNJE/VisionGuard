@@ -204,7 +204,8 @@ fun buildDeviceCardUiModel(device: DeviceInfo): DeviceCardUiModel {
         !device.isReady -> DeviceStatusTone.NOT_READY
         else -> DeviceStatusTone.READY
     }
-    val statusLabel = when (statusTone) {
+    val camera = device.component == "android-camera" || "video-publish" in device.capabilities
+    val statusLabel = if (camera && device.online) { if (device.isStreaming) "推流中" else "推流已停止" } else when (statusTone) {
         DeviceStatusTone.OFFLINE -> "离线"
         DeviceStatusTone.RESIDENT_ONLY -> "驻留在线 · 程序关闭"
         DeviceStatusTone.MONITORING -> "检测中"
@@ -260,14 +261,14 @@ fun buildDeviceCardChrome(): DeviceCardChrome =
 private fun deviceCardIllustrationOf(clientType: String): DeviceCardIllustration =
     when (clientType.lowercase(Locale.US)) {
         "windows" -> DeviceCardIllustration.WINDOWS_DESKTOP
-        "android-detector" -> DeviceCardIllustration.ANDROID_CAMERA
+        "android-camera" -> DeviceCardIllustration.ANDROID_CAMERA
         else -> DeviceCardIllustration.GENERIC_VIEWFINDER
     }
 
 private fun deviceTypeLabelOf(clientType: String): String =
     when (clientType.lowercase(Locale.US)) {
         "windows" -> "Windows识别端"
-        "android-detector" -> "安卓识别端"
+        "android-camera" -> "镜头推流"
         else -> "识别端"
     }
 

@@ -21,14 +21,8 @@ namespace VisionGuard.Detector.Windows.Services
         {
             _path = path ?? Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "VisionGuard", $"alert-outbox-{SafeChannelName()}.json");
+                "VisionGuard", "accounts", Utils.AccountSession.ScopeKey, "alert-outbox.json");
             _entries = Load();
-        }
-
-        private static string SafeChannelName()
-        {
-            var channel = Environment.GetEnvironmentVariable("VISIONGUARD_CHANNEL") ?? "vnext";
-            return new string(channel.Select(ch => char.IsLetterOrDigit(ch) || ch is '.' or '_' or '-' ? ch : '_').ToArray());
         }
 
         public IReadOnlyList<AlertOutboxEntry> Snapshot()

@@ -6,22 +6,16 @@ import fs from 'node:fs';
 import test from 'node:test';
 import WebSocket, { WebSocketServer } from 'ws';
 
-process.env.API_KEY = 'control-request-test-key';
 process.env.VISIONGUARD_CHANNEL = 'test-vnext';
-// 显式钉住 4 路上限：本文件要覆盖的是「超限心跳整组被拒 + 接收端看到 sourceLimitExceeded」，
-// 不能跟着 config 默认值走（默认值已改为 16，否则 5 路心跳不再超限，这条覆盖会静默失效）。
 process.env.MAX_SOURCES_PER_DETECTOR = '4';
-const alertStorePath = path.join(os.tmpdir(), `visionguard-alert-store-${process.pid}.json`);
-process.env.ALERT_STORE_PATH = alertStorePath;
-test.after(() => { try { fs.rmSync(alertStorePath, { force: true }); } catch {} });
-test.after(() => { try { fs.rmSync(`${alertStorePath}.tmp`, { force: true }); } catch {} });
-
-const identitiesPath = path.join(os.tmpdir(), `visionguard-identities-${process.pid}.json`);
-fs.writeFileSync(identitiesPath, JSON.stringify([{"deviceId": "foreign-channel-receiver", "role": "console", "nodeType": "console", "platform": "android", "apiKey": "test-console-foreign-channel-receiver-credential"}, {"deviceId": "alert-retry-detector", "role": "detector", "nodeType": "visual", "platform": "windows", "apiKey": "test-detector-alert-retry-detector-credential"}, {"deviceId": "alert-retry-receiver", "role": "console", "nodeType": "console", "platform": "android", "apiKey": "test-console-alert-retry-receiver-credential"}, {"deviceId": "detector-control-test", "role": "detector", "nodeType": "visual", "platform": "android", "apiKey": "test-detector-detector-control-test-credential"}, {"deviceId": "receiver-control-test", "role": "console", "nodeType": "console", "platform": "android", "apiKey": "test-console-receiver-control-test-credential"}, {"deviceId": "other-receiver-control-test", "role": "console", "nodeType": "console", "platform": "android", "apiKey": "test-console-other-receiver-control-test-credential"}, {"deviceId": "resident-control-test", "role": "lifecycle", "nodeType": "resident", "platform": "windows", "apiKey": "test-lifecycle-resident-control-test-credential"}, {"deviceId": "resident-receiver-test", "role": "console", "nodeType": "console", "platform": "android", "apiKey": "test-console-resident-receiver-test-credential"}, {"deviceId": "resident-name-test", "role": "lifecycle", "nodeType": "resident", "platform": "windows", "apiKey": "test-lifecycle-resident-name-test-credential"}, {"deviceId": "resident-name-test", "role": "detector", "nodeType": "visual", "platform": "windows", "apiKey": "test-detector-resident-name-test-credential"}, {"deviceId": "resident-name-receiver", "role": "console", "nodeType": "console", "platform": "android", "apiKey": "test-console-resident-name-receiver-credential"}]));
-process.env.VISIONGUARD_IDENTITIES_FILE = identitiesPath;
-test.after(() => fs.rmSync(identitiesPath, { force: true }));
+const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-control-accounts-'));
+process.env.VISIONGUARD_DATA_DIR = temporary;
+test.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+const { AccountFixture } = require('./helpers/accounts') as typeof import('./helpers/accounts');
+const fixtures = new AccountFixture([{"name": "foreign-channel-receiver", "component": "web-console"}, {"name": "alert-retry-detector", "component": "windows-inference"}, {"name": "alert-retry-receiver", "component": "web-console"}, {"name": "detector-control-test", "component": "windows-inference"}, {"name": "receiver-control-test", "component": "web-console"}, {"name": "other-receiver-control-test", "component": "web-console"}, {"name": "resident-control-test", "component": "windows-resident"}, {"name": "resident-receiver-test", "component": "web-console"}, {"name": "resident-name-test", "component": "windows-resident"}, {"name": "resident-name-test", "component": "windows-inference"}, {"name": "resident-name-receiver", "component": "web-console"}]);
 
 const { associateScreenshotPayload, handleConnection } = require('../src/services/ConnectionManager') as typeof import('../src/services/ConnectionManager');
+const { accountStore } = require('../src/services/AccountStore') as typeof import('../src/services/AccountStore');
 
 test('associates screenshot identity from the authoritative alert record', () => {
   const alert = {
@@ -53,24 +47,15 @@ test('acknowledges durable alerts and suppresses retry duplicates', async (t) =>
   t.after(() => { detector.terminate(); receiver.terminate(); foreign.terminate(); wss.close(); });
 
   const foreignAuth = waitForMessage(foreign, msg => msg.type === 'auth-result');
-  foreign.send(JSON.stringify({
-    type: 'auth', channel: 'legacy-live', apiKey: 'test-console-foreign-channel-receiver-credential', role: 'console', nodeType: 'console', platform: 'android',
-    deviceId: 'foreign-channel-receiver', deviceName: 'Foreign Receiver',
-  }));
-  assert.deepEqual(await foreignAuth, { type: 'auth-result', success: false, reason: 'invalid identity or channel' });
+  foreign.send(JSON.stringify(fixtures.auth('foreign-channel-receiver', 'console', false)));
+  assert.deepEqual(await foreignAuth, { type: 'auth-result', success: false, reason: 'invalid session' });
 
   const detectorAuth = waitForMessage(detector, msg => msg.type === 'auth-result');
-  detector.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-detector-alert-retry-detector-credential', role: 'detector', nodeType: 'visual', platform: 'windows',
-    deviceId: 'alert-retry-detector', deviceName: 'Alert Retry Detector',
-  }));
+  detector.send(JSON.stringify(fixtures.auth('alert-retry-detector', 'detector')));
   assert.equal((await detectorAuth).success, true);
 
   const receiverAuth = waitForMessage(receiver, msg => msg.type === 'auth-result');
-  receiver.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-console-alert-retry-receiver-credential', role: 'console', nodeType: 'console', platform: 'android',
-    deviceId: 'alert-retry-receiver', deviceName: 'Alert Retry Receiver',
-  }));
+  receiver.send(JSON.stringify(fixtures.auth('alert-retry-receiver', 'console')));
   assert.equal((await receiverAuth).success, true);
 
   const sourceAck = waitForMessage(detector, msg => msg.type === 'heartbeat-ack');
@@ -85,7 +70,7 @@ test('acknowledges durable alerts and suppresses retry duplicates', async (t) =>
   const firstDelivery = waitForMessage(receiver, msg => msg.type === 'alert' && msg.alertId === alertId);
   const firstAck = waitForMessage(detector, msg => msg.type === 'alert-ack' && msg.alertId === alertId);
   detector.send(JSON.stringify(alert));
-  assert.equal((await firstDelivery).deviceId, 'alert-retry-detector');
+  assert.equal((await firstDelivery).deviceId, fixtures.id('alert-retry-detector'));
   const stored = await firstAck;
   assert.equal(stored.type, 'alert-ack');
   assert.equal(stored.alertId, alertId);
@@ -145,6 +130,7 @@ function expectNoMessage(ws: WebSocket, predicate: (message: any) => boolean, wa
 }
 
 async function connect(port: number): Promise<WebSocket> {
+  await fixtures.ready;
   const ws = new WebSocket(`ws://127.0.0.1:${port}`);
   await new Promise<void>((resolve, reject) => {
     ws.once('open', resolve);
@@ -171,31 +157,22 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   });
 
   const detectorAuth = waitForMessage(detector, msg => msg.type === 'auth-result');
-  detector.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-detector-detector-control-test-credential', role: 'detector', nodeType: 'visual', platform: 'android',
-    deviceId: 'detector-control-test', deviceName: 'Detector', version: '4.4.4',
-  }));
+  detector.send(JSON.stringify(fixtures.auth('detector-control-test', 'detector')));
   assert.equal((await detectorAuth).success, true);
 
   const receiverAuth = waitForMessage(receiver, msg => msg.type === 'auth-result');
-  receiver.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-console-receiver-control-test-credential', role: 'console', nodeType: 'console', platform: 'android',
-    deviceId: 'receiver-control-test', deviceName: 'Receiver', version: '4.4.4',
-  }));
+  receiver.send(JSON.stringify(fixtures.auth('receiver-control-test', 'console')));
   assert.equal((await receiverAuth).success, true);
 
   const otherReceiverAuth = waitForMessage(otherReceiver, msg => msg.type === 'auth-result');
-  otherReceiver.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-console-other-receiver-control-test-credential', role: 'console', nodeType: 'console', platform: 'android',
-    deviceId: 'other-receiver-control-test', deviceName: 'Other Receiver', version: '4.4.4',
-  }));
+  otherReceiver.send(JSON.stringify(fixtures.auth('other-receiver-control-test', 'console')));
   assert.equal((await otherReceiverAuth).success, true);
 
   const capabilityListPromise = waitForMessage(receiver, msg =>
     msg.type === 'device-list' && msg.devices?.some((device: any) =>
-      device.deviceId === 'detector-control-test' && device.capabilities?.includes('request-correlation')));
+      device.deviceId === fixtures.id('detector-control-test') && device.capabilities?.includes('request-correlation')));
   detector.send(JSON.stringify({
-    type: 'heartbeat', deviceId: 'detector-control-test', deviceName: 'Detector',
+    type: 'heartbeat', deviceId: fixtures.id('detector-control-test'), deviceName: 'Detector',
     isMonitoring: false, isReady: true,
     capabilities: ['monitor-control', 'config-control', 'screenshot-on-demand', 'monitor-control', 'request-correlation', 'source-control'],
     components: { detectorApp: 'running', invalidComponent: 'invented-state' },
@@ -209,7 +186,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
     ],
   }));
   const capabilityDevice = (await capabilityListPromise).devices
-    .find((device: any) => device.deviceId === 'detector-control-test');
+    .find((device: any) => device.deviceId === fixtures.id('detector-control-test'));
   assert.deepEqual(capabilityDevice.capabilities, ['monitor-control', 'config-control', 'screenshot-on-demand', 'request-correlation', 'source-control']);
   assert.deepEqual(capabilityDevice.components, { detectorApp: 'running' });
   // 接收端必须能解释“来源为什么只有这些”，因此上限与超限状态都要下发。
@@ -228,7 +205,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const relayPromise = waitForMessage(detector, msg => msg.type === 'command');
   const forwardedPromise = waitForMessage(receiver, msg => msg.type === 'command-ack' && msg.phase === 'forwarded');
   receiver.send(JSON.stringify({
-    type: 'command', requestId, targetDeviceId: 'detector-control-test', command: 'pause',
+    type: 'command', requestId, targetDeviceId: fixtures.id('detector-control-test'), command: 'pause',
   }));
 
   const relay = await relayPromise;
@@ -237,7 +214,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
 
   const completedPromise = waitForMessage(receiver, msg => msg.type === 'command-ack' && msg.phase === 'completed');
   detector.send(JSON.stringify({
-    type: 'command-ack', phase: 'completed', requestId, targetDeviceId: 'detector-control-test',
+    type: 'command-ack', phase: 'completed', requestId, targetDeviceId: fixtures.id('detector-control-test'),
     command: 'pause', success: true, reason: '监控已停止',
   }));
 
@@ -249,18 +226,18 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const sourceRequestId = 'source-request-12345678';
   const sourceRelayPromise = waitForMessage(detector, msg => msg.type === 'command' && msg.requestId === sourceRequestId);
   receiver.send(JSON.stringify({
-    type: 'command', requestId: sourceRequestId, targetDeviceId: 'detector-control-test', targetSourceId: 'front', command: 'pause',
+    type: 'command', requestId: sourceRequestId, targetDeviceId: fixtures.id('detector-control-test'), targetSourceId: 'front', command: 'pause',
   }));
   const sourceRelay = await sourceRelayPromise;
   assert.equal(sourceRelay.targetSourceId, 'front');
   const sourceCompletedPromise = waitForMessage(receiver, msg =>
     msg.type === 'command-ack' && msg.phase === 'completed' && msg.requestId === sourceRequestId);
   detector.send(JSON.stringify({
-    type: 'command-ack', phase: 'completed', requestId: sourceRequestId, targetDeviceId: 'detector-control-test',
+    type: 'command-ack', phase: 'completed', requestId: sourceRequestId, targetDeviceId: fixtures.id('detector-control-test'),
     targetSourceId: 'wrong-source', command: 'pause', success: true, reason: '错误来源回执',
   }));
   detector.send(JSON.stringify({
-    type: 'command-ack', phase: 'completed', requestId: sourceRequestId, targetDeviceId: 'detector-control-test',
+    type: 'command-ack', phase: 'completed', requestId: sourceRequestId, targetDeviceId: fixtures.id('detector-control-test'),
     targetSourceId: 'front', command: 'pause', success: true, reason: '正确来源回执',
   }));
   const sourceCompleted = await sourceCompletedPromise;
@@ -271,7 +248,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const fourthRelayPromise = waitForMessage(detector, msg => msg.type === 'command' && msg.requestId === fourthRequestId);
   const fourthForwardedPromise = waitForMessage(receiver, msg => msg.type === 'command-ack' && msg.phase === 'forwarded' && msg.requestId === fourthRequestId);
   receiver.send(JSON.stringify({
-    type: 'command', requestId: fourthRequestId, targetDeviceId: 'detector-control-test', targetSourceId: 'fourth', command: 'resume',
+    type: 'command', requestId: fourthRequestId, targetDeviceId: fixtures.id('detector-control-test'), targetSourceId: 'fourth', command: 'resume',
   }));
   assert.equal((await fourthRelayPromise).targetSourceId, 'fourth');
   assert.equal((await fourthForwardedPromise).success, true);
@@ -281,7 +258,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const fourthCompletedPromise = waitForMessage(receiver, msg =>
     msg.type === 'command-ack' && msg.phase === 'completed' && msg.requestId === fourthRequestId);
   detector.send(JSON.stringify({
-    type: 'command-ack', phase: 'completed', requestId: fourthRequestId, targetDeviceId: 'detector-control-test',
+    type: 'command-ack', phase: 'completed', requestId: fourthRequestId, targetDeviceId: fixtures.id('detector-control-test'),
     targetSourceId: 'fourth', command: 'resume', success: true, reason: '第四路已启动',
   }));
   assert.equal((await fourthCompletedPromise).reason, '第四路已启动');
@@ -291,7 +268,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const unknownSourceAckPromise = waitForMessage(receiver, msg =>
     msg.type === 'command-ack' && msg.phase === 'completed' && msg.requestId === unknownSourceRequestId);
   receiver.send(JSON.stringify({
-    type: 'command', requestId: unknownSourceRequestId, targetDeviceId: 'detector-control-test', targetSourceId: 'missing', command: 'pause',
+    type: 'command', requestId: unknownSourceRequestId, targetDeviceId: fixtures.id('detector-control-test'), targetSourceId: 'missing', command: 'pause',
   }));
   const unknownSourceAck = await unknownSourceAckPromise;
   assert.equal(unknownSourceAck.success, false);
@@ -300,7 +277,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const reusedSourceRelayPromise = waitForMessage(detector, msg =>
     msg.type === 'command' && msg.requestId === unknownSourceRequestId);
   receiver.send(JSON.stringify({
-    type: 'command', requestId: unknownSourceRequestId, targetDeviceId: 'detector-control-test', targetSourceId: 'fourth', command: 'pause',
+    type: 'command', requestId: unknownSourceRequestId, targetDeviceId: fixtures.id('detector-control-test'), targetSourceId: 'fourth', command: 'pause',
   }));
   assert.equal((await reusedSourceRelayPromise).targetSourceId, 'fourth');
 
@@ -308,7 +285,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const unknownCommandAckPromise = waitForMessage(receiver, msg =>
     msg.type === 'command-ack' && msg.phase === 'completed' && msg.requestId === unknownCommandRequestId);
   receiver.send(JSON.stringify({
-    type: 'command', requestId: unknownCommandRequestId, targetDeviceId: 'detector-control-test', command: 'run-shell',
+    type: 'command', requestId: unknownCommandRequestId, targetDeviceId: fixtures.id('detector-control-test'), command: 'run-shell',
   }));
   const unknownCommandAck = await unknownCommandAckPromise;
   assert.equal(unknownCommandAck.success, false);
@@ -317,7 +294,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const reusedCommandRelayPromise = waitForMessage(detector, msg =>
     msg.type === 'command' && msg.requestId === unknownCommandRequestId);
   receiver.send(JSON.stringify({
-    type: 'command', requestId: unknownCommandRequestId, targetDeviceId: 'detector-control-test', targetSourceId: 'fourth', command: 'pause',
+    type: 'command', requestId: unknownCommandRequestId, targetDeviceId: fixtures.id('detector-control-test'), targetSourceId: 'fourth', command: 'pause',
   }));
   assert.equal((await reusedCommandRelayPromise).command, 'pause');
 
@@ -328,7 +305,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
     msg.type === 'command' && msg.requestId === lifecycleToDetectorRequestId);
   receiver.send(JSON.stringify({
     type: 'command', requestId: lifecycleToDetectorRequestId,
-    targetDeviceId: 'detector-control-test', command: 'open-detector',
+    targetDeviceId: fixtures.id('detector-control-test'), command: 'open-detector',
   }));
   assert.equal((await lifecycleToDetectorAckPromise).reason, '驻留组件离线');
   await lifecycleNotRelayedPromise;
@@ -336,7 +313,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const configRequestId = 'source-config-12345678';
   const configRelayPromise = waitForMessage(detector, msg => msg.type === 'set-config' && msg.requestId === configRequestId);
   receiver.send(JSON.stringify({
-    type: 'set-config', requestId: configRequestId, targetDeviceId: 'detector-control-test',
+    type: 'set-config', requestId: configRequestId, targetDeviceId: fixtures.id('detector-control-test'),
     targetSourceId: 'front', key: 'confidence', value: '0.7',
   }));
   const configRelay = await configRelayPromise;
@@ -346,7 +323,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const configCompletedPromise = waitForMessage(receiver, msg =>
     msg.type === 'command-ack' && msg.phase === 'completed' && msg.requestId === configRequestId);
   detector.send(JSON.stringify({
-    type: 'command-ack', phase: 'completed', requestId: configRequestId, targetDeviceId: 'detector-control-test',
+    type: 'command-ack', phase: 'completed', requestId: configRequestId, targetDeviceId: fixtures.id('detector-control-test'),
     targetSourceId: 'front', command: 'set-config:confidence', success: true, reason: '已更新',
   }));
   const configCompleted = await configCompletedPromise;
@@ -357,7 +334,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const unknownConfigSourceAckPromise = waitForMessage(receiver, msg =>
     msg.type === 'command-ack' && msg.phase === 'completed' && msg.requestId === unknownConfigSourceRequestId);
   receiver.send(JSON.stringify({
-    type: 'set-config', requestId: unknownConfigSourceRequestId, targetDeviceId: 'detector-control-test',
+    type: 'set-config', requestId: unknownConfigSourceRequestId, targetDeviceId: fixtures.id('detector-control-test'),
     targetSourceId: 'missing', key: 'confidence', value: '0.65',
   }));
   const unknownConfigSourceAck = await unknownConfigSourceAckPromise;
@@ -367,7 +344,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const reusedConfigRelayPromise = waitForMessage(detector, msg =>
     msg.type === 'set-config' && msg.requestId === unknownConfigSourceRequestId);
   receiver.send(JSON.stringify({
-    type: 'set-config', requestId: unknownConfigSourceRequestId, targetDeviceId: 'detector-control-test',
+    type: 'set-config', requestId: unknownConfigSourceRequestId, targetDeviceId: fixtures.id('detector-control-test'),
     targetSourceId: 'fourth', key: 'confidence', value: '0.65',
   }));
   assert.equal((await reusedConfigRelayPromise).targetSourceId, 'fourth');
@@ -375,7 +352,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const replayAckPromise = waitForMessage(receiver, msg =>
     msg.type === 'command-ack' && msg.phase === 'completed' && msg.requestId === configRequestId);
   receiver.send(JSON.stringify({
-    type: 'set-config', requestId: configRequestId, targetDeviceId: 'detector-control-test',
+    type: 'set-config', requestId: configRequestId, targetDeviceId: fixtures.id('detector-control-test'),
     targetSourceId: 'front', key: 'confidence', value: '0.8',
   }));
   const replayAck = await replayAckPromise;
@@ -386,7 +363,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const invalidSourceAckPromise = waitForMessage(receiver, msg =>
     msg.type === 'command-ack' && msg.phase === 'completed' && msg.requestId === reusableRequestId);
   receiver.send(JSON.stringify({
-    type: 'set-config', requestId: reusableRequestId, targetDeviceId: 'detector-control-test',
+    type: 'set-config', requestId: reusableRequestId, targetDeviceId: fixtures.id('detector-control-test'),
     targetSourceId: '../bad', key: 'confidence', value: '0.6',
   }));
   const invalidSourceAck = await invalidSourceAckPromise;
@@ -396,7 +373,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   const reusedRelayPromise = waitForMessage(detector, msg =>
     msg.type === 'set-config' && msg.requestId === reusableRequestId);
   receiver.send(JSON.stringify({
-    type: 'set-config', requestId: reusableRequestId, targetDeviceId: 'detector-control-test',
+    type: 'set-config', requestId: reusableRequestId, targetDeviceId: fixtures.id('detector-control-test'),
     targetSourceId: 'front', key: 'confidence', value: '0.6',
   }));
   const reusedRelay = await reusedRelayPromise;
@@ -405,9 +382,9 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   // 超限心跳：sources 整组被拒并保留旧快照，但接收端必须看到超限状态，而不是静默的旧来源。
   const overLimitListPromise = waitForMessage(receiver, msg =>
     msg.type === 'device-list' && msg.devices?.some((device: any) =>
-      device.deviceId === 'detector-control-test' && device.sourceLimitExceeded === true));
+      device.deviceId === fixtures.id('detector-control-test') && device.sourceLimitExceeded === true));
   detector.send(JSON.stringify({
-    type: 'heartbeat', deviceId: 'detector-control-test', deviceName: 'Detector',
+    type: 'heartbeat', deviceId: fixtures.id('detector-control-test'), deviceName: 'Detector',
     isMonitoring: false, isReady: true,
     capabilities: ['monitor-control', 'config-control', 'screenshot-on-demand', 'monitor-control', 'request-correlation', 'source-control'],
     sources: [
@@ -419,7 +396,7 @@ test('correlates detector completion with the requesting receiver', async (t) =>
     ],
   }));
   const overLimitDevice = (await overLimitListPromise).devices
-    .find((device: any) => device.deviceId === 'detector-control-test');
+    .find((device: any) => device.deviceId === fixtures.id('detector-control-test'));
   assert.equal(overLimitDevice.maxSources, 4);
   assert.equal(overLimitDevice.sourceLimitExceeded, true);
   assert.deepEqual(overLimitDevice.sources.map((source: any) => source.sourceId),
@@ -428,15 +405,15 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   // 正常心跳必须清除超限状态，否则接收端会一直显示过期的告警。
   const recoveredListPromise = waitForMessage(receiver, msg =>
     msg.type === 'device-list' && msg.devices?.some((device: any) =>
-      device.deviceId === 'detector-control-test' && device.sourceLimitExceeded === false));
+      device.deviceId === fixtures.id('detector-control-test') && device.sourceLimitExceeded === false));
   detector.send(JSON.stringify({
-    type: 'heartbeat', deviceId: 'detector-control-test', deviceName: 'Detector',
+    type: 'heartbeat', deviceId: fixtures.id('detector-control-test'), deviceName: 'Detector',
     isMonitoring: false, isReady: true,
     capabilities: ['monitor-control', 'config-control', 'screenshot-on-demand', 'monitor-control', 'request-correlation', 'source-control'],
     sources: [{ sourceId: 'front', sourceName: 'Front Door', isMonitoring: false, isReady: true, modelKey: 'yolo26n_320' }],
   }));
   assert.equal((await recoveredListPromise).devices
-    .find((device: any) => device.deviceId === 'detector-control-test').sources.length, 1);
+    .find((device: any) => device.deviceId === fixtures.id('detector-control-test')).sources.length, 1);
 });
 
 test('keeps resident identity separate and routes lifecycle commands only to it', async (t) => {
@@ -450,25 +427,19 @@ test('keeps resident identity separate and routes lifecycle commands only to it'
   t.after(() => { resident.terminate(); receiver.terminate(); wss.close(); });
 
   const residentAuth = waitForMessage(resident, msg => msg.type === 'auth-result');
-  resident.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-lifecycle-resident-control-test-credential', role: 'lifecycle', nodeType: 'resident', platform: 'windows',
-    deviceId: 'resident-control-test', deviceName: 'Resident PC',
-  }));
+  resident.send(JSON.stringify(fixtures.auth('resident-control-test', 'lifecycle')));
   assert.equal((await residentAuth).success, true);
 
   const receiverAuth = waitForMessage(receiver, msg => msg.type === 'auth-result');
-  receiver.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-console-resident-receiver-test-credential', role: 'console', nodeType: 'console', platform: 'android',
-    deviceId: 'resident-receiver-test', deviceName: 'Receiver',
-  }));
+  receiver.send(JSON.stringify(fixtures.auth('resident-receiver-test', 'console')));
   assert.equal((await receiverAuth).success, true);
 
   const listPromise = waitForMessage(receiver, msg => msg.type === 'device-list' &&
-    msg.devices?.some((d: any) => d.deviceId === 'resident-control-test' && d.components?.detectorApp === 'running'));
+    msg.devices?.some((d: any) => d.deviceId === fixtures.id('resident-control-test') && d.components?.detectorApp === 'running'));
   resident.send(JSON.stringify({
     type: 'resident-heartbeat', components: { resident: 'running', detectorApp: 'running' },
   }));
-  const listed = (await listPromise).devices.find((d: any) => d.deviceId === 'resident-control-test');
+  const listed = (await listPromise).devices.find((d: any) => d.deviceId === fixtures.id('resident-control-test'));
   assert.deepEqual(listed.capabilities, ['app-lifecycle-control']);
   assert.equal(listed.isMonitoring, false);
 
@@ -479,7 +450,7 @@ test('keeps resident identity separate and routes lifecycle commands only to it'
     msg.type === 'command' && msg.requestId === businessRequestId);
   receiver.send(JSON.stringify({
     type: 'command', requestId: businessRequestId,
-    targetDeviceId: 'resident-control-test', command: 'pause',
+    targetDeviceId: fixtures.id('resident-control-test'), command: 'pause',
   }));
   // 只有驻留在线的设备仍算在线，业务命令必须给出比“设备离线”更准确的原因。
   assert.equal((await businessAckPromise).reason, '该设备当前没有检测端在线');
@@ -487,7 +458,7 @@ test('keeps resident identity separate and routes lifecycle commands only to it'
 
   const requestId = 'resident-request-12345678';
   const relayPromise = waitForMessage(resident, msg => msg.type === 'command' && msg.requestId === requestId);
-  receiver.send(JSON.stringify({ type: 'command', requestId, targetDeviceId: 'resident-control-test', command: 'close-detector' }));
+  receiver.send(JSON.stringify({ type: 'command', requestId, targetDeviceId: fixtures.id('resident-control-test'), command: 'close-detector' }));
   assert.equal((await relayPromise).command, 'close-detector');
 });
 
@@ -504,39 +475,31 @@ test('keeps the detector custom name after only the Windows resident remains onl
   t.after(() => { resident.terminate(); detector.terminate(); receiver.terminate(); wss.close(); });
 
   const residentAuth = waitForMessage(resident, msg => msg.type === 'auth-result');
-  resident.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-lifecycle-resident-name-test-credential',
-    role: 'lifecycle', nodeType: 'resident', platform: 'windows', deviceId: 'resident-name-test', deviceName: 'DESKTOP-MACHINE',
-  }));
+  resident.send(JSON.stringify(fixtures.auth('resident-name-test', 'lifecycle')));
   assert.equal((await residentAuth).success, true);
 
   const detectorAuth = waitForMessage(detector, msg => msg.type === 'auth-result');
-  detector.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-detector-resident-name-test-credential',
-    role: 'detector', nodeType: 'visual', platform: 'windows', deviceId: 'resident-name-test', deviceName: '客厅检测端',
-  }));
+  detector.send(JSON.stringify(fixtures.auth('resident-name-test', 'detector')));
   assert.equal((await detectorAuth).success, true);
 
   const renamedList = waitForMessage(receiver, msg => msg.type === 'device-list' &&
-    msg.devices?.some((d: any) => d.deviceId === 'resident-name-test' && d.deviceName === '门口检测端'));
+    msg.devices?.some((d: any) => d.deviceId === fixtures.id('resident-name-test') && d.deviceName === '门口检测端'));
   const receiverAuth = waitForMessage(receiver, msg => msg.type === 'auth-result');
-  receiver.send(JSON.stringify({
-    type: 'auth', channel: process.env.VISIONGUARD_CHANNEL, apiKey: 'test-console-resident-name-receiver-credential',
-    role: 'console', nodeType: 'console', platform: 'android', deviceId: 'resident-name-receiver', deviceName: 'Receiver',
-  }));
+  receiver.send(JSON.stringify(fixtures.auth('resident-name-receiver', 'console')));
   assert.equal((await receiverAuth).success, true);
 
+  accountStore.rename(fixtures.accountId, fixtures.id('resident-name-test'), '门口检测端');
   detector.send(JSON.stringify({
-    type: 'heartbeat', deviceId: 'resident-name-test', deviceName: '门口检测端',
+    type: 'heartbeat', deviceId: fixtures.id('resident-name-test'), deviceName: '旧客户端名称',
     isMonitoring: false, isReady: true,
   }));
   await renamedList;
 
   const residentOnlyList = waitForMessage(receiver, msg => msg.type === 'device-list' &&
-    msg.devices?.some((d: any) => d.deviceId === 'resident-name-test'
+    msg.devices?.some((d: any) => d.deviceId === fixtures.id('resident-name-test')
       && d.deviceName === '门口检测端' && d.components?.detectorApp === 'stopped'), 12_000);
   detector.close();
-  const listed = (await residentOnlyList).devices.find((d: any) => d.deviceId === 'resident-name-test');
+  const listed = (await residentOnlyList).devices.find((d: any) => d.deviceId === fixtures.id('resident-name-test'));
   assert.equal(listed.deviceName, '门口检测端');
   assert.deepEqual(listed.capabilities, ['app-lifecycle-control']);
 });

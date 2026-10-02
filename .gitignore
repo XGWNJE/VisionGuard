@@ -23,6 +23,8 @@ server/.env.*
 server/data/screenshots/
 server/data/releases/
 server/data/models/
+server/data/accounts.json
+server/data/accounts/
 
 # ===== Windows 检测端 =====
 detector/windows-wpf/**/.vs/

@@ -9,6 +9,17 @@ namespace VisionGuard.Detector.Windows.ViewModels
     public class ServerViewModel : ViewModelBase
     {
         private readonly ServerPushService _serverPushService;
+        public event EventHandler AccountChanging;
+        public event EventHandler AccountChanged;
+        private string _serviceAddress = AccountSession.ServiceUrl, _username = "", _password = "", _loginMessage = "";
+        private bool _isSigningIn, _isRefreshing;
+        public string ServiceAddress { get => _serviceAddress; set => SetProperty(ref _serviceAddress, value); }
+        public string Username { get => _username; set => SetProperty(ref _username, value); }
+        public string Password { get => _password; set => SetProperty(ref _password, value); }
+        public string LoginMessage { get => _loginMessage; private set => SetProperty(ref _loginMessage, value); }
+        public string AccountText => AccountSession.Current == null ? "未登录" : "已登录 · " + AccountSession.Current.account.username;
+        public RelayCommand LoginCommand { get; }
+        public RelayCommand LogoutCommand { get; }
 
         private string _connectionState = "● 未连接";
         public string ConnectionState
@@ -95,6 +106,10 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public void Load()
         {
             DeviceName = SettingsStore.GetString("DeviceName", System.Environment.MachineName);
+            ServiceAddress = AccountSession.ServiceUrl;
+            Username = AccountSession.Current?.account.username ?? "";
+            if (AccountSession.Current != null) DeviceName = AccountSession.Current.device.deviceName;
+            OnPropertyChanged(nameof(AccountText));
         }
 
         public void Save()
@@ -108,6 +123,37 @@ namespace VisionGuard.Detector.Windows.ViewModels
             _serverPushService = serverPushService;
 
             _serverPushService.ConnectionStateChanged += OnConnectionStateChanged;
+            _serverPushService.DeviceUpdated += (_, device) =>
+            {
+                Application.Current?.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (AccountSession.Current?.device.deviceId != device.deviceId) return;
+                    DeviceName = device.deviceName; Save();
+                }));
+            };
+            LoginCommand = new RelayCommand(async () =>
+            {
+                if (_isSigningIn) return;
+                _isSigningIn = true; LoginMessage = "正在登录…";
+                try
+                {
+                    AccountChanging?.Invoke(this, EventArgs.Empty);
+                    await Task.Run(() => AccountSession.Login(ServiceAddress, Username, Password, DeviceName));
+                    Password = ""; AccountChanged?.Invoke(this, EventArgs.Empty); LoginMessage = "登录成功";
+                }
+                catch (Exception ex) { LoginMessage = ex.Message; }
+                finally { _isSigningIn = false; OnPropertyChanged(nameof(AccountText)); }
+            });
+            LogoutCommand = new RelayCommand(async () =>
+            {
+                try
+                {
+                    AccountChanging?.Invoke(this, EventArgs.Empty); _serverPushService.Disconnect();
+                    await Task.Run(AccountSession.Logout); LoginMessage = "已退出登录";
+                }
+                catch (Exception ex) { LoginMessage = "本机已退出；服务撤销未确认：" + ex.Message; }
+                finally { AccountChanged?.Invoke(this, EventArgs.Empty); Password = ""; OnPropertyChanged(nameof(AccountText)); }
+            });
 
             RetryCommand = new RelayCommand(() =>
             {
@@ -153,15 +199,20 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
             ApplyNameCommand = new RelayCommand(async () =>
             {
+                try
+                {
+                await Task.Run(() => AccountSession.RenameDevice(DeviceName));
                 // 先持久化，再刷新驻留配置；主检测端和驻留始终使用同一个名称。
                 Save();
                 _serverPushService.Configure(
                     AppConfig.ServerUrl,
-                    AppConfig.ApiKey,
+                    AppConfig.SessionToken,
                     AppConfig.DeviceId,
                     DeviceName);
                 await Task.Run(() => Runtime.ResidentLauncher.EnsureStarted());
                 RefreshResidentStatus(allowLaunch: false);
+                }
+                catch (Exception ex) { LoginMessage = ex.Message; }
             });
 
             CheckUpdateCommand = new RelayCommand(async () =>
@@ -181,6 +232,23 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 }
             });
 
+        }
+        public async void MaintainSession()
+        {
+            if (_isRefreshing || _isSigningIn) return;
+            _isRefreshing = true;
+            try
+            {
+                var old = AccountSession.Current;
+                var current = await Task.Run(AccountSession.EnsureFresh);
+                if (old?.token != current?.token)
+                {
+                    AccountChanged?.Invoke(this, EventArgs.Empty);
+                    if (current == null) LoginMessage = "登录已失效，请重新登录。";
+                }
+            }
+            catch (Exception ex) { LoginMessage = ex.Message; }
+            finally { _isRefreshing = false; }
         }
 
         private void OnConnectionStateChanged(object? sender, string state)

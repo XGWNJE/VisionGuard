@@ -1,57 +1,39 @@
-# 视觉检测（Android）
+# VisionGuard 镜头推流
 
-`detector/android/` 是视觉检测（Android），负责摄像头采集、推理、遮罩、告警和上传。
-
-> **当前状态：暂缓**。整端源码保留，以下描述其当前实现，不代表已验收可用。认证已同步 `channel/role/nodeType/platform`，摄像头按固定 `camera` 来源上报，事件带实时期限；尚未实现逐来源控制、持续处理状态监测和持久重试。本端不纳入当前交付结论。
-
-当前界面尚未作为交付方案验收。当前 Android UI 规范见[设计说明](../design/android-ui-guidelines.md)，该检测端尚未采用接收端界面方案。
+`detector/android/` 是 Android 摄像推流组件，仍属于视觉节点。它在前台采集摄像头画面，经统一服务转发给账号内的 Windows 视觉推理节点；本机不加载模型、不执行目标推理或生成视觉报警。
 
 ## 当前职责
 
-- CameraX 采集
-- ONNX Runtime Mobile 推理
-- 遮罩编辑与持久化
-- 告警生成
-- 与视觉中继的 WS 通信
-- 自动更新（Service 启动时发通知；控制台界面手动检查并弹 AlertDialog）
-- 模型按需下载（首次启动/切换时通过 OkHttp 从视觉中继下载到 `filesDir/models/`）
+- 账号密码登录，服务器自动登记本机身份；同账号只有一个 Windows 推理节点时自动关联，多节点时按名称选择。
+- 真实 CameraX `ImageAnalysis` 采集，JPEG 二进制媒体 WebSocket 推流；控制与视频分别使用 `/ws` 和 `/media/ws`。
+- 默认最高 640×480、5 帧/秒，可切换到最高 1280×720；高规格优先选择 16:9，相机不支持时使用可用规格。页面显示真实采集与发送尺寸；输出超过选择上限时缩放，视频最大长边 1280、短边 720。
+- 摄像头生命周期绑定当前 Activity；切到后台或锁屏立即停流、解绑摄像头。回到前台须手动开始。
+- 仅推流时保持亮屏；应用内可切换暗色低亮度界面、收起画面预览。亮度只影响本机应用窗口，停止后恢复，不修改系统锁屏或唤醒设置。
+- CameraX 只保留最新画面；发送端最多一帧等待服务器确认，超过确认时限重建媒体连接，丢弃积压画面。
 
-## 关键约束
+## 账号与身份
 
-- 前台服务类型当前为 `camera`
-- 当前实现不绑定 `Preview`，仅 `ImageAnalysis`
-- 数码变焦是软件中心裁切逻辑，不是 CameraX API 缩放
-- `SettingsRepository` 默认 `targets=person`、`selected_model=yolo26n`
-- 正式包默认不把模型打包到 APK；加载器支持先从 `assets/models/` 复制确定性模型，未提供 asset 时再从视觉中继下载到 `filesDir/models/`
-- Release 编译：`isMinifyEnabled=true` + `isShrinkResources=true` + R8/ProGuard
-- NDK ABI 过滤：仅 `arm64-v8a`（节省 ~53 MB）
-- Android 推理默认请求 ONNX Runtime `NNAPI`；API 29+ 使用 `CPU_DISABLED` + `USE_NCHW` 注册 NNAPI，不能创建时显式回退 CPU 并保留原因
-- NNAPI session 完成至少 3 次实际推理后结束 profiling，解析 profile 中的 `NnapiExecutionProvider`，并在 `filesDir/inference-backend-evidence.json` 写入 provider 证据和 CPU/NNAPI 事件计数；provider 命中只能确认 NNAPI 分区，只有另有非 `reference/CPU` 执行设备证据时才能标记硬件执行确认
+显示名为 **VisionGuard 镜头推流**，工程目录和包名仍是 `detector/android/` 与 `com.xgwnje.visionguard.detector`。服务器按登录组件 `android-camera` 分配 `detector / visual / android` 身份；摄像端声明 `video-publish` 能力，不声明本地推理、模型或参数控制能力。
 
-## 关键文件
+三个 Android 组件共用 [`android-shared/`](../../android-shared/) 的账号 HTTP、Keystore 加密会话、登录界面和主题。密码只用于登录请求；会话凭证保存在本机加密存储，退出后撤销服务会话。服务、账号和本机设备共同决定本地缓存分区，关闭系统备份。服务地址可在登录页测试设置中修改；公网使用 HTTPS，局域网测试允许明确的私网 HTTP 地址，无需填写通道、设备 ID 或密钥。
 
-- `detector/android/app/src/main/java/com/xgwnje/visionguard/detector/MainActivity.kt`
-- 界面与标定：`detector/android/app/src/main/java/com/xgwnje/visionguard/detector/ui/console/`
-- `detector/android/app/src/main/java/com/xgwnje/visionguard/detector/service/DetectorForegroundService.kt`
-- `detector/android/app/src/main/java/com/xgwnje/visionguard/detector/service/MonitorService.kt`
-- `detector/android/app/src/main/java/com/xgwnje/visionguard/detector/data/repository/SettingsRepository.kt`
-- `detector/android/app/src/main/java/com/xgwnje/visionguard/detector/data/remote/WebSocketClient.kt`
-- `detector/android/app/src/main/java/com/xgwnje/visionguard/detector/inference/OnnxInferenceEngine.kt`
-- `scripts/prepare-android-nnapi-model.py`
-- `detector/android/app/src/main/java/com/xgwnje/visionguard/detector/util/AutoUpdater.kt`
-- `detector/android/app/build.gradle.kts`
+## 媒体与推理边界
 
-## 实现事实
+二进制帧包含 4 字节大端 JSON 头长度、UTF-8 头和 JPEG。头携带服务器分配的流 ID、媒体会话 ID、递增序号、采集时间、宽高和方向；单帧 JPEG 上限 2 MiB、头上限 4096 字节。确认必须匹配当前会话与帧序号。
 
-- 包名为 `com.xgwnje.visionguard.detector`
-- 设置层使用 DataStore
-- WS 心跳字段包含业务状态
-- 自动更新检查通过 `/api/update` 查询，有更新弹通知（不自动下载）
-- 设备能力会影响高分辨率模型可用性
-- SoC 白名单逻辑单独在 `SocWhitelist.kt`
-- 模型下载失败时前台通知提示"模型下载失败，请检查网络后重启"
-- 发布准备会将 YOLO26 模型的 NNAPI 不兼容 `Split` 形式改写为等价 `Slice` 形式，逻辑文件名不变；模型资产边界和脚本职责见[模型资产](35-model-assets.md)
+用户主动停止、离开前台或锁屏是正常停流；意外断网、媒体连接失效和画面停滞属于故障。发布、收到画面、推理进度和告警收件分别判断。服务确认只表示中继收到这帧，不代表 Windows 已完成推理。
+
+画面预览、遮罩、目标推理、截图与告警由 Windows 来源处理；Android 不保留 ONNX Runtime、SoC/NNAPI 选择、模型下载、遮罩标定或本地视觉报警。产品没有本地视频文件输入入口。模拟器可通过外部 `videofile` 摄像头使用短视频验证真实采集链路。
+
+## 维护入口
+
+- 采集、前后台状态、亮度与页面：`detector/android/app/src/main/java/com/xgwnje/visionguard/detector/MainActivity.kt`
+- 媒体连接、帧确认与目标绑定：同目录 `stream/CameraPublisher.kt`
+- YUV 转换与规格限制：`stream/CameraFrameCodec.kt`、`stream/MediaPacket.kt`
+- 账号与统一主题：`android-shared/src/main/java/com/xgwnje/visionguard/account/`
+- 编译与签名：`detector/android/app/build.gradle.kts`；不限制为单一 ARM ABI，支持本机 x86_64 模拟器构建。
+- UI 规范：[Android 设计说明](../design/android-ui-guidelines.md)
 
 ## 验证边界
 
-本轮构建与人工/真机未覆盖项见[验证报告](90-verification-report.md)。NNAPI provider 命中不能单独证明硬件加速；当前身份认证和摄像头链尚未做运行验收。
+构建、模拟器链路与未覆盖项以[验证报告](90-verification-report.md)为准。模拟器的视频摄像头不证明真实老手机的功耗、镜头画质、厂商管理或硬件编码能力；镜头收到服务器确认也不等于完整报警链验收。

@@ -9,13 +9,14 @@ using System.Threading;
 using System.Web.Script.Serialization;
 using Microsoft.Win32;
 using VisionGuard.Detector.Windows.Net;
+using VisionGuard.Detector.Windows.Utils;
 
 namespace VisionGuard.Resident.Windows
 {
     internal sealed class ResidentConfig
     {
         public string ServerUrl { get; set; }
-        public string ApiKey { get; set; }
+        public string AccountDir { get; set; }
         public string DeviceId { get; set; }
         public string DeviceName { get; set; }
         public string Channel { get; set; }
@@ -30,7 +31,7 @@ namespace VisionGuard.Resident.Windows
         private const int HeartbeatIntervalMs = 3000;
         private const int AuthTimeoutMs = 12000;
         private const int CommandTimeoutMs = 10000;
-        private const string ResidentShutdownEventName = @"Local\VisionGuard.Resident.Shutdown";
+        private static string ResidentShutdownEventName { get { return AccountSession.ResidentShutdownName; } }
         private static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = 1024 * 1024 };
         private static readonly object LogLock = new object();
 
@@ -49,9 +50,11 @@ namespace VisionGuard.Resident.Windows
 
                 ResidentConfig config = Json.Deserialize<ResidentConfig>(File.ReadAllText(args[1]));
                 Validate(config);
-                string apiKey = Environment.GetEnvironmentVariable("VISIONGUARD_RESIDENT_API_KEY") ?? config.ApiKey;
+                Environment.SetEnvironmentVariable("VISIONGUARD_ACCOUNT_DIR", config.AccountDir);
+                Environment.SetEnvironmentVariable("VISIONGUARD_SERVER_URL", config.ServerUrl);
+                AccountSession.Load();
                 bool createdNew;
-                using (var mutex = new Mutex(true, @"Local\VisionGuard.Resident.SingleInstance", out createdNew))
+                using (var mutex = new Mutex(true, AccountSession.ResidentMutexName, out createdNew))
                 {
                     if (!createdNew) return 0;
                     // 由检测端拉起时自行登记登录自启：检测端退出或崩溃后驻留要保持存活，
@@ -59,7 +62,7 @@ namespace VisionGuard.Resident.Windows
                     TryEnsureLoginStartup(args[1]);
                     using (var shutdownRequested = new EventWaitHandle(false, EventResetMode.ManualReset, ResidentShutdownEventName))
                     {
-                        Run(config, apiKey, shutdownRequested);
+                        Run(config, shutdownRequested);
                     }
                 }
                 return 0;
@@ -83,6 +86,8 @@ namespace VisionGuard.Resident.Windows
 
         private static int SetStartup(string configPath, bool enabled)
         {
+            // Isolated acceptance runs never alter the owner's Windows login startup.
+            if (AccountSession.IsIsolated) return 0;
             const string keyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
             using (RegistryKey key = Registry.CurrentUser.OpenSubKey(keyPath, true) ?? Registry.CurrentUser.CreateSubKey(keyPath))
             {
@@ -98,12 +103,17 @@ namespace VisionGuard.Resident.Windows
             return 0;
         }
 
-        private static void Run(ResidentConfig config, string apiKey, EventWaitHandle shutdownRequested)
+        private static void Run(ResidentConfig config, EventWaitHandle shutdownRequested)
         {
             int delaySeconds = 1;
             while (!shutdownRequested.WaitOne(0))
             {
-                try { RunSession(config, apiKey, shutdownRequested); delaySeconds = 1; }
+                try
+                {
+                    var account = AccountSession.EnsureFresh();
+                    if (account == null || account.resident == null || account.device.deviceId != config.DeviceId) break;
+                    RunSession(config, account.resident.token, shutdownRequested); delaySeconds = 1;
+                }
                 catch (Exception ex)
                 {
                     Log("connection failed: " + ex.Message);
@@ -153,6 +163,18 @@ namespace VisionGuard.Resident.Windows
                             failure = GetString(message, "reason", "authentication failed");
                             SafeSet(authenticated);
                         }
+                        else if (type == "device-updated")
+                        {
+                            object updatedValue;
+                            if (message.TryGetValue("device", out updatedValue))
+                            {
+                                var updated = Json.Deserialize<AccountDevice>(Json.Serialize(updatedValue));
+                                if (updated != null && updated.deviceId == config.DeviceId)
+                                {
+                                    AccountSession.ApplyDeviceUpdate(updated); config.DeviceName = updated.deviceName;
+                                }
+                            }
+                        }
                         else if (type == "command") ThreadPool.QueueUserWorkItem(delegate { HandleCommand(message, config, send); });
                         else if (type == "kicked") { failure = "kicked: " + GetString(message, "reason", "duplicate"); SafeSet(closed); }
                     }
@@ -167,8 +189,15 @@ namespace VisionGuard.Resident.Windows
                     {
                         while (true)
                         {
-                            var result = ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None)
-                                           .GetAwaiter().GetResult();
+                            var bytes = new MemoryStream();
+                            System.Net.WebSockets.WebSocketReceiveResult result;
+                            do
+                            {
+                                result = ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None).GetAwaiter().GetResult();
+                                if (result.MessageType == System.Net.WebSockets.WebSocketMessageType.Close) break;
+                                if (bytes.Length + result.Count > 1024 * 1024) throw new IOException("Control message too large.");
+                                bytes.Write(buffer, 0, result.Count);
+                            } while (!result.EndOfMessage);
                             if (result.MessageType == System.Net.WebSockets.WebSocketMessageType.Close)
                             {
                                 failure = "closed: " + result.CloseStatusDescription;
@@ -176,7 +205,7 @@ namespace VisionGuard.Resident.Windows
                                 return;
                             }
                             if (result.Count <= 0) continue;
-                            string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                            string json = Encoding.UTF8.GetString(bytes.ToArray());
                             Dictionary<string, object> message;
                             try { message = Json.Deserialize<Dictionary<string, object>>(json); }
                             catch (Exception ex) { Log("deserialize failed: " + ex.GetType().Name + " - " + ex.Message); continue; }
@@ -198,9 +227,7 @@ namespace VisionGuard.Resident.Windows
                 send(new Dictionary<string, object>
                 {
                     ["type"] = "auth",
-                    ["channel"] = Environment.GetEnvironmentVariable("VISIONGUARD_CHANNEL") ?? config.Channel ?? "vnext",
-                    ["role"] = "lifecycle", ["nodeType"] = "resident", ["platform"] = "windows", ["apiKey"] = apiKey,
-                    ["deviceId"] = config.DeviceId, ["deviceName"] = config.DeviceName
+                    ["token"] = apiKey,
                 });
 
                 int authWait = WaitHandle.WaitAny(new WaitHandle[] { authenticated, shutdownRequested }, AuthTimeoutMs);
@@ -211,7 +238,12 @@ namespace VisionGuard.Resident.Windows
                 {
                     while (!heartbeatStop.WaitOne(HeartbeatIntervalMs))
                     {
-                        try { SendHeartbeat(send, config); }
+                        try
+                        {
+                            var current = AccountSession.EnsureFresh();
+                            if (current == null || current.resident == null || current.resident.token != apiKey) throw new IOException("Account session changed.");
+                            SendHeartbeat(send, config);
+                        }
                         catch (Exception ex) { failure = "heartbeat failed: " + ex.Message; SafeSet(closed); return; }
                     }
                 })) { IsBackground = true, Name = "VG_ResidentHeartbeat" };
@@ -328,7 +360,7 @@ namespace VisionGuard.Resident.Windows
             Uri uri;
             if (config == null) throw new InvalidDataException("Invalid resident config.");
             if (!Uri.TryCreate(config.ServerUrl, UriKind.Absolute, out uri) || (uri.Scheme != "https" && uri.Scheme != "http")) throw new InvalidDataException("ServerUrl must be HTTP(S).");
-            if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("VISIONGUARD_RESIDENT_API_KEY")) && string.IsNullOrWhiteSpace(config.ApiKey)) throw new InvalidDataException("VISIONGUARD_RESIDENT_API_KEY or config ApiKey is required.");
+            if (string.IsNullOrWhiteSpace(config.AccountDir)) throw new InvalidDataException("AccountDir is required.");
             if (string.IsNullOrWhiteSpace(config.DeviceId)) throw new InvalidDataException("DeviceId is required.");
             if (string.IsNullOrWhiteSpace(config.DeviceName)) config.DeviceName = Environment.MachineName;
             if (string.IsNullOrWhiteSpace(config.DetectorPath)) throw new InvalidDataException("DetectorPath is required.");
@@ -351,7 +383,7 @@ namespace VisionGuard.Resident.Windows
         {
             try
             {
-                string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionGuard");
+                string directory = AccountSession.LogRoot;
                 Directory.CreateDirectory(directory);
                 lock (LogLock) File.AppendAllText(Path.Combine(directory, "resident.log"), DateTimeOffset.Now.ToString("O") + " " + message + Environment.NewLine);
             }

@@ -37,10 +37,7 @@ fun quotedBuildConfigString(value: String): String {
     return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 }
 
-val visionguardChannel = secretProperty("VISIONGUARD_CHANNEL").ifBlank { "vnext" }
 val visionguardServerUrl = secretProperty("VISIONGUARD_SERVER_URL").ifBlank { "https://visionguard.xgwnje.cn" }
-val visionguardDeviceId = secretProperty("VISIONGUARD_DEVICE_ID")
-val visionguardApiKey = secretProperty("VISIONGUARD_DETECTOR_API_KEY")
 
 fun signingProperty(environmentName: String, legacyName: String): String {
     return System.getenv(environmentName)?.takeIf { it.isNotBlank() }
@@ -92,6 +89,8 @@ if (releasePackagingRequested && !hasReleaseKeystore && !allowUnsignedRelease) {
 }
 
 android {
+    sourceSets.getByName("main").kotlin.srcDir(repositoryRoot.resolve("android-shared/src/main/java"))
+    sourceSets.getByName("test").kotlin.srcDir(repositoryRoot.resolve("android-shared/src/test/java"))
     namespace = "com.xgwnje.visionguard.detector"
     compileSdk {
         version = release(36) {
@@ -106,14 +105,9 @@ android {
         versionCode = 4501
         versionName = "4.5.1"
 
-        buildConfigField("String", "CHANNEL", quotedBuildConfigString(visionguardChannel))
         buildConfigField("String", "SERVER_URL", quotedBuildConfigString(visionguardServerUrl))
-        buildConfigField("String", "DEVICE_ID", quotedBuildConfigString(visionguardDeviceId))
-        buildConfigField("String", "API_KEY", quotedBuildConfigString(visionguardApiKey))
 
-        ndk {
-            abiFilters += "arm64-v8a"
-        }
+
     }
 
     signingConfigs {
@@ -169,10 +163,6 @@ dependencies {
     implementation(libs.camerax.core)
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)
-    implementation(libs.androidx.compose.material.icons.extended)
-    implementation(libs.onnxruntime)
     implementation(libs.okhttp)
     implementation(libs.gson)
-    implementation(libs.datastore.preferences)
-    implementation(libs.lifecycle.service)
 }

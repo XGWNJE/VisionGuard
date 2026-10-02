@@ -58,12 +58,12 @@ namespace VisionGuard.Detector.Windows.Runtime
     internal static class ResidentLauncher
     {
         /// <summary>检测端与驻留共用的应用标识；用于单实例互斥体与运行/退出事件名。</summary>
-        public const string ApplicationId = "Detector";
+        public static string ApplicationId => AccountSession.ApplicationId;
 
         private const string ResidentExeName = "VisionGuard.Resident.Windows.exe";
         private const string ResidentExeConfigName = "VisionGuard.Resident.Windows.exe.config";
-        private const string ResidentMutexName = @"Local\VisionGuard.Resident.SingleInstance";
-        private const string ResidentShutdownEventName = @"Local\VisionGuard.Resident.Shutdown";
+        private static string ResidentMutexName => AccountSession.ResidentMutexName;
+        private static string ResidentShutdownEventName => AccountSession.ResidentShutdownName;
         private const int HandshakeWaitMs = 6000;
         private const int ShutdownWaitMs = 6000;
 
@@ -103,6 +103,11 @@ namespace VisionGuard.Detector.Windows.Runtime
         {
             try
             {
+                if (AccountSession.Current == null)
+                {
+                    if (IsResidentRunning()) { SignalResidentShutdown(); WaitForStopped(ShutdownWaitMs); }
+                    return;
+                }
                 string appDir = AppDomain.CurrentDomain.BaseDirectory;
                 string exePath = ResolveResidentPath(appDir);
                 if (exePath == null)
@@ -271,8 +276,7 @@ namespace VisionGuard.Detector.Windows.Runtime
         }
 
         /// <summary>驻留拉起日志路径：与驻留自身日志同目录，便于一并带走。</summary>
-        public static string LogFilePath => Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionGuard", "resident-launch.log");
+        public static string LogFilePath => Path.Combine(AccountSession.LogRoot, "resident-launch.log");
 
         /// <summary>
         /// 写拉起日志。Debug.WriteLine 在 Release 包里没有任何落点，用户机器上无法取证，
@@ -304,18 +308,17 @@ namespace VisionGuard.Detector.Windows.Runtime
         /// </summary>
         private static string WriteConfig(out bool changed)
         {
-            string directory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionGuard");
+            string directory = AccountSession.Root;
             Directory.CreateDirectory(directory);
             string configPath = Path.Combine(directory, "resident-config.json");
 
             var payload = new Dictionary<string, string>
             {
                 ["serverUrl"] = AppConfig.ServerUrl ?? string.Empty,
-                ["apiKey"] = Environment.GetEnvironmentVariable("VISIONGUARD_RESIDENT_API_KEY") ?? string.Empty,
+                ["accountDir"] = AccountSession.Root,
                 ["deviceId"] = AppConfig.DeviceId ?? string.Empty,
                 // 自定义名称是设备名称的唯一来源；驻留不得另行上报电脑名。
-                ["deviceName"] = SettingsStore.GetString("DeviceName", Environment.MachineName),
+                ["deviceName"] = AccountSession.Current?.device.deviceName ?? Environment.MachineName,
                 ["channel"] = AppConfig.Channel ?? string.Empty,
                 // 驻留在收到 open-detector 时按此路径启动检测端，因此由检测端写入自身位置。
                 ["detectorPath"] = InstallLayout.LauncherPath,

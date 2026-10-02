@@ -134,7 +134,7 @@ test('component platforms cannot drift', () => {
   const read = p => fs.readFileSync(path.join(root, p), 'utf8');
   const errors = [];
   checkComponentContract(root,
-    read('README.md').replace('| 视觉检测 | Android |', '| 视觉检测 | Windows |'),
+    read('README.md').replace('| VisionGuard 镜头推流 | Android |', '| VisionGuard 镜头推流 | Windows |'),
     read('docs/codex/10-project-overview.md'), read('docs/codex/60-operations.md'), errors);
   assert.ok(errors.some(message => message.includes('README.md must list the canonical platforms')));
 });

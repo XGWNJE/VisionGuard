@@ -22,6 +22,7 @@
 `Capture → MaskApply → Preprocess → ONNX Inference → Parse → AlertDecision → Push`
 
 - 采集窗口客户区或屏幕选区；目标和窗口子区域的宽高都须严格大于 100 像素。窗口身份使用标题、类名和进程名，非唯一候选不自动重绑。
+- 远程镜头通过账号媒体连接进入 `RemoteStream` 来源；服务确定账号与目标节点，自动创建稳定来源卡片，复用遮罩、模型、检测参数、截图与报警。只处理新帧，本地单调计时限制帧龄；主动停流与异常断流分别显示。
 - 遮罩是帧内 `[0,1]` 相对坐标；推理前涂黑并影响报警截图。采集目标更换时整体重置目标与遮罩。
 - 预处理等比缩放、黑边补齐；解析去除补边并映射回原始帧。PerMonitorV2 处理界面缩放，采集坐标按当次客户区重绘帧计算。
 - 默认一个来源，按视觉中继下发上限手动增删，至少保留一个；运行中先停止才能删除。`sourceId` 稳定，`sourceName` 可改；既有 `default` / `signal-N` 身份保留。
@@ -31,20 +32,22 @@
 - 实测 FPS 低于目标 80% 连续 30 秒时提示性能不足，提醒冷却 10 分钟；故障与性能不足分别表达，FPS 只统计成功帧。
 - 带 `targetSourceId` 的控制只作用于该来源；设备级 `pause` / `resume` 作用于全部来源。远控统一由主 ViewModel 路由，每条命令只执行一次；启停和参数保护按协调器实际运行状态判断，不依赖异步界面状态；重复启动不会重建运行中的来源，启动失败返回失败回执。
 - 停止只等待实际正在处理的帧，空闲来源立即停止；帧在两秒内未结束时返回可重试的失败，不释放仍在使用的推理引擎。
-- 报警先写按 `channel` 分区的持久 outbox，收到视觉中继持久化 `alert-ack` 才移除，再异步发送截图；实时期限为事件发生后 30 秒，过期队列项清除且不补传；损坏队列隔离并记录原因。
+- 报警先写按服务、账号和设备分区的持久 outbox，收到视觉中继持久化 `alert-ack` 才移除，再异步发送截图；实时期限为事件发生后 30 秒，过期队列项清除且不补传；损坏队列隔离并记录原因。
 
 ## 界面与配置
 
 - 主界面为来源预览与右侧检查区；“当前来源”按采集目标、识别设置、检测参数排列，“全局设定”维护运行环境、模型、连接、身份、驻留和更新。
 - 实时预览最多四个来源，其他来源继续推理；全局来源视图选择预览对象。卡片由 `CardLayoutPlanner` 求网格，画面等比显示；最小窗口 1200×880。
 - 模型资源按档位显示下载清单；来源选择只列本机已下载模型。失败原因可读，长度不符删除临时文件重下。
-- 唯一设置入口 `Utils/SettingsStore.cs`，默认 `%APPDATA%\VisionGuard\settings.ini`，可用 `VISIONGUARD_SETTINGS_PATH` 隔离。共享设置写入重读磁盘、合并改动、原子替换。
-- `%LOCALAPPDATA%\VisionGuard` 下的 `detector-crash.log`、`inference-error.log`、`resident-launch.log` 用于诊断。
+- 全局设定提供账号登录、退出、修改密码与服务地址。共享 `AccountSession` 使用当前 Windows 用户的 DPAPI 加密会话，不保存密码；驻留与启动器沿用该会话。退出、撤销或换账号停止连接与推理并清理当前画面。
+- 唯一设置入口 `Utils/SettingsStore.cs`，按服务、账号和设备写入 `%APPDATA%\VisionGuard\accounts/<scope>/settings.ini`，可用 `VISIONGUARD_SETTINGS_PATH` 指定独立父目录。共享设置写入重读磁盘、合并改动、原子替换。`VISIONGUARD_ACCOUNT_DIR` 隔离会话、驻留配置与单实例标识；隔离实例不改 Windows 登录自启。
+- 默认日志位于 `%LOCALAPPDATA%\VisionGuard`；隔离实例使用独立日志目录，`detector-crash.log`、`inference-error.log`、`resident-launch.log` 用于诊断。
 
 ## 视觉驻留
 
 - 检测端启动时拉起同目录驻留并等待单实例握手；驻留脱离父进程，自行登记登录启动。检测端退出后驻留继续存活；启动失败不阻断检测，但原因可见。
-- WS 角色 `lifecycle`，节点类型 `resident`，平台 `windows`；与检测端共用 `deviceId` 和设备名称，名称唯一来源是 `settings.ini` 的 `DeviceName`。
+- WS 角色 `lifecycle`，节点类型 `resident`，平台 `windows`；与检测端共用 `deviceId` 和设备名称。名称以服务登记为准，`device-updated` 同步主节点、驻留和本地缓存，旧心跳不会覆盖控制台改名。
+- 登录时由服务自动签发驻留子会话，驻留配置只引用共享账号目录，不含手填密钥。解绑、退出或改密后旧会话失效。
 - 生命周期命令为 `open-detector` / `close-detector`；远程打开不自动开始检测。回执携带 `requestId`、`phase=completed` 与目标设备。
 - 两者共用应用标识 `Detector` 与当前用户会话运行/退出事件；驻留配置每次启动由 JSON 序列化生成并回读自检。
 - “完整退出”请求驻留退出并取消登录启动，确认退出后关闭主体；失败保留主体并说明原因。

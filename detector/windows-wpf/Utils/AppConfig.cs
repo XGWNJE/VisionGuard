@@ -4,28 +4,11 @@ namespace VisionGuard.Detector.Windows.Utils
     internal static class AppConfig
     {
         public const string Version = "4.5.1";
-        public static readonly string ServerUrl =
-            System.Environment.GetEnvironmentVariable("VISIONGUARD_SERVER_URL") ?? "https://visionguard.xgwnje.cn";
-        public static readonly string Channel =
-            System.Environment.GetEnvironmentVariable("VISIONGUARD_CHANNEL") ?? "vnext";
-        public static readonly string ApiKey = ApiKeyProvider.ResolveFromEnvironment();
+        public static string ServerUrl => AccountSession.ServiceUrl;
+        public static string Channel => AccountSession.Current?.channel ?? "signed-out";
+        public static string SessionToken => AccountSession.Current?.token ?? "";
 
-        /// <summary>运行时设备唯一 ID（UUID，首次生成后持久化到 settings.ini）。</summary>
-        public static string DeviceId
-        {
-            get
-            {
-                string configured = System.Environment.GetEnvironmentVariable("VISIONGUARD_DEVICE_ID") ?? "";
-                if (!string.IsNullOrWhiteSpace(configured)) return configured.Trim();
-                string id = SettingsStore.GetString("DeviceId", string.Empty);
-                if (string.IsNullOrEmpty(id))
-                {
-                    id = System.Guid.NewGuid().ToString();
-                    SettingsStore.Set("DeviceId", id);
-                    SettingsStore.Save();
-                }
-                return id;
-            }
-        }
+        /// <summary>设备身份只由账号服务登记；未登录时没有服务身份。</summary>
+        public static string DeviceId => AccountSession.Current?.device.deviceId ?? "";
     }
 }

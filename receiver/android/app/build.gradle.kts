@@ -37,11 +37,8 @@ fun quotedBuildConfigString(value: String): String {
     return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 }
 
-val visionguardDeviceId = secretProperty("VISIONGUARD_DEVICE_ID")
-val visionguardApiKey = secretProperty("VISIONGUARD_CONSOLE_API_KEY")
 val visionguardServerUrl = secretProperty("VISIONGUARD_SERVER_URL")
     .ifBlank { "https://visionguard.xgwnje.cn" }
-val visionguardChannel = secretProperty("VISIONGUARD_CHANNEL").ifBlank { "vnext" }
 
 fun signingProperty(environmentName: String, legacyName: String): String {
     return System.getenv(environmentName)?.takeIf { it.isNotBlank() }
@@ -93,6 +90,8 @@ if (releasePackagingRequested && !hasReleaseKeystore && !allowUnsignedRelease) {
 }
 
 android {
+    sourceSets.getByName("main").kotlin.srcDir(repositoryRoot.resolve("android-shared/src/main/java"))
+    sourceSets.getByName("test").kotlin.srcDir(repositoryRoot.resolve("android-shared/src/test/java"))
     namespace = "com.xgwnje.visionguard.receiver"
     compileSdk {
         version = release(36) {
@@ -107,10 +106,7 @@ android {
         versionCode = 4501
         versionName = "4.5.1"
 
-        buildConfigField("String", "DEVICE_ID", quotedBuildConfigString(visionguardDeviceId))
-        buildConfigField("String", "API_KEY", quotedBuildConfigString(visionguardApiKey))
         buildConfigField("String", "SERVER_URL", quotedBuildConfigString(visionguardServerUrl))
-        buildConfigField("String", "CHANNEL", quotedBuildConfigString(visionguardChannel))
     }
 
     signingConfigs {

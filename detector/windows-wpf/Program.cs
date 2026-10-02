@@ -16,14 +16,21 @@ namespace VisionGuard.Detector.Windows
             // Win7：.NET Framework 默认 SystemDefault，在未启用 SCHANNEL 客户端 TLS 1.2 时
             // 退化为 TLS 1.0，服务端只接受 1.2 及以上。必须在任何网络调用前设置。
             System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
+            var startupArgs = new System.Collections.Generic.List<string>(args);
+            int environmentIndex = startupArgs.IndexOf("--isolated-environment");
+            if (environmentIndex >= 0)
+            {
+                if (environmentIndex + 1 >= startupArgs.Count) throw new ArgumentException("缺少独立测试环境文件路径。");
+                Utils.AccountSession.ConfigureIsolatedEnvironment(startupArgs[environmentIndex + 1]);
+                startupArgs.RemoveRange(environmentIndex, 2); args = startupArgs.ToArray();
+            }
 
             // 驻留拉起契约探针：在两个归档档位产物上都能跑（legacy 档在 Win7 上运行），
             // 不打开主界面、不创建推理会话，只验证「检测端能否把同目录的驻留拉起来」。
             if (args.Length >= 1 && args[0] == "--resident-launch")
                 return RunResidentLaunchProbe(args);
 
-            // 驻留与主检测端必须读取同一份持久化设备身份。若在加载设置前拉起驻留，
-            // AppConfig.DeviceId 会把空内存状态误判为首次运行，名称也只能退回电脑名。
+            // 先加载账号分区设置，驻留沿用已登录账号的同一设备身份。
             Utils.SettingsStore.Load();
 
             // 按运行环境选择并预加载 ONNX Runtime 原生库；必须在任何推理调用之前。
@@ -55,9 +62,7 @@ namespace VisionGuard.Detector.Windows
             int waitMs = 8000;
             if (args.Length >= 3) int.TryParse(args[2], out waitMs);
 
-            // 探针不经过主界面，因此必须自己加载设置：否则 AppConfig.DeviceId 每次都新生成一个 GUID，
-            // 写出的驻留配置与检测端自身的设备身份对不上，服务端就会把驻留当成另一台设备。
-            SeedIsolatedDeviceIdIfRequested();
+            // 探针不经过主界面，自己加载同一账号分区设置后再拉起驻留。
             Utils.SettingsStore.Load();
 
             Runtime.ResidentLauncher.EnsureStarted();
@@ -94,23 +99,6 @@ namespace VisionGuard.Detector.Windows
             // 不释放会让调用方（PowerShell / CI）一直等控制台关闭，探针看起来像卡住。
             FreeConsole();
             return refreshed.IsRunning ? 0 : 1;
-        }
-
-        /// <summary>
-        /// 隔离验证专用：若 VISIONGUARD_SETTINGS_PATH 指向的文件不存在，先写入一个测试专属 DeviceId。
-        /// 只有自动化验证会设置该变量，普通运行不受影响；这样探针与它拉起的驻留共用同一设备身份。
-        /// </summary>
-        private static void SeedIsolatedDeviceIdIfRequested()
-        {
-            string path = System.Environment.GetEnvironmentVariable("VISIONGUARD_SETTINGS_PATH");
-            if (string.IsNullOrWhiteSpace(path) || System.IO.File.Exists(path)) return;
-
-            string directory = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path));
-            if (!string.IsNullOrEmpty(directory)) System.IO.Directory.CreateDirectory(directory);
-            System.IO.File.WriteAllText(path,
-                "# VisionGuard 用户设置（自动化验证隔离文件）" + System.Environment.NewLine +
-                "DeviceId=" + System.Guid.NewGuid().ToString() + System.Environment.NewLine,
-                new System.Text.UTF8Encoding(false));
         }
 
         private const uint AttachParentProcess = 0xFFFFFFFF;

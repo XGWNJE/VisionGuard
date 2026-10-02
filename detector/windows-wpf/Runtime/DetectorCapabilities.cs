@@ -19,6 +19,8 @@ namespace VisionGuard.Detector.Windows.Runtime
                 "request-correlation",
                 "screenshot-on-demand",
                 "source-control",
+                "video-subscribe",
+                "visual-inference",
             };
 
             if (NativeLibrarySelector.SupportsDirectMl && !NativeLibrarySelector.IsLegacy)

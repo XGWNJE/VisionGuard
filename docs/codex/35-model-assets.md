@@ -24,20 +24,7 @@ legacy 档的 ONNX Runtime 原生库是 1.1.0，算子覆盖不足以支撑 YOLO
 - `yolo26m_320.onnx`
 - `yolo26m_640.onnx`
 
-### 视觉检测（Android）（YOLO26）
-
-- `yolo26n_320.onnx`
-- `yolo26n_640.onnx`
-- `yolo26s_320.onnx`
-- `yolo26s_640.onnx`
-
-### Android NNAPI 兼容处理
-
-- YOLO26 原始导出模型中的 `Split` 节点在小米 15 的 NNAPI 路径上可能能完成能力分区，却在 session 创建时失败；发布准备阶段使用 `scripts/prepare-android-nnapi-model.py` 将带常量切分输入的 `Split` 改写为等价 `Slice` 节点。
-- 改写保留原有逻辑模型名和下载路由，视觉中继最终仍提供上述文件名；modern 档的 CPU、modern 档的 DirectML 和 Android/NNAPI 均使用同一份归一化后的 YOLO26 文件。
-- 脚本要求 Python 与 `onnx`、`numpy` 包；正式发布脚本在复制 YOLO26 模型后自动执行，准备失败时中止发布，不静默提供未验证的原始模型。
-- 该处理不是量化，不改变模型输入/输出契约；发布前仍须以目标模型的 ONNX 校验和对应端推理烟测确认语义。
-- Android 加载器会在本地缓存缺失时先检查 `assets/models/{filename}`，再访问视觉中继；正式包默认不内置模型，Debug/E2E 可临时注入确定性模型，适用于禁止 `run-as` 的真机验证。
+Android 镜头推流不加载模型、不在手机推理；模型只由 Windows 视觉节点下载与执行。`scripts/prepare-android-nnapi-model.py` 仍用于既有 YOLO26 模型归一化，名称和发布资产契约未变，不代表当前 Android 有 NNAPI 推理链。
 
 ## 模型按需下载
 
@@ -57,7 +44,6 @@ legacy 档的 ONNX Runtime 原生库是 1.1.0，算子覆盖不足以支撑 YOLO
 | 端/档位 | 路径 | 管理类 |
 |---|---|---|
 | VisionGuard 视觉节点（legacy 与 modern 两档共用同一缓存目录，清单按档位切换） | `%APPDATA%\VisionGuard\models\{modelKey}.onnx` | `Utils\ModelManager.cs` |
-| Android | `filesDir/models/{modelName}_{inputSize}.onnx` | `OnnxInferenceEngine.kt` → 内置 asset（存在时）→ `downloadModel()` |
 
 ### 首次安装 / 旧版升级
 
@@ -67,19 +53,16 @@ legacy 档的 ONNX Runtime 原生库是 1.1.0，算子覆盖不足以支撑 YOLO
 
 - 默认模型选中后自动下载（StartMonitor 前检测，缺失则下载 + 进度条）
 - 设置页模型选择处可手动下载任意模型，实时显示百分比
-- Android Service 启动时模型缺失则前台通知提示"下载中"，下载失败提示"模型下载失败，请检查网络后重启"
 
 ## 输出格式
 
 - VisionGuard 视觉节点 legacy 档 YOLOv5：`[1,84,N]`
 - VisionGuard 视觉节点 modern 档 YOLO26：`[1,300,6]`
-- 视觉检测（Android）：YOLO26 格式，解析逻辑在 `YoloOutputParser.kt`
 
 ## COCO 映射真相源
 
 - VisionGuard 视觉节点：`detector/windows-wpf/Data/CocoClassMap.cs`
 - VisionGuard 控制台：`receiver/android/.../CocoClassMap.kt`
-- 视觉检测（Android）：`YoloOutputParser.kt` 内维护标签数组
 
 ## 统一目标子集
 
@@ -96,6 +79,5 @@ legacy 档的 ONNX Runtime 原生库是 1.1.0，算子覆盖不足以支撑 YOLO
 
 - 模型文件不入 git 版本控制（`.gitignore` 排除 Windows `Assets/*.onnx`；Android 当前没有模型 assets 目录）。
 - VisionGuard 视觉节点项目文件从构建项中排除 `Assets/`；目录仍可保存发布所需模型，正式压缩阶段也排除该目录。
-- 视觉检测（Android）不把模型放进 APK 的 assets；当前没有模型文件，首次启动下载到 `filesDir/models/`。
 - 类目中英文映射引用源码静态表，不手动复制文档
 - 导出脚本、模型文件名、输入尺寸只在源码已存在时写入说明

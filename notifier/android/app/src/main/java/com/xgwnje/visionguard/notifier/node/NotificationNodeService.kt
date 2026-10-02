@@ -14,6 +14,8 @@ import androidx.core.content.ContextCompat
 import com.xgwnje.visionguard.notifier.MainActivity
 import com.xgwnje.visionguard.notifier.AlarmPlaybackService
 import com.xgwnje.visionguard.notifier.SharedPreferencesHelper
+import com.xgwnje.visionguard.account.AccountStore
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.OkHttpClient
@@ -37,6 +39,9 @@ class NotificationNodeService : Service() {
         val state = mutableState.asStateFlow()
         fun start(context: android.content.Context) = ContextCompat.startForegroundService(context, Intent(context, NotificationNodeService::class.java))
     }
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private lateinit var account: AccountStore
+    private var currentToken = ""
     private val handler = Handler(Looper.getMainLooper())
     private val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(0, TimeUnit.SECONDS).build()
     private lateinit var settings: NotificationNodeSettings
@@ -73,6 +78,7 @@ class NotificationNodeService : Service() {
     }
     override fun onCreate() {
         super.onCreate()
+        account = AccountStore.get(this)
         settings = NotificationNodeSettings(this)
         mutableState.value = NodeState(timeZone = settings.timeZone)
         alarms = SharedPreferencesHelper(this)
@@ -83,6 +89,11 @@ class NotificationNodeService : Service() {
             .setSmallIcon(com.xgwnje.visionguard.notifier.R.drawable.ic_notification_icon).setContentTitle("VisionGuard 通知节点")
             .setContentText("后台接收统一服务报警").setContentIntent(launch).setOngoing(true).build())
         lastResponse = SystemClock.elapsedRealtime()
+        serviceScope.launch { account.session.collect { value ->
+            if (value == null) { alarms.clearAccountData(); stopService(Intent(this@NotificationNodeService, AlarmPlaybackService::class.java)); stopSelf() }
+            else if (currentToken.isNotEmpty() && currentToken != value.token) { reconnect("更新登录凭证"); connect() }
+        } }
+        serviceScope.launch { while (true) { account.ensureSession(); delay(30_000) } }
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!settings.enabled || !NotificationNodeSettings.valid(settings.read())) { stopSelf(); return START_NOT_STICKY }
@@ -94,6 +105,8 @@ class NotificationNodeService : Service() {
     }
     private fun connect() {
         val value = settings.read()
+        if (!NotificationNodeSettings.valid(value)) { stopSelf(); return }
+        currentToken = value.token
         val own = ++generation
         authenticated = false
         connectedAt = SystemClock.elapsedRealtime()
@@ -101,9 +114,7 @@ class NotificationNodeService : Service() {
         socket = client.newWebSocket(Request.Builder().url(value.endpoint).build(), object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) { handler.post {
                 if (own != generation || stopped) { ws.cancel(); return@post }
-                ws.send(JSONObject().put("type", "auth").put("deviceId", value.deviceId).put("deviceName", value.name)
-                    .put("role", "notifier").put("nodeType", "notification").put("platform", "android")
-                    .put("channel", value.channel).put("apiKey", value.apiKey).toString())
+                ws.send(JSONObject().put("type", "auth").put("token", value.token).toString())
             } }
             override fun onMessage(ws: WebSocket, text: String) { handler.post {
                 if (own != generation || stopped || text.length > 1_000_000) return@post
@@ -118,7 +129,7 @@ class NotificationNodeService : Service() {
     private fun handleMessage(ws: WebSocket, message: JSONObject) {
         val type = message.optString("type")
         if (type == "auth-result") {
-            if (!message.optBoolean("success")) { terminal = true; reconnect("身份或通道不匹配，请修改连接配置"); return }
+            if (!message.optBoolean("success")) { terminal = true; reconnect("登录已失效，请重新登录"); account.clear(); return }
             authenticated = true
             retryMs = 1_000
             message.optJSONObject("notificationScope")?.let { updateScope(it) }
@@ -126,6 +137,7 @@ class NotificationNodeService : Service() {
         }
         if (type == "kicked") { terminal = true; reconnect("此身份已在另一台设备连接"); return }
         if (!authenticated) return
+        if (type == "device-updated") message.optJSONObject("device")?.let { device -> serviceScope.launch { account.updateDevice(device) } }
         lastResponse = SystemClock.elapsedRealtime()
         outageId = null
         outageAccepted = false
@@ -169,6 +181,7 @@ class NotificationNodeService : Service() {
     override fun onDestroy() {
         stopped = true
         ++generation
+        serviceScope.cancel()
         handler.removeCallbacksAndMessages(null)
         socket?.cancel()
         client.dispatcher.executorService.shutdown()

@@ -13,5 +13,17 @@ namespace VisionGuard.Detector.Windows.Views
         {
             InitializeComponent();
         }
+        private void AccountPasswordChanged(object sender, System.Windows.RoutedEventArgs e)
+        {
+            if (sender is PasswordBox box && box.DataContext is ViewModels.ServerViewModel vm)
+            {
+                vm.Password = box.Password;
+                if (box.Tag == null)
+                {
+                    box.Tag = true;
+                    vm.PropertyChanged += (_, change) => { if (change.PropertyName == nameof(vm.Password) && vm.Password.Length == 0) box.Password = ""; };
+                }
+            }
+        }
     }
 }

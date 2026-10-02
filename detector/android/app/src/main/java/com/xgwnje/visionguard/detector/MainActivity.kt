@@ -1,478 +1,190 @@
 package com.xgwnje.visionguard.detector
 
 import android.Manifest
-import android.app.Activity
-import android.content.ComponentName
-import android.content.Context
-import android.content.Intent
-import android.content.ServiceConnection
-import android.content.pm.ActivityInfo
+import android.app.KeyguardManager
 import android.content.pm.PackageManager
-import android.os.Build
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.os.Bundle
-import android.os.IBinder
-import android.util.Log
+import android.os.SystemClock
+import android.util.Size
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.AlertDialog
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
-import com.xgwnje.visionguard.detector.data.model.DeploymentOrientation
-import com.xgwnje.visionguard.detector.data.model.MonitorConfig
-import com.xgwnje.visionguard.detector.data.repository.SettingsRepository
-import com.xgwnje.visionguard.detector.inference.SocWhitelist
-import com.xgwnje.visionguard.detector.service.DetectorForegroundService
-import com.xgwnje.visionguard.detector.ui.console.CalibrationWorkspace
-import com.xgwnje.visionguard.detector.ui.console.DetectorConsoleScreen
-import com.xgwnje.visionguard.detector.ui.console.UncalibratedStartDialog
-import com.xgwnje.visionguard.detector.ui.console.buildDetectorConsoleState
+import com.xgwnje.visionguard.account.*
+import com.xgwnje.visionguard.detector.stream.*
 import com.xgwnje.visionguard.detector.ui.theme.VisionguardTheme
-import com.xgwnje.visionguard.detector.util.AutoUpdater
-import com.xgwnje.visionguard.detector.util.UpdateInfo
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
-
-    private var service by mutableStateOf<DetectorForegroundService?>(null)
-    private var isBound by mutableStateOf(false)
-    private var serviceStartRequested = false
-    private var cameraPermissionGranted by mutableStateOf(false)
-
-    private val serviceConnection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            val localBinder = binder as? DetectorForegroundService.LocalBinder
-            service = localBinder?.getService()
-            isBound = true
-        }
-
-        override fun onServiceDisconnected(name: ComponentName?) {
-            service = null
-            isBound = false
-        }
+    private val executor = Executors.newSingleThreadExecutor()
+    private val policy = ForegroundStreamPolicy()
+    private var cameraProvider: ProcessCameraProvider? = null
+    private var publisher: CameraPublisher? = null
+    @Volatile private var cameraGeneration = 0
+    private var streaming by mutableStateOf(false)
+    private var preview by mutableStateOf<Bitmap?>(null)
+    private var captureSize by mutableStateOf<Pair<Int, Int>?>(null)
+    private var sentSize by mutableStateOf<Pair<Int, Int>?>(null)
+    private var highResolution by mutableStateOf(false)
+    private var dimScreen by mutableStateOf(false)
+    private var hidePreview by mutableStateOf(false)
+    private var priorBrightness = -1f
+    private var nextFrameAt = 0L
+    private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted && policy.foreground) startCamera()
+        else Toast.makeText(this, "需要允许摄像头后才能推流", Toast.LENGTH_LONG).show()
     }
-
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { results ->
-        val cameraGranted = results[Manifest.permission.CAMERA] == true || hasCameraPermission()
-        cameraPermissionGranted = cameraGranted
-        if (cameraGranted) {
-            startAndBindService()
-        } else {
-            Log.w("VG_MainActivity", "Camera permission denied; detector service not started")
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        cameraPermissionGranted = hasCameraPermission()
-
+        priorBrightness = window.attributes.screenBrightness
+        val account = AccountStore.get(this)
         setContent {
-            VisionguardTheme {
-                MainScreen(
-                    service = service,
-                    isBound = isBound,
-                    hasCameraPermission = cameraPermissionGranted,
-                    onRequestPermission = { requestPermissionsOrStartService() }
-                )
-            }
-        }
-
-        requestPermissionsOrStartService()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        if (isBound) {
-            unbindService(serviceConnection)
-            isBound = false
-            service = null
-        }
-    }
-
-    private fun requestPermissionsOrStartService() {
-        val permissions = mutableListOf<String>()
-        if (!hasCameraPermission()) {
-            permissions.add(Manifest.permission.CAMERA)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-        }
-        if (permissions.isNotEmpty()) {
-            permissionLauncher.launch(permissions.toTypedArray())
-        } else {
-            cameraPermissionGranted = true
-            startAndBindService()
-        }
-    }
-
-    private fun startAndBindService() {
-        if (!hasCameraPermission()) {
-            Log.w("VG_MainActivity", "Camera permission missing; detector service not started")
-            return
-        }
-        ensureServiceRunning()
-        bindService()
-    }
-
-    private fun hasCameraPermission(): Boolean =
-        ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-
-    private fun ensureServiceRunning() {
-        if (serviceStartRequested) return
-        serviceStartRequested = true
-        val intent = Intent(this, DetectorForegroundService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
-        }
-    }
-
-    private fun bindService() {
-        if (isBound) return
-        val intent = Intent(this, DetectorForegroundService::class.java)
-        bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
-    }
-}
-
-@Composable
-private fun MainScreen(
-    service: DetectorForegroundService?,
-    isBound: Boolean,
-    hasCameraPermission: Boolean,
-    onRequestPermission: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-    val activity = context as? Activity
-    val repository = remember(context.applicationContext) {
-        SettingsRepository(context.applicationContext)
-    }
-
-    if (!hasCameraPermission) {
-        PermissionMissingScreen(onRequestPermission = onRequestPermission, modifier = modifier)
-        return
-    }
-
-    if (!isBound || service == null) {
-        BoxLoading(modifier = modifier)
-        return
-    }
-
-    val draftConfig by repository.monitorConfigFlow.collectAsState(initial = MonitorConfig())
-    val deviceName by repository.deviceNameFlow.collectAsState(initial = SettingsRepository.DEFAULT_DEVICE_NAME)
-    val deploymentOrientation by repository.deploymentOrientationFlow.collectAsState(initial = null)
-    val calibrationDone by repository.calibrationDoneFlow.collectAsState(initial = false)
-
-    val connectionState by service.connectionState.collectAsState()
-    val isMonitoring by service.isMonitoring.collectAsState()
-    val lastFrame by service.lastAlertFrame.collectAsState()
-    val frameAspectRatio by service.frameAspectRatio.collectAsState()
-    val isReady by service.isReady.collectAsState()
-    val inferenceBackendStatus by service.inferenceBackendStatus.collectAsState()
-    val actualSamplingRate by service.actualSamplingRate.collectAsState()
-    val lastAlertPushTime by service.lastAlertPushTime.collectAsState()
-    val appliedConfig by service.currentConfigFlow.collectAsState()
-
-    var showCalibration by remember { mutableStateOf(false) }
-    var showMaintenance by remember { mutableStateOf(false) }
-    var isCapturingFrame by remember { mutableStateOf(false) }
-    var showUncalibratedDialog by remember { mutableStateOf(false) }
-    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
-    var showUpdateDialog by remember { mutableStateOf(false) }
-    var isCheckingUpdate by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-
-    LaunchedEffect(deploymentOrientation) {
-        applyDeploymentPresentation(activity, deploymentOrientation)
-    }
-
-    LaunchedEffect(lastFrame, isCapturingFrame) {
-        if (isCapturingFrame && lastFrame != null) {
-            isCapturingFrame = false
-        }
-    }
-
-    LaunchedEffect(isCapturingFrame) {
-        if (isCapturingFrame) {
-            delay(5000)
-            isCapturingFrame = false
-        }
-    }
-
-    BackHandler(enabled = showCalibration) {
-        showCalibration = false
-    }
-
-    val consoleState = buildDetectorConsoleState(
-        deploymentOrientation = deploymentOrientation,
-        draftConfig = draftConfig,
-        appliedConfig = appliedConfig,
-        isMonitoring = isMonitoring,
-        isReady = isReady,
-        hasCalibrationFrame = calibrationDone || lastFrame != null
-    )
-
-    val modelStatusText = remember(
-        draftConfig.modelName,
-        draftConfig.inputSize,
-        context.filesDir,
-        inferenceBackendStatus
-    ) {
-        val modelFile = context.filesDir.resolve("models/${draftConfig.modelName}_${draftConfig.inputSize}.onnx")
-        val fileStatus = if (modelFile.exists() && modelFile.length() > 0) {
-            "模型文件：已下载"
-        } else {
-            "模型文件：未下载（启动监控时自动下载）"
-        }
-        "$fileStatus\n推理后端：${inferenceBackendStatus.displayText}"
-    }
-
-    fun startMonitoring() {
-        service.startMonitoring(draftConfig)
-    }
-
-    val activeOrientation = deploymentOrientation
-    if (showCalibration && activeOrientation != null) {
-        CalibrationWorkspace(
-            orientation = activeOrientation,
-            bitmap = lastFrame,
-            frameAspectRatio = frameAspectRatio,
-            initialMasks = draftConfig.maskRegions,
-            initialZoom = draftConfig.digitalZoom,
-            isCapturing = isCapturingFrame,
-            onRetake = {
-                isCapturingFrame = true
-                service.capturePreviewFrame()
-            },
-            onApply = { masks, zoom ->
-                scope.launch {
-                    repository.saveMonitorConfig(draftConfig.copy(maskRegions = masks, digitalZoom = zoom))
-                    repository.setCalibrationDone(true)
-                    showCalibration = false
-                    Toast.makeText(context, "校准配置已保存", Toast.LENGTH_SHORT).show()
-                }
-            },
-            onCancel = { showCalibration = false },
-            modifier = modifier
-        )
-    } else {
-        DetectorConsoleScreen(
-            state = consoleState,
-            connectionState = connectionState,
-            deviceName = deviceName,
-            lastFrame = lastFrame,
-            frameAspectRatio = frameAspectRatio,
-            lastFrameLabel = lastFrameLabel(calibrationDone, lastAlertPushTime),
-            lastAlertTime = lastAlertPushTime,
-            actualSamplingRate = actualSamplingRate,
-            isCapturingFrame = isCapturingFrame,
-            showMaintenance = showMaintenance,
-            isHighEndSoc = SocWhitelist.isHighEndSoc(),
-            modelStatusText = modelStatusText,
-            onSelectOrientation = { orientation ->
-                scope.launch {
-                    repository.setDeploymentOrientation(orientation)
-                    applyDeploymentPresentation(activity, orientation)
-                }
-            },
-            onToggleMonitoring = {
-                if (isMonitoring) {
-                    service.stopMonitoring()
-                } else if (consoleState.requiresUncalibratedStartConfirmation) {
-                    showUncalibratedDialog = true
-                } else {
-                    startMonitoring()
-                }
-            },
-            onRefreshFrame = {
-                isCapturingFrame = true
-                if (isMonitoring) service.requestSnapshot() else service.capturePreviewFrame()
-            },
-            onOpenCalibration = {
-                if (consoleState.canEnterCalibration) {
-                    showCalibration = true
-                    isCapturingFrame = true
-                    service.capturePreviewFrame()
-                }
-            },
-            onRetakeCalibrationFrame = {
-                isCapturingFrame = true
-                service.capturePreviewFrame()
-            },
-            onApplyCalibration = { masks, zoom ->
-                scope.launch {
-                    repository.saveMonitorConfig(draftConfig.copy(maskRegions = masks, digitalZoom = zoom))
-                    repository.setCalibrationDone(true)
-                    showCalibration = false
-                }
-            },
-            onCloseCalibration = { showCalibration = false },
-            onOpenMaintenance = { showMaintenance = true },
-            onCloseMaintenance = { showMaintenance = false },
-            onSaveMaintenance = { newConfig, newDeviceName, newOrientation ->
-                scope.launch {
-                    repository.saveMonitorConfig(newConfig)
-                    repository.setDeviceName(newDeviceName)
-                    repository.setDeploymentOrientation(newOrientation)
-                    applyDeploymentPresentation(activity, newOrientation)
-                    showMaintenance = false
-                    Toast.makeText(context, "已保存，停止后重新开启生效", Toast.LENGTH_SHORT).show()
-                }
-            },
-            onReconnect = { service.reconnect() },
-            onCheckUpdate = {
-                if (!isCheckingUpdate) {
-                    isCheckingUpdate = true
-                    scope.launch {
-                        val result = AutoUpdater.checkUpdate(context)
-                        isCheckingUpdate = false
-                        if (result != null) {
-                            updateInfo = result
-                            showUpdateDialog = true
-                        } else {
-                            Toast.makeText(context, "已是最新版本", Toast.LENGTH_SHORT).show()
-                        }
+            val session by account.session.collectAsState()
+            VisionguardTheme(darkTheme = if (streaming && dimScreen) true else androidx.compose.foundation.isSystemInDarkTheme()) {
+                if (session == null) AccountLogin(account, "VisionGuard 镜头推流", "android-camera")
+                else key(session!!.scope) {
+                    val connection = remember { CameraPublisher(account) }
+                    val prefs = remember { getSharedPreferences("camera-options-" + AccountStore.cacheKey(this@MainActivity), MODE_PRIVATE) }
+                    DisposableEffect(connection) {
+                        publisher = connection
+                        highResolution = prefs.getBoolean("720p", false)
+                        dimScreen = prefs.getBoolean("dim", false)
+                        hidePreview = prefs.getBoolean("hidePreview", false)
+                        onDispose { stopCamera("user"); connection.close(); publisher = null }
+                    }
+                    val state by connection.state.collectAsState()
+                    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+                        AccountHeader(account, session!!, beforeLogout = {
+                            stopCamera("user"); connection.close(); prefs.edit().clear().commit()
+                        })
+                        CameraHome(state, preview, streaming, highResolution, dimScreen, hidePreview, captureSize, sentSize,
+                            onStart = {
+                                if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startCamera()
+                                else permission.launch(Manifest.permission.CAMERA)
+                            }, onStop = { stopCamera("user") }, onBind = connection::bind, onRefresh = connection::refreshTargets,
+                            onResolution = { highResolution = it; prefs.edit().putBoolean("720p", it).apply() },
+                            onDim = { dimScreen = it; prefs.edit().putBoolean("dim", it).apply(); applyScreen() },
+                            onHidePreview = { hidePreview = it; prefs.edit().putBoolean("hidePreview", it).apply() })
                     }
                 }
-            },
-            modifier = modifier
-        )
-    }
-
-    if (showUncalibratedDialog) {
-        UncalibratedStartDialog(
-            onConfirm = {
-                showUncalibratedDialog = false
-                startMonitoring()
-            },
-            onDismiss = { showUncalibratedDialog = false }
-        )
-    }
-
-    if (showUpdateDialog && updateInfo != null) {
-        AlertDialog(
-            onDismissRequest = { showUpdateDialog = false },
-            title = { Text("发现新版本") },
-            text = { Text("发现新版本 ${updateInfo!!.version}\n当前版本 ${AppConstants.VERSION}\n\n是否立即下载更新？") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showUpdateDialog = false
-                    AutoUpdater.downloadApk(context, updateInfo!!.downloadUrl, updateInfo!!.version)
-                }) { Text("更新") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showUpdateDialog = false }) { Text("稍后") }
             }
-        )
+        }
     }
+    override fun onResume() { super.onResume(); policy.resumed() }
+    override fun onPause() {
+        policy.leftForeground()
+        stopCamera(if (getSystemService(KeyguardManager::class.java).isKeyguardLocked) "locked" else "background")
+        super.onPause()
+    }
+    private fun startCamera() {
+        if (!policy.start() || publisher?.state?.value?.connected != true) return
+        if (publisher?.state?.value?.stream?.targetDeviceId == null) { policy.stop(); return }
+        streaming = true; nextFrameAt = 0; captureSize = null; sentSize = null; applyScreen(); publisher?.start()
+        val own = ++cameraGeneration
+        val future = ProcessCameraProvider.getInstance(this)
+        future.addListener({
+            if (own != cameraGeneration || !streaming || !policy.foreground) return@addListener
+            runCatching {
+                val provider = future.get(); cameraProvider = provider
+                val target = if (highResolution) Size(1280, 720) else Size(640, 480)
+                val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .setResolutionSelector(ResolutionSelector.Builder()
+                        .setAspectRatioStrategy(if (highResolution) AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY else AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+                        .setResolutionStrategy(ResolutionStrategy(target, ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER)).build()).build()
+                analysis.setAnalyzer(executor) { image ->
+                    try {
+                        val now = SystemClock.elapsedRealtime()
+                        val active = publisher
+                        if (own != cameraGeneration || !streaming || now < nextFrameAt || active == null) return@setAnalyzer
+                        nextFrameAt = now + 200
+                        if (!active.canPublish()) { active.dropped(); return@setAnalyzer }
+                        val frame = CameraFrameCodec.encode(image, if (highResolution) 1280 else 640, if (highResolution) 720 else 480)
+                        val captured = image.width to image.height
+                        runOnUiThread { if (own == cameraGeneration && streaming) { captureSize = captured; sentSize = frame.width to frame.height } }
+                        if (active.publish(frame) && !hidePreview) {
+                            val bitmap = BitmapFactory.decodeByteArray(frame.jpeg, 0, frame.jpeg.size)
+                            val oriented = if (frame.rotation == 0 || bitmap == null) bitmap else Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply { postRotate(frame.rotation.toFloat()) }, true)
+                            runOnUiThread { if (own == cameraGeneration && streaming) preview = oriented }
+                        }
+                    } catch (_: Exception) {
+                        runOnUiThread { if (own == cameraGeneration) Toast.makeText(this, "画面处理失败，已跳过这一帧", Toast.LENGTH_SHORT).show() }
+                    } finally { image.close() }
+                }
+                provider.unbindAll(); provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, analysis)
+            }.onFailure { stopCamera("user"); Toast.makeText(this, "无法启动摄像头", Toast.LENGTH_LONG).show() }
+        }, ContextCompat.getMainExecutor(this))
+    }
+    private fun stopCamera(reason: String) {
+        ++cameraGeneration; policy.stop(); streaming = false
+        cameraProvider?.unbindAll(); publisher?.stop(reason); preview = null; captureSize = null; sentSize = null; applyScreen()
+    }
+    private fun applyScreen() {
+        if (streaming) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.attributes = window.attributes.apply { screenBrightness = if (streaming && dimScreen) 0.03f else priorBrightness }
+    }
+    override fun onDestroy() { stopCamera("background"); publisher?.close(); executor.shutdown(); super.onDestroy() }
 }
 
 @Composable
-private fun PermissionMissingScreen(
-    onRequestPermission: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = "需要摄像头权限",
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.primary
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        Text(
-            text = "授权后才能启动检测端服务",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f)
-        )
-        Spacer(modifier = Modifier.height(18.dp))
-        Button(onClick = onRequestPermission) {
-            Text("重新授权")
+private fun CameraHome(state: PublisherState, preview: Bitmap?, streaming: Boolean, highResolution: Boolean,
+    dim: Boolean, hidden: Boolean, captureSize: Pair<Int, Int>?, sentSize: Pair<Int, Int>?, onStart: () -> Unit, onStop: () -> Unit, onBind: (String) -> Unit,
+    onRefresh: () -> Unit, onResolution: (Boolean) -> Unit, onDim: (Boolean) -> Unit, onHidePreview: (Boolean) -> Unit) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("镜头推流", fontSize = 26.sp, fontWeight = FontWeight.Bold)
+        Text(state.status, color = MaterialTheme.colorScheme.primary)
+        Text("保持应用在前台；离开应用或锁屏后停止推流。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row { Text("目标视觉节点", Modifier.weight(1f), fontWeight = FontWeight.SemiBold); TextButton(onRefresh) { Text("刷新") } }
+                if (state.targets.isEmpty()) Text("请先在视觉推理节点登录同一账号。")
+                state.targets.forEach { target ->
+                    OutlinedButton({ onBind(target.deviceId) }, enabled = !streaming, modifier = Modifier.fillMaxWidth()) {
+                        Text((if (state.stream?.targetDeviceId == target.deviceId) "已关联 · " else "选择 · ") + target.deviceName)
+                    }
+                }
+                state.stream?.sourceName?.takeIf { it.isNotBlank() }?.let { Text("推理来源：$it") }
+            }
         }
+        if (!hidden) OutlinedCard(Modifier.fillMaxWidth().height(220.dp)) {
+            if (preview != null) Image(preview.asImageBitmap(), "实时摄像头画面", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+            else Box(Modifier.fillMaxSize()) { Text(if (streaming) "等待实时画面" else "开始后显示实时画面", Modifier.padding(20.dp)) }
+        }
+        if (streaming) Button(onStop, Modifier.fillMaxWidth().height(50.dp)) { Text("停止推流") }
+        else Button(onStart, Modifier.fillMaxWidth().height(50.dp), enabled = state.connected && state.stream?.targetDeviceId != null) { Text("开始推流") }
+        Row { Text(if (highResolution) "最高720P · 5 帧/秒" else "最高640×480 · 5 帧/秒", Modifier.weight(1f)); Switch(highResolution, onResolution, enabled = !streaming) }
+        if (captureSize != null && sentSize != null) {
+            Text("实际采集 ${captureSize.first}×${captureSize.second} · 发送 ${sentSize.first}×${sentSize.second}", style = MaterialTheme.typography.bodySmall)
+            if (highResolution && (maxOf(captureSize.first, captureSize.second) < 1280 || minOf(captureSize.first, captureSize.second) < 720))
+                Text("此摄像头已按可用规格回退。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Row { Text("省电暗色界面", Modifier.weight(1f)); Switch(dim, onDim) }
+        Row { Text("收起画面预览", Modifier.weight(1f)); Switch(hidden, onHidePreview) }
+        Text("画面发送 ${state.sentFrames} · 服务确认 ${state.acknowledgedFrames} · 丢弃 ${state.droppedFrames}", style = MaterialTheme.typography.bodySmall)
+        Text("服务确认表示视频已送达中继；检测结果请在控制台查看。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
-
-@Composable
-private fun BoxLoading(modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        CircularProgressIndicator()
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = "加载中...",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-        )
-    }
-}
-
-private fun applyDeploymentPresentation(activity: Activity?, orientation: DeploymentOrientation?) {
-    if (activity == null) return
-
-    orientation?.let {
-        activity.requestedOrientation = when (it) {
-            DeploymentOrientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            DeploymentOrientation.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        }
-    }
-
-    WindowInsetsControllerCompat(activity.window, activity.window.decorView).apply {
-        systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        isAppearanceLightStatusBars = true
-        isAppearanceLightNavigationBars = true
-        if (orientation == DeploymentOrientation.LANDSCAPE) {
-            hide(WindowInsetsCompat.Type.systemBars())
-        } else {
-            show(WindowInsetsCompat.Type.systemBars())
-        }
-    }
-}
-
-private fun lastFrameLabel(calibrationDone: Boolean, lastAlertPushTime: String?): String =
-    when {
-        lastAlertPushTime != null -> lastAlertPushTime
-        calibrationDone -> "校准帧"
-        else -> "非实时预览"
-    }

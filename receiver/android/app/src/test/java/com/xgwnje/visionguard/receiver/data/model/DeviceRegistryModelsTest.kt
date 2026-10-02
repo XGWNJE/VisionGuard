@@ -130,24 +130,6 @@ class DeviceRegistryModelsTest {
         assertEquals(listOf("gate", "door", "yard"), moved.map { it.deviceId })
     }
 
-    @Test
-    fun removeOfflineDeviceRejectsOnlineDeviceAndRestoresAtOriginalIndex() {
-        val devices = listOf(
-            device("door", "Door", online = false),
-            device("yard", "Yard", online = true)
-        )
-
-        assertNull(removeOfflineDeviceById(devices, "yard").removed)
-
-        val removal = removeOfflineDeviceById(devices, "door")
-        assertEquals(listOf("yard"), removal.devices.map { it.deviceId })
-        assertEquals("door", removal.removed?.device?.deviceId)
-        assertEquals(0, removal.removed?.index)
-
-        val restored = restoreRemovedDevice(removal.devices, removal.removed!!)
-
-        assertEquals(listOf("door", "yard"), restored.map { it.deviceId })
-    }
 
     @Test
     fun mergeKnownDevicesIgnoresBlankAndDuplicateDeviceIds() {

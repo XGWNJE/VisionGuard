@@ -8,7 +8,7 @@
 - [视觉中继](docs/codex/20-server.md)：视觉中继当前职责、接口和协议角色
 - [Windows](docs/codex/30-windows-detector.md)：统一启动器、WPF 运行时和驻留程序
 - [模型资源](docs/codex/35-model-assets.md)：模型、类别映射和打包边界
-- [视觉检测（Android）](docs/codex/40-android-detector.md)
+- [VisionGuard 镜头推流](docs/codex/40-android-detector.md)：前台摄像头与实时画面发送
 - [控制台与通知节点](docs/codex/50-android-receiver.md)
 - [运维](docs/codex/60-operations.md)：构建、验证和发布授权边界
 - [验证报告](docs/codex/90-verification-report.md)：证据、状态和未覆盖项

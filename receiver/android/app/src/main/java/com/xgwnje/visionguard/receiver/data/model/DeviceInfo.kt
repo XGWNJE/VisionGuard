@@ -35,7 +35,10 @@ data class DeviceInfo(
     val sourceLimitExceeded: Boolean = false,
     val role: String = "detector",
     val nodeType: String = "visual",
-    val platform: String = "windows"
+    val platform: String = "windows",
+    val component: String = "",
+    val isStreaming: Boolean = false,
+    val streamTargetId: String? = null
 )
 
 @Immutable

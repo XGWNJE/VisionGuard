@@ -48,13 +48,7 @@ export interface AlertRecord {
 /** 客户端 → 服务器：认证 */
 export interface WsAuthMessage {
   type: 'auth';
-  channel: string;
-  apiKey: string;
-  role: import('../services/NodeProtocol').NodeRole;
-  nodeType: import('../services/NodeProtocol').NodeType;
-  platform: string;
-  deviceId: string;
-  deviceName: string;
+  token: string;
   version?: string;
 }
 
@@ -150,6 +144,7 @@ export interface WsScreenshotDataPush {
 }
 
 export interface DeviceStatus {
+  component: import('../services/AccountStore').Component;
   role: import('../services/NodeProtocol').NodeRole;
   nodeType: import('../services/NodeProtocol').NodeType;
   platform: string;
@@ -282,6 +277,7 @@ export interface ReceiverClient {
 }
 
 export interface ResidentClient {
+  identity: import('../services/NodeProtocol').NodeIdentity;
   ws: WebSocket;
   deviceId: string;
   deviceName: string;

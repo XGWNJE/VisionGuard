@@ -6,18 +6,17 @@ test('credentials only travel over same-origin WSS except local development', ()
   assert.equal(websocketURL('https://relay.example/console/'), 'wss://relay.example/ws');
   assert.equal(websocketURL('http://127.0.0.1:4318/console/'), 'ws://127.0.0.1:4318/ws');
   assert.equal(websocketURL('http://[::1]:4318/console/'), 'ws://[::1]:4318/ws');
-  for (const origin of ['http://relay.example', 'http://192.168.1.2', 'file:///console', 'http://localhost.example']) {
+  for (const origin of ['http://relay.example', 'file:///console', 'http://localhost.example']) {
     assert.throws(() => websocketURL(origin), /HTTPS/);
   }
 });
 
-test('explicit test login allows private LAN HTTP while public HTTP remains blocked', () => {
+test('account login supports private LAN HTTP without a separate test identity bypass', () => {
   for (const ip of ['10.0.0.1', '172.16.0.1', '172.31.255.254', '192.168.31.58']) {
-    assert.throws(() => websocketURL(`http://${ip}:4318`), /HTTPS/);
-    assert.equal(websocketURL(`http://${ip}:4318`, true), `ws://${ip}:4318/ws`);
+    assert.equal(websocketURL(`http://${ip}:4318`), `ws://${ip}:4318/ws`);
   }
   for (const host of ['172.15.0.1', '172.32.0.1', '192.169.0.1', '8.8.8.8', 'relay.example', 'localhost.example']) {
-    assert.throws(() => websocketURL(`http://${host}`, true), /HTTPS/);
+    assert.throws(() => websocketURL(`http://${host}`), /HTTPS/);
   }
 });
 

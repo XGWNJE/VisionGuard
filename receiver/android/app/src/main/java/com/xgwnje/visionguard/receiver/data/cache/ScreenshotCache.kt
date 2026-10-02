@@ -8,7 +8,7 @@ private const val TAG = "VG_ScreenshotCache"
 
 class ScreenshotCache(context: Context) {
 
-    private val cacheDir = File(context.filesDir, "screenshots")
+    private val cacheDir = File(context.filesDir, "screenshots/" + com.xgwnje.visionguard.account.AccountStore.cacheKey(context))
 
     init {
         if (!cacheDir.exists()) cacheDir.mkdirs()

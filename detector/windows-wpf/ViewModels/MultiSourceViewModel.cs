@@ -30,6 +30,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private DateTime _lastPerformanceAlertUtc = DateTime.MinValue;
         // 收到服务端 maxSources 之前先放开到最大值，否则本地会被默认上限卡住，用户加不了更多来源。
         private int _sourceLimit = MultiSourceMonitorCoordinator.MaximumSourceLimit;
+        private int _viewGeneration;
 
         // ── 卡片区状态（固定网格、最多 4 个实时预览位、可拖宽度）──
         // 布局求解本身在 CardLayoutPlanner（纯计算）；这里只保存用户交互产生的状态。
@@ -172,6 +173,11 @@ namespace VisionGuard.Detector.Windows.ViewModels
             if (_server != null)
             {
                 _server.SourceLimitReceived += (_, limit) => Application.Current.Dispatcher.Invoke(() => ApplySourceLimit(limit));
+                _server.StreamsReceived += (_, streams) =>
+                {
+                    int generation = _viewGeneration;
+                    Dispatch(() => { if (generation == _viewGeneration) ApplyStreams(streams); });
+                };
             }
 
             // 状态/帧事件可能在来源已被移除之后才送达（重建来源就是在 Remove 之后 Add，
@@ -180,21 +186,28 @@ namespace VisionGuard.Detector.Windows.ViewModels
             _coordinator.AlertTriggered += (_, alert) =>
             {
                 _server?.PushAlert(alert);
-                Dispatch(() => Sources.FirstOrDefault(source => source.SourceId == alert.SourceId)?.ApplyAlert(alert));
+                int generation = _viewGeneration;
+                Dispatch(() => { if (generation == _viewGeneration) Sources.FirstOrDefault(source => source.SourceId == alert.SourceId)?.ApplyAlert(alert); });
             };
-            _coordinator.StatusChanged += (_, status) => Dispatch(() =>
+            _coordinator.StatusChanged += (_, status) =>
             {
+                int generation = _viewGeneration;
+                Dispatch(() => {
+                if (generation != _viewGeneration) return;
                 var slot = Sources.FirstOrDefault(s => s.SourceId == status.SourceId);
                 if (slot == null) return;
                 slot.ApplyStatus(status);
                 RefreshSummary();
                 RaisePerformanceAlertIfNeeded();
-            });
+                });
+            };
             _coordinator.FrameProcessed += (_, e) =>
             {
                 if (e.Frame.HasError) { e.Frame.Frame?.Dispose(); return; }
+                int generation = _viewGeneration;
                 Dispatch(() =>
                 {
+                    if (generation != _viewGeneration) { e.Frame.Frame?.Dispose(); return; }
                     var slot = Sources.FirstOrDefault(s => s.SourceId == e.SourceId);
                     if (slot == null) { e.Frame.Frame?.Dispose(); return; }
                     using (e.Frame.Frame)
@@ -224,6 +237,60 @@ namespace VisionGuard.Detector.Windows.ViewModels
             if (dispatcher == null) { action(); return; }
             dispatcher.BeginInvoke(action);
         }
+        public void PrepareAccountChange()
+        {
+            _viewGeneration++;
+            StopAll();
+            foreach (var slot in Sources) slot.FinishEditing();
+            Save();
+        }
+        public void ReloadAccount()
+        {
+            _viewGeneration++;
+            foreach (var slot in Sources.ToArray()) { slot.ReleaseForAccountSwitch(); _coordinator.Remove(slot.SourceId); }
+            Sources.Clear(); PreviewSources.Clear(); SelectedSource = null;
+            RemoteFrameStore.Shared.Clear();
+            foreach (int index in ResolveInitialSourceIndexes())
+            {
+                var slot = new SourceViewModel(index, this); Sources.Add(slot); _coordinator.Add(slot.BuildSource());
+            }
+            RestorePreviewSelection(); SelectedSource = PreviewSources.FirstOrDefault() ?? Sources[0]; RefreshSummary();
+        }
+        private void ApplyStreams(IReadOnlyList<RemoteStreamInfo> streams)
+        {
+            var bound = streams.Where(s => s.targetDeviceId == AppConfig.DeviceId && !string.IsNullOrWhiteSpace(s.sourceId)).ToArray();
+            foreach (var removed in Sources.Where(s => s.IsRemoteStream && !bound.Any(b => b.sourceId == s.SourceId)).ToArray())
+            {
+                if (IsRunning(removed)) Stop(removed);
+                removed.FinishEditing(); _coordinator.Remove(removed.SourceId); removed.ForgetRemoteBinding(); PreviewSources.Remove(removed); Sources.Remove(removed);
+            }
+            foreach (var stream in bound)
+            {
+                var slot = Sources.FirstOrDefault(s => s.SourceId == stream.sourceId);
+                if (slot == null)
+                {
+                    int index = 1; while (Sources.Any(s => s.Index == index)) index++;
+                    // Reuse an empty slot to avoid a useless extra first card.
+                    slot = Sources.FirstOrDefault(s => !s.IsTargetBound && !s.IsMonitoring);
+                    if (slot == null && Sources.Count >= _sourceLimit) { _sourceLimitWarning = "远程镜头超过来源上限。"; continue; }
+                    if (slot != null) _coordinator.Remove(slot.SourceId);
+                    else { slot = new SourceViewModel(index, this); Sources.Add(slot); AddPreview(slot); }
+                    slot.BindRemote(stream);
+                    _coordinator.Add(slot.BuildSource()); PersistSourceIndexes(); SelectedSource = slot;
+                }
+                if (!stream.isStreaming && RemoteFrameStore.Shared.IsExpectedStop(stream.streamId))
+                {
+                    if (IsRunning(slot)) Stop(slot);
+                    slot.SetError("镜头已停止推流");
+                }
+                else if (!stream.isStreaming) slot.SetError("镜头已断流，等待恢复");
+                slot.RefreshRemoteAvailability();
+            }
+            if (Sources.Count == 0) AddSource();
+            PersistSourceIndexes(); EnsurePreviewSelectionNotEmpty();
+            if (SelectedSource == null || !Sources.Contains(SelectedSource)) SelectedSource = Sources[0];
+            RefreshSummary();
+        }
 
         /// <summary>
         /// 在服务端上限内新增一个来源：新来源默认未配置，等待用户设定采集目标。
@@ -231,7 +298,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         internal bool CanAddSource => Sources.Count < _sourceLimit;
 
         internal bool CanRemoveSource(SourceViewModel slot)
-            => Sources.Count > 1 && !slot.IsMonitoring;
+            => Sources.Count > 1 && !slot.IsMonitoring && !slot.IsRemoteStream;
 
         internal void AddSource()
         {
@@ -717,7 +784,9 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private double _actualFps;
         private bool _isPerformanceInsufficient;
 
-        public string SourceId { get; }
+        public string SourceId { get; private set; }
+        private string _remoteStreamId = "", _remotePublisherName = "";
+        public bool IsRemoteStream => _captureMode == CaptureMode.RemoteStream;
         public string DisplayIndex => $"来源 {_index}";
 
         /// <summary>
@@ -838,15 +907,15 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
         public bool CanEdit => !IsMonitoring;
         public bool CanStart => !IsMonitoring && IsReady;
-        public bool IsReady => _captureMode == CaptureMode.WindowHandle
+        public bool IsReady => IsRemoteStream ? !string.IsNullOrWhiteSpace(_remoteStreamId) && RemoteFrameStore.Shared.IsBound(_remoteStreamId) : _captureMode == CaptureMode.WindowHandle
             ? _targetWindow != null && CaptureSizeConstraints.IsValid(_targetWindow.Bounds)
             : CaptureSizeConstraints.IsValid(_screenRegion);
         /// <summary>已选择采集目标；窗口暂时失联时仍视为已绑定。</summary>
-        public bool IsTargetBound => _captureMode == CaptureMode.WindowHandle
+        public bool IsTargetBound => IsRemoteStream ? !string.IsNullOrWhiteSpace(_remoteStreamId) : _captureMode == CaptureMode.WindowHandle
             ? !string.IsNullOrWhiteSpace(_targetWindowTitle)
             : _screenRegion != Rectangle.Empty;
         public string StatusText { get => _statusText; private set => SetProperty(ref _statusText, value); }
-        public string TargetInfo => _captureMode == CaptureMode.WindowHandle
+        public string TargetInfo => IsRemoteStream ? "远程镜头：" + _remotePublisherName : _captureMode == CaptureMode.WindowHandle
             ? (string.IsNullOrWhiteSpace(_targetWindowTitle) ? "未选择窗口" : $"窗口：{_targetWindowTitle}{(_windowSubRegion == Rectangle.Empty ? "" : $" · 选区 {_windowSubRegion.Width}×{_windowSubRegion.Height}")}")
             : (CaptureSizeConstraints.IsValid(_screenRegion) ? $"屏幕选区：{_screenRegion.X},{_screenRegion.Y} {_screenRegion.Width}×{_screenRegion.Height}" : "未选择屏幕区域");
 
@@ -909,16 +978,16 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
         internal SourceViewModel(int index, MultiSourceViewModel owner)
         {
-            _owner = owner; _index = index; SourceId = index == 1 ? "default" : $"signal-{index}";
+            _owner = owner; _index = index; SourceId = SettingsStore.GetString(Prefix + "SourceId", index == 1 ? "default" : $"signal-{index}");
             Load();
             InitializeTargetOptions();
             _saved = CaptureState();
             _autoSaveTimer.Tick += AutoSaveTick;
             SelectCommand = new RelayCommand(() => _owner.Select(this));
-            PickWindowCommand = new RelayCommand(PickWindow, () => CanEdit);
-            SelectRegionCommand = new RelayCommand(SelectRegion, () => CanEdit);
+            PickWindowCommand = new RelayCommand(PickWindow, () => CanEdit && !IsRemoteStream);
+            SelectRegionCommand = new RelayCommand(SelectRegion, () => CanEdit && !IsRemoteStream);
             // 采集目标三件套（窗口 / 选区 / 遮罩）合用一个重置：它们本来就要一起变，分开清除只会留下半套配置。
-            ResetTargetCommand = new RelayCommand(ResetTarget, () => CanEdit && HasAnyTarget);
+            ResetTargetCommand = new RelayCommand(ResetTarget, () => CanEdit && HasAnyTarget && !IsRemoteStream);
             EditMasksCommand = new RelayCommand(EditMasks, () => CanEdit && IsReady);
             StartCommand = new RelayCommand(Start, () => CanStart);
             StopCommand = new RelayCommand(() => _owner.Stop(this), () => IsMonitoring);
@@ -958,7 +1027,9 @@ namespace VisionGuard.Detector.Windows.ViewModels
             _thresholdPercent = Net472Compat.Clamp(SettingsStore.GetInt(Prefix + "Threshold", 45), 10, 95);
             _targetFps = Net472Compat.Clamp(SettingsStore.GetInt(Prefix + "Fps", 3), 1, 5);
             _cooldown = Net472Compat.Clamp(SettingsStore.GetInt(Prefix + "Cooldown", 5), 1, 300);
-            _captureMode = Enum.TryParse<CaptureMode>(SettingsStore.GetString(Prefix + "CaptureMode", CaptureMode.ScreenRegion.ToString()), out var mode) && mode == CaptureMode.WindowHandle ? CaptureMode.WindowHandle : CaptureMode.ScreenRegion;
+            _captureMode = Enum.TryParse<CaptureMode>(SettingsStore.GetString(Prefix + "CaptureMode", CaptureMode.ScreenRegion.ToString()), out var mode) && Enum.IsDefined(typeof(CaptureMode), mode) ? mode : CaptureMode.ScreenRegion;
+            _remoteStreamId = SettingsStore.GetString(Prefix + "RemoteStreamId", "");
+            _remotePublisherName = SettingsStore.GetString(Prefix + "RemotePublisherName", "");
             _targetWindowTitle = SettingsStore.GetString(Prefix + "TargetWindowTitle", string.Empty);
             _targetWindowClassName = SettingsStore.GetString(Prefix + "TargetWindowClassName", string.Empty);
             _targetWindowProcessName = SettingsStore.GetString(Prefix + "TargetWindowProcessName", string.Empty);
@@ -1021,6 +1092,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             var config = new MonitorConfig
             {
                 CaptureMode = _captureMode, CaptureRegion = _screenRegion, TargetWindowTitle = _targetWindowTitle,
+                RemoteStreamId = _remoteStreamId,
                 TargetWindowClassName = _targetWindowClassName, TargetWindowProcessName = _targetWindowProcessName,
                 TargetWindowHandle = _targetWindow?.Handle ?? IntPtr.Zero, WindowSubRegion = _windowSubRegion,
                 ConfidenceThreshold = ThresholdPercent / 100f, AlertCooldownSeconds = Cooldown, TargetFps = TargetFps,
@@ -1124,6 +1196,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
         private Bitmap GrabFrame()
         {
+            if (IsRemoteStream) return RemoteFrameStore.Shared.Peek(_remoteStreamId);
             if (_captureMode == CaptureMode.WindowHandle && _targetWindow != null) return WindowCapturer.CaptureWindow(_targetWindow.Handle, _windowSubRegion);
             if (_captureMode == CaptureMode.ScreenRegion && CaptureSizeConstraints.IsValid(_screenRegion)) return ScreenCapturer.CaptureRegion(_screenRegion);
             throw new InvalidOperationException("尚未配置有效捕获目标。");
@@ -1160,6 +1233,9 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
         internal void PersistCurrent()
         {
+            SettingsStore.Set(Prefix + "SourceId", SourceId);
+            SettingsStore.Set(Prefix + "RemoteStreamId", _remoteStreamId);
+            SettingsStore.Set(Prefix + "RemotePublisherName", _remotePublisherName);
             SettingsStore.Set(Prefix + "Initialized", true); SettingsStore.Set(Prefix + "Name", SourceName);
             SettingsStore.Set(Prefix + "CaptureMode", _captureMode.ToString()); SettingsStore.Set(Prefix + "TargetWindowTitle", _targetWindowTitle);
             SettingsStore.Set(Prefix + "TargetWindowClassName", _targetWindowClassName); SettingsStore.Set(Prefix + "TargetWindowProcessName", _targetWindowProcessName);
@@ -1170,6 +1246,30 @@ namespace VisionGuard.Detector.Windows.ViewModels
         }
 
         private SavedState CaptureState() => new(SourceName, ModelKey, Targets, ThresholdPercent, TargetFps, Cooldown, _captureMode, _targetWindowTitle, _targetWindowClassName, _targetWindowProcessName, _screenRegion, _windowSubRegion, new List<RectangleF>(MaskRegions));
+        internal void BindRemote(RemoteStreamInfo stream)
+        {
+            SourceId = stream.sourceId; _remoteStreamId = stream.streamId; _remotePublisherName = stream.publisherName;
+            _captureMode = CaptureMode.RemoteStream; _sourceName = string.IsNullOrWhiteSpace(stream.sourceName) ? stream.publisherName : stream.sourceName;
+            _targetWindow = null; _screenRegion = Rectangle.Empty; _windowSubRegion = Rectangle.Empty; ClearMasksInternal();
+            PersistCurrent(); SettingsStore.Save(); _saved = CaptureState();
+            OnPropertyChanged(nameof(SourceId)); OnPropertyChanged(nameof(SourceName)); OnPropertyChanged(nameof(TargetInfo));
+            OnPropertyChanged(nameof(IsRemoteStream)); OnPropertyChanged(nameof(IsReady)); OnPropertyChanged(nameof(CanStart));
+            RaiseCommandStates();
+        }
+        internal void FinishEditing() { _autoSaveTimer.Stop(); PersistCurrent(); SettingsStore.Save(); ClearPreviewFrame(); }
+        internal void ReleaseForAccountSwitch() { _autoSaveTimer.Stop(); ClearPreviewFrame(); }
+        internal void ForgetRemoteBinding()
+        {
+            SettingsStore.Set(Prefix + "SourceId", _index == 1 ? "default" : $"signal-{_index}");
+            SettingsStore.Set(Prefix + "RemoteStreamId", ""); SettingsStore.Set(Prefix + "RemotePublisherName", "");
+            SettingsStore.Set(Prefix + "CaptureMode", CaptureMode.ScreenRegion.ToString()); SettingsStore.Set(Prefix + "ScreenRegion", "");
+            SettingsStore.Set(Prefix + "Name", $"来源 {_index}"); SettingsStore.Set(Prefix + "Masks", ""); SettingsStore.Save();
+        }
+        internal void RefreshRemoteAvailability()
+        {
+            OnPropertyChanged(nameof(IsReady)); OnPropertyChanged(nameof(CanStart)); RaiseCommandStates();
+            if (!IsMonitoring && RemoteFrameStore.Shared.IsBound(_remoteStreamId) && !RemoteFrameStore.Shared.IsExpectedStop(_remoteStreamId)) StatusText = "远程镜头已绑定 · 可开始推理";
+        }
 
         /// <summary>
         /// 比较「当前值」与「已生效配置」，列出需要重新启动才生效的参数名。

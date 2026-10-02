@@ -9,12 +9,13 @@
 import fs from 'fs';
 import path from 'path';
 import { config } from '../config';
+import { accountDirectory } from './AccountStore';
 import type { AlertRecord } from '../models/types';
 
+export type AddAlertResult = 'stored' | 'duplicate' | 'conflict';
+function createStore(accountId: string) {
 /** 持久化文件路径 */
-const PERSIST_PATH = process.env.ALERT_STORE_PATH
-  ? path.resolve(process.env.ALERT_STORE_PATH)
-  : path.resolve(config.dataDir, 'alerts.json');
+const PERSIST_PATH = path.join(accountDirectory(accountId), 'alerts.json');
 
 /** deviceId → AlertRecord[] (最多 maxAlertsPerDevice 条) */
 const store = new Map<string, AlertRecord[]>();
@@ -75,7 +76,7 @@ function scheduleSaveToDisk(): void {
 /**
  * 添加报警记录，超出上限时淘汰最旧的
  */
-export type AddAlertResult = 'stored' | 'duplicate' | 'conflict';
+type InternalAddAlertResult = 'stored' | 'duplicate' | 'conflict';
 
 function isSameAlert(existing: AlertRecord, incoming: AlertRecord): boolean {
   return existing.deviceId === incoming.deviceId
@@ -87,7 +88,7 @@ function isSameAlert(existing: AlertRecord, incoming: AlertRecord): boolean {
     && JSON.stringify(existing.detections) === JSON.stringify(incoming.detections);
 }
 
-export function addAlert(record: AlertRecord): AddAlertResult {
+function addAlert(record: AlertRecord): InternalAddAlertResult {
   const existing = getAlertById(record.alertId);
   if (existing) {
     if (!isSameAlert(existing, record)) return 'conflict';
@@ -96,7 +97,7 @@ export function addAlert(record: AlertRecord): AddAlertResult {
   }
 
   if (!record.screenshotPath) {
-    const backedUpScreenshot = path.join(config.screenshotDir, `${record.alertId}.jpg`);
+    const backedUpScreenshot = path.join(accountDirectory(accountId), 'screenshots', `${record.alertId}.jpg`);
     if (fs.existsSync(backedUpScreenshot)) {
       record.screenshotPath = backedUpScreenshot;
     }
@@ -116,7 +117,7 @@ export function addAlert(record: AlertRecord): AddAlertResult {
   return 'stored';
 }
 
-export function markAlertScreenshot(alertId: string, screenshotPath: string): boolean {
+function markAlertScreenshot(alertId: string, screenshotPath: string): boolean {
   for (const list of store.values()) {
     const record = list.find(r => r.alertId === alertId);
     if (record) {
@@ -128,7 +129,7 @@ export function markAlertScreenshot(alertId: string, screenshotPath: string): bo
   return false;
 }
 
-export function getAlertById(alertId: string): AlertRecord | undefined {
+function getAlertById(alertId: string): AlertRecord | undefined {
   for (const list of store.values()) {
     const record = list.find(r => r.alertId === alertId);
     if (record) return record;
@@ -143,7 +144,7 @@ export function getAlertById(alertId: string): AlertRecord | undefined {
  * @param sourceId 只返回指定来源的记录
  * @param limit 最多返回条数
  */
-export function getAlerts(deviceId?: string, since?: number, limit = 50, sourceId?: string): AlertRecord[] {
+function getAlerts(deviceId?: string, since?: number, limit = 50, sourceId?: string): AlertRecord[] {
   const now = Date.now();
   const deadline = now - alertTtlMs;
 
@@ -176,7 +177,7 @@ export function getAlerts(deviceId?: string, since?: number, limit = 50, sourceI
 /**
  * 定时清理：删除超过 TTL 的报警记录
  */
-export function cleanupExpiredAlerts(): void {
+function cleanupExpiredAlerts(): void {
   const now = Date.now();
   const deadline = now - alertTtlMs;
   let totalRemoved = 0;
@@ -196,3 +197,13 @@ export function cleanupExpiredAlerts(): void {
     scheduleSaveToDisk();
   }
 }
+
+return { addAlert, getAlertById, markAlertScreenshot, getAlerts, cleanupExpiredAlerts };
+}
+const stores = new Map<string, ReturnType<typeof createStore>>();
+function forAccount(accountId: string) { let store = stores.get(accountId); if (!store) { store = createStore(accountId); stores.set(accountId, store); } return store; }
+export function addAlert(accountId: string, record: AlertRecord): AddAlertResult { return forAccount(accountId).addAlert(record); }
+export function getAlertById(accountId: string, alertId: string): AlertRecord | undefined { return forAccount(accountId).getAlertById(alertId); }
+export function markAlertScreenshot(accountId: string, alertId: string, screenshotPath: string): boolean { return forAccount(accountId).markAlertScreenshot(alertId, screenshotPath); }
+export function getAlerts(accountId: string, deviceId?: string, since?: number, limit = 50, sourceId?: string): AlertRecord[] { return forAccount(accountId).getAlerts(deviceId, since, limit, sourceId); }
+export function cleanupExpiredAlerts(): void { for (const store of stores.values()) store.cleanupExpiredAlerts(); }

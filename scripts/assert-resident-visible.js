@@ -1,53 +1,27 @@
-// 接收端侧断言：服务端是否真的看到了这台设备的驻留组件（components.resident === 'running'）。
-// 用法：node scripts/assert-resident-visible.js <ws-url> <channel> <deviceId>
-// 退出码 0 = 可见；1 = 超时或接收端错误；2 = 参数缺失。
-// 用于「检测端 -> 同目录驻留 -> Server」这一段是否真的贯通，服务端视角而不是本地进程视角。
+"use strict";
+// node scripts/assert-resident-visible.js <service-url> <server-assigned-deviceId>
 const WebSocket = require('../server/node_modules/ws');
-
-const [url, channel, deviceId] = process.argv.slice(2);
-const apiKey = process.env.VISIONGUARD_CONSOLE_API_KEY;
-const consoleId = process.env.VISIONGUARD_CONSOLE_DEVICE_ID;
-if (!url || !channel || !apiKey || !deviceId || !consoleId) {
-  console.error('usage: node scripts/assert-resident-visible.js <ws-url> <channel> <deviceId>');
-  process.exit(2);
-}
-
-const receiver = new WebSocket(url.replace(/^http/, 'ws') + '/ws');
-const deadline = Date.now() + 25000;
-let settled = false;
-
-function finish(visible, detail) {
-  if (settled) return;
-  settled = true;
-  console.log(JSON.stringify({ visible, deviceId, detail: detail || null }));
-  try { receiver.close(); } catch {}
-  process.exit(visible ? 0 : 1);
-}
-
-receiver.on('open', () => {
-  receiver.send(JSON.stringify({
-    type: 'auth', channel, apiKey, role: 'console', nodeType: 'console', platform: 'test', deviceId: consoleId, deviceName: 'Resident visibility',
-  }));
-});
-
-receiver.on('message', (data) => {
-  let message;
-  try { message = JSON.parse(data.toString()); } catch { return; }
-  if (message.type !== 'device-list') return;
-
-  const device = (message.devices || []).find((item) => item.deviceId === deviceId);
-  const components = device && device.components ? device.components : null;
-  if (components && components.resident === 'running') {
-    finish(true, components);
+const { login, logout } = require('./windows-account-test-lib');
+const [url, deviceId] = process.argv.slice(2);
+if (!url || !deviceId) { console.error('usage: node scripts/assert-resident-visible.js <service-url> <deviceId>'); process.exit(2); }
+(async () => {
+  const session = await login(url, 'web-console', 'Resident visibility');
+  const receiver = new WebSocket(url.replace(/^http/, 'ws').replace(/\/$/, '') + '/ws');
+  let settled = false;
+  const timeout = setTimeout(() => finish(false, 'timeout waiting for resident component'), 25000);
+  async function finish(visible, detail) {
+    if (settled) return; settled = true; clearTimeout(timeout);
+    try { receiver.close(); } catch {}
+    await logout(url, session.token);
+    console.log(JSON.stringify({ visible, deviceId, detail: detail || null })); process.exitCode = visible ? 0 : 1;
   }
-});
-
-receiver.on('error', (error) => {
-  console.error('receiver error: ' + error.message);
-  finish(false, 'receiver error: ' + error.message);
-});
-
-const timer = setInterval(() => {
-  if (Date.now() > deadline) { clearInterval(timer); finish(false, 'timeout waiting for resident component'); }
-}, 500);
-timer.unref?.();
+  receiver.on('open', () => receiver.send(JSON.stringify({ type: 'auth', token: session.token })));
+  receiver.on('message', data => {
+    let message; try { message = JSON.parse(data.toString()); } catch { return; }
+    if (message.type === 'auth-result' && !message.success) return finish(false, 'account authentication rejected');
+    if (message.type !== 'device-list') return;
+    const device = (message.devices || []).find(item => item.deviceId === deviceId);
+    if (device?.components?.resident === 'running') finish(true, device.components);
+  });
+  receiver.on('error', error => finish(false, 'receiver error: ' + error.message));
+})().catch(error => { console.error(error.message); process.exitCode = 1; });

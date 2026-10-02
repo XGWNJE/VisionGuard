@@ -1,7 +1,7 @@
 // ┌─────────────────────────────────────────────────────────┐
 // │ alerts.ts                                               │
 // │ 角色：GET /api/alerts — 查询报警历史列表                 │
-// │ 鉴权：X-API-Key header                                   │
+// │ 鉴权：账号 Bearer 会话                                   │
 // └─────────────────────────────────────────────────────────┘
 
 import { Router, Request, Response } from 'express';
@@ -23,7 +23,7 @@ router.get('/api/alerts', httpAuth, (req: Request, res: Response) => {
     const limit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : 50;
     const sourceId = typeof req.query.sourceId === 'string' ? req.query.sourceId : undefined;
 
-    const alerts = getAlerts(deviceId, since, limit, sourceId);
+    const alerts = getAlerts(res.locals.identity.accountId, deviceId, since, Math.max(1, Math.min(200, Number.isFinite(limit) ? limit : 50)), sourceId);
 
     // 过滤掉内部字段（screenshotPath 不应暴露给客户端）
     const sanitized = alerts.map(a => {

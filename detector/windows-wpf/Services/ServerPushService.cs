@@ -36,6 +36,8 @@ namespace VisionGuard.Detector.Windows.Services
         /// <summary>set-config 命令：key=配置项名, value=新值</summary>
         public event EventHandler<RemoteSetConfigEventArgs> SetConfigReceived;
         public event EventHandler<int> SourceLimitReceived;
+        public event EventHandler<IReadOnlyList<Capture.RemoteStreamInfo>> StreamsReceived;
+        public event EventHandler<AccountDevice> DeviceUpdated;
 
         // ── 常量 ─────────────────────────────────────────────────────
         private const int HEARTBEAT_INTERVAL_MS = 3_000;
@@ -56,7 +58,9 @@ namespace VisionGuard.Detector.Windows.Services
         private WsState _state = WsState.Disconnected;
         private Session _session;
         private Timer _backoffTimer;
-        private readonly AlertOutbox _alertOutbox = new AlertOutbox();
+        private AlertOutbox _alertOutbox = new AlertOutbox();
+        private string _outboxScope = AccountSession.ScopeKey;
+        private RemoteMediaService? _media;
 
         // ── 事件循环 ────────────────────────────────────────────────
         private readonly BlockingCollection<Action> _events = new BlockingCollection<Action>();
@@ -159,6 +163,7 @@ namespace VisionGuard.Detector.Windows.Services
         {
             Post(() => OnConnect(_serverUrl, _apiKey, _deviceId, _deviceName));
         }
+        public void Disconnect() { Post(() => OnConnect("", "", "", "")); }
 
         public void UpdateHeartbeatParams(bool isMonitoring, bool isReady,
             int cooldown, float confidence, string targets,
@@ -183,7 +188,7 @@ namespace VisionGuard.Detector.Windows.Services
 
         public void PushAlert(AlertEvent alert)
         {
-            if (alert == null) return;
+            if (alert == null || string.IsNullOrEmpty(_apiKey) || AccountSession.Current == null || AccountSession.ScopeKey != _outboxScope) return;
             var msg = new Dictionary<string, object>
             {
                 ["type"] = "alert", ["alertId"] = alert.AlertId,
@@ -353,6 +358,7 @@ namespace VisionGuard.Detector.Windows.Services
                     CancelBackoffTimer();
                     _session?.Shutdown("dispose");
                     _session = null;
+                    _media?.Dispose(); _media = null;
                 });
             }
             catch { }
@@ -367,13 +373,16 @@ namespace VisionGuard.Detector.Windows.Services
 
         private void OnConnect(string url, string key, string did, string dname)
         {
-            if (string.IsNullOrWhiteSpace(url))
+            if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(key))
             {
                 LogManager.StaticInfo("[Server] Configure: ServerUrl 为空，静默不启动");
                 _shouldReconnect = false;
                 CancelBackoffTimer();
                 _session?.Shutdown("reconfigure-empty");
                 _session = null;
+                _media?.Dispose(); _media = null;
+                Capture.RemoteFrameStore.Shared.Clear();
+                _apiKey = ""; _deviceId = "";
                 SetState(WsState.Disconnected);
                 return;
             }
@@ -389,12 +398,15 @@ namespace VisionGuard.Detector.Windows.Services
             _apiKey = key;
             _deviceId = did;
             _deviceName = dname;
+            var scope = AccountSession.ScopeKey;
+            if (_outboxScope != scope) { _alertOutbox = new AlertOutbox(); _outboxScope = scope; }
             _shouldReconnect = true;
             _attempt = 0;
 
             CancelBackoffTimer();
             _session?.Shutdown("reconfigure");
             _session = null;
+            _media?.Dispose(); _media = null;
 
             LogManager.StaticInfo($"[Server] connect → {_serverUrl} deviceId={_deviceId}");
             StartNewSession();
@@ -439,12 +451,7 @@ namespace VisionGuard.Detector.Windows.Services
             s.SendJson(new Dictionary<string, object>
             {
                 ["type"] = "auth",
-                ["channel"] = AppConfig.Channel,
-                ["apiKey"] = _apiKey,
-                ["role"] = "detector", ["nodeType"] = "visual", ["platform"] = "windows",
-                ["deviceId"] = _deviceId,
-                ["deviceName"] = _deviceName,
-                ["version"] = AppConfig.Version,
+                ["token"] = _apiKey,
             });
         }
 
@@ -459,6 +466,7 @@ namespace VisionGuard.Detector.Windows.Services
                 // maxSources=0 表示服务端未声明上限，此时保持本地已放开的范围，不收窄。
                 if (maxSources > 0) SourceLimitReceived?.Invoke(this, Net472Compat.Clamp(maxSources, 1, 16));
                 s.StartHeartbeat();
+                _media?.Dispose(); _media = new RemoteMediaService(_serverUrl, _apiKey);
                 FlushAlertOutbox();
             }
             else
@@ -467,6 +475,7 @@ namespace VisionGuard.Detector.Windows.Services
                 SetState(WsState.AuthFailed);
                 s.Shutdown("auth-failed");
                 _session = null;
+                _media?.Dispose(); _media = null;
                 if (IsPermanentAuthFailure(reason))
                 {
                     _shouldReconnect = false;
@@ -480,7 +489,7 @@ namespace VisionGuard.Detector.Windows.Services
         private static bool IsPermanentAuthFailure(string reason)
         {
             var r = (reason ?? "").ToLowerInvariant();
-            return r.Contains("invalid api key")
+            return r.Contains("invalid") || r.Contains("expired") || r.Contains("revoked") || r.Contains("unauthorized")
                 || r.Contains("invalid deviceid")
                 || r.Contains("invalid role")
                 || r.Contains("needs-update")
@@ -554,6 +563,7 @@ namespace VisionGuard.Detector.Windows.Services
         private void SetState(WsState newState)
         {
             if (_state == newState) return;
+            if (newState != WsState.Connected) { _media?.Dispose(); _media = null; Capture.RemoteFrameStore.Shared.ClearFrames(); }
             _state = newState;
             string name;
             switch (newState)
@@ -713,6 +723,30 @@ namespace VisionGuard.Detector.Windows.Services
                     string type = SimpleJson.GetString(d, "type");
                     switch (type)
                     {
+                        case "device-updated":
+                        {
+                            if (!d.TryGetValue("device", out var updatedValue)) break;
+                            var updated = SimpleJson.Deserialize<AccountDevice>(SimpleJson.ToJson(updatedValue));
+                            if (updated == null) break;
+                            _parent.Post(() => {
+                                if (_parent._session != this || updated.deviceId != _parent._deviceId) return;
+                                AccountSession.ApplyDeviceUpdate(updated); _parent._deviceName = updated.deviceName;
+                                _parent.DeviceUpdated?.Invoke(_parent, updated);
+                            });
+                            break;
+                        }
+                        case "stream-list":
+                        {
+                            var streams = d.TryGetValue("streams", out var streamValues)
+                                ? SimpleJson.Deserialize<List<Capture.RemoteStreamInfo>>(SimpleJson.ToJson(streamValues)) ?? new List<Capture.RemoteStreamInfo>()
+                                : new List<Capture.RemoteStreamInfo>();
+                            _parent.Post(() => {
+                                if (_parent._session != this) return;
+                                Capture.RemoteFrameStore.Shared.SetStreams(streams, _parent._deviceId);
+                                _parent.StreamsReceived?.Invoke(_parent, streams);
+                            });
+                            break;
+                        }
                         case "auth-result":
                         {
                             bool success = d.TryGetValue("success", out object? sv) && sv is bool b && b;

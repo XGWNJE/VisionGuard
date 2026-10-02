@@ -24,6 +24,7 @@ namespace VisionGuard.Detector.Windows.Services
     public class AlertService : IDisposable
     {
         private readonly string _sourceId;
+        private readonly string _accountScope = AccountSession.ScopeKey;
         private string _sourceName;
 
         public AlertService(string sourceId = "default", string sourceName = "默认来源")
@@ -57,7 +58,7 @@ namespace VisionGuard.Detector.Windows.Services
         public void Evaluate(List<Detection> detections, MonitorConfig config,
                              Dictionary<string, long> timings, Bitmap inferenceFrame)
         {
-            if (detections == null || detections.Count == 0) return;
+            if (detections == null || detections.Count == 0 || _accountScope != AccountSession.ScopeKey) return;
 
             DateTime now = NtpSync.UtcNow;
 
@@ -97,7 +98,7 @@ namespace VisionGuard.Detector.Windows.Services
             long processMs = timings["captureMs"] + timings["preprocessMs"]
                            + timings["inferMs"] + timings["parseMs"] + alertMs;
             // 构建新的 timings 字典，不修改调用方传入的字典
-            var finalTimings = new Dictionary<string, long>
+            var finalTimings = new Dictionary<string, long>(timings)
             {
                 ["processMs"] = processMs,
             };
@@ -108,11 +109,11 @@ namespace VisionGuard.Detector.Windows.Services
 
         // ── 截图缓存管理 ─────────────────────────────────────────────
 
-        private static void TrySaveSnapshot(Bitmap bmp, string alertId)
+        private void TrySaveSnapshot(Bitmap bmp, string alertId)
         {
             try
             {
-                string dir = AlertDirectory;
+                string dir = DirectoryForScope(_accountScope);
                 Directory.CreateDirectory(dir);
 
                 string filename = alertId + ".png";
@@ -133,9 +134,11 @@ namespace VisionGuard.Detector.Windows.Services
             return Path.Combine(AlertDirectory, alertId + ".png");
         }
 
-        private static string AlertDirectory => Path.Combine(
+        private static string AlertDirectory => DirectoryForScope(AccountSession.ScopeKey);
+
+        private static string DirectoryForScope(string scope) => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "VisionGuard", "alerts");
+            "VisionGuard", "accounts", scope, "alerts");
 
         /// <summary>
         /// 清理截图缓存：满足 1GB / 7天 / 5000张 约束（LRU）。

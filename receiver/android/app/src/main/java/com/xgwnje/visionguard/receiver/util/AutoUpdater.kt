@@ -28,6 +28,7 @@ import com.xgwnje.visionguard.receiver.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import com.xgwnje.visionguard.account.AccountStore
 import okhttp3.Request
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
@@ -62,8 +63,8 @@ object AutoUpdater {
 
     suspend fun checkUpdateResult(): UpdateCheckResult = withContext(Dispatchers.IO) {
         try {
-            val url = "${AppConstants.SERVER_URL}/api/update?platform=$PLATFORM&version=${AppConstants.VERSION}"
-            val request = Request.Builder().url(url).header("X-API-Key", AppConstants.API_KEY).build()
+            val url = "${(AccountStore.current()?.endpoint ?: AppConstants.SERVER_URL)}/api/update?platform=$PLATFORM&version=${AppConstants.VERSION}"
+            val request = Request.Builder().url(url).header("Authorization", "Bearer " + (AccountStore.current()?.token ?: "")).build()
             http.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@withContext UpdateCheckResult.Failed
 
@@ -77,7 +78,7 @@ object AutoUpdater {
                 if (downloadUrl.isEmpty()) return@withContext UpdateCheckResult.Failed
 
                 val fullUrl = if (downloadUrl.startsWith("http", true)) downloadUrl
-                    else AppConstants.SERVER_URL + downloadUrl
+                    else (AccountStore.current()?.endpoint ?: AppConstants.SERVER_URL) + downloadUrl
 
                 Log.i(TAG, "发现新版本 $latestVersion (当前 ${AppConstants.VERSION})")
                 UpdateCheckResult.Available(UpdateInfo(latestVersion, fullUrl))
@@ -140,7 +141,7 @@ object AutoUpdater {
                 setDescription("正在下载新版本 $version…")
                 setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                addRequestHeader("X-API-Key", AppConstants.API_KEY)
+                if (java.net.URI(url).authority == java.net.URI(AccountStore.current()?.endpoint ?: AppConstants.SERVER_URL).authority) addRequestHeader("Authorization", "Bearer " + (AccountStore.current()?.token ?: ""))
             }
 
             ContextCompat.registerReceiver(

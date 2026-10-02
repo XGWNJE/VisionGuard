@@ -13,7 +13,8 @@ namespace VisionGuard.Detector.Windows.Models
     public enum CaptureMode
     {
         ScreenRegion,   // 原有 BitBlt 屏幕区域捕获
-        WindowHandle    // PrintWindow 窗口句柄捕获
+        WindowHandle,   // PrintWindow 窗口句柄捕获
+        RemoteStream
     }
 
     public class MonitorConfig
@@ -30,6 +31,7 @@ namespace VisionGuard.Detector.Windows.Models
         // ── 新增字段 ─────────────────────────────────────────────────
         /// <summary>捕获模式：屏幕区域或窗口句柄</summary>
         public CaptureMode CaptureMode { get; set; } = CaptureMode.ScreenRegion;
+        public string RemoteStreamId { get; set; } = string.Empty;
 
         /// <summary>目标窗口标题（跨会话恢复用，不可序列化 HWND 时用此重匹配）</summary>
         public string TargetWindowTitle { get; set; } = string.Empty;

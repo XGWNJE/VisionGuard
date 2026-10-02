@@ -4,7 +4,7 @@
   "description": "视觉中继 (VisionGuard.Relay，HTTP + WebSocket)",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc && npm --prefix ../receiver/web run build",
+    "build": "node scripts/clean-output.cjs && tsc && npm --prefix ../receiver/web run build",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "test": "node --require ts-node/register --test test/**/*.test.ts"
@@ -33,6 +33,6 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.1",
     "multer": "^2.1.1",
-    "ws": "^8.20.0"
+    "ws": "8.21.0"
   }
 }

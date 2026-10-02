@@ -8,11 +8,24 @@ import org.junit.Test
 import java.time.Instant
 
 class UnifiedAccessTest {
-    @Test fun consoleIdentitySeparatesRoleTypeAndPlatform() {
-        val json = Gson().toJsonTree(WsAuthMessage(apiKey = "test", deviceId = "console")).asJsonObject
-        assertEquals("console", json["role"].asString)
-        assertEquals("console", json["nodeType"].asString)
-        assertEquals("android", json["platform"].asString)
+    @Test fun cameraPublishesVideoWithoutInferenceControls() {
+        val camera = DeviceInfo("c", "镜头", true, false, true, "now", component = "android-camera",
+            clientType = "android-camera", platform = "android", isStreaming = true, capabilities = listOf("video-publish"))
+        val card = buildDeviceCardUiModel(camera)
+        assertFalse(card.showLegacyControls)
+        assertFalse(card.controlsEnabled)
+        assertEquals("推流中", card.statusLabel)
+        assertEquals("镜头推流", card.typeLabel)
+        assertEquals("推流已停止", buildDeviceCardUiModel(camera.copy(isStreaming = false)).statusLabel)
+        assertEquals("离线", buildDeviceCardUiModel(camera.copy(online = false)).statusLabel)
+    }
+    @Test fun consoleAuthCannotSelfGrantIdentity() {
+        val json = Gson().toJsonTree(WsAuthMessage(token = "test-token")).asJsonObject
+        assertEquals("auth", json["type"].asString)
+        assertEquals("test-token", json["token"].asString)
+        assertFalse(json.has("role"))
+        assertFalse(json.has("deviceId"))
+        assertFalse(json.has("apiKey"))
     }
 
     @Test fun sensorAndInterruptionEventsHaveMeaningWithoutDetectionsOrPicture() {

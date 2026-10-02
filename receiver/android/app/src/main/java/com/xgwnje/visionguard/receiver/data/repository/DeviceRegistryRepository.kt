@@ -12,11 +12,11 @@ import com.xgwnje.visionguard.receiver.data.model.DeviceInfo
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.deviceRegistryDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "vg_device_registry"
-)
+
 
 class DeviceRegistryRepository(private val context: Context) {
+    private val store = ScopedDataStores.get(context, "registry")
+    suspend fun clearAccountData() { store.edit { it.clear() } }
 
     private object Keys {
         val KNOWN_DEVICES = stringPreferencesKey("known_devices")
@@ -25,14 +25,14 @@ class DeviceRegistryRepository(private val context: Context) {
     private val gson = Gson()
     private val deviceListType = object : TypeToken<List<DeviceInfo>>() {}.type
 
-    val devicesFlow: Flow<List<DeviceInfo>> = context.deviceRegistryDataStore.data.map { prefs ->
+    val devicesFlow: Flow<List<DeviceInfo>> = store.data.map { prefs ->
         decodeDevices(prefs[Keys.KNOWN_DEVICES])
     }
 
     suspend fun saveDevices(devices: List<DeviceInfo>) {
         val normalized = normalizeDevicesForStorage(devices)
         val json = gson.toJson(normalized)
-        context.deviceRegistryDataStore.edit { prefs ->
+        store.edit { prefs ->
             prefs[Keys.KNOWN_DEVICES] = json
         }
     }

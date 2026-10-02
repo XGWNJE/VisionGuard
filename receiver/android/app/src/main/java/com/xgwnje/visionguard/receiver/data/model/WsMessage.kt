@@ -10,17 +10,7 @@ import com.xgwnje.visionguard.receiver.AppConstants
 import com.xgwnje.visionguard.receiver.BuildConfig
 
 /** Android → 服务器：认证 */
-data class WsAuthMessage(
-    val type: String = "auth",
-    val channel: String = AppConstants.CHANNEL,
-    val apiKey: String,
-    val role: String = "console",
-    val nodeType: String = "console",
-    val platform: String = "android",
-    val deviceId: String,
-    val deviceName: String = "Android",
-    val version: String = BuildConfig.VERSION_NAME
-)
+data class WsAuthMessage(val type: String = "auth", val token: String)
 
 /** Android → 服务器：发送控制命令（pause / resume / stop-alarm） */
 data class WsCommandMessage(

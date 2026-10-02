@@ -9,6 +9,8 @@
 import './env';
 
 import http from 'http';
+import https from 'node:https';
+import fs from 'node:fs';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { WebSocketServer } from 'ws';
@@ -19,7 +21,10 @@ import { handleConnection } from './services/ConnectionManager';
 import { cleanupExpiredAlerts } from './services/AlertStore';
 import screenshotRouter from './routes/screenshot';
 import updateRouter from './routes/update';
-import testConsoleRouter from './routes/testConsole';
+import accountRouter from './routes/account';
+import streamsRouter from './routes/streams';
+import { mediaRelay } from './services/MediaRelay';
+import { websocketLimits } from './services/WebSocketLimits';
 import { startCleanupTimer, cleanupScreenshots } from './services/ScreenshotCleanup';
 import path from 'path';
 
@@ -27,7 +32,7 @@ import path from 'path';
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(express.json());
+app.use(express.json({ limit: '16kb' }));
 
 // 全局速率限制：所有 API 路由 100 req/15min per IP
 const apiLimiter = rateLimit({
@@ -56,7 +61,8 @@ app.use(alertRouter);
 app.use(alertsQueryRouter);
 app.use(screenshotRouter);
 app.use(updateRouter);
-app.use(testConsoleRouter);
+app.use(accountRouter);
+app.use(streamsRouter);
 
 // The console shares this service and origin; credentials stay in browser memory.
 app.use('/console', express.static(path.resolve(__dirname, 'console'), {
@@ -75,9 +81,11 @@ app.use('/models', express.static(path.resolve(__dirname, '..', 'data', 'models'
 
 // ── HTTP + WebSocket 服务器 ────────────────────────────────
 
-const server = http.createServer(app);
+const server = config.tlsCertFile && config.tlsKeyFile
+  ? https.createServer({ cert: fs.readFileSync(config.tlsCertFile), key: fs.readFileSync(config.tlsKeyFile) }, app)
+  : http.createServer(app);
 
-const wss = new WebSocketServer({ server, maxPayload: config.maxUploadBytes });
+const wss = new WebSocketServer({ server, ...websocketLimits });
 
 wss.on('connection', (ws, req) => {
   if (wss.clients.size > config.maxWsConnections) {
@@ -86,7 +94,10 @@ wss.on('connection', (ws, req) => {
     ws.close(1013, 'server busy');
     return;
   }
-  handleConnection(ws);
+  const pathname = req.url?.split('?')[0];
+  if (pathname === '/media/ws') mediaRelay.handleConnection(ws);
+  else if (pathname === '/ws') handleConnection(ws);
+  else ws.close(1008, 'unknown websocket path');
 });
 // ── 启动 ──────────────────────────────────────────────────
 

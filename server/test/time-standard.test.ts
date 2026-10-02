@@ -7,17 +7,15 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { TimeStandardStore } from '../src/services/TimeStandardStore';
 
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-time-standard-'));
-process.env.API_KEY = 'time-standard-admin-test';
 process.env.VISIONGUARD_CHANNEL = 'time-standard';
 process.env.VISIONGUARD_DATA_DIR = path.join(temporary, 'runtime');
-process.env.ALERT_STORE_PATH = path.join(temporary, 'alerts.json');
-process.env.VISIONGUARD_IDENTITIES_FILE = path.join(temporary, 'identities.json');
 const identities = [
-  { deviceId: 'console-one', role: 'console', nodeType: 'console', platform: 'web', apiKey: 'time-console-one-test' },
-  { deviceId: 'console-two', role: 'console', nodeType: 'console', platform: 'web', apiKey: 'time-console-two-test' },
-  { deviceId: 'notifier', role: 'notifier', nodeType: 'notification', platform: 'android', apiKey: 'time-notifier-test-key' },
+  { deviceId: 'console-one', role: 'console', nodeType: 'console', platform: 'web' },
+  { deviceId: 'console-two', role: 'console', nodeType: 'console', platform: 'web' },
+  { deviceId: 'notifier', role: 'notifier', nodeType: 'notification', platform: 'android' },
 ];
-fs.writeFileSync(process.env.VISIONGUARD_IDENTITIES_FILE, JSON.stringify(identities));
+const { AccountFixture } = require('./helpers/accounts') as typeof import('./helpers/accounts');
+const fixtures = new AccountFixture(identities.map(identity => ({ name: identity.deviceId, component: identity.role === 'notifier' ? 'android-notifier' : 'web-console' })));
 const { handleConnection } = require('../src/services/ConnectionManager') as typeof import('../src/services/ConnectionManager');
 test.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
 
@@ -49,6 +47,7 @@ test('only consoles can save the shared standard; all consoles and notifiers rec
   const peers: WebSocket[] = [];
   t.after(() => { peers.forEach(ws => ws.terminate()); server.close(); });
   async function connect(identity: typeof identities[number]) {
+    await fixtures.ready;
     const ws = new WebSocket(`ws://127.0.0.1:${(server.address() as any).port}`); peers.push(ws);
     const messages: any[] = []; ws.on('message', raw => messages.push(JSON.parse(raw.toString())));
     await new Promise<void>(resolve => ws.once('open', resolve));
@@ -62,7 +61,7 @@ test('only consoles can save the shared standard; all consoles and notifiers rec
       }
       throw new Error(`Missing ${type}`);
     }
-    send({ type: 'auth', channel: 'time-standard', deviceName: identity.deviceId, ...identity });
+    send(fixtures.auth(identity.deviceId));
     return { ws, send, take, auth: await take('auth-result') };
   }
   const first = await connect(identities[0]), second = await connect(identities[1]), notifier = await connect(identities[2]);

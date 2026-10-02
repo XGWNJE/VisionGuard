@@ -145,7 +145,7 @@ class ReceiverHomeModelsTest {
         val androidDetector = windowsDevice.copy(
             deviceId = "android-1",
             deviceName = "Android-仓库",
-            clientType = "android-detector"
+            clientType = "android-camera"
         )
         val unknown = windowsDevice.copy(
             deviceId = "unknown-1",
@@ -162,7 +162,7 @@ class ReceiverHomeModelsTest {
         assertEquals("Windows识别端", windowsModel.typeLabel)
 
         assertEquals(DeviceCardIllustration.ANDROID_CAMERA, androidModel.illustration)
-        assertEquals("安卓识别端", androidModel.typeLabel)
+        assertEquals("镜头推流", androidModel.typeLabel)
 
         assertEquals(DeviceCardIllustration.GENERIC_VIEWFINDER, unknownModel.illustration)
         assertEquals("识别端", unknownModel.typeLabel)

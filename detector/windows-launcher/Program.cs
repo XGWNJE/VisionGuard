@@ -16,9 +16,9 @@ namespace VisionGuard.Detector.Windows.Launcher
     internal static class Program
     {
         private const string Version = "4.5.1";
-        private const string ServerBase = "https://visionguard.xgwnje.cn";
-        private const string DetectorShutdownEvent = @"Local\VisionGuard.Detector.Shutdown";
-        private const string ResidentShutdownEvent = @"Local\VisionGuard.Resident.Shutdown";
+        private static string ServerBase { get { return AccountSession.ServiceUrl; } }
+        private static string DetectorShutdownEvent { get { return @"Local\VisionGuard." + AccountSession.ApplicationId + ".Shutdown"; } }
+        private static string ResidentShutdownEvent { get { return AccountSession.ResidentShutdownName; } }
         private static readonly string InstallRoot = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
 
         [STAThread]
@@ -27,6 +27,9 @@ namespace VisionGuard.Detector.Windows.Launcher
             System.Net.ServicePointManager.SecurityProtocol |= System.Net.SecurityProtocolType.Tls12;
             try
             {
+                string testEnvironment = GetOption(args, "--isolated-environment");
+                if (!string.IsNullOrEmpty(testEnvironment)) AccountSession.ConfigureIsolatedEnvironment(testEnvironment);
+                args = RemoveOption(args, "--isolated-environment");
                 if (args.Length > 0 && args[0] == "--apply-update") return ApplyUpdate(args);
                 if (args.Length > 0 && args[0] == "--check-update") return CheckUpdate(args);
                 if (args.Length > 1 && args[0] == "--profile-probe") return WriteProfileProbe(args[1]);
@@ -155,7 +158,8 @@ namespace VisionGuard.Detector.Windows.Launcher
             using (var client = new HttpClient())
             {
                 client.Timeout = TimeSpan.FromSeconds(20);
-                client.DefaultRequestHeaders.Add("X-API-Key", ApiKeyProvider.ResolveFromEnvironment());
+                var session = AccountSession.EnsureFresh();
+                if (session != null) client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.token);
                 string json = client.GetStringAsync(
                     ServerBase + "/api/update?platform=wpf&version=" + Uri.EscapeDataString(Version)).GetAwaiter().GetResult();
                 var data = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(json);
@@ -404,7 +408,7 @@ namespace VisionGuard.Detector.Windows.Launcher
         {
             try
             {
-                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionGuard");
+                string dir = AccountSession.LogRoot;
                 Directory.CreateDirectory(dir);
                 File.AppendAllText(Path.Combine(dir, "launcher.log"),
                     DateTime.Now.ToString("O") + " " + action + " " + detail + Environment.NewLine);

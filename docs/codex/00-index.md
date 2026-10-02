@@ -8,7 +8,7 @@
 - [20-server.md](20-server.md) - 视觉中继当前职责、接口、运行参数和协议角色
 - [30-windows-detector.md](30-windows-detector.md) - 统一启动器、WPF 两套内部运行时和驻留程序的实现事实
 - [35-model-assets.md](35-model-assets.md) - ONNX 模型、COCO 类别、目标子集和资源维护约束
-- [40-android-detector.md](40-android-detector.md) - 视觉检测（Android）的采集、推理、前台服务和 WS
+- [40-android-detector.md](40-android-detector.md) - VisionGuard 镜头推流的前台摄像头采集、账号与实时媒体 WS
 - [50-android-receiver.md](50-android-receiver.md) - Web 管理、通知节点接入及保留的 Android 控制台
 - [60-operations.md](60-operations.md) - 构建、验证、发布授权边界和常见风险
 - [90-verification-report.md](90-verification-report.md) - 可追溯验证证据、状态判定和未覆盖项

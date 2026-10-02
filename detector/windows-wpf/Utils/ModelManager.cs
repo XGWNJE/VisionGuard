@@ -9,7 +9,7 @@ namespace VisionGuard.Detector.Windows.Utils
 {
     public static class ModelManager
     {
-        private const string ServerBase = "https://visionguard.xgwnje.cn";
+        private static string ServerBase => AppConfig.ServerUrl;
         public const int ModelCount = 6;
 
         /// <summary>
@@ -32,7 +32,7 @@ namespace VisionGuard.Detector.Windows.Utils
         /// <summary>指定模型键是否属于本档位清单。</summary>
         public static bool IsSupported(string modelKey) => Array.IndexOf(ModelKeys, modelKey) >= 0;
 
-        private static string ModelsDir => Path.Combine(
+        private static string ModelsDir => Environment.GetEnvironmentVariable("VISIONGUARD_MODELS_DIR") ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "VisionGuard", "models");
 

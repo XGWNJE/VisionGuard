@@ -36,6 +36,8 @@ namespace VisionGuard.Detector.Windows.Services
         private bool _disposed;
         // 输出形态日志：只在形态变化时写一次，避免每帧刷屏；形态与档位不匹配是漏检头号根因，必须可诊断。
         private string _loggedOutputLayout;
+        private string _lastRemoteSession = "";
+        private long _lastRemoteSequence = -1;
         // 停止同步：确保 OnTick 完全结束（包括 finally）后才能安全 Dispose _engine
         private readonly ManualResetEvent _tickCompleted = new ManualResetEvent(true);
         private readonly object _tickSync = new object();
@@ -68,6 +70,9 @@ namespace VisionGuard.Detector.Windows.Services
                 && (config.TargetWindowHandle == IntPtr.Zero
                     || (config.WindowSubRegion != Rectangle.Empty && !CaptureSizeConstraints.IsValid(config.WindowSubRegion))))
                 throw new InvalidOperationException("目标窗口或窗口选区无效，宽度和高度必须都大于 100 像素。");
+            if (config.CaptureMode == CaptureMode.RemoteStream && !RemoteFrameStore.Shared.IsBound(config.RemoteStreamId))
+                throw new InvalidOperationException("远程镜头尚未绑定到此视觉节点。");
+            _lastRemoteSession = ""; _lastRemoteSequence = -1;
 
             // 启动阶段的预加载若遇到短暂文件占用，这里会重试；仍失败时必须在触发 ORT
             // NativeMethods 静态初始化前停止，否则类型会在本进程内永久保持失败状态。
@@ -122,6 +127,7 @@ namespace VisionGuard.Detector.Windows.Services
             MonitorConfig cfg = Volatile.Read(ref _config);
             Bitmap frame    = null;
             MonitorFailureKind failureKind = MonitorFailureKind.Capture;
+            RemoteFrameHeader remoteHeader = null;
 
             try
             {
@@ -129,7 +135,11 @@ namespace VisionGuard.Detector.Windows.Services
                 var sw = Stopwatch.StartNew();
 
                 // 1. 截图（根据捕获模式选择方式）
-                if (cfg.CaptureMode == Models.CaptureMode.WindowHandle
+                if (cfg.CaptureMode == Models.CaptureMode.RemoteStream)
+                {
+                    frame = RemoteFrameStore.Shared.ReadFresh(cfg.RemoteStreamId, ref _lastRemoteSession, ref _lastRemoteSequence, out remoteHeader);
+                }
+                else if (cfg.CaptureMode == Models.CaptureMode.WindowHandle
                     && cfg.TargetWindowHandle != IntPtr.Zero)
                 {
                     frame = WindowCapturer.CaptureWindow(cfg.TargetWindowHandle, cfg.WindowSubRegion);
@@ -156,6 +166,9 @@ namespace VisionGuard.Detector.Windows.Services
                 sw.Restart();
                 float[] rawOutput = _engine.Run(preprocessed.Tensor, ImagePreprocessor.InputShape(modelSize));
                 long inferMs = sw.ElapsedMilliseconds;
+                long remoteAgeMs = remoteHeader == null ? 0 : (long)((Stopwatch.GetTimestamp() - remoteHeader.LocalReceivedTicks) * 1000d / Stopwatch.Frequency);
+                if (remoteHeader != null && remoteAgeMs > RemoteFrameStore.MaximumFrameAgeMs)
+                    throw new RemoteFrameUnavailableException("推理完成时镜头帧已过期，等待新画面。");
                 LogOutputLayoutOnce(rawOutput != null ? rawOutput.Length : 0, modelSize);
 
                 // 4. 解析（按预处理的等比留白变换还原到实际帧尺寸）
@@ -176,6 +189,12 @@ namespace VisionGuard.Detector.Windows.Services
                     ["inferMs"]       = inferMs,
                     ["parseMs"]       = parseMs,
                 };
+                if (remoteHeader != null)
+                {
+                    timings["remoteCachedAgeMs"] = remoteAgeMs;
+                    timings["publisherCapturedAt"] = remoteHeader.capturedAt;
+                    timings["relayReceivedAt"] = remoteHeader.receivedAt;
+                }
                 _alertService.Evaluate(detections, cfg, timings, frame);
 
                 // 6. 通知 UI
@@ -185,6 +204,10 @@ namespace VisionGuard.Detector.Windows.Services
             catch (ObjectDisposedException)
             {
                 // 服务已停止，忽略
+            }
+            catch (RemoteFrameUnavailableException ex) when (ex.WaitingForNext || ex.ExpectedStop)
+            {
+                // No new frame is not successful inference. Never advance progress using the old cache.
             }
             catch (Exception ex)
             {

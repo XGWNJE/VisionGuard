@@ -11,6 +11,8 @@ import fs from 'fs';
 import { config } from '../config';
 import crypto from 'node:crypto';
 import path from 'node:path';
+import { accountStore, accountDirectory, type AccountSession } from './AccountStore';
+import { mediaRelay } from './MediaRelay';
 import { NotificationScopeStore, parseNotificationScope, scopeAccepts } from './NotificationScopeStore';
 import { TimeStandardStore, validAlarmTimeZone } from './TimeStandardStore';
 import { authenticateNode, clientType, allowedCapabilities, validateEvent, registeredNodes, REALTIME_TTL_MS, DETECTION_STALL_MS, type NodeIdentity, type NodeRole } from './NodeProtocol';
@@ -25,6 +27,7 @@ import type {
   AlertRecord, SourceStatus,
 } from '../models/types';
 
+function createAccountConnections(accountId: string) {
 // Roles route by responsibility; platform and node type stay on the registered identity.
 const detectorClients = new Map<string, DetectorClient>();
 const notifierClients = new Map<string, ReceiverClient>();
@@ -46,8 +49,8 @@ interface PendingControlRequest {
 
 const pendingControlRequests = new Map<string, PendingControlRequest>();
 const completedControlRequests = new Map<string, number>();
-const notificationScopes = new NotificationScopeStore(path.join(config.dataDir, 'notification-scopes.json'));
-const timeStandard = new TimeStandardStore(path.join(config.dataDir, 'time-standard.json'));
+const notificationScopes = new NotificationScopeStore(path.join(accountDirectory(accountId), 'notification-scopes.json'));
+const timeStandard = new TimeStandardStore(path.join(accountDirectory(accountId), 'time-standard.json'));
 
 function rememberCompletedRequest(requestId: string): void {
   const now = Date.now();
@@ -57,7 +60,7 @@ function rememberCompletedRequest(requestId: string): void {
   }
 }
 
-export function associateScreenshotPayload(
+function associateScreenshotPayload(
   payload: WsScreenshotDataPush,
   authenticatedDeviceId: string,
   alertRecord: AlertRecord | undefined,
@@ -73,7 +76,7 @@ export function associateScreenshotPayload(
   };
 }
 
-export function getConnectionCount(): number {
+function getConnectionCount(): number {
   return detectorClients.size + notifierClients.size + residentWindowsClients.size + receiverClients.size;
 }
 
@@ -111,7 +114,6 @@ function scheduleDetectorRemoval(
 
 // ── 输入校验 ────────────────────────────────────────────────
 
-const MAX_DEVICE_NAME_LENGTH = 64;
 const MAX_TARGETS_LENGTH = 500;
 const MAX_MODEL_OPTIONS = 16;
 const MAX_COMPONENTS = 8;
@@ -243,11 +245,11 @@ function registerPendingControlRequest(
 
 function createDetectorClient(
   ws: WebSocket,
-  msg: WsAuthMessage,
+  msg: NodeIdentity,
   clientType: string,
 ): DetectorClient {
   return {
-    identity: { deviceId: msg.deviceId, role: msg.role, nodeType: msg.nodeType, platform: msg.platform },
+    identity: msg,
     ws,
     deviceId: msg.deviceId,
     deviceName: msg.deviceName,
@@ -314,14 +316,14 @@ function backupScreenshot(payload: WsScreenshotDataPush): boolean {
       return false;
     }
 
-    fs.mkdirSync(config.screenshotDir, { recursive: true });
-    const target = getSafeScreenshotPath(config.screenshotDir, payload.alertId, contentType);
+    fs.mkdirSync(path.join(accountDirectory(accountId), 'screenshots'), { recursive: true });
+    const target = getSafeScreenshotPath(path.join(accountDirectory(accountId), 'screenshots'), payload.alertId, contentType);
     if (!target) {
       console.warn(`[ws] screenshot backup rejected: alertId=${payload.alertId} reason=invalid-alert-id`);
       return false;
     }
     fs.writeFileSync(target.filePath, bytes);
-    const linked = markAlertScreenshot(payload.alertId, target.filePath);
+    const linked = markAlertScreenshot(accountId, payload.alertId, target.filePath);
     console.log(`[ws][${new Date().toISOString()}] screenshot backed up: alertId=${payload.alertId} bytes=${bytes.length} linked=${linked}`);
     return linked;
   } catch (err: any) {
@@ -389,7 +391,7 @@ function findDetector(deviceId: string): DetectorClient | undefined {
 // 公开 API
 // ════════════════════════════════════════════════════════════
 
-export function handleConnection(ws: WebSocket): void {
+function handleConnection(ws: WebSocket): void {
   let authenticated = false;
   let role: NodeRole | null = null;
   let identity: NodeIdentity | undefined;
@@ -408,6 +410,8 @@ export function handleConnection(ws: WebSocket): void {
   }, config.wsAuthTimeoutMs);
 
   ws.on('message', (raw) => {
+    const token = socketTokens.get(ws);
+    if (authenticated && !accountStore.authenticate(token)) { ws.close(4001, 'session revoked'); return; }
     let msg: any;
     try { msg = JSON.parse(raw.toString()); } catch { return; }
     if (!msg || typeof msg !== 'object' || Array.isArray(msg)) return;
@@ -484,7 +488,7 @@ export function handleConnection(ws: WebSocket): void {
           alert.createdAt = createdAt;
           let insertResult: AddAlertResult;
           try {
-            insertResult = addAlert({
+            insertResult = addAlert(accountId, {
               ...event, nodeType: identity!.nodeType,
               alertId: alert.alertId,
               deviceId: alert.deviceId,
@@ -522,7 +526,7 @@ export function handleConnection(ws: WebSocket): void {
         if (role === 'detector') {
           const payload = msg as WsScreenshotDataPush;
           if (identity?.nodeType !== 'visual' || !isSafeAlertId(payload.alertId) || typeof payload.imageBase64 !== 'string') break;
-          const associatedPayload = associateScreenshotPayload(payload, authenticatedDeviceId, getAlertById(payload.alertId));
+          const associatedPayload = associateScreenshotPayload(payload, authenticatedDeviceId, getAlertById(accountId, payload.alertId));
           if (!associatedPayload) {
             console.warn(`[ws] screenshot rejected: alertId=${payload.alertId} reason=alert-device-mismatch-or-missing`);
             break;
@@ -536,6 +540,9 @@ export function handleConnection(ws: WebSocket): void {
         break;
       case 'set-config':
         if (role === 'console') handleSetConfig(ws, msg as WsSetConfig);
+        break;
+      case 'get-streams':
+        if (identity) sendJson(ws, { type: 'stream-list', streams: mediaRelay.streams(accountId) });
         break;
       case 'get-devices':
         if (role === 'console') sendJson(ws, { type: 'device-list', devices: buildDeviceList() });
@@ -612,7 +619,7 @@ export function handleConnection(ws: WebSocket): void {
   });
 }
 
-export function broadcastAlert(alert: WsAlertPush): void {
+function broadcastAlert(alert: WsAlertPush): void {
   if (!alert.expiresAt || Date.parse(alert.expiresAt) <= Date.now()) return;
   for (const [id, client] of notifierClients) {
     if (!scopeAccepts(notificationScopes.get(id), alert)) continue;
@@ -631,7 +638,7 @@ export function broadcastAlert(alert: WsAlertPush): void {
  * 截图独立异步广播 — 走 500ms 串行队列,防止多接收端并发下行拥塞。
  * 协议分离后,alert 已先行送达,本函数仅负责补传 BigPicture。
  */
-export function broadcastScreenshotData(payload: WsScreenshotDataPush): void {
+function broadcastScreenshotData(payload: WsScreenshotDataPush): void {
   for (const [rid] of receiverClients) {
     enqueueScreenshotPush(rid, payload.alertId, payload);
   }
@@ -647,34 +654,37 @@ function handleAuth(
   onSuccess: (role: NodeRole, deviceId: string) => void,
 ): void {
   clearTimeout(authTimer);
-  const identity = msg.channel === config.channelId ? authenticateNode(msg) : undefined;
-  if (!identity || typeof msg.deviceName !== 'string' || !msg.deviceName.trim() || msg.deviceName.length > MAX_DEVICE_NAME_LENGTH) {
-    sendJson(ws, { type: 'auth-result', success: false, reason: 'invalid identity or channel' });
+  const identity = authenticateNode(msg);
+  if (!identity || identity.accountId !== accountId) {
+    sendJson(ws, { type: 'auth-result', success: false, reason: 'invalid session' });
     ws.close(); return;
   }
   const map = identity.role === 'detector' ? detectorClients : identity.role === 'console' ? receiverClients
     : identity.role === 'notifier' ? notifierClients : residentWindowsClients;
-  const existing = map.get(msg.deviceId);
-  if (existing) { map.delete(msg.deviceId); sendJson(existing.ws, { type: 'kicked', reason: 'duplicate connection' }); existing.ws.terminate(); }
+  const existing = map.get(identity.deviceId);
+  if (existing) { map.delete(identity.deviceId); sendJson(existing.ws, { type: 'kicked', reason: 'duplicate connection' }); existing.ws.terminate(); }
   if (identity.role === 'detector') {
-    clearPendingDetectorRemoval(clientType(identity), msg.deviceId);
-    const client = createDetectorClient(ws, msg, clientType(identity));
+    clearPendingDetectorRemoval(clientType(identity), identity.deviceId);
+    const client = createDetectorClient(ws, identity, clientType(identity));
     client.identity = identity;
-    detectorClients.set(msg.deviceId, client);
-    const resident = residentWindowsClients.get(msg.deviceId);
-    if (resident) resident.deviceName = msg.deviceName;
+    detectorClients.set(identity.deviceId, client);
+    const resident = residentWindowsClients.get(identity.deviceId);
+    if (resident) resident.deviceName = identity.deviceName;
   } else if (identity.role === 'lifecycle') {
-    residentWindowsClients.set(msg.deviceId, { ws, deviceId: msg.deviceId,
-      deviceName: detectorClients.get(msg.deviceId)?.deviceName || msg.deviceName,
+    residentWindowsClients.set(identity.deviceId, { ws, identity, deviceId: identity.deviceId,
+      deviceName: detectorClients.get(identity.deviceId)?.deviceName || identity.deviceName,
       lastSeen: new Date(), components: { resident: 'running', detectorApp: 'stopped' } });
   } else {
-    (identity.role === 'console' ? receiverClients : notifierClients).set(msg.deviceId, { ws, deviceId: msg.deviceId, deviceName: msg.deviceName, identity, lastSeen: new Date() });
+    (identity.role === 'console' ? receiverClients : notifierClients).set(identity.deviceId, { ws, deviceId: identity.deviceId, deviceName: identity.deviceName, identity, lastSeen: new Date() });
   }
-  sendJson(ws, { type: 'auth-result', success: true, identity, maxSources: config.maxSourcesPerDetector,
+  sendJson(ws, { type: 'auth-result', success: true, identity, account: accountStore.authenticate(msg.token)!.account, ...identity, channel: config.channelId, maxSources: config.maxSourcesPerDetector,
     timeStandard: timeStandard.get(),
     ...(identity.role === 'notifier' ? { notificationScope: notificationScopes.get(identity.deviceId) } : {}),
     realtimeTtlMs: REALTIME_TTL_MS, heartbeatIntervalMs: identity.role === 'console' ? 30_000 : 3000, connectionTimeoutMs: 45_000 });
   onSuccess(identity.role, identity.deviceId);
+  socketTokens.set(ws, msg.token);
+  mediaRelay.ensureAccount(accountId);
+  sendJson(ws, { type: 'stream-list', streams: mediaRelay.streams(accountId) });
   if (identity.role === 'console') {
     sendJson(ws, { type: 'device-list', devices: buildDeviceList() });
     sendJson(ws, notificationScopeList());
@@ -714,7 +724,6 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   // 超限会让 sources 整组被拒、客户端保留旧快照，因此必须把这个状态也告诉接收端。
   const sourceOverLimit = Array.isArray(msg.sources) && msg.sources.length > config.maxSourcesPerDetector;
   const sourceLimitChanged = msg.sources !== undefined && client.sourceLimitExceeded !== sourceOverLimit;
-  const nameChanged = msg.deviceName !== undefined && msg.deviceName !== client.deviceName;
   const changed =
     client.isMonitoring !== msg.isMonitoring ||
     client.isReady !== msg.isReady ||
@@ -729,8 +738,7 @@ function handleHeartbeat(msg: WsHeartbeat): void {
     JSON.stringify(client.capabilities) !== JSON.stringify(msg.capabilities ?? client.capabilities) ||
     JSON.stringify(client.components) !== JSON.stringify(msg.components ?? client.components) ||
     JSON.stringify(client.sources) !== JSON.stringify(msg.sources ?? client.sources) ||
-    sourceLimitChanged ||
-    nameChanged;
+    sourceLimitChanged;
 
   client.isMonitoring = msg.isMonitoring;
   client.isReady = msg.isReady ?? false;
@@ -748,20 +756,12 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   if (validProgress(msg.lastProgressAt)) client.lastProgressAt = msg.lastProgressAt;
   if (sanitizedSources !== undefined) client.sources = sanitizedSources;
   if (msg.sources !== undefined) client.sourceLimitExceeded = sourceOverLimit;
-  if (nameChanged && typeof msg.deviceName === 'string' && msg.deviceName.trim() && msg.deviceName.length <= MAX_DEVICE_NAME_LENGTH) {
-    client.deviceName = msg.deviceName!;
-    if (client.clientType === 'windows') {
-      const resident = residentWindowsClients.get(msg.deviceId);
-      if (resident) resident.deviceName = client.deviceName;
-    }
-    console.log(`[ws][${new Date().toISOString()}] 设备名称更新: ${client.deviceName} (${msg.deviceId})`);
-  }
 
   const count = (_heartbeatCounter.get(msg.deviceId) ?? 0) + 1;
   _heartbeatCounter.set(msg.deviceId, count % 60 === 0 ? 0 : count);
   if (count === 1 || count % 60 === 0) {
     const silentSec = Math.round((Date.now() - client.lastSeen.getTime()) / 1000);
-    const roleLabel = client.identity.nodeType === 'sensor' ? '传感器节点' : client.clientType === 'android-detector' ? '视觉检测（Android）' : '视觉检测（Windows）';
+    const roleLabel = client.identity.component === 'android-camera' ? '镜头推流（Android）' : client.identity.nodeType === 'sensor' ? '传感器节点' : '视觉检测（Windows）';
     console.log(`[ws][${new Date().toISOString()}] ${roleLabel} 心跳: ${client.deviceName} (${msg.deviceId}) monitoring=${msg.isMonitoring} 静默${silentSec}s`);
   }
 
@@ -1041,7 +1041,7 @@ function buildDeviceList(): DeviceStatus[] {
   for (const clients of [detectorClients]) {
     for (const c of clients.values()) {
       devices.push({
-        role: c.identity.role, nodeType: c.identity.nodeType, platform: c.identity.platform,
+        role: c.identity.role, nodeType: c.identity.nodeType, platform: c.identity.platform, component: c.identity.component,
         deviceId: c.deviceId,
         deviceName: c.deviceName,
         online: c.ws.readyState === WebSocket.OPEN && (now - c.lastSeen.getTime()) < config.deviceOfflineMs,
@@ -1070,7 +1070,7 @@ function buildDeviceList(): DeviceStatus[] {
   for (const r of residentWindowsClients.values()) {
     if (devices.some(d => d.deviceId === r.deviceId)) continue;
     devices.push({
-      role: 'detector', nodeType: 'visual', platform: 'windows',
+      role: 'detector', nodeType: 'visual', platform: 'windows', component: 'windows-inference',
       deviceId: r.deviceId, deviceName: r.deviceName,
       online: (now - r.lastSeen.getTime()) < config.deviceOfflineMs,
       isMonitoring: false, isReady: false, lastSeen: r.lastSeen.toISOString(),
@@ -1084,7 +1084,7 @@ function buildDeviceList(): DeviceStatus[] {
     });
   }
   for (const client of notifierClients.values()) {
-    devices.push({ role: 'notifier', nodeType: 'notification', platform: client.identity!.platform,
+    devices.push({ role: 'notifier', nodeType: 'notification', platform: client.identity!.platform, component: client.identity!.component,
       deviceId: client.deviceId, deviceName: client.deviceName!, online: client.ws.readyState === WebSocket.OPEN,
       isMonitoring: false, isReady: true, lastSeen: client.lastSeen.toISOString(), cooldown: 5, confidence: 0.45,
       targets: '', targetSamplingRate: 3, modelKey: '', modelOptions: [], canSwitchModelWhileMonitoring: false,
@@ -1095,6 +1095,8 @@ function buildDeviceList(): DeviceStatus[] {
 }
 
 function sendJson(ws: WebSocket, obj: object, context?: string): boolean {
+  const token = socketTokens.get(ws);
+  if (token && !accountStore.authenticate(token)) { ws.close(4001, 'session revoked'); return false; }
   if (ws.readyState !== WebSocket.OPEN) {
     console.warn(`[ws][${new Date().toISOString()}] 消息发送失败 (连接未开放)${context ? ` [${context}]` : ''}`);
     return false;
@@ -1142,8 +1144,8 @@ function dropDeliveries(notifierId: string, ws?: WebSocket): void {
 }
 
 function notificationScopeList(): object {
-  return { type: 'notification-scopes', detectors: registeredNodes('detector'), notifiers: registeredNodes('notifier').map(identity => ({
-    ...identity, deviceName: notifierClients.get(identity.deviceId)?.deviceName ?? identity.deviceId,
+  return { type: 'notification-scopes', detectors: registeredNodes(accountId, 'detector'), notifiers: registeredNodes(accountId, 'notifier').map(identity => ({
+    ...identity, deviceName: notifierClients.get(identity.deviceId)?.deviceName ?? identity.deviceName,
     online: notifierClients.get(identity.deviceId)?.ws.readyState === WebSocket.OPEN,
     scope: notificationScopes.get(identity.deviceId),
   })) };
@@ -1152,8 +1154,8 @@ function notificationScopeList(): object {
 function handleNotificationScope(ws: WebSocket, msg: any): void {
   const scope = parseNotificationScope(msg.scope);
   const requestId = typeof msg.requestId === 'string' && /^[A-Za-z0-9._-]{1,128}$/.test(msg.requestId) ? msg.requestId : undefined;
-  const target = registeredNodes('notifier').find(identity => identity.deviceId === msg.targetNotifierId);
-  const detectors = registeredNodes('detector');
+  const target = registeredNodes(accountId, 'notifier').find(identity => identity.deviceId === msg.targetNotifierId);
+  const detectors = registeredNodes(accountId, 'detector');
   const invalidTarget = scope?.targets.some(item => {
     const identity = detectors.find(node => node.deviceId === item.deviceId);
     return !identity || (item.sourceId !== undefined && (identity.nodeType !== 'visual'
@@ -1188,6 +1190,9 @@ function handleTimeStandard(ws: WebSocket, msg: any): void {
 }
 
 function emitFault(client: DetectorClient, eventKind: 'connection-lost' | 'detection-interrupted', source?: SourceStatus): void {
+  // Camera control connectivity does not imply inference intent. Media failures are
+  // reported through the bound Windows source, while idle/background camera exits are normal.
+  if (client.identity.component === 'android-camera') return;
   const key = `${client.deviceId}:${source?.sourceId ?? ''}:${eventKind}`;
   if (activeFaults.has(key)) return;
   const now = Date.now();
@@ -1205,7 +1210,7 @@ function flushFaultOutbox(now: number): void {
   for (const [id, alert] of faultOutbox) {
     if (Date.parse(alert.expiresAt!) <= now) { faultOutbox.delete(id); continue; }
     try {
-      const result = addAlert({ ...alert, createdAt: alert.createdAt! });
+      const result = addAlert(accountId, { ...alert, createdAt: alert.createdAt! });
       faultOutbox.delete(id);
       if (result === 'stored') broadcastAlert(alert);
     } catch { /* Retry temporary storage failure within the original event deadline. */ }
@@ -1213,7 +1218,8 @@ function flushFaultOutbox(now: number): void {
 }
 
 /** Clock argument makes outage thresholds testable without long-running device operations. */
-export function maintainRealtime(now = Date.now()): void {
+function maintainRealtime(now = Date.now()): void {
+  revokeAndRefresh();
   flushFaultOutbox(now);
   for (const [key, delivery] of deliveries) {
     if (Date.parse(delivery.alert.expiresAt ?? '') <= now || notifierClients.get(delivery.notifierId)?.ws !== delivery.ws) {
@@ -1270,7 +1276,7 @@ const maintenanceTimer = setInterval(() => {
     for (const [id, client] of clients) {
       if (client.lastSeen.getTime() <= detectorDeadline) {
         const silentSec = Math.round((now - client.lastSeen.getTime()) / 1000);
-        const roleLabel = client.identity.nodeType === 'sensor' ? '传感器节点' : client.clientType === 'android-detector' ? '视觉检测（Android）' : '视觉检测（Windows）';
+        const roleLabel = client.identity.component === 'android-camera' ? '镜头推流（Android）' : client.identity.nodeType === 'sensor' ? '传感器节点' : '视觉检测（Windows）';
         console.log(`[ws][${ts}] ${roleLabel} 幽灵清理: ${client.deviceName} (${id}) 静默 ${silentSec}s 阈值 ${config.deviceOfflineMs / 1000}s`);
         client.ws.terminate();
         emitFault(client, 'connection-lost');
@@ -1299,3 +1305,69 @@ const maintenanceTimer = setInterval(() => {
   }
 }, 3000);
 maintenanceTimer.unref();
+
+function revokeAndRefresh(): void {
+  for (const clients of [detectorClients, receiverClients, notifierClients, residentWindowsClients]) {
+    for (const [id, client] of clients) {
+      const live = accountStore.authenticate(socketTokens.get(client.ws));
+      if (!live) {
+        clients.delete(id); clearPendingDetectorRemoval('windows', id); clearPendingDetectorRemoval('android-camera', id);
+        screenshotQueues.delete(id); screenshotProcessing.delete(id); dropDeliveries(id);
+        for (const [key, delivery] of deliveries) if (delivery.alert.deviceId === id) deliveries.delete(key);
+        for (const [key, fault] of faultOutbox) if (fault.deviceId === id) faultOutbox.delete(key);
+        for (const key of activeFaults) if (key.startsWith(`${id}:`)) activeFaults.delete(key);
+        for (const key of unhealthySince.keys()) if (key.startsWith(`${id}:`)) unhealthySince.delete(key);
+        for (const [requestId, pending] of pendingControlRequests) if (pending.senderWs === client.ws || pending.targetWs === client.ws) { clearTimeout(pending.timer); pendingControlRequests.delete(requestId); }
+        client.ws.close(4001, 'session revoked');
+      } else {
+        const nameChanged = client.deviceName !== live.device.deviceName;
+        client.deviceName = live.device.deviceName;
+        client.identity = live.device;
+        if (nameChanged) sendJson(client.ws, { type: 'device-updated', device: live.device });
+      }
+    }
+  }
+  scheduleBroadcast();
+}
+function sendStreams(): void {
+  const message = { type: 'stream-list', streams: mediaRelay.streams(accountId) };
+  broadcastToReceivers(message);
+  for (const client of detectorClients.values()) sendJson(client.ws, message);
+}
+return { handleConnection, broadcastAlert, broadcastScreenshotData, getConnectionCount, maintainRealtime, revokeAndRefresh, sendStreams, buildDeviceList };
+}
+const contexts = new Map<string, ReturnType<typeof createAccountConnections>>();
+const socketTokens = new WeakMap<WebSocket, string>();
+function forAccount(accountId: string) {
+  let context = contexts.get(accountId);
+  if (!context) { context = createAccountConnections(accountId); contexts.set(accountId, context); }
+  return context;
+}
+accountStore.onChange(() => { for (const context of contexts.values()) context.revokeAndRefresh(); });
+mediaRelay.onChange(accountId => contexts.get(accountId)?.sendStreams());
+export function handleConnection(ws: WebSocket): void {
+  const timer = setTimeout(() => ws.close(4001, 'auth timeout'), config.wsAuthTimeoutMs); timer.unref();
+  ws.once('message', (raw, binary) => {
+    clearTimeout(timer);
+    let message: any; try { message = JSON.parse(raw.toString()); } catch { ws.close(4001, 'invalid auth'); return; }
+    const session = !binary && message.type === 'auth' ? accountStore.authenticate(message.token) : undefined;
+    if (!session) { ws.send(JSON.stringify({ type: 'auth-result', success: false, reason: 'invalid session' })); ws.close(4001, 'invalid session'); return; }
+    socketTokens.set(ws, message.token);
+    forAccount(session.account.accountId).handleConnection(ws);
+    ws.emit('message', raw, false);
+  });
+  ws.on('error', () => ws.terminate());
+  ws.once('close', () => clearTimeout(timer));
+}
+export function broadcastAlert(accountId: string, alert: WsAlertPush): void { forAccount(accountId).broadcastAlert(alert); }
+export function broadcastScreenshotData(accountId: string, payload: WsScreenshotDataPush): void { forAccount(accountId).broadcastScreenshotData(payload); }
+export function getConnectionCount(): number { return [...contexts.values()].reduce((n, context) => n + context.getConnectionCount(), 0); }
+export function maintainRealtime(now = Date.now()): void { for (const context of contexts.values()) context.maintainRealtime(now); }
+export function accountDeviceList(session: AccountSession): object[] {
+  const live = forAccount(session.account.accountId).buildDeviceList();
+  return accountStore.devices(session.account.accountId).map(device => ({ ...device, online: false, ...live.find(item => item.deviceId === device.deviceId) }));
+}
+export function associateScreenshotPayload(payload: WsScreenshotDataPush, authenticatedDeviceId: string, alertRecord: AlertRecord | undefined): WsScreenshotDataPush | null {
+  if (!alertRecord || alertRecord.deviceId !== authenticatedDeviceId || alertRecord.alertId !== payload.alertId) return null;
+  return { ...payload, deviceId: authenticatedDeviceId, sourceId: alertRecord.sourceId, sourceName: alertRecord.sourceName };
+}

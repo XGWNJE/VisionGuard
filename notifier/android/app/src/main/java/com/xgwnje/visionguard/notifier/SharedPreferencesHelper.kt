@@ -41,7 +41,8 @@ data class AlertQueueTransition(
 )
 
 class SharedPreferencesHelper(context: Context) {
-    internal val prefs: SharedPreferences = context.getSharedPreferences("vg_notifier_prefs", Context.MODE_PRIVATE)
+    internal val prefs: SharedPreferences = context.getSharedPreferences("vg_notifier_prefs-" + com.xgwnje.visionguard.account.AccountStore.cacheKey(context), Context.MODE_PRIVATE)
+    fun clearAccountData() = synchronized(alertQueueLock) { check(prefs.edit().clear().commit()) }
     companion object {
         private val alertQueueLock = Any()
         private const val KEY_RINGTONE_URI = "ringtone_uri"

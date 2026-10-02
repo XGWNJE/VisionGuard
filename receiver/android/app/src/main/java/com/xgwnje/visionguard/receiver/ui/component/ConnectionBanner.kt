@@ -154,7 +154,7 @@ private fun connectionSpec(state: WsState, onlineCount: Int): ConnectionSpec =
         )
         WsState.AUTH_FAILED -> ConnectionSpec(
             title = "认证失败",
-            subtitle = "检查 API Key",
+            subtitle = "请重新登录账号",
             icon = Icons.Default.ErrorOutline,
             containerColor = ReceiverAlertSoft,
             foregroundColor = ReceiverAlert

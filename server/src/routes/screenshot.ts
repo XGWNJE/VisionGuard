@@ -1,14 +1,15 @@
 import { Router } from 'express';
 import path from 'path';
 import fs from 'fs';
-import { config } from '../config';
+import { accountDirectory } from '../services/AccountStore';
+import { getAlertById } from '../services/AlertStore';
 import { httpAuth } from '../middleware/auth';
 
 const router = Router();
 
 /**
  * GET /screenshots/:filename
- * 通过 HTTP 下载报警截图（需 X-API-Key）
+ * 下载当前账号的报警截图（需 Bearer 会话与事件归属）
  */
 router.get('/screenshots/:filename', httpAuth, (req, res) => {
   if (typeof req.params.filename !== 'string') {
@@ -16,11 +17,16 @@ router.get('/screenshots/:filename', httpAuth, (req, res) => {
     return;
   }
   const filename = path.basename(req.params.filename);
-  const filePath = path.join(config.screenshotDir, filename);
+  if (filename !== req.params.filename || !/^[A-Za-z0-9_-]{8,128}\.(?:jpg|jpeg|png)$/.test(filename)) { res.status(404).json({ ok: false, error: 'screenshot not found' }); return; }
+  const accountId = res.locals.identity.accountId;
+  const alert = getAlertById(accountId, path.parse(filename).name);
+  const screenshotDir = path.join(accountDirectory(accountId), 'screenshots');
+  const filePath = path.join(screenshotDir, filename);
+  if (!alert?.screenshotPath || path.resolve(alert.screenshotPath) !== path.resolve(filePath)) { res.status(404).json({ ok: false, error: 'screenshot not found' }); return; }
 
   // 防止目录遍历攻击
   const resolvedPath = path.resolve(filePath);
-  const resolvedDir = path.resolve(config.screenshotDir);
+  const resolvedDir = path.resolve(screenshotDir);
   const relative = path.relative(resolvedDir, resolvedPath);
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
     res.status(403).json({ ok: false, error: 'access denied' });

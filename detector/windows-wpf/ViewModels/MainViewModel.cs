@@ -20,6 +20,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private readonly SettingsViewModel _settingsVm;
         private readonly ServerViewModel _serverVm;
         private readonly System.Windows.Threading.DispatcherTimer _heartbeatTimer;
+        private string _accountScope = AccountSession.ScopeKey;
 
         public MainViewModel()
         {
@@ -32,6 +33,19 @@ namespace VisionGuard.Detector.Windows.ViewModels
             MultiSourceVm = new MultiSourceViewModel(_serverPushService, _settingsVm);
             _serverVm = new ServerViewModel(_serverPushService);
             GlobalSettingsVm = new GlobalSettingsViewModel(_settingsVm, _serverVm);
+            _serverVm.AccountChanging += (_, _) => MultiSourceVm.PrepareAccountChange();
+            _serverVm.AccountChanged += (_, _) =>
+            {
+                if (_accountScope != AccountSession.ScopeKey)
+                {
+                    MultiSourceVm.PrepareAccountChange();
+                    SettingsStore.SwitchAccount(); _settingsVm.Load(); MultiSourceVm.ReloadAccount();
+                    _accountScope = AccountSession.ScopeKey;
+                }
+                _serverVm.Load();
+                _serverPushService.Configure(AppConfig.ServerUrl, AppConfig.SessionToken, AppConfig.DeviceId, _serverVm.DeviceName);
+                System.Threading.Tasks.Task.Run(() => Runtime.ResidentLauncher.EnsureStarted());
+            };
 
             // ── 远控命令路由 ──────────────────────────────────────────
             _serverPushService.CommandReceived += (s, cmd) =>
@@ -86,7 +100,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             // 初始配置服务器连接
             _serverPushService.Configure(
                 AppConfig.ServerUrl,
-                AppConfig.ApiKey,
+                AppConfig.SessionToken,
                 AppConfig.DeviceId,
                 _serverVm.DeviceName);
 
@@ -95,7 +109,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             {
                 Interval = System.TimeSpan.FromSeconds(3)
             };
-            _heartbeatTimer.Tick += (s, e) => RefreshHeartbeat(_serverPushService);
+            _heartbeatTimer.Tick += (s, e) => { _serverVm.MaintainSession(); RefreshHeartbeat(_serverPushService); };
             _heartbeatTimer.Start();
         }
 

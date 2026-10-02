@@ -18,6 +18,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Security" />
+    <Reference Include="System.Net.Http" />
   </ItemGroup>
   <ItemGroup>
     <!--
@@ -26,5 +28,6 @@
       会被服务端拒绝，且不暴露 TLS 版本配置入口——检测端在 Win7 实测过同一根因。
     -->
     <Compile Include="..\windows-wpf\Net\MinimalWebSocketClient.cs" Link="Net\MinimalWebSocketClient.cs" />
+    <Compile Include="..\windows-shared\Utils\AccountSession.cs" Link="Utils\AccountSession.cs" />
   </ItemGroup>
 </Project>

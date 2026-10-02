@@ -22,8 +22,9 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
@@ -31,10 +32,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -52,7 +50,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.xgwnje.visionguard.receiver.data.model.RemovedDevice
 import com.xgwnje.visionguard.receiver.data.remote.WsState
 import com.xgwnje.visionguard.receiver.service.AlertForegroundService
 import com.xgwnje.visionguard.receiver.ui.component.DeviceCard
@@ -78,6 +75,8 @@ fun DeviceListScreen(
     val wsState by service.connectionState.collectAsState()
     val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    var pendingUnbind by remember { mutableStateOf<com.xgwnje.visionguard.receiver.data.model.DeviceInfo?>(null) }
+    var unbinding by remember { mutableStateOf(false) }
     val hapticFeedback = LocalHapticFeedback.current
     val lazyListState = rememberLazyListState()
     val onlineCount = remember(devices) { devices.count { it.online } }
@@ -101,6 +100,24 @@ fun DeviceListScreen(
             }
             snackbarHost.showSnackbar(message)
         }
+    }
+
+    pendingUnbind?.let { device ->
+        AlertDialog(
+            onDismissRequest = { if (!unbinding) pendingUnbind = null },
+            title = { Text("解绑设备") },
+            text = { Text("解绑 ${device.deviceName} 后，该设备需要重新登录。已有事件记录会保留。") },
+            confirmButton = { TextButton(enabled = !unbinding, onClick = {
+                unbinding = true
+                scope.launch {
+                    val success = deviceVm.unbindDevice(device.deviceId)
+                    pendingUnbind = null
+                    unbinding = false
+                    snackbarHost.showSnackbar(if (success) "已解绑：${device.deviceName}" else "解绑失败，请重试")
+                }
+            }) { Text(if (unbinding) "正在解绑…" else "确认解绑") } },
+            dismissButton = { TextButton(enabled = !unbinding, onClick = { pendingUnbind = null }) { Text("取消") } }
+        )
     }
 
     Box(
@@ -138,20 +155,7 @@ fun DeviceListScreen(
                     key = { _, device -> device.deviceId }
                 ) { _, device ->
                     ReorderableItem(reorderableState, key = device.deviceId) {
-                        DeviceSwipeContainer(
-                            device = device,
-                            onDelete = {
-                                val removed = deviceVm.removeOfflineDevice(device.deviceId)
-                                if (removed != null) {
-                                    scope.launch {
-                                        showDeviceRemovedSnackbar(
-                                            snackbarHost = snackbarHost,
-                                            removed = removed
-                                        )
-                                    }
-                                }
-                            }
-                        ) {
+                        Column {
                             DeviceCard(
                                 device = device,
                                 initialConfig = buildDeviceConfigFromDevice(device),
@@ -172,6 +176,9 @@ fun DeviceListScreen(
                                     }
                                 )
                             )
+                            if (!device.online) TextButton(
+                                onClick = { pendingUnbind = device }, modifier = Modifier.align(Alignment.End)
+                            ) { Text("解绑设备") }
                         }
                     }
                 }
@@ -220,81 +227,6 @@ private fun DeviceListHeader(
             )
         }
     }
-}
-
-@Composable
-private fun DeviceSwipeContainer(
-    device: com.xgwnje.visionguard.receiver.data.model.DeviceInfo,
-    onDelete: () -> Unit,
-    content: @Composable () -> Unit
-) {
-    val canDelete = !device.online
-    val dismissState = rememberSwipeToDismissBoxState()
-    var dismissed by remember(device.deviceId) { mutableStateOf(false) }
-
-    if (dismissed) return
-
-    SwipeToDismissBox(
-        state = dismissState,
-        backgroundContent = {
-            DeleteDeviceBackground(enabled = canDelete)
-        },
-        enableDismissFromStartToEnd = false,
-        enableDismissFromEndToStart = canDelete,
-        gesturesEnabled = canDelete,
-        onDismiss = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart && canDelete) {
-                dismissed = true
-                onDelete()
-            }
-        }
-    ) {
-        content()
-    }
-}
-
-@Composable
-private fun DeleteDeviceBackground(enabled: Boolean) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        shape = RoundedCornerShape(28.dp),
-        color = if (enabled) ReceiverAlertSoft else ReceiverSurfaceMuted,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.End,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Delete,
-                contentDescription = null,
-                tint = if (enabled) ReceiverAlert else ReceiverMuted,
-                modifier = Modifier.size(24.dp)
-            )
-            Spacer(modifier = Modifier.size(8.dp))
-            Text(
-                text = "删除",
-                style = MaterialTheme.typography.labelLarge,
-                color = if (enabled) ReceiverAlert else ReceiverMuted,
-                fontWeight = FontWeight.Black
-            )
-        }
-    }
-}
-
-private suspend fun showDeviceRemovedSnackbar(
-    snackbarHost: SnackbarHostState,
-    removed: RemovedDevice
-) {
-    val name = removed.device.deviceName.ifBlank { "离线设备" }
-    snackbarHost.showSnackbar(
-        message = "已删除：$name",
-        duration = SnackbarDuration.Short
-    )
 }
 
 @Composable

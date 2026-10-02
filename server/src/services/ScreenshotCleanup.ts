@@ -8,27 +8,31 @@ let cleanupTimer: ReturnType<typeof setInterval> | null = null;
  * 清理过期截图文件（基于截图 TTL 配置）
  */
 export function cleanupScreenshots(): void {
-  const dir = config.screenshotDir;
-  if (!fs.existsSync(dir)) return;
+  const root = path.join(config.dataDir, 'accounts');
+  if (!fs.existsSync(root)) return;
 
   const ttlMs = config.screenshotTtlHours * 3600 * 1000;
   const now = Date.now();
   let removed = 0;
 
   try {
-    const files = fs.readdirSync(dir);
-    for (const file of files) {
+    for (const account of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!account.isDirectory() || !/^[A-Za-z0-9_-]{1,128}$/.test(account.name)) continue;
+      const dir = path.join(root, account.name, 'screenshots');
+      if (!fs.existsSync(dir)) continue;
+      for (const file of fs.readdirSync(dir)) {
       const ext = path.extname(file).toLowerCase();
       if (ext !== '.png' && ext !== '.jpg' && ext !== '.jpeg') continue;
       const filePath = path.join(dir, file);
       try {
         const stat = fs.statSync(filePath);
-        if (now - stat.mtime.getTime() > ttlMs) {
+        if (stat.isFile() && now - stat.mtime.getTime() > ttlMs) {
           fs.unlinkSync(filePath);
           removed++;
         }
       } catch {
         // 单个文件删除失败不阻塞整体流程
+      }
       }
     }
     if (removed > 0) {

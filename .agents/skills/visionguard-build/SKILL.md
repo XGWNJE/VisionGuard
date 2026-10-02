@@ -5,7 +5,7 @@ description: Build and verify one or more VisionGuard targets without packaging,
 
 # VisionGuard Build
 
-Compile the requested targets through the maintained project script and verify the expected artifacts exist. 组件名称统一为 VisionGuard 视觉节点、视觉驻留、视觉检测（Android）、VisionGuard 控制台、VisionGuard 通知节点、视觉中继。
+Compile the requested targets through the maintained project script and verify the expected artifacts exist. 组件名称统一为 VisionGuard 视觉节点、视觉驻留、VisionGuard 镜头推流、VisionGuard 控制台、VisionGuard 通知节点、视觉中继。
 
 ## Boundaries
 
@@ -42,7 +42,7 @@ The script currently accepts `All`, `Server`, `Windows`, `WPF`, `WindowsResident
 - Internal modern runtime: `detector/windows-package/bin/Release/runtimes/modern/VisionGuard.Detector.Windows.exe`
 - Internal legacy runtime: `detector/windows-package/bin/Release/runtimes/legacy/VisionGuard.Detector.Windows.exe`
 - 视觉驻留： `detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe`
-- 视觉检测（Android）： `detector/android/app/build/outputs/apk/release/app-release.apk`
+- VisionGuard 镜头推流： `detector/android/app/build/outputs/apk/release/app-release.apk`
 - VisionGuard 控制台： `receiver/android/app/build/outputs/apk/release/app-release.apk`
 - VisionGuard 通知节点： `notifier/android/app/build/outputs/apk/release/app-release.apk`
 

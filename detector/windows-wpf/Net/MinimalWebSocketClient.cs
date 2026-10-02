@@ -29,7 +29,11 @@ namespace VisionGuard.Detector.Windows.Net
     /// </summary>
     internal sealed class MinimalWebSocketClient : System.Net.WebSockets.WebSocket
     {
-        private const int MaxMessageBytes = 32 * 1024 * 1024;
+        private readonly int _maxMessageBytes;
+        private readonly object _writeSync = new object();
+        private byte[] _pendingMessage;
+        private int _pendingOffset;
+        private System.Net.WebSockets.WebSocketMessageType _pendingType;
 
         private readonly Uri _uri;
         private readonly int _connectTimeoutMs;
@@ -38,11 +42,13 @@ namespace VisionGuard.Detector.Windows.Net
         private Stream _stream;
         private System.Net.WebSockets.WebSocketState _state = System.Net.WebSockets.WebSocketState.None;
 
-        public MinimalWebSocketClient(Uri uri, int connectTimeoutMs = 20000, int sendTimeoutMs = 15000)
+        public MinimalWebSocketClient(Uri uri, int connectTimeoutMs = 20000, int sendTimeoutMs = 15000, int maxMessageBytes = 32 * 1024 * 1024)
         {
             _uri = uri;
             _connectTimeoutMs = connectTimeoutMs;
             _sendTimeoutMs = sendTimeoutMs;
+            if (maxMessageBytes < 1) throw new ArgumentOutOfRangeException(nameof(maxMessageBytes));
+            _maxMessageBytes = maxMessageBytes;
         }
 
         public override System.Net.WebSockets.WebSocketState State => _state;
@@ -159,6 +165,11 @@ namespace VisionGuard.Detector.Windows.Net
 
         private void WriteFrame(byte opcode, byte[] payload, int offset, int count)
         {
+            lock (_writeSync) WriteFrameCore(opcode, payload, offset, count);
+        }
+
+        private void WriteFrameCore(byte opcode, byte[] payload, int offset, int count)
+        {
             var header = new byte[14];
             int headerLength = 2;
             header[0] = (byte)(0x80 | opcode);
@@ -194,54 +205,55 @@ namespace VisionGuard.Detector.Windows.Net
             if (!task.Wait(_sendTimeoutMs)) throw new TimeoutException("发送超时(" + _sendTimeoutMs + "ms)");
         }
 
-        public override async Task<System.Net.WebSockets.WebSocketReceiveResult> ReceiveAsync(
+        public override Task<System.Net.WebSockets.WebSocketReceiveResult> ReceiveAsync(
             ArraySegment<byte> buffer,
             CancellationToken cancellationToken)
         {
-            var message = new MemoryStream();
-            var messageType = System.Net.WebSockets.WebSocketMessageType.Text;
-
-            while (true)
+            cancellationToken.ThrowIfCancellationRequested();
+            if (buffer.Array == null || buffer.Count == 0) throw new ArgumentException("A receive buffer is required.");
+            using (cancellationToken.Register(Abort))
             {
-                Frame frame = ReadFrame();
-                if (frame == null) throw new IOException("连接已被服务端关闭");
-
-                switch (frame.Opcode)
+                if (_pendingMessage == null)
                 {
-                    case 0x1: messageType = System.Net.WebSockets.WebSocketMessageType.Text; break;
-                    case 0x2: messageType = System.Net.WebSockets.WebSocketMessageType.Binary; break;
-                    case 0x8:
-                        _state = System.Net.WebSockets.WebSocketState.CloseReceived;
-                        byte[] closePayload = frame.Payload;
-                        var closeStatus = closePayload != null && closePayload.Length >= 2
-                            ? (System.Net.WebSockets.WebSocketCloseStatus)((closePayload[0] << 8) | closePayload[1])
-                            : System.Net.WebSockets.WebSocketCloseStatus.NormalClosure;
-                        string description = closePayload != null && closePayload.Length > 2
-                            ? Encoding.UTF8.GetString(closePayload, 2, closePayload.Length - 2) : string.Empty;
-                        return new System.Net.WebSockets.WebSocketReceiveResult(
-                            0, System.Net.WebSockets.WebSocketMessageType.Close, true, closeStatus, description);
-                    case 0x9:
-                        WriteFrame(0xA, frame.Payload, 0, frame.Payload == null ? 0 : frame.Payload.Length);
-                        continue;
-                    case 0xA:
-                        continue;
-                    default:
-                        continue;
+                    using (var message = new MemoryStream())
+                    {
+                        bool started = false;
+                        while (true)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            Frame frame = ReadFrame();
+                            if (frame == null) throw new IOException("连接已被服务端关闭");
+                            if (frame.Opcode == 0x8)
+                            {
+                                _state = System.Net.WebSockets.WebSocketState.CloseReceived;
+                                var close = frame.Payload;
+                                var code = close.Length >= 2 ? (System.Net.WebSockets.WebSocketCloseStatus)((close[0] << 8) | close[1]) : System.Net.WebSockets.WebSocketCloseStatus.NormalClosure;
+                                return Task.FromResult(new System.Net.WebSockets.WebSocketReceiveResult(0, System.Net.WebSockets.WebSocketMessageType.Close, true, code, close.Length > 2 ? Encoding.UTF8.GetString(close, 2, close.Length - 2) : string.Empty));
+                            }
+                            if (frame.Opcode == 0x9) { WriteFrame(0xA, frame.Payload, 0, frame.Payload.Length); continue; }
+                            if (frame.Opcode == 0xA) continue;
+                            if (frame.Opcode == 0x0) { if (!started) throw new IOException("Unexpected continuation frame."); }
+                            else if (frame.Opcode == 0x1 || frame.Opcode == 0x2)
+                            {
+                                if (started) throw new IOException("Fragmented message interrupted.");
+                                started = true;
+                                _pendingType = frame.Opcode == 0x2 ? System.Net.WebSockets.WebSocketMessageType.Binary : System.Net.WebSockets.WebSocketMessageType.Text;
+                            }
+                            else throw new IOException("Invalid WebSocket opcode.");
+                            if (message.Length + frame.Payload.Length > _maxMessageBytes) throw new IOException("WebSocket message too large.");
+                            message.Write(frame.Payload, 0, frame.Payload.Length);
+                            if (frame.Fin) break;
+                        }
+                        _pendingMessage = message.ToArray(); _pendingOffset = 0;
+                    }
                 }
-
-                if (frame.Payload != null && frame.Payload.Length > 0)
-                {
-                    if (message.Length + frame.Payload.Length > MaxMessageBytes)
-                        throw new IOException("单条消息超过上限(" + MaxMessageBytes + " 字节)");
-                    message.Write(frame.Payload, 0, frame.Payload.Length);
-                }
-                if (frame.Fin) break;
+                int count = Math.Min(_pendingMessage.Length - _pendingOffset, buffer.Count);
+                Array.Copy(_pendingMessage, _pendingOffset, buffer.Array, buffer.Offset, count);
+                _pendingOffset += count;
+                bool end = _pendingOffset == _pendingMessage.Length;
+                if (end) { _pendingMessage = null; _pendingOffset = 0; }
+                return Task.FromResult(new System.Net.WebSockets.WebSocketReceiveResult(count, _pendingType, end));
             }
-
-            byte[] data = message.ToArray();
-            int length2 = Math.Min(data.Length, buffer.Count);
-            Array.Copy(data, 0, buffer.Array, buffer.Offset, length2);
-            return new System.Net.WebSockets.WebSocketReceiveResult(length2, messageType, true);
         }
 
         private sealed class Frame
@@ -258,6 +270,7 @@ namespace VisionGuard.Detector.Windows.Net
 
             bool fin = (head[0] & 0x80) != 0;
             byte opcode = (byte)(head[0] & 0x0F);
+            if ((head[0] & 0x70) != 0) throw new IOException("Unsupported WebSocket extension.");
             bool masked = (head[1] & 0x80) != 0;
             long length = head[1] & 0x7F;
 
@@ -275,7 +288,7 @@ namespace VisionGuard.Detector.Windows.Net
                 for (int i = 0; i < 8; i++) length = (length << 8) | extended[i];
             }
 
-            if (length < 0 || length > MaxMessageBytes) throw new IOException("帧长度非法: " + length);
+            if (length < 0 || length > _maxMessageBytes || (opcode >= 8 && (!fin || length > 125))) throw new IOException("帧长度非法: " + length);
 
             byte[] mask = null;
             if (masked)

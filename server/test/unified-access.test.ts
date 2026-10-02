@@ -8,28 +8,26 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { NotificationSession } from '../src/services/NotificationSession';
 
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-access-'));
-process.env.API_KEY = 'test-http-admin-key';
 process.env.VISIONGUARD_CHANNEL = 'access-test';
-process.env.ALERT_STORE_PATH = path.join(temporary, 'alerts.json');
 process.env.VISIONGUARD_DATA_DIR = temporary;
-process.env.VISIONGUARD_IDENTITIES_FILE = path.join(temporary, 'identities.json');
 const identities = [
-  { deviceId: 'visual', role: 'detector', nodeType: 'visual', platform: 'windows', apiKey: 'visual-test-credential' },
-  { deviceId: 'sensor', role: 'detector', nodeType: 'sensor', platform: 'embedded', apiKey: 'sensor-test-credential' },
-  { deviceId: 'console', role: 'console', nodeType: 'console', platform: 'android', apiKey: 'console-test-credential' },
-  { deviceId: 'notifier', role: 'notifier', nodeType: 'notification', platform: 'linux', apiKey: 'notifier-test-credential' },
-  { deviceId: 'visual', role: 'lifecycle', nodeType: 'resident', platform: 'windows', apiKey: 'resident-test-credential' },
+  { deviceId: 'visual', role: 'detector', nodeType: 'visual', platform: 'windows' },
+  { deviceId: 'sensor', role: 'detector', nodeType: 'sensor', platform: 'embedded' },
+  { deviceId: 'console', role: 'console', nodeType: 'console', platform: 'android' },
+  { deviceId: 'notifier', role: 'notifier', nodeType: 'notification', platform: 'linux' },
+  { deviceId: 'visual', role: 'lifecycle', nodeType: 'resident', platform: 'windows' },
 ];
-fs.writeFileSync(process.env.VISIONGUARD_IDENTITIES_FILE, JSON.stringify(identities));
+const { AccountFixture } = require('./helpers/accounts') as typeof import('./helpers/accounts');
+const fixtures = new AccountFixture(identities.map(identity => ({ name: identity.deviceId, component: identity.role === 'detector' ? 'windows-inference' : identity.role === 'lifecycle' ? 'windows-resident' : identity.role === 'notifier' ? 'android-notifier' : 'web-console' })));
 test.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
 const { handleConnection, maintainRealtime } = require('../src/services/ConnectionManager') as typeof import('../src/services/ConnectionManager');
-const { authenticateNode, allowedCapabilities, validateEvent, loadCredentials } = require('../src/services/NodeProtocol') as typeof import('../src/services/NodeProtocol');
+const { authenticateNode, allowedCapabilities, validateEvent } = require('../src/services/NodeProtocol') as typeof import('../src/services/NodeProtocol');
 const { getAlertById } = require('../src/services/AlertStore') as typeof import('../src/services/AlertStore');
 
 class Peer {
   messages: any[] = [];
-  constructor(readonly ws: WebSocket) { ws.on('message', raw => this.messages.push(JSON.parse(raw.toString()))); }
-  send(message: object): void { this.ws.send(JSON.stringify(message)); }
+  constructor(readonly ws: WebSocket, readonly secondary = false) { ws.on('message', raw => this.messages.push(JSON.parse(raw.toString()))); }
+  send(message: any): void { if (this.secondary && message.type === 'heartbeat') message = { ...message, sources: [{ ...message, sourceId: 'secondary-source', sourceName: 'Secondary', modelKey: '' }] }; this.ws.send(JSON.stringify(message)); }
   async take(predicate: (message: any) => boolean, timeout = 2500): Promise<any> {
     const deadline = Date.now() + timeout;
     while (Date.now() < deadline) {
@@ -49,34 +47,37 @@ async function fixture(t: any) {
   const url = `ws://127.0.0.1:${(server.address() as any).port}`;
   t.after(() => { peers.forEach(peer => peer.ws.terminate()); server.close(); });
   async function connect(identity: typeof identities[number], override = {}) {
+    await fixtures.ready;
     const ws = new WebSocket(url);
-    const peer = new Peer(ws); peers.push(peer);
+    const peer = new Peer(ws, identity.deviceId === 'sensor'); peers.push(peer);
     await new Promise<void>(resolve => ws.once('open', resolve));
-    peer.send({ type: 'auth', channel: 'access-test', deviceName: identity.deviceId, ...identity, ...override });
-    return { peer, auth: await peer.take(message => message.type === 'auth-result') };
+    peer.send({ ...fixtures.auth(identity.deviceId, identity.role), ...override });
+    const auth = await peer.take(message => message.type === 'auth-result');
+    if (identity.deviceId === 'sensor' && auth.success) { peer.send({ type: 'heartbeat', isMonitoring: false, isReady: true }); await peer.take(message => message.type === 'heartbeat-ack'); }
+    return { peer, auth };
   }
   return { connect, url };
 }
 
 function sensorEvent() {
   const now = Date.now();
-  return { type: 'alert', alertId: crypto.randomUUID(), eventKind: 'sensor-detection', summary: '有人经过',
-    timestamp: new Date(now).toISOString(), expiresAt: new Date(now + 30_000).toISOString(), detections: [] };
+  return { type: 'alert', alertId: crypto.randomUUID(), eventKind: 'visual-detection', sourceId: 'secondary-source', summary: '有人经过',
+    timestamp: new Date(now).toISOString(), expiresAt: new Date(now + 30_000).toISOString(), detections: [{ label: 'person', confidence: .9, bbox: { x: 0, y: 0, w: 1, h: 1 } }] };
 }
 
-test('provisioned identity binds role, type, platform and ID; shared HTTP key grants no WS identity', () => {
-  assert.ok(authenticateNode(identities[0]));
-  for (const override of [{ role: 'console' }, { role: '__proto__' }, { role: 'constructor' }, { deviceId: 'other' }, { nodeType: 'sensor' }, { platform: 'android' }, { apiKey: process.env.API_KEY }]) {
-    assert.equal(authenticateNode({ ...identities[0], ...override }), undefined);
-  }
+test('account credentials derive role, type, platform and ID rather than trusting message fields', async () => {
+  await fixtures.ready;
+  const auth = fixtures.auth('visual') as any;
+  const identity = authenticateNode(auth)!;
+  assert.equal(identity.deviceId, fixtures.id('visual'));
+  for (const override of [{ role: 'console' }, { role: '__proto__' }, { deviceId: 'other' }, { nodeType: 'sensor' }, { platform: 'android' }]) assert.deepEqual(authenticateNode({ ...auth, ...override }), identity);
+  assert.equal(authenticateNode({ token: 'old-shared-http-key' }), undefined);
   assert.deepEqual(allowedCapabilities(identities[1] as any, ['source-control', 'screenshot-on-demand', 'monitor-control']), ['monitor-control']);
-  const duplicate = path.join(temporary, 'duplicate.json');
-  fs.writeFileSync(duplicate, JSON.stringify([identities[0], identities[0]]));
-  assert.throws(() => loadCredentials(duplicate), /Duplicate/);
 });
 
 test('event deadline rejects expired, future and overlong sensor events without requiring a picture', () => {
-  const event = sensorEvent();
+  const { sourceId: _source, ...base } = sensorEvent();
+  const event = { ...base, eventKind: 'sensor-detection', detections: [] };
   assert.ok(validateEvent(event, identities[1] as any));
   for (const override of [
     { expiresAt: new Date(Date.now() - 1).toISOString() },
@@ -86,7 +87,7 @@ test('event deadline rejects expired, future and overlong sensor events without 
   ]) assert.equal(validateEvent({ ...event, ...override }, identities[1] as any), undefined);
 });
 
-test('sensor event persists, retries only until deadline, and only its notifier can confirm receipt', async t => {
+test('secondary visual event persists, retries only until deadline, and only its notifier can confirm receipt', async t => {
   const f = await fixture(t);
   const { peer: detector, auth } = await f.connect(identities[1]); assert.equal(auth.success, true);
   const { peer: console } = await f.connect(identities[2]);
@@ -96,14 +97,14 @@ test('sensor event persists, retries only until deadline, and only its notifier 
   const accepted = await detector.take(msg => msg.type === 'alert-ack');
   assert.equal(accepted.reason, 'stored');
   const received = await notifier.take(msg => msg.type === 'alert');
-  assert.equal(received.deviceId, 'sensor'); assert.deepEqual(received.detections, []);
-  assert.equal(getAlertById(event.alertId)?.eventKind, 'sensor-detection');
+  assert.equal(received.deviceId, fixtures.id('sensor')); assert.equal(received.detections[0].label, 'person');
+  assert.equal(getAlertById(fixtures.accountId, event.alertId)?.eventKind, 'visual-detection');
   console.send({ type: 'notification-receipt', alertId: event.alertId });
   maintainRealtime(Date.now() + 4000);
   assert.equal((await notifier.take(msg => msg.type === 'alert')).alertId, event.alertId);
   notifier.send({ type: 'notification-receipt', alertId: event.alertId });
   const receipt = await console.take(msg => msg.type === 'notification-receipt');
-  assert.equal(receipt.notifierId, 'notifier');
+  assert.equal(receipt.notifierId, fixtures.id('notifier'));
   maintainRealtime(Date.now() + 8000);
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(notifier.messages.some(msg => msg.type === 'alert'), false);
@@ -116,7 +117,7 @@ test('sensor event persists, retries only until deadline, and only its notifier 
   const expired = { ...sensorEvent(), expiresAt: new Date(Date.now() - 1).toISOString() };
   detector.send(expired);
   assert.equal((await detector.take(msg => msg.type === 'alert-ack')).reason, 'invalid-or-expired-event');
-  assert.equal(getAlertById(expired.alertId), undefined);
+  assert.equal(getAlertById(fixtures.accountId, expired.alertId), undefined);
 });
 
 test('notification-node reconnect does not replay events from its previous session', async t => {
@@ -157,8 +158,8 @@ test('detector health distinguishes intended pause, stalled frames, recovery and
   const next = await console.take(msg => msg.type === 'alert' && msg.eventKind === 'detection-interrupted');
   assert.notEqual(next.alertId, interruption.alertId);
   visual.ws.close();
-  const offline = await console.take(msg => msg.type === 'alert' && msg.eventKind === 'connection-lost' && msg.deviceId === 'visual', 11_000);
-  assert.equal(offline.deviceId, 'visual'); assert.deepEqual(offline.detections, []);
+  const offline = await console.take(msg => msg.type === 'alert' && msg.eventKind === 'connection-lost' && msg.deviceId === fixtures.id('visual'), 11_000);
+  assert.equal(offline.deviceId, fixtures.id('visual')); assert.deepEqual(offline.detections, []);
 });
 
 test('notification client watchdog works without service messages; retries do not repeat accepted alarms', async () => {
@@ -188,10 +189,10 @@ test('generated interruption retries temporary storage failure within its origin
     maintainRealtime();
   } finally { fs.renameSync = originalRename; }
   await new Promise(resolve => setTimeout(resolve, 30));
-  assert.equal(console.messages.some(msg => msg.eventKind === 'detection-interrupted' && msg.deviceId === 'sensor'), false);
+  assert.equal(console.messages.some(msg => msg.eventKind === 'detection-interrupted' && msg.deviceId === fixtures.id('sensor')), false);
   maintainRealtime();
-  const event = await console.take(msg => msg.eventKind === 'detection-interrupted' && msg.deviceId === 'sensor');
-  assert.equal(getAlertById(event.alertId)?.eventKind, 'detection-interrupted');
+  const event = await console.take(msg => msg.eventKind === 'detection-interrupted' && msg.deviceId === fixtures.id('sensor'));
+  assert.equal(getAlertById(fixtures.accountId, event.alertId)?.eventKind, 'detection-interrupted');
   assert.equal(Date.parse(event.expiresAt) - Date.parse(event.timestamp), 30_000);
   maintainRealtime(); await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(console.messages.some(msg => msg.alertId === event.alertId), false);
@@ -203,10 +204,10 @@ test('real notification transport authenticates, accepts an event and returns re
   const { peer: console } = await f.connect(identities[2]);
   const { NotificationNodeClient } = require('../src/services/NotificationNodeClient') as typeof import('../src/services/NotificationNodeClient');
   const alarms: any[] = [];
-  const client = new NotificationNodeClient(f.url, { ...identities[3], channel: 'access-test', deviceName: 'Test Notifier' } as any,
+  const client = new NotificationNodeClient(f.url, { token: fixtures.session('notifier').token },
     async event => { alarms.push(event); }, () => assert.fail('No outage expected'));
   t.after(() => client.stop());
-  await console.take(msg => msg.type === 'device-list' && msg.devices.some((d: any) => d.deviceId === 'notifier'));
+  await console.take(msg => msg.type === 'device-list' && msg.devices.some((d: any) => d.deviceId === fixtures.id('notifier')));
   const event = sensorEvent(); sensor.send(event);
   await console.take(msg => msg.type === 'notification-receipt' && msg.alertId === event.alertId);
   assert.equal(alarms.length, 1);
@@ -221,12 +222,12 @@ test('console persists notifier scopes and routing excludes unselected nodes and
   visual.send({ type: 'heartbeat', isMonitoring: false, isReady: true,
     sources: ['front', 'side'].map(sourceId => ({ sourceId, sourceName: sourceId, modelKey: '', isMonitoring: false, isReady: true })) });
   await visual.take(msg => msg.type === 'heartbeat-ack');
-  console.send({ type: 'set-notification-scope', requestId: 'scope-selected', targetNotifierId: 'notifier',
-    scope: { mode: 'selected', targets: [{ deviceId: 'visual', sourceId: 'front' }] } });
+  console.send({ type: 'set-notification-scope', requestId: 'scope-selected', targetNotifierId: fixtures.id('notifier'),
+    scope: { mode: 'selected', targets: [{ deviceId: fixtures.id('visual'), sourceId: 'front' }] } });
   assert.equal((await console.take(msg => msg.type === 'notification-scope-result' && msg.requestId === 'scope-selected')).success, true);
   assert.equal((await notifier.take(msg => msg.type === 'notification-scope')).scope.targets[0].sourceId, 'front');
-  const stored = JSON.parse(fs.readFileSync(path.join(temporary, 'notification-scopes.json'), 'utf8'));
-  assert.equal(stored.notifier.targets[0].sourceId, 'front');
+  const stored = JSON.parse(fs.readFileSync(path.join(temporary, 'accounts', fixtures.accountId, 'notification-scopes.json'), 'utf8'));
+  assert.equal(stored[fixtures.id('notifier')].targets[0].sourceId, 'front');
   for (const sourceId of ['side', 'front']) {
     const event = { ...sensorEvent(), eventKind: 'visual-detection', sourceId,
       detections: [{ label: 'person', confidence: 0.9, bbox: { x: 0, y: 0, w: 1, h: 1 } }] };
@@ -237,16 +238,16 @@ test('console persists notifier scopes and routing excludes unselected nodes and
   sensor.send(sensorEvent()); await sensor.take(msg => msg.type === 'alert-ack');
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(notifier.messages.some(msg => msg.type === 'alert'), false);
-  console.send({ type: 'set-notification-scope', requestId: 'scope-invalid', targetNotifierId: 'notifier',
-    scope: { mode: 'selected', targets: [{ deviceId: 'sensor', sourceId: 'invented-camera' }] } });
+  console.send({ type: 'set-notification-scope', requestId: 'scope-invalid', targetNotifierId: fixtures.id('notifier'),
+    scope: { mode: 'selected', targets: [{ deviceId: fixtures.id('sensor'), sourceId: 'invented-camera' }] } });
   assert.equal((await console.take(msg => msg.type === 'notification-scope-result' && msg.requestId === 'scope-invalid')).success, false);
-  console.send({ type: 'set-notification-scope', requestId: 'scope-empty', targetNotifierId: 'notifier', scope: { mode: 'selected', targets: [] } });
+  console.send({ type: 'set-notification-scope', requestId: 'scope-empty', targetNotifierId: fixtures.id('notifier'), scope: { mode: 'selected', targets: [] } });
   assert.equal((await console.take(msg => msg.type === 'notification-scope-result' && msg.requestId === 'scope-empty')).success, true);
   // Switching scope must cancel pending retries from the previously selected source.
   maintainRealtime(Date.now() + 4000);
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(notifier.messages.some(msg => msg.type === 'alert'), false);
-  console.send({ type: 'set-notification-scope', requestId: 'scope-reset', targetNotifierId: 'notifier', scope: { mode: 'all', targets: [] } });
+  console.send({ type: 'set-notification-scope', requestId: 'scope-reset', targetNotifierId: fixtures.id('notifier'), scope: { mode: 'all', targets: [] } });
   assert.equal((await console.take(msg => msg.type === 'notification-scope-result' && msg.requestId === 'scope-reset')).success, true);
   assert.equal(JSON.stringify((await console.take(msg => msg.type === 'notification-scopes'))).includes('apiKey'), false);
 });

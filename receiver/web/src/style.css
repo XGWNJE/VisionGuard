@@ -10,3 +10,4 @@
 .settings-panel+.settings-panel{margin-top:24px}.settings-panel form label{display:flex;flex-direction:column;gap:8px;max-width:360px;font-size:14px}
 
 @media(max-width:760px){.nav-item{gap:5px;padding:10px 5px;font-size:12px}.nav-item svg{width:18px;height:18px}.nav-item span{white-space:nowrap}}
+.account-password{border-top:1px solid var(--border);margin-top:28px;padding-top:24px;display:flex;flex-direction:column;gap:16px}.account-password h3{margin:0;font-size:18px;font-weight:600}.account-password input{display:block;margin-top:8px}.account-password .button{align-self:flex-start;margin-top:0}.device-form{display:flex;align-items:flex-end;flex-wrap:wrap;gap:12px;margin:20px 0}.device-form label{flex:1;min-width:180px}.device-form input,.device-form select{display:block;margin-top:8px}.device-form p{width:100%}.danger{color:var(--error)}

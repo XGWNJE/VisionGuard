@@ -6,7 +6,7 @@ package com.xgwnje.visionguard.receiver.service
 // │ 生命周期：START_STICKY，被杀后自动重启                    │
 // │ 对外：通过 StateFlow/SharedFlow 暴露状态给 ViewModel     │
 // │ Binder：AlertServiceBinder 供 Activity 绑定              │
-// │ 服务器地址/API Key 从 AppConstants 读取（硬编码）          │
+// │ 连接地址和会话凭证来自统一账号登录                          │
 // └─────────────────────────────────────────────────────────┘
 
 import android.app.NotificationManager
@@ -23,13 +23,10 @@ import com.xgwnje.visionguard.receiver.data.model.AlertMessage
 import com.xgwnje.visionguard.receiver.data.model.isRealtime
 import com.xgwnje.visionguard.receiver.data.model.CommandResult
 import com.xgwnje.visionguard.receiver.data.model.DeviceInfo
-import com.xgwnje.visionguard.receiver.data.model.RemovedDevice
 import com.xgwnje.visionguard.receiver.data.model.ScreenshotData
 import com.xgwnje.visionguard.receiver.data.cache.ScreenshotCache
 import com.xgwnje.visionguard.receiver.data.model.DeviceRegistrySyncState
 import com.xgwnje.visionguard.receiver.data.model.moveDeviceWithinGroup
-import com.xgwnje.visionguard.receiver.data.model.removeOfflineDeviceById
-import com.xgwnje.visionguard.receiver.data.model.restoreRemovedDevice as restoreRemovedDeviceInOrder
 import com.xgwnje.visionguard.receiver.data.remote.WebSocketClient
 import com.xgwnje.visionguard.receiver.data.remote.WsState
 import com.xgwnje.visionguard.receiver.data.repository.DeviceRegistryRepository
@@ -89,6 +86,9 @@ class AlertForegroundService : LifecycleService() {
     private lateinit var screenshotCache: ScreenshotCache
     private lateinit var networkMonitor: NetworkMonitor  // 网络状态监听
     private var deviceRegistryState = DeviceRegistrySyncState()
+    private lateinit var accountDeviceDirectory: com.xgwnje.visionguard.receiver.data.remote.AccountDeviceDirectory
+    private val accountDevices get() = accountDeviceDirectory.devices
+    private var deviceAccountScope: String? = null
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -123,6 +123,9 @@ class AlertForegroundService : LifecycleService() {
         deviceRegistryRepo = DeviceRegistryRepository(applicationContext)
         screenshotCache = ScreenshotCache(applicationContext)
         networkMonitor = NetworkMonitor(applicationContext)
+        deviceAccountScope = com.xgwnje.visionguard.account.AccountStore.get(this).session.value?.scope
+        accountDeviceDirectory = com.xgwnje.visionguard.receiver.data.remote.AccountDeviceDirectory(
+            httpClient, ::accountDeviceScope) { applyRuntimeDevices(wsClient.onDeviceList.value) }
 
         // 后台检查自动更新（不阻塞 Service 启动）
         lifecycleScope.launch {
@@ -143,9 +146,10 @@ class AlertForegroundService : LifecycleService() {
 
         lifecycleScope.launch {
             deviceRegistryRepo.devicesFlow.collect { savedDevices ->
-                val update = deviceRegistryState.onRegistryLoaded(savedDevices)
+                val ids = accountDevices?.map { it.deviceId }?.toSet()
+                val update = deviceRegistryState.onRegistryLoaded(savedDevices.filter { ids == null || it.deviceId in ids })
                 deviceRegistryState = update.state
-                _devices.value = update.visibleDevices
+                _devices.value = enrichStreams(update.visibleDevices)
                 update.devicesToPersist?.let { deviceRegistryRepo.saveDevices(it) }
             }
         }
@@ -189,6 +193,7 @@ class AlertForegroundService : LifecycleService() {
                 // 连接成功后拉取历史报警（取最近 7 天内）
                 if (state == WsState.CONNECTED) {
                     val since = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
+                    refreshAccountDevices()
                     fetchHistoryAlerts(since)
                 }
             }
@@ -255,14 +260,16 @@ class AlertForegroundService : LifecycleService() {
         // 订阅设备列表
         lifecycleScope.launch {
             wsClient.onDeviceList.collect { devices ->
-                val update = deviceRegistryState.onRealtimeDevices(devices)
-                deviceRegistryState = update.state
-                _devices.value = update.visibleDevices
-                update.devicesToPersist?.let { deviceRegistryRepo.saveDevices(it) }
+                applyRuntimeDevices(devices)
+                refreshAccountDevices()
                 Log.d(TAG, "设备列表更新: ${devices.size} 台 [${
                     devices.joinToString { "${it.deviceName}(${if (it.online) "在" else "离"})" }
                 }]")
             }
+        }
+
+        lifecycleScope.launch {
+            wsClient.onStreams.collect { _devices.value = enrichStreams(_devices.value) }
         }
 
         // 订阅命令回执
@@ -272,10 +279,25 @@ class AlertForegroundService : LifecycleService() {
             }
         }
 
-        // 读取持久化 deviceId 后连接（使用硬编码的 URL 和 Key）
+        val account = com.xgwnje.visionguard.account.AccountStore.get(this)
+        wsClient.onDeviceUpdated = { device -> lifecycleScope.launch { account.updateDevice(org.json.JSONObject(device)) } }
         lifecycleScope.launch {
-            val deviceId = settingsRepo.ensureDeviceId()
-            wsClient.connect(AppConstants.SERVER_URL, AppConstants.API_KEY, deviceId)
+            var credential = ""
+            account.session.collect { value ->
+                if (value == null) { wsClient.disconnect(); stopSelf() }
+                else if (credential != value.webSocketUrl + "|" + value.token) {
+                    credential = value.webSocketUrl + "|" + value.token
+                    wsClient.connect(value.webSocketUrl, value.token, value.deviceId)
+                }
+            }
+        }
+        lifecycleScope.launch {
+            while (true) { account.ensureSession(); kotlinx.coroutines.delay(30_000) }
+        }
+        lifecycleScope.launch {
+            wsClient.connectionState.collect { state ->
+                if (state == com.xgwnje.visionguard.receiver.data.remote.WsState.AUTH_FAILED) account.clear()
+            }
         }
 
         networkMonitor.register(
@@ -309,6 +331,11 @@ class AlertForegroundService : LifecycleService() {
         }
     }
 
+    private fun enrichStreams(devices: List<com.xgwnje.visionguard.receiver.data.model.DeviceInfo>) = devices.map { device ->
+        val stream = wsClient.onStreams.value.firstOrNull { it.publisherDeviceId == device.deviceId }
+        device.copy(isStreaming = stream?.isStreaming == true, streamTargetId = stream?.targetDeviceId)
+    }
+
     // ── 公开 API ──────────────────────────────────────────────
 
     fun sendCommand(targetDeviceId: String, command: String, targetSourceId: String? = null) {
@@ -331,17 +358,43 @@ class AlertForegroundService : LifecycleService() {
         persistDevices(reordered)
     }
 
-    fun removeOfflineDevice(deviceId: String): RemovedDevice? {
-        val result = removeOfflineDeviceById(deviceRegistryState.knownDevices, deviceId)
-        val removed = result.removed ?: return null
-        persistDevices(result.devices)
-        return removed
+    suspend fun unbindDevice(deviceId: String): Boolean {
+        val current = _devices.value.firstOrNull { it.deviceId == deviceId } ?: return false
+        if (current.online) return false
+        val session = com.xgwnje.visionguard.account.AccountStore.get(this).session.value ?: return false
+        if (session.scope != deviceAccountScope) return false
+        return try {
+            val delete = Request.Builder().url(session.endpoint + "/api/devices/$deviceId")
+                .header("Authorization", "Bearer " + session.token).delete().build()
+            val refresh = Request.Builder().url(session.endpoint + "/api/devices")
+                .header("Authorization", "Bearer " + session.token).build()
+            accountDeviceDirectory.unbind(delete, refresh, session.accountId, session.scope + "|" + session.token,
+                _devices.value, deviceId)
+        } catch (_: Exception) { false }
     }
 
-    fun restoreDevice(removed: RemovedDevice) {
-        val restored = restoreRemovedDeviceInOrder(deviceRegistryState.knownDevices, removed)
-        if (restored == deviceRegistryState.knownDevices) return
-        persistDevices(restored)
+    private fun accountDeviceScope(): String? = com.xgwnje.visionguard.account.AccountStore.get(this).session.value
+        ?.takeIf { it.scope == deviceAccountScope }?.let { it.scope + "|" + it.token }
+
+    private suspend fun refreshAccountDevices(): Boolean {
+        val account = com.xgwnje.visionguard.account.AccountStore.get(this).session.value ?: return false
+        if (account.scope != deviceAccountScope) return false
+        val request = Request.Builder().url(account.endpoint + "/api/devices")
+            .header("Authorization", "Bearer " + account.token).build()
+        return accountDeviceDirectory.refresh(request, account.accountId, account.scope + "|" + account.token)
+    }
+
+    private suspend fun applyRuntimeDevices(runtime: List<com.xgwnje.visionguard.receiver.data.model.DeviceInfo>) {
+        val registered = accountDevices
+        val devices = registered?.let { com.xgwnje.visionguard.receiver.data.remote.mergeAccountDevices(it, runtime) } ?: runtime
+        if (registered != null) {
+            val ids = registered.map { it.deviceId }.toSet()
+            deviceRegistryState = deviceRegistryState.copy(knownDevices = deviceRegistryState.knownDevices.filter { it.deviceId in ids })
+        }
+        val update = deviceRegistryState.onRealtimeDevices(devices)
+        deviceRegistryState = update.state
+        _devices.value = enrichStreams(update.visibleDevices)
+        update.devicesToPersist?.let { deviceRegistryRepo.saveDevices(it) }
     }
 
     fun clearAlerts() {
@@ -353,7 +406,7 @@ class AlertForegroundService : LifecycleService() {
     private fun persistDevices(devices: List<DeviceInfo>) {
         val update = deviceRegistryState.onManualDevices(devices)
         deviceRegistryState = update.state
-        _devices.value = update.visibleDevices
+        _devices.value = enrichStreams(update.visibleDevices)
         lifecycleScope.launch {
             update.devicesToPersist?.let { deviceRegistryRepo.saveDevices(it) }
         }
@@ -364,10 +417,11 @@ class AlertForegroundService : LifecycleService() {
 
     /** 从服务器拉取历史报警列表 */
     suspend fun fetchHistoryAlerts(since: Long = 0): Boolean {
-        val url = "${AppConstants.SERVER_URL}/api/alerts?since=$since&limit=200"
+        val account = com.xgwnje.visionguard.account.AccountStore.get(this).ensureSession() ?: return false
+        val url = "${account.endpoint}/api/alerts?since=$since&limit=200"
         val request = Request.Builder()
             .url(url)
-            .header("X-API-Key", AppConstants.API_KEY)
+            .header("Authorization", "Bearer " + account.token)
             .build()
 
         return try {
@@ -417,11 +471,12 @@ class AlertForegroundService : LifecycleService() {
 
     private suspend fun downloadScreenshot(alertId: String, screenshotUrl: String): File? {
         if (screenshotUrl.isEmpty()) return null
-        val url = if (screenshotUrl.startsWith("http")) screenshotUrl
-        else "${AppConstants.SERVER_URL}$screenshotUrl"
+        val account = com.xgwnje.visionguard.account.AccountStore.get(this).ensureSession() ?: return null
+        val url = if (screenshotUrl.startsWith("http")) screenshotUrl else "${account.endpoint}$screenshotUrl"
+        if (java.net.URI(url).authority != java.net.URI(account.endpoint).authority) return null
         val request = Request.Builder()
             .url(url)
-            .header("X-API-Key", AppConstants.API_KEY)
+            .header("Authorization", "Bearer " + account.token)
             .build()
 
         Log.d(TAG, "开始下载截图: alertId=$alertId url=$url")

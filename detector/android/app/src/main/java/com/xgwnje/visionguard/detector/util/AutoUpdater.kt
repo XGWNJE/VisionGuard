@@ -28,6 +28,7 @@ import com.xgwnje.visionguard.detector.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import com.xgwnje.visionguard.account.AccountStore
 import okhttp3.Request
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
@@ -48,8 +49,8 @@ object AutoUpdater {
     /** 仅检查更新，返回 UpdateInfo 或 null */
     suspend fun checkUpdate(context: Context): UpdateInfo? = withContext(Dispatchers.IO) {
         try {
-            val url = "${AppConstants.SERVER_URL}/api/update?platform=$PLATFORM&version=${AppConstants.VERSION}"
-            val request = Request.Builder().url(url).header("X-API-Key", AppConstants.API_KEY).build()
+            val url = "${(AccountStore.current()?.endpoint ?: AppConstants.SERVER_URL)}/api/update?platform=$PLATFORM&version=${AppConstants.VERSION}"
+            val request = Request.Builder().url(url).header("Authorization", "Bearer " + (AccountStore.current()?.token ?: "")).build()
             http.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@withContext null
 
@@ -63,7 +64,7 @@ object AutoUpdater {
                 if (downloadUrl.isEmpty()) return@withContext null
 
                 val fullUrl = if (downloadUrl.startsWith("http", true)) downloadUrl
-                    else AppConstants.SERVER_URL + downloadUrl
+                    else (AccountStore.current()?.endpoint ?: AppConstants.SERVER_URL) + downloadUrl
 
                 Log.i(TAG, "发现新版本 $latestVersion (当前 ${AppConstants.VERSION})")
                 UpdateInfo(latestVersion, fullUrl)
@@ -81,6 +82,8 @@ object AutoUpdater {
     }
 
     private fun showUpdateNotification(context: Context, info: UpdateInfo) {
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS)
+            != android.content.pm.PackageManager.PERMISSION_GRANTED) return
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("navigateTo", "settings")
@@ -127,7 +130,7 @@ object AutoUpdater {
                 setDescription("正在下载新版本 $version…")
                 setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
                 setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                addRequestHeader("X-API-Key", AppConstants.API_KEY)
+                if (java.net.URI(url).authority == java.net.URI(AccountStore.current()?.endpoint ?: AppConstants.SERVER_URL).authority) addRequestHeader("Authorization", "Bearer " + (AccountStore.current()?.token ?: ""))
             }
 
             ContextCompat.registerReceiver(

@@ -80,6 +80,8 @@ val versionParts = notificationVersion.split('.').map(String::toInt)
 val notificationVersionCode = versionParts[0] * 1000 + versionParts[1] * 100 + versionParts[2]
 
 android {
+    sourceSets.getByName("main").java.srcDir(repositoryRoot.resolve("android-shared/src/main/java"))
+    sourceSets.getByName("test").java.srcDir(repositoryRoot.resolve("android-shared/src/test/java"))
     namespace = "com.xgwnje.visionguard.notifier"
     compileSdk = 35 // Android 编译 SDK 版本
 

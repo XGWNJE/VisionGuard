@@ -1,6 +1,5 @@
 import WebSocket from 'ws';
 import { NotificationSession } from './NotificationSession';
-import type { NodeIdentity } from './NodeProtocol';
 import type { WsAlertPush } from '../models/types';
 
 /** Minimal notification-node transport; no Vigil integration or playback policy here. */
@@ -13,11 +12,10 @@ export class NotificationNodeClient {
 
   constructor(
     private readonly url: string,
-    private readonly auth: NodeIdentity & { apiKey: string; channel: string; deviceName: string },
+    private readonly auth: { token: string },
     receive: (event: WsAlertPush) => Promise<void>,
     connectionInterrupted: () => void,
   ) {
-    if (auth.role !== 'notifier' || auth.nodeType !== 'notification') throw new Error('Notification identity required');
     this.session = new NotificationSession(message => this.send(message), receive, () => {
       this.ws?.terminate();
       connectionInterrupted();

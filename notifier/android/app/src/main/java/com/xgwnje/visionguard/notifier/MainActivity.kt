@@ -5,15 +5,15 @@ import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.setContent
-import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.app.ActivityCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.xgwnje.visionguard.account.*
 import com.xgwnje.visionguard.notifier.node.NotificationNodeService
 import com.xgwnje.visionguard.notifier.node.NotificationNodeSettings
 import com.xgwnje.visionguard.notifier.ui.dialogs.AlarmDialog
@@ -21,63 +21,75 @@ import com.xgwnje.visionguard.notifier.ui.history.AlertHistoryScreen
 import com.xgwnje.visionguard.notifier.ui.main.NotificationDashboard
 import com.xgwnje.visionguard.notifier.ui.settings.RingtoneLibraryScreen
 import com.xgwnje.visionguard.notifier.ui.settings.SettingsViewModel
-import com.xgwnje.visionguard.notifier.ui.settings.SettingsViewModelFactory
 import com.xgwnje.visionguard.notifier.ui.theme.NotificationTheme
 
 class MainActivity : AppCompatActivity() {
-    private val settingsViewModel: SettingsViewModel by viewModels { SettingsViewModelFactory(application) }
-    private lateinit var alarms: SharedPreferencesHelper
+    private var alarms: SharedPreferencesHelper? = null
     private var activeAlert by mutableStateOf<AlertQueueItem?>(null)
     private val queueListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "alert_queue") runOnUiThread { syncAlarm() }
     }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        alarms = SharedPreferencesHelper(this)
-        alarms.prefs.registerOnSharedPreferenceChangeListener(queueListener)
-        requestNotifications()
-        if (NotificationNodeSettings(this).enabled) runCatching { NotificationNodeService.start(this) }
-            .onFailure { Toast.makeText(this, "请在接警页重新连接通知节点", Toast.LENGTH_LONG).show() }
-        syncAlarm()
-        if (activeAlert != null) runCatching { androidx.core.content.ContextCompat.startForegroundService(this, Intent(this, AlarmPlaybackService::class.java)) }
+        if (Build.VERSION.SDK_INT >= 33 && !PermissionUtils.canPostNotifications(this))
+            ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), PermissionUtils.REQUEST_CODE_POST_NOTIFICATIONS)
+        val account = AccountStore.get(this)
         setContent {
+            val session by account.session.collectAsState()
             NotificationTheme {
-                val nav = rememberNavController()
-                NavHost(navController = nav, startDestination = "node", modifier = Modifier.fillMaxSize()) {
-                    composable("node") { NotificationDashboard(settingsViewModel, onHistory = { nav.navigate("history") }, onLibrary = { nav.navigate("ringtones") }) }
-                    composable("history") { AlertHistoryScreen(onNavigateBack = { nav.popBackStack() }, viewModel = settingsViewModel) }
-                    composable("ringtones") { RingtoneLibraryScreen(onNavigateBack = { nav.popBackStack() }, viewModel = settingsViewModel) }
-                }
-                activeAlert?.let { item ->
-                    AlarmDialog(onDismissRequest = {}, onConfirm = {
-                        if (!alarms.finishActiveAlert(item.id, AlertEndType.MANUAL).success)
-                            Toast.makeText(this, "确认保存失败，请重试", Toast.LENGTH_LONG).show()
+                if (session == null) AccountLogin(account, "VisionGuard 通知节点", "android-notifier")
+                else key(session!!.scope) {
+                    val model = remember { SettingsViewModel(application) }
+                    DisposableEffect(session!!.scope) {
+                        alarms = SharedPreferencesHelper(this@MainActivity)
+                        alarms!!.prefs.registerOnSharedPreferenceChangeListener(queueListener)
                         syncAlarm()
-                    }, matchedKeyword = item.keyword, sourceApp = item.sourceApp, snippet = item.snippet, eventTimeMillis = item.firstTriggeredAt)
+                        if (NotificationNodeSettings(this@MainActivity).enabled) runCatching { NotificationNodeService.start(this@MainActivity) }
+                        onDispose {
+                            model.disposeAccount()
+                            alarms?.prefs?.unregisterOnSharedPreferenceChangeListener(queueListener)
+                            alarms = null; activeAlert = null
+                            syncAlarm()
+                        }
+                    }
+                    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+                        AccountHeader(account, session!!, beforeLogout = { stopAccount() })
+                        val nav = rememberNavController()
+                        NavHost(navController = nav, startDestination = "node", modifier = Modifier.weight(1f)) {
+                            composable("node") { NotificationDashboard(model, onHistory = { nav.navigate("history") }, onLibrary = { nav.navigate("ringtones") }) }
+                            composable("history") { AlertHistoryScreen(onNavigateBack = { nav.popBackStack() }, viewModel = model) }
+                            composable("ringtones") { RingtoneLibraryScreen(onNavigateBack = { nav.popBackStack() }, viewModel = model) }
+                        }
+                    }
+                    activeAlert?.let { item ->
+                        AlarmDialog(onDismissRequest = {}, onConfirm = {
+                            if (alarms?.finishActiveAlert(item.id, AlertEndType.MANUAL)?.success != true)
+                                Toast.makeText(this, "确认保存失败，请重试", Toast.LENGTH_LONG).show()
+                            syncAlarm()
+                        }, matchedKeyword = item.keyword, sourceApp = item.sourceApp, snippet = item.snippet, eventTimeMillis = item.firstTriggeredAt)
+                    }
                 }
             }
+            LaunchedEffect(session?.scope) { if (session == null) { stopService(Intent(this@MainActivity, NotificationNodeService::class.java)); stopService(Intent(this@MainActivity, AlarmPlaybackService::class.java)) } }
         }
     }
+    private fun stopAccount() {
+        stopService(Intent(this, NotificationNodeService::class.java))
+        stopService(Intent(this, AlarmPlaybackService::class.java))
+        alarms?.clearAccountData()
+        NotificationNodeSettings(this).clearAccountData()
+        RingtoneLibrary.stopPreview()
+        activeAlert = null
+    }
     private fun syncAlarm() {
-        activeAlert = alarms.getActiveAlert()
-        if (Build.VERSION.SDK_INT >= 27) {
-            setShowWhenLocked(activeAlert != null)
-            setTurnScreenOn(activeAlert != null)
-        } else {
+        activeAlert = alarms?.getActiveAlert()
+        if (Build.VERSION.SDK_INT >= 27) { setShowWhenLocked(activeAlert != null); setTurnScreenOn(activeAlert != null) }
+        else {
             @Suppress("DEPRECATION")
             val flags = android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
             if (activeAlert != null) window.addFlags(flags) else window.clearFlags(flags)
         }
     }
-    private fun requestNotifications() {
-        if (Build.VERSION.SDK_INT >= 33 && !PermissionUtils.canPostNotifications(this))
-            ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), PermissionUtils.REQUEST_CODE_POST_NOTIFICATIONS)
-    }
     override fun onNewIntent(intent: Intent?) { super.onNewIntent(intent); setIntent(intent); syncAlarm() }
-    override fun onResume() { super.onResume(); if (::alarms.isInitialized) syncAlarm() }
-    override fun onDestroy() {
-        if (::alarms.isInitialized) alarms.prefs.unregisterOnSharedPreferenceChangeListener(queueListener)
-        super.onDestroy()
-    }
+    override fun onResume() { super.onResume(); syncAlarm() }
 }

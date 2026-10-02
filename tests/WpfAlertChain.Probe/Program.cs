@@ -6,6 +6,7 @@ using System.IO;
 using System.Threading;
 using VisionGuard.Detector.Windows.Models;
 using VisionGuard.Detector.Windows.Services;
+using VisionGuard.Detector.Windows.Utils;
 
 if (args.Length == 2 && args[0] == "--outbox-contract")
 {
@@ -26,12 +27,14 @@ if (args.Length == 2 && args[0] == "--outbox-contract")
 }
 
 if (args.Length != 1)
-    throw new ArgumentException("Usage: WpfAlertChain.Probe <server-url>; set VISIONGUARD_DETECTOR_API_KEY");
+    throw new ArgumentException("Usage: WpfAlertChain.Probe <server-url>; log in with the isolated Windows account session first.");
+Environment.SetEnvironmentVariable("VISIONGUARD_SERVER_URL", args[0]);
+AccountSession.Load();
+var account = AccountSession.EnsureFresh() ?? throw new InvalidOperationException("No account login for the selected test service.");
 
 var alertId = Guid.NewGuid().ToString();
-var alertsDirectory = Path.Combine(AppContext.BaseDirectory, "alerts");
-Directory.CreateDirectory(alertsDirectory);
-var screenshotPath = Path.Combine(alertsDirectory, alertId + ".png");
+var screenshotPath = AlertService.GetSnapshotPath(alertId);
+Directory.CreateDirectory(Path.GetDirectoryName(screenshotPath));
 using (var screenshot = new Bitmap(320, 240))
 {
     using var graphics = Graphics.FromImage(screenshot);
@@ -42,7 +45,7 @@ using (var screenshot = new Bitmap(320, 240))
 }
 
 using var service = new ServerPushService();
-service.Configure(args[0], Environment.GetEnvironmentVariable("VISIONGUARD_DETECTOR_API_KEY") ?? "", "wpf-alert-chain-probe", "WPF Alert Chain Probe");
+service.Configure(args[0], account.token, account.device.deviceId, account.device.deviceName);
 var deadline = DateTime.UtcNow.AddSeconds(15);
 while (!service.IsConnected && DateTime.UtcNow < deadline) Thread.Sleep(100);
 if (!service.IsConnected) throw new TimeoutException("WPF ServerPushService did not authenticate in 15 seconds");

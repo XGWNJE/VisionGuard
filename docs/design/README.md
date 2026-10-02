@@ -5,7 +5,7 @@
 ## 当前入口
 
 - [unified-ui.md](./unified-ui.md)：Web 控制台与通知节点的统一颜色、布局、控件和浅深色规范。
-- [android-ui-guidelines.md](./android-ui-guidelines.md)：Android UI 通用规范。当前只有控制台 Compose 实现采用本规范；视觉检测（Android）与 VisionGuard 视觉节点当前未采用本规范。
+- [android-ui-guidelines.md](./android-ui-guidelines.md)：三个 Android 组件的现代简约 Compose 规范；Windows 视觉节点保留现有外观。
 
 ## 维护约定
 

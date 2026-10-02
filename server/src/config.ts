@@ -6,14 +6,13 @@
 
 import path from 'path';
 import { parsePositiveIntEnv } from './utils/security';
-import { hasNodeCredentials } from './services/NodeProtocol';
 
 export function parseBindHost(value: string | undefined): string {
   return value?.trim() || '127.0.0.1';
 }
 
 export const config = {
-  /** 进程级隔离通道。新协议实例只接受同一通道客户端。 */
+  /** 进程标签；账号与会话由本实例私有数据目录确定。 */
   channelId: (process.env.VISIONGUARD_CHANNEL || 'vnext').trim(),
 
   /** 运行数据根目录；测试通道必须使用独立目录。 */
@@ -22,17 +21,10 @@ export const config = {
   /** HTTP/WS bind address; defaults to loopback to prevent direct public exposure. */
   host: parseBindHost(process.env.BIND_HOST),
 
-  /** Explicit opt-in for automatic LAN console login in an isolated test service. */
-  testConsoleAutoLogin: process.env.VISIONGUARD_TEST_CONSOLE_AUTOLOGIN === 'true',
-
   /** HTTP/WS 监听端口 */
   port: parsePositiveIntEnv('PORT', 3000, 1, 65535),
-
-  /** HTTP 管理读取凭据；WS 使用逐节点登记凭据。 */
-  apiKey: process.env.API_KEY || '',
-
-  /** 截图存储目录 */
-  screenshotDir: path.resolve(process.env.VISIONGUARD_DATA_DIR || path.resolve(__dirname, '..', 'data'), 'screenshots'),
+  tlsCertFile: process.env.VISIONGUARD_TLS_CERT_FILE || '',
+  tlsKeyFile: process.env.VISIONGUARD_TLS_KEY_FILE || '',
 
   /** 截图过期时间 (小时)，默认 72 小时 */
   screenshotTtlHours: parsePositiveIntEnv('SCREENSHOT_TTL_HOURS', 72, 1, 24 * 365),
@@ -75,19 +67,7 @@ export const config = {
 } as const;
 
 export function validateConfig(): void {
-  if (config.testConsoleAutoLogin && (!process.env.VISIONGUARD_DATA_DIR?.trim()
-    || config.dataDir === path.resolve(__dirname, '..', 'data'))) {
-    console.error('[config] 测试控制台自动登录必须使用独立 VISIONGUARD_DATA_DIR');
-    process.exit(1);
-  }
-  if (!hasNodeCredentials) {
-    console.error('[config] VISIONGUARD_IDENTITIES_FILE 必须指向非空节点凭据文件');
-    process.exit(1);
-  }
-  if (!config.apiKey) {
-    console.error('[config] ❌ API_KEY 未设置，服务器拒绝启动。请在 .env 中配置 API_KEY');
-    process.exit(1);
-  }
+  if (!!config.tlsCertFile !== !!config.tlsKeyFile) { console.error('[config] Both TLS certificate and key files are required'); process.exit(1); }
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(config.channelId)) {
     console.error('[config] ❌ VISIONGUARD_CHANNEL 必须是 1-64 位安全标识符');
     process.exit(1);

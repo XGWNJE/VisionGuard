@@ -508,45 +508,23 @@ function Run-WpfParserContract {
 }
 
 function Run-ResidentLaunch {
-    # 「检测端拉起同目录驻留 → 驻留认证 → 服务端 device-list 出现 resident=running」这一段。
-    # 为什么需要它：驻留是独立进程，检测端本地只能证明互斥体出现了，无法证明它真的连上了服务端；
-    # 而 Win7 上的历史事实是「驻留没起来，界面上与接收端都毫无提示」，必须从服务端视角取证。
-    # 两档产物都要跑：legacy 档是 Win7 包，是这条链路真正要服务的环境。
-    $profiles = @('modern', 'legacy')
-    $testIdentities = @()
-    foreach ($profile in $profiles) {
-        $testIdentities += [ordered]@{ deviceId = "e2e-resident-$profile"; role = 'detector'; nodeType = 'visual'; platform = 'windows'; apiKey = ([Guid]::NewGuid().ToString('N')) }
-        $testIdentities += [ordered]@{ deviceId = "e2e-resident-$profile"; role = 'lifecycle'; nodeType = 'resident'; platform = 'windows'; apiKey = ([Guid]::NewGuid().ToString('N')) }
-    }
-    $testIdentities += [ordered]@{ deviceId = 'e2e-resident-console'; role = 'console'; nodeType = 'console'; platform = 'test'; apiKey = ([Guid]::NewGuid().ToString('N')) }
-    $identitiesPath = Join-Path $artifactRoot 'node-identities.json'
-    [System.IO.File]::WriteAllText($identitiesPath, ($testIdentities | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
+    # Independent account storage also isolates mutexes, lifecycle events and login-startup side effects.
     $serverScript = Join-Path $repoRoot 'scripts\start-isolated-test-server.ps1'
     $assertScript = Join-Path $repoRoot 'scripts\assert-resident-visible.js'
-    if (-not (Test-Path -LiteralPath $serverScript)) { throw "隔离 Server 脚本不存在：$serverScript" }
-    if (-not (Test-Path -LiteralPath $assertScript)) { throw "驻留可见性断言脚本不存在：$assertScript" }
-
+    $accountProbe = Join-Path $repoRoot 'tests\AccountMedia.Probe\bin\Release\net472\AccountMedia.Probe.exe'
+    if (-not (Test-Path -LiteralPath $accountProbe)) { throw 'Build tests/AccountMedia.Probe in Release before this mode.' }
+    $occupied = @(Get-NetTCPConnection -LocalPort $ResidentPort -State Listen -ErrorAction SilentlyContinue)
+    if ($occupied.Count -gt 0) { throw "Port $ResidentPort is occupied; the existing process was left running." }
     $serverLog = Join-Path $artifactRoot 'isolated-server.log'
     $serverErrorLog = Join-Path $artifactRoot 'isolated-server-error.log'
     $server = $null
-    $residentProcesses = @()
-    # 端口必须空闲：残留的隔离 Server（例如上次手工验证留下的 node 进程）会先占住端口，
-    # 新实例只会在 stderr 里写 EADDRINUSE，而探针会去连旧实例，结论就被污染。
-    $occupied = @(Get-NetTCPConnection -LocalPort $ResidentPort -State Listen -ErrorAction SilentlyContinue)
-    if ($occupied.Count -gt 0) {
-        $owners = @($occupied | ForEach-Object { $_.OwningProcess } | Select-Object -Unique) -join ', '
-        throw "端口 $ResidentPort 已被占用（PID: $owners）。请先结束该监听进程再运行本模式。"
+    $previousNodeEnvironment = @{}
+    foreach ($name in @('VISIONGUARD_ACCOUNT_DIR', 'VISIONGUARD_TEST_ACCOUNTS_PATH', 'VISIONGUARD_TEST_USERNAME', 'VISIONGUARD_LOGIN_PASSWORD', 'VISIONGUARD_CHANNEL', 'VISIONGUARD_SERVER_URL', 'VISIONGUARD_SETTINGS_PATH')) {
+        $previousNodeEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
     }
+    $residentConfigPaths = @()
     try {
-        $previousNodeEnvironment = @{}
-        foreach ($name in @('VISIONGUARD_IDENTITIES_FILE', 'VISIONGUARD_CONSOLE_API_KEY', 'VISIONGUARD_CONSOLE_DEVICE_ID', 'VISIONGUARD_DETECTOR_API_KEY', 'VISIONGUARD_RESIDENT_API_KEY', 'VISIONGUARD_DEVICE_ID', 'VISIONGUARD_CHANNEL', 'VISIONGUARD_SERVER_URL', 'VISIONGUARD_SETTINGS_PATH')) { $previousNodeEnvironment[$name] = [Environment]::GetEnvironmentVariable($name) }
-        $env:VISIONGUARD_IDENTITIES_FILE = $identitiesPath
-        $env:VISIONGUARD_CONSOLE_API_KEY = $testIdentities[-1].apiKey
-        $env:VISIONGUARD_CONSOLE_DEVICE_ID = 'e2e-resident-console'
-        $server = Start-Process -FilePath 'powershell' `
-            -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $serverScript, '-Port', $ResidentPort.ToString(), '-Channel', $ResidentChannel) `
-            -RedirectStandardOutput $serverLog -RedirectStandardError $serverErrorLog -WindowStyle Hidden -PassThru
-
+        $server = Start-Process -FilePath 'powershell' -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $serverScript, '-Port', $ResidentPort.ToString(), '-Channel', $ResidentChannel, '-SkipBuild') -RedirectStandardOutput $serverLog -RedirectStandardError $serverErrorLog -WindowStyle Hidden -PassThru
         $ready = $false
         $deadline = (Get-Date).AddSeconds(60)
         while ((Get-Date) -lt $deadline) {
@@ -554,105 +532,60 @@ function Run-ResidentLaunch {
             try {
                 $health = Invoke-WebRequest -Uri "http://127.0.0.1:$ResidentPort/health" -UseBasicParsing -TimeoutSec 2
                 if ($health.StatusCode -eq 200) { $ready = $true; break }
-            }
-            catch { }
-            if ($server.HasExited) { throw "隔离 Server 提前退出（退出码 $($server.ExitCode)），日志：$serverLog" }
+            } catch { }
+            if ($server.HasExited) { throw "Isolated server exited: $serverErrorLog" }
         }
-        if (-not $ready) { throw "隔离 Server 未在 60 秒内就绪，日志：$serverLog" }
-
-        $profiles = @('modern', 'legacy')
-        $paths = @{ modern = 'detector\windows-wpf\bin\x64\modern\VisionGuard.Detector.Windows.exe'; legacy = 'detector\windows-wpf\bin\x64\legacy\VisionGuard.Detector.Windows.exe' }
-        foreach ($profile in $profiles) {
-            $detectorExe = Resolve-RepoPath $paths[$profile]
-            if (-not (Test-Path -LiteralPath $detectorExe)) { throw "$profile 档检测端不存在：$detectorExe（先运行 visionguard-build -Target Windows）" }
-            $residentExe = Join-Path (Split-Path -Parent $detectorExe) 'VisionGuard.Resident.Windows.exe'
-            if (-not (Test-Path -LiteralPath $residentExe)) { throw "$profile 档产物缺少配套驻留程序：$residentExe" }
-
+        if (-not $ready) { throw "Isolated server did not become ready: $serverErrorLog" }
+        $env:VISIONGUARD_TEST_ACCOUNTS_PATH = Join-Path $repoRoot ".local\e2e-server\$ResidentChannel\test-accounts.json"
+        $testAccounts = Get-Content -LiteralPath $env:VISIONGUARD_TEST_ACCOUNTS_PATH -Raw -Encoding UTF8 | ConvertFrom-Json
+        $testAccount = $testAccounts | Where-Object { $_.username -eq 'vg-test' } | Select-Object -First 1
+        if (-not $testAccount) { throw 'The isolated vg-test account is missing.' }
+        $env:VISIONGUARD_TEST_USERNAME = $testAccount.username
+        $env:VISIONGUARD_CHANNEL = $ResidentChannel
+        $env:VISIONGUARD_SERVER_URL = "http://127.0.0.1:$ResidentPort"
+        foreach ($profile in @('modern', 'legacy')) {
+            $detectorExe = Resolve-RepoPath "detector\windows-wpf\bin\x64\$profile\VisionGuard.Detector.Windows.exe"
+            if (-not (Test-Path -LiteralPath $detectorExe)) { throw "Build the $profile Windows Release artifact first." }
+            $env:VISIONGUARD_ACCOUNT_DIR = Join-Path $repoRoot ".local\resident-launch\$ResidentChannel\$profile"
+            $env:VISIONGUARD_SETTINGS_PATH = Join-Path $artifactRoot "resident-launch-$profile-settings.ini"
+            $env:VISIONGUARD_LOGIN_PASSWORD = $testAccount.password
+            $loginOutput = & $accountProbe '--login' $env:VISIONGUARD_SERVER_URL $testAccount.username "Resident acceptance $profile"
+            if ($LASTEXITCODE -ne 0) { throw 'Windows account login failed.' }
+            $identity = ($loginOutput | Out-String) | ConvertFrom-Json
+            Remove-Item Env:VISIONGUARD_LOGIN_PASSWORD -ErrorAction SilentlyContinue
+            $residentConfigPath = Join-Path $env:VISIONGUARD_ACCOUNT_DIR 'resident-config.json'
+            $residentConfigPaths += $residentConfigPath
             $reportPath = Join-Path $artifactRoot "resident-launch-$profile.json"
             $stdoutLog = Join-Path $artifactRoot "resident-launch-$profile.txt"
             $stderrLog = Join-Path $artifactRoot "resident-launch-$profile-error.txt"
-            $settingsPath = Join-Path $artifactRoot "resident-launch-$profile-settings.ini"
-
-            # 每次用独立 settings 文件，避免干扰本机真实配置。
-            # 必须预置测试专属 DeviceId：探针驻留与探针检测端共用同一设备身份，
-            # 否则服务端会把驻留当成另一台设备，而清理时又可能误杀用户真实运行的驻留。
-            # 探针启动时会读取（不覆盖）这个文件，因此这里写入的 DeviceId 就是两端共同身份。
-            [System.IO.File]::WriteAllText($settingsPath,
-                "# VisionGuard 用户设置（E2E 隔离文件）`r`nDeviceId=$("e2e-resident-$profile")`r`n",
-                (New-Object System.Text.UTF8Encoding($false)))
-
-            $env:VISIONGUARD_DETECTOR_API_KEY = ($testIdentities | Where-Object { $_.deviceId -eq "e2e-resident-$profile" -and $_.role -eq 'detector' }).apiKey
-            $env:VISIONGUARD_RESIDENT_API_KEY = ($testIdentities | Where-Object { $_.deviceId -eq "e2e-resident-$profile" -and $_.role -eq 'lifecycle' }).apiKey
-            $env:VISIONGUARD_DEVICE_ID = "e2e-resident-$profile"
-            $env:VISIONGUARD_CHANNEL = $ResidentChannel
-            $env:VISIONGUARD_SERVER_URL = "http://127.0.0.1:$ResidentPort"
-            $env:VISIONGUARD_SETTINGS_PATH = $settingsPath
-
-            $probe = Start-Process -FilePath $detectorExe `
-                -ArgumentList @('--resident-launch', $reportPath, '6000') `
-                -WorkingDirectory (Split-Path -Parent $detectorExe) -NoNewWindow -PassThru `
-                -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
-            if (-not $probe.WaitForExit(60000)) { try { $probe.Kill() } catch { }; throw "$profile 档拉起探针超过 60 秒未结束" }
-            # 探针是 WinExe：AttachConsole/FreeConsole 之后 Start-Process 的 ExitCode 可能为空，
-            # 因此以 JSON 报告作为权威依据，退出码只作为附加诊断信息。
-            $probe.Refresh()
-            $probeExit = $probe.ExitCode
-            if (-not (Test-Path -LiteralPath $reportPath)) {
-                throw "$profile 档拉起探针未写出报告（退出码 $probeExit）：$reportPath"
-            }
+            $probe = Start-Process -FilePath $detectorExe -ArgumentList @('--resident-launch', $reportPath, '6000') -WorkingDirectory (Split-Path -Parent $detectorExe) -NoNewWindow -PassThru -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
+            if (-not $probe.WaitForExit(60000)) { try { $probe.Kill() } catch { }; throw "$profile resident-launch timed out." }
+            if (-not (Test-Path -LiteralPath $reportPath)) { throw "$profile resident-launch report is missing." }
             $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
-            if (-not $report.isRunning -or -not $report.handshakeSucceeded) {
-                throw "$profile 档驻留未进入运行状态（退出码 $probeExit）：$($report.failureReason)"
-            }
-
-            # 以隔离 settings 里实际生效的设备身份去服务端核对（探针与驻留共用该身份）。
-            $deviceId = ((Get-Content -LiteralPath $settingsPath -Encoding UTF8 |
-                Select-String -Pattern '^DeviceId=(.+)$').Matches[0].Groups[1].Value).Trim()
-            if (-not $deviceId) { throw "$profile 档隔离 settings 中没有 DeviceId：$settingsPath" }
-
-            $visibleOutput = & node $assertScript "ws://127.0.0.1:$ResidentPort" $ResidentChannel $deviceId 2>&1
+            if (-not $report.isRunning -or -not $report.handshakeSucceeded) { throw "$profile resident failed: $($report.failureReason)" }
+            $visibleOutput = & node $assertScript $env:VISIONGUARD_SERVER_URL $identity.deviceId 2>&1
             $visibleExit = $LASTEXITCODE
             $visiblePath = Join-Path $artifactRoot "resident-visibility-$profile.json"
-            ($visibleOutput | Out-String).Trim() | Set-Content -Encoding UTF8 $visiblePath
-            if ($visibleExit -ne 0) { throw "$profile 档驻留在服务端不可见：$($visibleOutput | Out-String)" }
-
-            Add-Result -Name "Resident launch ($profile)" -Status 'PASS' `
-                -Note "detector launched resident, server reports components.resident=running" -Evidence $visiblePath
-
-            # 收尾：只结束由本轮隔离配置拉起的驻留（按驻留自身配置路径匹配），不碰用户真实运行的驻留。
-            $residentConfigPath = Join-Path $env:LOCALAPPDATA 'VisionGuard\resident-config.json'
-            $ours = @()
-            try {
-                $ours = @(Get-CimInstance Win32_Process -Filter "Name = 'VisionGuard.Resident.Windows.exe'" -ErrorAction SilentlyContinue |
-                    Where-Object { $_.CommandLine -and $_.CommandLine -like "*$residentConfigPath*" })
+            [System.IO.File]::WriteAllText($visiblePath, ($visibleOutput | Out-String).Trim(), (New-Object System.Text.UTF8Encoding($false)))
+            if ($visibleExit -ne 0) { throw "$profile resident is not visible to its account: $visiblePath" }
+            Add-Result -Name "Resident launch ($profile)" -Status 'PASS' -Note 'account child authenticated; server reports components.resident=running' -Evidence $visiblePath
+            foreach ($process in @(Get-CimInstance Win32_Process -Filter "Name = 'VisionGuard.Resident.Windows.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($residentConfigPath, [StringComparison]::OrdinalIgnoreCase) -ge 0 })) {
+                Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
             }
-            catch { }
-            foreach ($process in $ours) { try { Stop-Process -Id $process.ProcessId -Force } catch { } }
         }
-
-
     }
     finally {
-        if ($previousNodeEnvironment) { foreach ($name in $previousNodeEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $previousNodeEnvironment[$name]) } }
-        # 本模式只清理自己拉起的驻留：按驻留自身配置路径匹配，绝不按进程名清空，
-        # 以免杀掉用户真实运行中的驻留（那会让接收端的「打开/关闭检测端」静默失效）。
-        try {
-            $residentConfigPath = Join-Path $env:LOCALAPPDATA 'VisionGuard\resident-config.json'
-            foreach ($process in @(Get-CimInstance Win32_Process -Filter "Name = 'VisionGuard.Resident.Windows.exe'" -ErrorAction SilentlyContinue |
-                Where-Object { $_.CommandLine -and $_.CommandLine -like "*$residentConfigPath*" })) {
-                try { Stop-Process -Id $process.ProcessId -Force } catch { }
+        foreach ($residentConfigPath in $residentConfigPaths) {
+            foreach ($process in @(Get-CimInstance Win32_Process -Filter "Name = 'VisionGuard.Resident.Windows.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($residentConfigPath, [StringComparison]::OrdinalIgnoreCase) -ge 0 })) {
+                Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
             }
         }
-        catch { }
+        foreach ($name in $previousNodeEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $previousNodeEnvironment[$name]) }
         if ($server -and -not $server.HasExited) {
-            # npm/node 子进程不随 powershell 一起退出，按端口结束监听进程。
-            try {
-                foreach ($connection in @(Get-NetTCPConnection -LocalPort $ResidentPort -State Listen -ErrorAction SilentlyContinue)) {
-                    $owner = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
-                    if ($owner) { $owner.Kill() }
-                }
+            foreach ($connection in @(Get-NetTCPConnection -LocalPort $ResidentPort -State Listen -ErrorAction SilentlyContinue)) {
+                $listener = Get-CimInstance Win32_Process -Filter "ProcessId = $($connection.OwningProcess)" -ErrorAction SilentlyContinue
+                if ($listener -and $listener.Name -eq 'node.exe' -and $listener.ParentProcessId -eq $server.Id) { Stop-Process -Id $listener.ProcessId -Force -ErrorAction SilentlyContinue }
             }
-            catch { }
             try { $server.Kill() } catch { }
         }
     }

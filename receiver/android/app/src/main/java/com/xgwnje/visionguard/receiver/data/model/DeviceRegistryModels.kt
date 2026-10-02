@@ -1,15 +1,5 @@
 package com.xgwnje.visionguard.receiver.data.model
 
-data class RemovedDevice(
-    val device: DeviceInfo,
-    val index: Int
-)
-
-data class DeviceRemovalResult(
-    val devices: List<DeviceInfo>,
-    val removed: RemovedDevice?
-)
-
 data class DeviceRegistrySyncUpdate(
     val state: DeviceRegistrySyncState,
     val visibleDevices: List<DeviceInfo>,
@@ -136,29 +126,6 @@ fun moveDeviceWithinGroup(
         } else {
             device
         }
-    }
-}
-
-fun removeOfflineDeviceById(
-    devices: List<DeviceInfo>,
-    deviceId: String
-): DeviceRemovalResult {
-    val index = devices.indexOfFirst { it.deviceId == deviceId }
-    if (index < 0 || devices[index].online) {
-        return DeviceRemovalResult(devices = devices, removed = null)
-    }
-    val removed = RemovedDevice(device = devices[index], index = index)
-    val remaining = devices.toMutableList().apply { removeAt(index) }
-    return DeviceRemovalResult(devices = remaining, removed = removed)
-}
-
-fun restoreRemovedDevice(
-    devices: List<DeviceInfo>,
-    removed: RemovedDevice
-): List<DeviceInfo> {
-    if (devices.any { it.deviceId == removed.device.deviceId }) return devices
-    return devices.toMutableList().apply {
-        add(removed.index.coerceIn(0, size), removed.device)
     }
 }
 

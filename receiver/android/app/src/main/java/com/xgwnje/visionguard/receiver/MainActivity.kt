@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,6 +41,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
+import com.xgwnje.visionguard.account.*
+import com.xgwnje.visionguard.receiver.data.repository.SettingsRepository
+import com.xgwnje.visionguard.receiver.data.repository.DeviceRegistryRepository
+import com.xgwnje.visionguard.receiver.data.cache.ScreenshotCache
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -107,23 +113,38 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // 直接启动并绑定服务（服务内部读 AppConstants 连接）
-        startAndBindService()
 
+
+        val account = AccountStore.get(this)
         setContent {
+            val session by account.session.collectAsState()
+            LaunchedEffect(session?.scope) {
+                if (session != null) startAndBindService() else stopConnection()
+            }
             VisionGuardReceiverTheme {
-                if (!serviceBound || boundService == null) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
+                if (session == null) AccountLogin(account, "VisionGuard 控制台", "android-console")
+                else Column(Modifier.fillMaxSize().statusBarsPadding()) {
+                    AccountHeader(account, session!!, beforeLogout = { clearAccountData(); stopConnection() })
+                    Box(Modifier.weight(1f)) {
+                        if (!serviceBound || boundService == null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                        else VisionGuardNavHost(service = boundService!!, initialAlertId = pendingAlertId)
                     }
-                } else {
-                    VisionGuardNavHost(
-                        service = boundService!!,
-                        initialAlertId = pendingAlertId
-                    )
                 }
             }
         }
+    }
+
+    private fun stopConnection() {
+        if (serviceBound) { unbindService(connection); serviceBound = false }
+        boundService = null
+        stopService(Intent(this, AlertForegroundService::class.java))
+        pendingAlertId = null
+    }
+    private suspend fun clearAccountData() {
+        boundService?.clearAlerts()
+        SettingsRepository(this).clearAccountData()
+        DeviceRegistryRepository(this).clearAccountData()
+        ScreenshotCache(this).clearAll()
     }
 
     override fun onNewIntent(intent: Intent) {

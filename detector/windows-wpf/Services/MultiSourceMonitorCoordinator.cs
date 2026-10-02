@@ -161,6 +161,8 @@ namespace VisionGuard.Detector.Windows.Services
 
         private static bool IsConfigured(MonitorConfig config)
         {
+            if (config.CaptureMode == CaptureMode.RemoteStream)
+                return !string.IsNullOrWhiteSpace(config.RemoteStreamId) && Capture.RemoteFrameStore.Shared.IsBound(config.RemoteStreamId);
             if (config.CaptureMode == CaptureMode.WindowHandle)
                 return config.TargetWindowHandle != IntPtr.Zero
                     && (config.WindowSubRegion == System.Drawing.Rectangle.Empty || VisionGuard.Detector.Windows.Capture.CaptureSizeConstraints.IsValid(config.WindowSubRegion));

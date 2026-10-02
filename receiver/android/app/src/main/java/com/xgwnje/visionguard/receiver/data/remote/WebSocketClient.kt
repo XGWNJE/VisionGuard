@@ -71,8 +71,13 @@ class WebSocketClient {
     private val _onAlert = MutableSharedFlow<AlertMessage>(extraBufferCapacity = 64)
     val onAlert: SharedFlow<AlertMessage> = _onAlert
 
+    private val _onStreams = MutableStateFlow<List<com.xgwnje.visionguard.receiver.data.model.StreamInfo>>(emptyList())
+    val onStreams: StateFlow<List<com.xgwnje.visionguard.receiver.data.model.StreamInfo>> = _onStreams.asStateFlow()
+
     private val _onDeviceList = MutableStateFlow<List<DeviceInfo>>(emptyList())
     val onDeviceList: StateFlow<List<DeviceInfo>> = _onDeviceList.asStateFlow()
+
+    var onDeviceUpdated: ((String) -> Unit)? = null
 
     private val _onCommandAck = MutableSharedFlow<CommandResult>(extraBufferCapacity = 16)
     val onCommandAck: SharedFlow<CommandResult> = _onCommandAck
@@ -82,7 +87,7 @@ class WebSocketClient {
 
     // ── 事件定义 ─────────────────────────────────────────────
     private sealed class Event {
-        data class Connect(val url: String, val apiKey: String, val deviceId: String) : Event()
+        data class Connect(val url: String, val token: String, val deviceId: String) : Event()
         object Disconnect : Event()
         object NetworkAvailable : Event()
         data class WsOpened(val session: Session) : Event()
@@ -97,7 +102,7 @@ class WebSocketClient {
 
     // ── 配置（事件循环内独占访问） ───────────────────────────
     private var serverUrl: String = ""
-    private var apiKey: String = ""
+    private var token: String = ""
     private var deviceId: String = ""
     private var shouldReconnect = false
     private var attempt = 0
@@ -127,8 +132,8 @@ class WebSocketClient {
     // 对外 API
     // ═════════════════════════════════════════════════════════
 
-    fun connect(serverUrl: String, apiKey: String, deviceId: String) {
-        events.trySend(Event.Connect(serverUrl.trimEnd('/'), apiKey, deviceId))
+    fun connect(serverUrl: String, token: String, deviceId: String) {
+        events.trySend(Event.Connect(serverUrl.trimEnd('/'), token, deviceId))
     }
 
     fun disconnect() {
@@ -211,13 +216,13 @@ class WebSocketClient {
 
     private fun onConnect(e: Event.Connect) {
         // 参数相同且已连接 → 跳过
-        if (e.url == serverUrl && e.apiKey == apiKey && e.deviceId == deviceId
+        if (e.url == serverUrl && e.token == token && e.deviceId == deviceId
             && _state.value == WsState.CONNECTED) {
             Log.i(TAG, "connect 忽略：参数未变且已连接")
             return
         }
         serverUrl = e.url
-        apiKey = e.apiKey
+        token = e.token
         deviceId = e.deviceId
         shouldReconnect = true
         attempt = 0
@@ -241,6 +246,7 @@ class WebSocketClient {
         session = null
         _state.value = WsState.DISCONNECTED
         _onDeviceList.value = emptyList()
+        _onStreams.value = emptyList()
     }
 
     private fun onNetworkAvailableEvent() {
@@ -272,7 +278,7 @@ class WebSocketClient {
     private fun onWsOpened(e: Event.WsOpened) {
         if (e.session != session) return
         Log.i(TAG, "WS onOpen → 发送认证")
-        val auth = WsAuthMessage(apiKey = apiKey, deviceId = deviceId)
+        val auth = WsAuthMessage(token = token)
         e.session.ws.send(gson.toJson(auth))
     }
 
@@ -291,9 +297,8 @@ class WebSocketClient {
             session = null
             // 区分永久错误和临时错误
             val reason = e.reason ?: ""
-            val isPermanent = reason.contains("invalid api key", ignoreCase = true) ||
-                    reason.contains("version too old", ignoreCase = true) ||
-                    reason.contains("invalid role", ignoreCase = true) ||
+            val isPermanent = reason.contains("token", ignoreCase = true) ||
+                    reason.contains("session", ignoreCase = true) ||
                     reason.contains("invalid deviceId", ignoreCase = true)
             if (isPermanent) {
                 Log.e(TAG, "认证永久失败 ($reason)，停止重连")
@@ -356,8 +361,6 @@ class WebSocketClient {
 
         _state.value = WsState.CONNECTING
         val wsUrl = serverUrl
-            .replace("https://", "wss://")
-            .replace("http://", "ws://") + "/ws"
         Log.i(TAG, "启动新会话 attempt=${attempt + 1} url=$wsUrl")
 
         val newSession = Session(wsUrl)
@@ -511,6 +514,10 @@ class WebSocketClient {
                     alert.receivedAt = com.xgwnje.visionguard.receiver.util.NtpSync.now()
                     scope.launch { _onAlert.emit(alert) }
                 }
+                "stream-list" -> {
+                    _onStreams.value = obj.getAsJsonArray("streams")?.map { gson.fromJson(it, com.xgwnje.visionguard.receiver.data.model.StreamInfo::class.java) } ?: emptyList()
+                }
+                "device-updated" -> obj.getAsJsonObject("device")?.let { onDeviceUpdated?.invoke(it.toString()) }
                 "device-list" -> {
                     val devicesArr = obj.getAsJsonArray("devices")
                     val devices = devicesArr?.mapNotNull { parseCurrentDeviceInfo(it, gson) } ?: emptyList()

@@ -6,7 +6,7 @@ export function validAlarmTimeZone(value: unknown): value is AlarmTimeZone {
   return value === 'Asia/Shanghai' || value === 'UTC';
 }
 
-/** One display standard per service channel; event instants and deadlines stay unchanged. */
+/** One display standard per account; event instants and deadlines stay unchanged. */
 export class TimeStandardStore {
   private timeZone: AlarmTimeZone = 'Asia/Shanghai';
   constructor(private readonly file: string) {

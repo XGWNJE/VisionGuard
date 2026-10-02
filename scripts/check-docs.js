@@ -10,7 +10,7 @@ const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 const COMPONENTS = [
   { label: 'VisionGuard 视觉节点', platform: 'Windows', relativePath: 'detector/windows-wpf', source: 'detector/windows-wpf/App.xaml.cs' },
   { label: '视觉驻留', platform: 'Windows', relativePath: 'detector/windows-resident', source: 'detector/windows-resident/Program.cs' },
-  { label: '视觉检测', platform: 'Android', relativePath: 'detector/android', source: 'detector/android/app/build.gradle.kts' },
+  { label: 'VisionGuard 镜头推流', platform: 'Android', relativePath: 'detector/android', source: 'detector/android/app/build.gradle.kts' },
   { label: 'VisionGuard 控制台', platform: 'Android', relativePath: 'receiver/android', source: 'receiver/android/app/build.gradle.kts' },
   { label: 'VisionGuard 控制台', platform: 'Web', relativePath: 'receiver/web', source: 'receiver/web/src/main.tsx' },
   { label: 'VisionGuard 通知节点', platform: 'Android', relativePath: 'notifier/android', source: 'notifier/android/app/build.gradle.kts' },
@@ -349,7 +349,7 @@ function checkComponentContract(root, readme, overview, operations, errors) {
   }
 
   for (const [directory, role, name, engineering] of [
-    ['detector', 'detector', '视觉检测', 'VisionGuard.Detector.Android'],
+    ['detector', 'detector', 'VisionGuard 镜头推流', 'VisionGuard.Detector.Android'],
     ['receiver', 'receiver', 'VisionGuard 控制台', 'VisionGuard.Receiver.Android'],
     ['notifier', 'notifier', 'VisionGuard 通知节点', 'VisionGuard.Notifier.Android']
   ]) {
@@ -611,9 +611,9 @@ function checkDomainAlignment(root, operations, readme, overview, errors) {
   for (const [relativePath, content] of [
     ['README.md', readme],
     ['docs/codex/10-project-overview.md', overview],
-    ['detector/windows-wpf/Utils/AppConfig.cs', readUtf8(root, 'detector/windows-wpf/Utils/AppConfig.cs', errors, { checkBom: false })],
+    ['detector/windows-shared/Utils/AccountSession.cs', readUtf8(root, 'detector/windows-shared/Utils/AccountSession.cs', errors, { checkBom: false })],
     ['detector/android/app/build.gradle.kts', readUtf8(root, 'detector/android/app/build.gradle.kts', errors, { checkBom: false })],
-    ['receiver/android/app/src/main/java/com/xgwnje/visionguard/receiver/AppConstants.kt', readUtf8(root, 'receiver/android/app/src/main/java/com/xgwnje/visionguard/receiver/AppConstants.kt', errors, { checkBom: false })]
+    ['android-shared/src/main/java/com/xgwnje/visionguard/account/AccountStore.kt', readUtf8(root, 'android-shared/src/main/java/com/xgwnje/visionguard/account/AccountStore.kt', errors, { checkBom: false })]
   ]) {
     requireText(content, domain, relativePath, 'the canonical service domain', errors);
   }

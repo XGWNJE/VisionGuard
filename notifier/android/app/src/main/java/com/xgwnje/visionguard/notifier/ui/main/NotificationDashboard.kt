@@ -33,7 +33,7 @@ fun NotificationDashboard(viewModel: SettingsViewModel, onHistory: () -> Unit, o
     val timeZone = rememberAlarmTimeZone()
     var enabled by remember { mutableStateOf(settings.enabled) }
     var connection by remember { mutableStateOf(settings.read()) }
-    var editing by remember { mutableStateOf(false) }
+
     var loopDialog by remember { mutableStateOf(false) }
     var ringtoneDialog by remember { mutableStateOf(false) }
     val loops by viewModel.defaultLoopCount
@@ -54,7 +54,7 @@ fun NotificationDashboard(viewModel: SettingsViewModel, onHistory: () -> Unit, o
             Row {
                 Column(Modifier.weight(1f)) { Text(connection.name, fontWeight = FontWeight.SemiBold); Text(if (enabled) node.status else "未启用") }
                 Switch(enabled, { value ->
-                    if (value && !NotificationNodeSettings.valid(connection)) editing = true
+                    if (value && !NotificationNodeSettings.valid(connection)) Toast.makeText(context, "请重新登录", Toast.LENGTH_LONG).show()
                     else runCatching {
                         settings.enabled = value
                         if (value) NotificationNodeService.start(context) else context.stopService(Intent(context, NotificationNodeService::class.java))
@@ -67,11 +67,11 @@ fun NotificationDashboard(viewModel: SettingsViewModel, onHistory: () -> Unit, o
                 })
             }
             Field("服务地址", connection.endpoint.ifBlank { "尚未配置" })
-            Field("通道", connection.channel.ifBlank { "未配置" })
+            Field("本机", connection.name)
             Field("接收范围", if (enabled) node.scope else "由控制台分配")
             Field("告警时间标准", alarmTimeStandardLabel(timeZone))
             Row {
-                TextButton({ editing = true }) { Text("连接设置") }
+
                 if (enabled && !node.connected) TextButton({
                     runCatching { context.stopService(Intent(context, NotificationNodeService::class.java)); NotificationNodeService.start(context) }
                         .onFailure { Toast.makeText(context, "重新连接失败，请重试", Toast.LENGTH_LONG).show() }
@@ -123,12 +123,7 @@ fun NotificationDashboard(viewModel: SettingsViewModel, onHistory: () -> Unit, o
             }
         }
     }, confirmButton = { TextButton({ ringtoneDialog = false }) { Text("关闭") } })
-    if (editing) ConnectionDialog(connection, { editing = false }) { value ->
-        if (settings.save(value)) {
-            context.stopService(Intent(context, NotificationNodeService::class.java))
-            enabled = false; connection = value; editing = false
-        } else Toast.makeText(context, "连接配置无效或保存失败", Toast.LENGTH_LONG).show()
-    }
+
 }
 
 @Composable private fun Panel(content: @Composable ColumnScope.() -> Unit) {
@@ -138,17 +133,4 @@ fun NotificationDashboard(viewModel: SettingsViewModel, onHistory: () -> Unit, o
 }
 @Composable private fun Field(label: String, value: String) {
     Row { Text(label, Modifier.width(110.dp), color = MaterialTheme.colorScheme.onSurfaceVariant); Text(value, Modifier.weight(1f)) }
-}
-@Composable private fun ConnectionDialog(value: NodeConnection, onDismiss: () -> Unit, onSave: (NodeConnection) -> Unit) {
-    var draft by remember { mutableStateOf(value) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("连接设置") }, text = {
-        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("使用已登记的 VG 通知节点身份。保存后重新启用连接。")
-            OutlinedTextField(draft.endpoint, { draft = draft.copy(endpoint = it.trim()) }, label = { Text("服务地址 wss://…/ws") }, singleLine = true)
-            OutlinedTextField(draft.channel, { draft = draft.copy(channel = it.trim()) }, label = { Text("通道") }, singleLine = true)
-            OutlinedTextField(draft.deviceId, { draft = draft.copy(deviceId = it.trim()) }, label = { Text("节点 ID") }, singleLine = true)
-            OutlinedTextField(draft.name, { draft = draft.copy(name = it) }, label = { Text("节点名称") }, singleLine = true)
-            OutlinedTextField(draft.apiKey, { draft = draft.copy(apiKey = it.trim()) }, label = { Text("节点凭据") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
-        }
-    }, confirmButton = { TextButton({ onSave(draft) }, enabled = NotificationNodeSettings.valid(draft)) { Text("保存") } }, dismissButton = { TextButton(onDismiss) { Text("取消") } })
 }
