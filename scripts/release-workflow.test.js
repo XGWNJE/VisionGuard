@@ -83,7 +83,7 @@ test('publish-release.ps1 keeps GitHub optional and release deployment reproduci
 
   assert.match(script, /param\s*\(/);
   assert.match(script, /\$Version/);
-  assert.match(script, /ValidateSet\('All','Windows','Android','Server','WPF','AndroidDetector','AndroidReceiver'\)/);
+  assert.match(script, /ValidateSet\('All','Windows','Android','Server','WPF','AndroidDetector','AndroidReceiver','AndroidNotifier'\)/);
   assert.match(script, /\$PushGitHub/);
   assert.match(script, /\$CreateTag/);
   assert.match(script, /\$CreateGitHubRelease/);
@@ -96,6 +96,8 @@ test('publish-release.ps1 keeps GitHub optional and release deployment reproduci
   assert.match(script, /scripts\\check-docs\.js/);
   assert.match(script, /Preflight only complete/);
   assert.match(script, /VisionGuard-WPF-v\$Version\.zip/);
+  assert.match(script, /VisionGuard-Notifier-v\$Version\.apk/);
+  assert.match(script, /Add-ReleaseEntry -Metadata \$metadata -Key 'android-notifier'/);
   // 发布使用 windows-package 中的统一目录，驻留由组装脚本放入根目录。
   assert.doesNotMatch(script, /windows-resident\\bin\\Release\\net472/);
   assert.doesNotMatch(script, /windows-resident\\bin\\Release\\net9\.0-windows/);

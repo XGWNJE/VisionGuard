@@ -22,7 +22,7 @@ test('releaseFileName 的产物名必须逐字出现在发布脚本里', () => {
   const publishScript = fs.readFileSync(path.join(ROOT, 'scripts', 'publish-release.ps1'), 'utf-8');
   // sync-version.js 只改 releases.json 的 url，真正生成包的是 publish-release.ps1。
   // 两边文件名写法漂移会让更新接口指向不存在的文件，所以在这里对死。
-  for (const key of ['wpf', 'android-detector', 'android-receiver']) {
+  for (const key of ['wpf', 'android-detector', 'android-receiver', 'android-notifier']) {
     const fileName = releaseFileName(key, '$Version');
     assert.ok(
       publishScript.includes(fileName),
@@ -49,12 +49,6 @@ test('releases.json 的 url 与 releaseFileName 一致', () => {
 
 test('被搁置的平台在统一版本同步时保留最后一个已发布包', () => {
   const syncScript = fs.readFileSync(path.join(ROOT, 'scripts', 'sync-version.js'), 'utf-8');
-  const releases = JSON.parse(fs.readFileSync(path.join(ROOT, 'server', 'data', 'releases.json'), 'utf-8'));
-  const detector = releases['android-detector'];
-
-  assert.equal(detector.heldBack, true);
-  assert.equal(detector.version, '4.4.4');
-  assert.equal(detector.url, '/releases/VisionGuard-Detector-v4.4.4.apk');
   assert.match(syncScript, /releases\[key\]\.heldBack === true/, 'sync-version must preserve held-back entries');
 });
 
@@ -113,6 +107,8 @@ test('release synchronization still updates released targets and preserves held-
   withVersionFixture(root => {
     const releasesPath = path.join(root, 'server/data/releases.json');
     const before = JSON.parse(fs.readFileSync(releasesPath, 'utf8'));
+    before['android-detector'] = { version: '4.4.4', url: '/releases/VisionGuard-Detector-v4.4.4.apk', size: 123, heldBack: true };
+    fs.writeFileSync(releasesPath, JSON.stringify(before));
     syncFixture(root, '0.5.2');
     const after = JSON.parse(fs.readFileSync(releasesPath, 'utf8'));
     assert.deepEqual(after['android-detector'], before['android-detector']);

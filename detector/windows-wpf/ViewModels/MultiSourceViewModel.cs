@@ -484,7 +484,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                     detail + Environment.NewLine + Environment.NewLine +
                     "采集、推理与报警仍在继续，不会自动减路或降帧。" + Environment.NewLine +
                     "建议降低检测频率、减少同时运行的来源，或改用更小的模型。",
-                    "VisionGuard 视觉节点 · 推理性能不足", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    "视觉节点 · 推理性能不足", MessageBoxButton.OK, MessageBoxImage.Warning);
             }));
         }
 
@@ -1156,7 +1156,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             BitmapSource? background = null;
             var windowMode = _captureMode == CaptureMode.WindowHandle && !string.IsNullOrWhiteSpace(_targetWindowTitle);
             if (windowMode && _targetWindow == null) ResolveWindow();
-            if (windowMode && _targetWindow == null) { VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show("目标窗口当前不存在，请重新选择窗口或清除目标后选择屏幕区域。", "VisionGuard 视觉节点", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            if (windowMode && _targetWindow == null) { VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show("目标窗口当前不存在，请重新选择窗口或清除目标后选择屏幕区域。", "视觉节点", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             try { using var bitmap = windowMode ? WindowCapturer.CaptureWindow(_targetWindow!.Handle, Rectangle.Empty) : ScreenCapturer.CapturePrimaryScreen(); background = BitmapSourceConverter.Convert(bitmap); } catch { }
             var selector = new RegionSelectorWindow(background) { Owner = Application.Current.MainWindow };
             selector.ShowDialog();
@@ -1183,7 +1183,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             _screenRegion = Rectangle.Empty; _windowSubRegion = Rectangle.Empty; ClearMasksInternal(); NotifyTargetChanged();
         }
 
-        private bool ConfirmTargetChange() => MaskRegions.Count == 0 || VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show("更换捕获目标或选区会清除当前遮罩。是否继续？", "VisionGuard 视觉节点", MessageBoxButton.YesNo, MessageBoxImage.Warning, "更换目标", destructive: true) == MessageBoxResult.Yes;
+        private bool ConfirmTargetChange() => MaskRegions.Count == 0 || VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show("更换捕获目标或选区会清除当前遮罩。是否继续？", "视觉节点", MessageBoxButton.YesNo, MessageBoxImage.Warning, "更换目标", destructive: true) == MessageBoxResult.Yes;
 
         private void EditMasks()
         {
@@ -1195,7 +1195,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 if (!editor.IsConfirmed) return;
                 MaskRegions = editor.ResultMasks; OnPropertyChanged(nameof(MaskInfo)); MarkDirty();
             }
-            catch (Exception ex) { VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show($"抓图失败：{ex.Message}", "VisionGuard 视觉节点", MessageBoxButton.OK, MessageBoxImage.Error); }
+            catch (Exception ex) { VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show($"抓图失败：{ex.Message}", "视觉节点", MessageBoxButton.OK, MessageBoxImage.Error); }
         }
 
         private Bitmap GrabFrame()

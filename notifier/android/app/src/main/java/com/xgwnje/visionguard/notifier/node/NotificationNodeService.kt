@@ -87,7 +87,7 @@ class NotificationNodeService : Service() {
         val launch = PendingIntent.getActivity(this, 718, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         startForeground(NOTIFICATION_ID, NotificationCompat.Builder(this, "notification-node")
             .setColor(ContextCompat.getColor(this, com.xgwnje.visionguard.notifier.R.color.md_theme_primary))
-            .setSmallIcon(com.xgwnje.visionguard.notifier.R.drawable.ic_lucide_bell).setContentTitle("VisionGuard 通知节点")
+            .setSmallIcon(com.xgwnje.visionguard.notifier.R.drawable.ic_lucide_bell).setContentTitle("通知节点")
             .setContentText("后台接收统一服务报警").setContentIntent(launch).setOngoing(true).build())
         lastResponse = SystemClock.elapsedRealtime()
         serviceScope.launch { account.session.collect { value ->

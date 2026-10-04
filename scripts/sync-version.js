@@ -18,6 +18,7 @@ const ROOT = path.resolve(__dirname, '..');
  */
 function releaseFileName(key, version) {
   if (key === 'android-detector') return `VisionGuard-Detector-v${version}.apk`;
+  if (key === 'android-notifier') return `VisionGuard-Notifier-v${version}.apk`;
   if (key === 'android-receiver') return `VisionGuard-Receiver-v${version}.apk`;
   if (key === 'wpf') return `VisionGuard-WPF-v${version}.zip`;
   return `VisionGuard-${key}-v${version}.zip`;
@@ -47,7 +48,7 @@ function main() {
     `Version = "${newVersion}"`
   );
 
-  // 3. 镜头推流（Android） build.gradle.kts
+  // 3. 相机推流节点（Android） build.gradle.kts
   replaceInFile(
     path.join(ROOT, 'detector', 'android', 'app', 'build.gradle.kts'),
     /versionName = "[\d.]+"/,
@@ -59,14 +60,14 @@ function main() {
     `versionCode = ${versionCode}`
   );
 
-  // 4. 镜头推流（Android） AppConstants.kt
+  // 4. 相机推流节点（Android） AppConstants.kt
   replaceInFile(
     path.join(ROOT, 'detector', 'android', 'app', 'src', 'main', 'java', 'com', 'xgwnje', 'visionguard', 'detector', 'AppConstants.kt'),
     /VERSION = "[\d.]+"/,
     `VERSION = "${newVersion}"`
   );
 
-  // 6. VisionGuard 控制台 build.gradle.kts
+  // 6. 控制台 build.gradle.kts
   replaceInFile(
     path.join(ROOT, 'receiver', 'android', 'app', 'build.gradle.kts'),
     /versionName = "[\d.]+"/,
@@ -78,7 +79,7 @@ function main() {
     `versionCode = ${versionCode}`
   );
 
-  // 7. VisionGuard 控制台 AppConstants.kt (VERSION)
+  // 7. 控制台 AppConstants.kt (VERSION)
   replaceInFile(
     path.join(ROOT, 'receiver', 'android', 'app', 'src', 'main', 'java', 'com', 'xgwnje', 'visionguard', 'receiver', 'AppConstants.kt'),
     /VERSION = "[\d.]+"/,

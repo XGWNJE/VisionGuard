@@ -1,6 +1,6 @@
-# VisionGuard 镜头推流
+# 相机推流节点
 
-`detector/android/` 是 **VisionGuard 镜头推流**，属于视觉节点类型（`visual`）。它在前台采集摄像头画面，经统一服务转发给账号内的 Windows 视觉节点；本机不加载模型、不执行目标推理或生成视觉报警。应用名与安装身份见[命名规范](15-component-naming.md)。
+`detector/android/` 是 **相机推流节点**，属于视觉节点类型（`visual`）。它在前台采集摄像头画面，经统一服务转发给账号内的 Windows 视觉节点；本机不加载模型、不执行目标推理或生成视觉报警。应用名与安装身份见[命名规范](15-component-naming.md)。
 
 ## 当前职责
 
@@ -13,7 +13,7 @@
 
 ## 账号与身份
 
-显示名为 **VisionGuard 镜头推流**，工程目录和包名仍是 `detector/android/` 与 `com.xgwnje.visionguard.detector`。服务器按登录组件 `android-camera` 分配 `detector / visual / android` 身份；摄像端声明 `video-publish` 能力，不声明本地推理、模型或参数控制能力。
+显示名为 **相机推流节点**，工程目录和包名仍是 `detector/android/` 与 `com.xgwnje.visionguard.detector`。服务器按登录组件 `android-camera` 分配 `detector / visual / android` 身份；摄像端声明 `video-publish` 能力，不声明本地推理、模型或参数控制能力。
 
 三个 Android 组件共用 [`android-shared/`](../../android-shared/) 的账号 HTTP、Keystore 加密会话、登录界面和主题。密码只用于登录请求；会话凭证保存在本机加密存储，退出后撤销服务会话。服务、账号和本机设备共同决定本地缓存分区，关闭系统备份。服务地址可在登录页测试设置中修改；公网使用 HTTPS，局域网测试允许明确的私网 HTTP 地址，无需填写通道、设备 ID 或密钥。
 

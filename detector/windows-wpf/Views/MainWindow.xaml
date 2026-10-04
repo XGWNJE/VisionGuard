@@ -7,7 +7,7 @@
         xmlns:icons="clr-namespace:VisionGuard.Detector.Windows.Icons"
         xmlns:local="clr-namespace:VisionGuard.Detector.Windows.Views"
         mc:Ignorable="d"
-        Title="VisionGuard 视觉节点"
+        Title="视觉节点"
         Width="1420" Height="880" MinWidth="1200" MinHeight="880"
         Background="{DynamicResource BackgroundDark}"
         WindowStartupLocation="CenterScreen">

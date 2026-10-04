@@ -2,7 +2,7 @@
     [Parameter(Mandatory = $true)]
     [string]$Version,
 
-    [ValidateSet('All','Windows','Android','Server','WPF','AndroidDetector','AndroidReceiver')]
+    [ValidateSet('All','Windows','Android','Server','WPF','AndroidDetector','AndroidReceiver','AndroidNotifier')]
     [string]$Target = 'All',
 
     [switch]$UploadVps,
@@ -318,7 +318,7 @@ function Invoke-ReleasePreflight {
         Test-PythonParamiko
     }
 
-    if (Test-TargetEnabled @('Android', 'AndroidDetector', 'AndroidReceiver')) {
+    if (Test-TargetEnabled @('Android', 'AndroidDetector', 'AndroidReceiver', 'AndroidNotifier')) {
         Set-AndroidJavaHome
         [void](Get-AndroidTool -Name 'apksigner')
         [void](Get-AndroidTool -Name 'zipalign')
@@ -332,6 +332,11 @@ function Invoke-ReleasePreflight {
     if (Test-TargetEnabled @('Android', 'AndroidReceiver')) {
         [void](Get-KeystoreConfig -ProjectRoot (Join-Path $repoRoot 'receiver\android'))
         Write-Host "preflight: Android receiver signing config resolved"
+    }
+
+    if (Test-TargetEnabled @('Android', 'AndroidNotifier')) {
+        [void](Get-KeystoreConfig -ProjectRoot (Join-Path $repoRoot 'notifier\android'))
+        Write-Host "preflight: Android notifier signing config resolved"
     }
 
     if ($ServerDeployPlanned -and $SkipBuild -and -not (Test-Path -LiteralPath (Join-Path $repoRoot 'server\dist\index.js'))) {
@@ -692,7 +697,8 @@ function Get-GitHubOnlyArtifacts {
     $definitions = @(
         [pscustomobject]@{ Platform = 'wpf'; Targets = @('Windows', 'WPF'); FileName = "VisionGuard-WPF-v$Version.zip"; Kind = 'zip' },
         [pscustomobject]@{ Platform = 'android-detector'; Targets = @('Android', 'AndroidDetector'); FileName = "VisionGuard-Detector-v$Version.apk"; Kind = 'apk' },
-        [pscustomobject]@{ Platform = 'android-receiver'; Targets = @('Android', 'AndroidReceiver'); FileName = "VisionGuard-Receiver-v$Version.apk"; Kind = 'apk' }
+        [pscustomobject]@{ Platform = 'android-receiver'; Targets = @('Android', 'AndroidReceiver'); FileName = "VisionGuard-Receiver-v$Version.apk"; Kind = 'apk' },
+        [pscustomobject]@{ Platform = 'android-notifier'; Targets = @('Android', 'AndroidNotifier'); FileName = "VisionGuard-Notifier-v$Version.apk"; Kind = 'apk' }
     )
 
     $artifacts = New-Object System.Collections.Generic.List[object]
@@ -886,7 +892,7 @@ client.connect(hostname=host, port=port, username=user, password=password or Non
 
 try:
     sftp = client.open_sftp()
-    stdin, stdout, stderr = client.exec_command("mkdir -p " + shlex.quote(posixpath.join(remote_root, "data", "releases")))
+    stdin, stdout, stderr = client.exec_command("mkdir -p " + shlex.quote(posixpath.join(remote_root, "data", "releases")) + " " + shlex.quote(posixpath.join(remote_root, "data", "models")))
     status = stdout.channel.recv_exit_status()
     if status != 0:
         error = stderr.read().decode("utf-8", "replace").strip()
@@ -895,6 +901,12 @@ try:
         local = item["local"]
         remote = item["remote"]
         expected = sha256_file(local)
+        stdin, stdout, stderr = client.exec_command("sha256sum " + shlex.quote(remote))
+        status = stdout.channel.recv_exit_status()
+        actual = stdout.read().decode("utf-8", "replace").strip().split()
+        if status == 0 and actual and actual[0].lower() == expected:
+            print("unchanged " + posixpath.basename(remote) + " " + expected)
+            continue
         temp_remote = remote + ".tmp-" + str(int(time.time()))
         sftp.put(local, temp_remote)
         command = "mv -f {tmp} {remote} && sha256sum {remote}".format(
@@ -1310,6 +1322,17 @@ if (Test-TargetEnabled @('Android', 'AndroidReceiver')) {
     $platforms.Add('android-receiver') | Out-Null
 }
 
+if (Test-TargetEnabled @('Android', 'AndroidNotifier')) {
+    $fileName = "VisionGuard-Notifier-v$Version.apk"
+    $apkPath = Get-SignedAndroidApk -ProjectRoot (Join-Path $repoRoot 'notifier\android') -Name 'Android notifier'
+    $dest = Join-Path $releaseDir $fileName
+    Copy-Item -LiteralPath $apkPath -Destination $dest -Force
+    Verify-AndroidApk -ApkPath $dest
+    Add-ReleaseEntry -Metadata $metadata -Key 'android-notifier' -FileName $fileName -FilePath $dest
+    $artifacts.Add([pscustomobject]@{ Platform = 'android-notifier'; Path = $dest; FileName = $fileName }) | Out-Null
+    $platforms.Add('android-notifier') | Out-Null
+}
+
 if ($artifacts.Count -gt 0) {
     Save-ReleasesJson -Metadata $metadata
 }
@@ -1322,6 +1345,14 @@ if ($UploadVps -and $artifacts.Count -gt 0) {
             local = $artifact.Path
             remote = "$RemoteRoot/data/releases/$($artifact.FileName)"
         }) | Out-Null
+    }
+    if (Test-TargetEnabled @('Windows', 'WPF')) {
+        foreach ($model in (Get-ChildItem -LiteralPath $modelsDir -Filter '*.onnx' -File)) {
+            $uploads.Add([pscustomobject]@{
+                local = $model.FullName
+                remote = "$RemoteRoot/data/models/$($model.Name)"
+            }) | Out-Null
+        }
     }
     $uploads.Add([pscustomobject]@{
         local = $releasesJsonPath

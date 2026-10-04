@@ -38,7 +38,7 @@ class MainActivity : AppCompatActivity() {
         setContent {
             val session by account.session.collectAsState()
             NotificationTheme {
-                if (session == null) AccountLogin(account, "VisionGuard 通知节点", "android-notifier")
+                if (session == null) AccountLogin(account, "通知节点", "android-notifier")
                 else key(session!!.scope) {
                     val model = remember { SettingsViewModel(application) }
                     var confirmationError by remember(activeAlert?.id) { mutableStateOf<String?>(null) }

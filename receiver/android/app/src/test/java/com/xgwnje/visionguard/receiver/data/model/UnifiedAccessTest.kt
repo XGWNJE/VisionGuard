@@ -15,7 +15,7 @@ class UnifiedAccessTest {
         assertFalse(card.showLegacyControls)
         assertFalse(card.controlsEnabled)
         assertEquals("推流中", card.statusLabel)
-        assertEquals("镜头推流", card.typeLabel)
+        assertEquals("相机推流节点", card.typeLabel)
         assertEquals("推流已停止", buildDeviceCardUiModel(camera.copy(isStreaming = false)).statusLabel)
         assertEquals("离线", buildDeviceCardUiModel(camera.copy(online = false)).statusLabel)
     }

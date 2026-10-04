@@ -1,4 +1,4 @@
-# VisionGuard 视觉节点
+# 视觉节点
 
 本文维护当前实现和必要约束。组件地图见[项目概览](10-project-overview.md)，命令见[运维](60-operations.md)，本轮验证和未覆盖项见[验证报告](90-verification-report.md)。
 
@@ -6,7 +6,7 @@
 
 | 入口 | 当前职责 |
 |---|---|
-| `detector/windows-launcher/` | VisionGuard 视觉节点统一入口；选择内部运行时；整包下载、大小/SHA256 校验、安全解压、目录切换和失败回滚 |
+| `detector/windows-launcher/` | 视觉节点统一入口；选择内部运行时；整包下载、大小/SHA256 校验、安全解压、目录切换和失败回滚 |
 | `detector/windows-wpf/` | net472 WPF x64，同一份界面与检测链，按 `OrtProfile` 构建两个内部推理档位 |
 | `detector/windows-resident/` | 视觉节点的内部后台驻留程序；net472 x64 当前用户进程，承接生命周期远控 |
 
@@ -48,7 +48,7 @@
 
 ## 后台驻留
 
-后台驻留属于 VisionGuard 视觉节点，随统一 Windows 包安装与更新；它有独立进程和工程标识，不作为单独应用。
+后台驻留属于 视觉节点，随统一 Windows 包安装与更新；它有独立进程和工程标识，不作为单独应用。
 
 - 检测端启动时拉起同目录驻留并等待单实例握手；驻留脱离父进程，自行登记登录启动。检测端退出后驻留继续存活；启动失败不阻断检测，但原因可见。
 - WS 角色 `lifecycle`，节点类型 `resident`，平台 `windows`；与检测端共用 `deviceId` 和设备名称。名称以服务登记为准，`device-updated` 同步主节点、驻留和本地缓存，旧心跳不会覆盖控制台改名。

@@ -42,9 +42,9 @@ The script currently accepts `All`, `Server`, `Windows`, `WPF`, `WindowsResident
 - Internal modern runtime: `detector/windows-package/bin/Release/runtimes/modern/VisionGuard.Detector.Windows.exe`
 - Internal legacy runtime: `detector/windows-package/bin/Release/runtimes/legacy/VisionGuard.Detector.Windows.exe`
 - 视觉节点内部驻留程序： `detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe`
-- VisionGuard 镜头推流： `detector/android/app/build/outputs/apk/release/app-release.apk`
-- VisionGuard 控制台： `receiver/android/app/build/outputs/apk/release/app-release.apk`
-- VisionGuard 通知节点： `notifier/android/app/build/outputs/apk/release/app-release.apk`
+- 相机推流节点： `detector/android/app/build/outputs/apk/release/app-release.apk`
+- 控制台： `receiver/android/app/build/outputs/apk/release/app-release.apk`
+- 通知节点： `notifier/android/app/build/outputs/apk/release/app-release.apk`
 
 Report the command, per-target result, artifact paths, important warnings, and any skipped target. State explicitly that no version, release, deployment, commit, or push action occurred unless the user requested it.
 

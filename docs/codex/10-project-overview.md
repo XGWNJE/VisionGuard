@@ -8,11 +8,11 @@
 
 VisionGuard 按节点、统一服务和控制台划分职责：镜头节点采集画面，推理节点判断并上报检测事件，通知节点接警；统一服务负责连接、认证、媒体、状态、告警流转和控制转发；控制台统一查看、配置和管理各类节点。
 
-Windows 推理应用为 **VisionGuard 视觉节点**，Android 摄像应用为 **VisionGuard 镜头推流**，Web 与 Android 管理应用为 **VisionGuard 控制台**，独立接警应用为 **VisionGuard 通知节点**。服务正式名称为 **VisionGuard 统一服务 / VisionGuard Server**；后台驻留程序属于 Windows 视觉节点的内部组成。
+Windows 推理应用为 **视觉节点**，Android 摄像应用为 **相机推流节点**，Web 与 Android 管理应用为 **控制台**，独立接警应用为 **通知节点**。服务名称为 **统一服务**；后台驻留程序属于 Windows 视觉节点的内部组成。
 
 基础账号将一套设备、画面、事件、截图、控制和通知范围隔离。组件使用账号密码登录，服务生成设备身份与会话；用户不再填写通道、设备 ID 或匹配密钥。一个在线推理节点自动关联镜头，多个节点按名称选择。账号创建由管理员命令完成，当前没有公开注册、团队权限或销售计费。
 
-后续能力通过扩展节点类型接入同一套服务和控制台，避免按硬件另建系统。当前已实现统一接入基础：登记角色、节点类型与平台，支持视觉/传感器事件、控制回执、通知收件确认及中断监测。VisionGuard 通知节点已接入后台通知与声音，Web 已承担跨端管理和通知范围配置；硬件驱动尚未接入；契约见[统一服务](20-server.md#统一接入契约)。
+后续能力通过扩展节点类型接入同一套服务和控制台，避免按硬件另建系统。当前已实现统一接入基础：登记角色、节点类型与平台，支持视觉/传感器事件、控制回执、通知收件确认及中断监测。通知节点已接入后台通知与声音，Web 已承担跨端管理和通知范围配置；硬件驱动尚未接入；契约见[统一服务](20-server.md#统一接入契约)。
 
 本项目采用 MIT License，以根目录 [LICENSE](../../LICENSE) 为准；第三方依赖、模型和素材遵循各自许可证。Windows 对外只交付一个统一包，由 Win7 兼容启动器按系统选择两个内部 WPF 推理运行时。
 
@@ -22,27 +22,27 @@ Windows 推理应用为 **VisionGuard 视觉节点**，Android 摄像应用为 *
 
 | 规范名称 | 平台 | 路径 | 当前实现范围 |
 |---|---|---|---|
-| VisionGuard 视觉节点 | Windows | `detector/windows-launcher/`、`detector/windows-wpf/`、`detector/windows-resident/` | 本地画面及远程镜头多来源推理；统一入口和整包更新；legacy / modern 内部运行时；后台驻留与生命周期控制 |
-| VisionGuard 镜头推流 | Android | `detector/android/` | 前台 CameraX 采集、最高 720P、实时画面经服务转发；切后台或锁屏停止；不在手机推理 |
-| VisionGuard 控制台 | Android | `receiver/android/` | 设备/来源查看、告警详情、逐来源控制和参数配置；识别通用身份和无图事件；保留当前实现，跨端管理由 Web 承担 |
-| VisionGuard 控制台 | Web | `receiver/web/` | 同源管理节点/来源、事件、当前参数及每个通知节点的接收范围 |
-| VisionGuard 通知节点 | Android | `notifier/android/` | 后台接警、持久化报警队列、有限次数播放、记录、统一时间；无本机通知关键词监听 |
-| VisionGuard 统一服务 | 服务端 | `server/` | 账号与设备会话、账号隔离、媒体转发、状态、告警流转、控制与文件分发 |
+| 视觉节点 | Windows | `detector/windows-launcher/`、`detector/windows-wpf/`、`detector/windows-resident/` | 本地画面及远程镜头多来源推理；统一入口和整包更新；legacy / modern 内部运行时；后台驻留与生命周期控制 |
+| 相机推流节点 | Android | `detector/android/` | 前台 CameraX 采集、最高 720P、实时画面经服务转发；切后台或锁屏停止；不在手机推理 |
+| 控制台 | Android | `receiver/android/` | 设备/来源查看、告警详情、逐来源控制和参数配置；识别通用身份和无图事件；保留当前实现，跨端管理由 Web 承担 |
+| 控制台 | Web | `receiver/web/` | 同源管理节点/来源、事件、当前参数及每个通知节点的接收范围 |
+| 通知节点 | Android | `notifier/android/` | 后台接警、持久化报警队列、有限次数播放、记录、统一时间；无本机通知关键词监听 |
+| 统一服务 | 服务端 | `server/` | 账号与设备会话、账号隔离、媒体转发、状态、告警流转、控制与文件分发 |
 
 ### 当前链路
 
 ```text
-VisionGuard 镜头推流 ──实时摄像头──▶ 统一服务 ──指定来源──▶ Windows 视觉节点
-VisionGuard 视觉节点 ──检测事件、状态、内部驻留生命周期──▶ 统一服务 ──事件、状态──▶ Web 控制台
-统一服务 ──实时报警──▶ VisionGuard 通知节点（保存后确认收件、进入声音队列）
-VisionGuard 视觉节点 ◀──控制、配置── 统一服务 ◀──控制、配置、通知范围── Web 控制台
+相机推流节点 ──实时摄像头──▶ 统一服务 ──指定来源──▶ Windows 视觉节点
+视觉节点 ──检测事件、状态、内部驻留生命周期──▶ 统一服务 ──事件、状态──▶ Web 控制台
+统一服务 ──实时报警──▶ 通知节点（保存后确认收件、进入声音队列）
+视觉节点 ◀──控制、配置── 统一服务 ◀──控制、配置、通知范围── Web 控制台
 ```
 
 以上是当前实现链路；本机、模拟器与独立公网的运行证据以验证报告为准，不代表真机和正式环境验收。
 
 ## 名称与身份
 
-完整中文名、英文名、简称、工程/包名、登录组件、协议身份及构建更新标识只在[命名规范](15-component-naming.md)维护。视觉节点是 Windows 应用名；镜头推流与它同属 `visual` 节点类型，但不执行手机推理。控制台管理设备，通知节点负责接警，不笼统称为“接收端”。
+完整中文名、英文名、简称、工程/包名、登录组件、协议身份及构建更新标识只在[命名规范](15-component-naming.md)维护。视觉节点是 Windows 应用名；相机推流节点与它同属 `visual` 节点类型，但不执行手机推理。控制台管理设备，通知节点负责接警，不笼统称为“接收端”。
 
 统一服务当前实现连接认证、心跳、告警广播、截图/更新路由和设备在线状态；连接状态不等于通知收件确认，通知收件确认不等于声音播放。完整报警链的覆盖边界见[验证报告](90-verification-report.md)。
 
@@ -50,16 +50,16 @@ VisionGuard 视觉节点 ◀──控制、配置── 统一服务 ◀──�
 
 | 目录 | 职责 |
 |---|---|
-| `detector/windows-launcher/` | VisionGuard 视觉节点统一入口与整包更新器（net472 / Win7+） |
-| `detector/windows-wpf/` | VisionGuard 视觉节点两套内部 WPF 运行时源码 |
+| `detector/windows-launcher/` | 视觉节点统一入口与整包更新器（net472 / Win7+） |
+| `detector/windows-wpf/` | 视觉节点两套内部 WPF 运行时源码 |
 | `detector/windows-package/` | 构建生成的统一 Windows 目录；不作为独立源码组件 |
-| `detector/windows-resident/` | VisionGuard 视觉节点的内部后台驻留程序 |
-| `detector/windows-shared/` | VisionGuard 视觉节点与驻留程序共用的进程/身份代码 |
+| `detector/windows-resident/` | 视觉节点的内部后台驻留程序 |
+| `detector/windows-shared/` | 视觉节点与驻留程序共用的进程/身份代码 |
 | `detector/windows-wpf-smoke/` | 人员检测 smoke 工具，按配置的来源数量取证；用独立 net472 窗口承载来源，legacy 档因此也能在 Win7 上运行 |
-| `detector/android/` | VisionGuard 镜头推流 |
+| `detector/android/` | 相机推流节点 |
 | `android-shared/` | 三个 Android 组件共用的账号、加密会话与登录界面 |
-| `receiver/android/` | VisionGuard 控制台 |
-| `notifier/android/` | VisionGuard 通知节点；独立安装身份与本地数据 |
+| `receiver/android/` | 控制台 |
+| `notifier/android/` | 通知节点；独立安装身份与本地数据 |
 | `receiver/web/` | Web 控制台；构建到 `server/dist/console/` |
 | `server/` | HTTP / WebSocket 统一服务 |
 | `scripts/` | 版本、构建、验证、发行和模型导出脚本 |

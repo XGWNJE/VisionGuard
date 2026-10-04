@@ -4,10 +4,10 @@
     <TargetFramework>net472</TargetFramework>
     <PlatformTarget>x64</PlatformTarget>
     <AssemblyName>VisionGuard.Detector.Windows</AssemblyName>
-    <Title>VisionGuard 视觉节点</Title>
-    <AssemblyTitle>VisionGuard 视觉节点</AssemblyTitle>
-    <Product>VisionGuard 视觉节点</Product>
-    <Description>VisionGuard 视觉节点统一启动入口</Description>
+    <Title>视觉节点</Title>
+    <AssemblyTitle>视觉节点</AssemblyTitle>
+    <Product>视觉节点</Product>
+    <Description>视觉节点统一启动入口</Description>
     <RootNamespace>VisionGuard.Detector.Windows.Launcher</RootNamespace>
     <StartupObject>VisionGuard.Detector.Windows.Launcher.Program</StartupObject>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -15,9 +15,9 @@
     <LangVersion>7.3</LangVersion>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
-    <Version>0.5.1</Version>
-    <FileVersion>0.5.1</FileVersion>
-    <AssemblyVersion>0.5.1</AssemblyVersion>
+    <Version>0.5.2</Version>
+    <FileVersion>0.5.2</FileVersion>
+    <AssemblyVersion>0.5.2</AssemblyVersion>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System.Net.Http" />

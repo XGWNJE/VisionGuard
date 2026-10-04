@@ -761,7 +761,7 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   _heartbeatCounter.set(msg.deviceId, count % 60 === 0 ? 0 : count);
   if (count === 1 || count % 60 === 0) {
     const silentSec = Math.round((Date.now() - client.lastSeen.getTime()) / 1000);
-    const roleLabel = client.identity.component === 'android-camera' ? '镜头推流（Android）' : client.identity.nodeType === 'sensor' ? '传感器节点' : '视觉节点（Windows）';
+    const roleLabel = client.identity.component === 'android-camera' ? '相机推流节点（Android）' : client.identity.nodeType === 'sensor' ? '传感器节点' : '视觉节点（Windows）';
     console.log(`[ws][${new Date().toISOString()}] ${roleLabel} 心跳: ${client.deviceName} (${msg.deviceId}) monitoring=${msg.isMonitoring} 静默${silentSec}s`);
   }
 
@@ -1276,7 +1276,7 @@ const maintenanceTimer = setInterval(() => {
     for (const [id, client] of clients) {
       if (client.lastSeen.getTime() <= detectorDeadline) {
         const silentSec = Math.round((now - client.lastSeen.getTime()) / 1000);
-        const roleLabel = client.identity.component === 'android-camera' ? '镜头推流（Android）' : client.identity.nodeType === 'sensor' ? '传感器节点' : '视觉节点（Windows）';
+        const roleLabel = client.identity.component === 'android-camera' ? '相机推流节点（Android）' : client.identity.nodeType === 'sensor' ? '传感器节点' : '视觉节点（Windows）';
         console.log(`[ws][${ts}] ${roleLabel} 幽灵清理: ${client.deviceName} (${id}) 静默 ${silentSec}s 阈值 ${config.deviceOfflineMs / 1000}s`);
         client.ws.terminate();
         emitFault(client, 'connection-lost');

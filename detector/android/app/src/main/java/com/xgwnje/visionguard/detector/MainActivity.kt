@@ -76,7 +76,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             VisionguardTheme(darkTheme = darkTheme) {
-                if (session == null) AccountLogin(account, "VisionGuard 镜头推流", "android-camera")
+                if (session == null) AccountLogin(account, "相机推流节点", "android-camera")
                 else key(session!!.scope) {
                     val connection = remember { CameraPublisher(account) }
                     val prefs = remember { getSharedPreferences("camera-options-" + AccountStore.cacheKey(this@MainActivity), MODE_PRIVATE) }
@@ -172,7 +172,7 @@ private fun CameraHome(state: PublisherState, preview: Bitmap?, streaming: Boole
         else -> colors.onSurface
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("镜头推流", style = MaterialTheme.typography.titleLarge)
+        Text("相机推流节点", style = MaterialTheme.typography.titleLarge)
         Text(state.status, color = statusColor, style = MaterialTheme.typography.titleSmall)
         Text("保持应用在前台；离开应用或锁屏后停止推流。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedCard(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, colors = CardDefaults.outlinedCardColors(containerColor = colors.surface), border = BorderStroke(1.dp, colors.outlineVariant)) {

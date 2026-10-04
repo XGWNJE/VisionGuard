@@ -21,11 +21,11 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scri
 构建结果必须按组件分别报告，并在完成后检查：
 
 - 统一服务及 Web：`server/dist/index.js`、`server/dist/console/index.html`；先分别运行 `npm --prefix server ci` 与 `npm --prefix receiver/web ci`，需要 Node.js 22.18 或以上
-- VisionGuard 视觉节点统一入口：`detector/windows-package/bin/Release/VisionGuard.Detector.Windows.exe`；内部运行时位于 `runtimes/modern/` 与 `runtimes/legacy/`，各自只保留匹配的 `native\modern\`、`native\legacy\`，包根目录不得残留 `onnxruntime.dll` 或 `DirectML.dll`
+- 视觉节点统一入口：`detector/windows-package/bin/Release/VisionGuard.Detector.Windows.exe`；内部运行时位于 `runtimes/modern/` 与 `runtimes/legacy/`，各自只保留匹配的 `native\modern\`、`native\legacy\`，包根目录不得残留 `onnxruntime.dll` 或 `DirectML.dll`
 - 视觉节点内部驻留程序：`detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe`
-- VisionGuard 镜头推流：`detector/android/app/build/outputs/apk/release/app-release.apk`
-- VisionGuard 控制台：`receiver/android/app/build/outputs/apk/release/app-release.apk`
-- VisionGuard 通知节点：`notifier/android/app/build/outputs/apk/release/app-release.apk`
+- 相机推流节点：`detector/android/app/build/outputs/apk/release/app-release.apk`
+- 控制台：`receiver/android/app/build/outputs/apk/release/app-release.apk`
+- 通知节点：`notifier/android/app/build/outputs/apk/release/app-release.apk`
 
 Windows 发行输出不得包含 `.pdb`、`.lib`、`.dll.config`、`.onnx`、`Assets/` 或 `alerts/`；模型按需下载，不随发行包分发。详细模型与项目文件边界见[模型资源](35-model-assets.md)。
 
@@ -143,6 +143,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish-release.ps1 -Version 
 ```
 
 该命令会同步版本、构建、准备签名包、更新 release 元数据、按目标上传并可部署统一服务；每一步都需要明确发布授权。仅检查前置条件时使用 `-PreflightOnly`，明确只发客户端时使用 `-SkipServerDeploy`。GitHub push、tag 和 Release 仍需显式开关。
+
+`All` 包含 Windows 整包、三个 Android 签名包、服务及 Web；通知节点可单独使用 `-Target AndroidNotifier`。更新查询键为 `wpf`、`android-detector`、`android-receiver`、`android-notifier`，通知节点当前通过下载安装。基础设施目录不在默认相邻路径时，显式传入当前 `Server-infra/server.local.env` 的 `-ServerEnvPath`，不能改写真实凭据或沿用旧路径。上线前备份运行代码、配置和私有数据；发布上传按 SHA256 跳过相同文件，同时核验 Windows 所需公共模型。
 
 发布前必须确认 Android 签名材料、Windows ZIP 清洁度、元数据大小和目标范围；发布后才可执行公网 `/health`、`/api/update`、`HEAD 200` 和 byte-range `206` 验证。发布脚本是唯一的正式打包/部署实现。
 

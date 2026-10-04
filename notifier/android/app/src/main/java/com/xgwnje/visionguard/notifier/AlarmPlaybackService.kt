@@ -507,7 +507,7 @@ class AlarmPlaybackService : Service() {
         val launch = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this, FOREGROUND_CHANNEL_ID)
             .setColor(ContextCompat.getColor(this, R.color.md_theme_primary))
-            .setContentTitle("VisionGuard 通知节点").setContentText("恢复已保存的报警队列")
+            .setContentTitle("通知节点").setContentText("恢复已保存的报警队列")
             .setSmallIcon(R.drawable.ic_lucide_bell).setContentIntent(launch).setOngoing(true).setSilent(true).build()
     }
 }

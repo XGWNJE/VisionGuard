@@ -30,7 +30,7 @@ namespace VisionGuard.Detector.Windows.Views
                 Icon = System.Drawing.Icon.ExtractAssociatedIcon(
                     System.Reflection.Assembly.GetExecutingAssembly().Location)
                     ?? SystemIcons.Shield,
-                Text = "VisionGuard 视觉节点",
+                Text = "视觉节点",
                 Visible = true,
             };
 

@@ -124,7 +124,7 @@ class MainActivity : ComponentActivity() {
                 if (session != null) startAndBindService() else stopConnection()
             }
             VisionGuardReceiverTheme {
-                if (session == null) AccountLogin(account, "VisionGuard 控制台", "android-console")
+                if (session == null) AccountLogin(account, "控制台", "android-console")
                 else Column(Modifier.fillMaxSize().statusBarsPadding()) {
                     AccountHeader(account, session!!, beforeLogout = { clearAccountData(); stopConnection() })
                     Box(Modifier.weight(1f)) {

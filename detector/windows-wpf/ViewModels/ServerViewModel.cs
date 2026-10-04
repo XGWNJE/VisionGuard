@@ -187,7 +187,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                     if (!result.Succeeded)
                     {
                         VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show("主体仍在运行，未执行完整退出。\n" + result.FailureReason,
-                            "VisionGuard 视觉节点错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            "视觉节点错误", MessageBoxButton.OK, MessageBoxImage.Warning);
                         return;
                     }
 
@@ -196,7 +196,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 catch (Exception ex)
                 {
                     VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show("主体仍在运行，未执行完整退出。\n" + ex.Message,
-                        "VisionGuard 视觉节点错误", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        "视觉节点错误", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
                 finally
                 {

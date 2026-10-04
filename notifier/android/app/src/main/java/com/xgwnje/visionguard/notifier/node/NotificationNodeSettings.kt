@@ -4,7 +4,7 @@ import android.content.Context
 import com.xgwnje.visionguard.account.AccountStore
 
 data class NodeConnection(val endpoint: String = "", val deviceId: String = "",
-    val name: String = "VisionGuard 通知节点", val token: String = "")
+    val name: String = "通知节点", val token: String = "")
 
 class NotificationNodeSettings(private val context: Context) {
     private val prefs = context.getSharedPreferences("notification-settings-" + AccountStore.cacheKey(context), Context.MODE_PRIVATE)

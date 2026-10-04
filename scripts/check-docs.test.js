@@ -126,9 +126,9 @@ test('canonical component names cannot drift', () => {
   const read = p => fs.readFileSync(path.join(root, p), 'utf8');
   const errors = [];
   checkComponentContract(root,
-    read('README.md').replaceAll('VisionGuard 统一服务', 'Server'),
+    read('README.md').replaceAll('统一服务', 'Server'),
     read('docs/codex/10-project-overview.md'), read('docs/codex/60-operations.md'), errors);
-  assert.ok(errors.some(message => message.includes('canonical component name VisionGuard 统一服务')));
+  assert.ok(errors.some(message => message.includes('canonical component name 统一服务')));
 });
 
 test('the resident process cannot reappear as a standalone product', () => {
@@ -138,15 +138,15 @@ test('the resident process cannot reappear as a standalone product', () => {
   const naming = read('docs/codex/15-component-naming.md').replace('## 规范名称', '## 规范名称\n\n| 视觉驻留 | VisionGuard Resident | 视觉驻留 / Resident | Windows |');
   checkComponentContract(root, readme, read('docs/codex/10-project-overview.md'), read('docs/codex/60-operations.md'), errors, naming);
   assert.ok(errors.some(message => message.includes('current component table has 7 data rows; expected 6')));
-  assert.ok(errors.some(message => message.includes('canonical Chinese, English, short names')));
+  assert.ok(errors.some(message => message.includes('canonical Chinese names')));
 });
 
 test('English names and abbreviations cannot diverge between console platforms', () => {
   const read = p => fs.readFileSync(path.join(root, p), 'utf8');
   const errors = [];
   checkComponentContract(root, read('README.md'), read('docs/codex/10-project-overview.md'), read('docs/codex/60-operations.md'), errors,
-    read('docs/codex/15-component-naming.md').replace('| VisionGuard Console | 控制台 / Console | Web |', '| VisionGuard Receiver | 接收端 / Receiver | Web |'));
-  assert.ok(errors.some(message => message.includes('canonical Chinese, English, short names')));
+    read('docs/codex/15-component-naming.md').replace('| 控制台 | Web |', '| 接收端 | Web |'));
+  assert.ok(errors.some(message => message.includes('canonical Chinese names')));
 });
 
 test('a package assigned to the wrong Android application is rejected', () => {
@@ -156,8 +156,8 @@ test('a package assigned to the wrong Android application is rejected', () => {
     .replace('`com.xgwnje.visionguard.detector`', '`com.xgwnje.visionguard.receiver`')
     .replace('| `VisionGuard.Receiver.Android` | `com.xgwnje.visionguard.receiver` |', '| `VisionGuard.Receiver.Android` | `com.xgwnje.visionguard.detector` |');
   checkComponentContract(root, read('README.md'), read('docs/codex/10-project-overview.md'), read('docs/codex/60-operations.md'), errors, naming);
-  assert.ok(errors.some(message => message.includes('Android package mapped to VisionGuard 镜头推流')));
-  assert.ok(errors.some(message => message.includes('Android package mapped to VisionGuard 控制台')));
+  assert.ok(errors.some(message => message.includes('Android package mapped to 相机推流节点')));
+  assert.ok(errors.some(message => message.includes('Android package mapped to 控制台')));
 });
 
 test('camera and inference identities cannot be exchanged despite a shared node type', () => {
@@ -165,7 +165,7 @@ test('camera and inference identities cannot be exchanged despite a shared node 
   const errors = [];
   checkComponentContract(root, read('README.md'), read('docs/codex/10-project-overview.md'), read('docs/codex/60-operations.md'), errors,
     read('docs/codex/15-component-naming.md')
-      .replace('| 镜头推流（Android） | `android-camera` |', '| 镜头推流（Android） | `windows-inference` |')
+      .replace('| 相机推流节点（Android） | `android-camera` |', '| 相机推流节点（Android） | `windows-inference` |')
       .replace('| 视觉节点（Windows） | `windows-inference` |', '| 视觉节点（Windows） | `android-camera` |'));
   assert.ok(errors.some(message => message.includes('component/role/nodeType/platform mappings')));
 });
@@ -186,17 +186,17 @@ test('build targets, update keys and notifier delivery claims cannot drift', () 
   const errors = [];
   const naming = read('docs/codex/15-component-naming.md')
     .replace('| `AndroidDetector` | `android-detector` |', '| `AndroidReceiver` | `android-receiver` |')
-    .replace('当前未接入正式发布/自动更新流程', '已接入正式发布/自动更新流程');
+    .replace('应用内自动更新未实现', '应用内自动更新已实现');
   checkComponentContract(root, read('README.md'), read('docs/codex/10-project-overview.md'), read('docs/codex/60-operations.md'), errors, naming);
   assert.ok(errors.some(message => message.includes('build targets, update keys and output paths')));
-  assert.ok(errors.some(message => message.includes('notifier build-only delivery boundary')));
+  assert.ok(errors.some(message => message.includes('notifier manual update boundary')));
 });
 
 test('component platforms cannot drift', () => {
   const read = p => fs.readFileSync(path.join(root, p), 'utf8');
   const errors = [];
   checkComponentContract(root,
-    read('README.md').replace('| VisionGuard 镜头推流 | Android |', '| VisionGuard 镜头推流 | Windows |'),
+    read('README.md').replace('| 相机推流节点 | Android |', '| 相机推流节点 | Windows |'),
     read('docs/codex/10-project-overview.md'), read('docs/codex/60-operations.md'), errors);
   assert.ok(errors.some(message => message.includes('README.md must list the canonical platforms')));
 });

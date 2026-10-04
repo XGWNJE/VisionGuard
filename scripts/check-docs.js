@@ -9,12 +9,12 @@ const DEFAULT_ROOT = path.resolve(__dirname, '..');
 const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 
 const COMPONENTS = [
-  { label: 'VisionGuard 视觉节点', english: 'VisionGuard Visual Node', short: '视觉节点 / Visual Node', platform: 'Windows', relativePath: 'detector/windows-wpf', source: 'detector/windows-wpf/App.xaml.cs' },
-  { label: 'VisionGuard 镜头推流', english: 'VisionGuard Camera Streamer', short: '镜头推流 / Camera Streamer', platform: 'Android', relativePath: 'detector/android', source: 'detector/android/app/build.gradle.kts' },
-  { label: 'VisionGuard 控制台', english: 'VisionGuard Console', short: '控制台 / Console', platform: 'Android', relativePath: 'receiver/android', source: 'receiver/android/app/build.gradle.kts' },
-  { label: 'VisionGuard 控制台', english: 'VisionGuard Console', short: '控制台 / Console', platform: 'Web', relativePath: 'receiver/web', source: 'receiver/web/src/main.tsx' },
-  { label: 'VisionGuard 通知节点', english: 'VisionGuard Notifier', short: '通知节点 / Notifier', platform: 'Android', relativePath: 'notifier/android', source: 'notifier/android/app/build.gradle.kts' },
-  { label: 'VisionGuard 统一服务', english: 'VisionGuard Server', short: '统一服务 / Server', platform: '服务端', relativePath: 'server', source: 'server/src/index.ts' }
+  { label: '视觉节点', platform: 'Windows', relativePath: 'detector/windows-wpf', source: 'detector/windows-wpf/App.xaml.cs' },
+  { label: '相机推流节点', platform: 'Android', relativePath: 'detector/android', source: 'detector/android/app/build.gradle.kts' },
+  { label: '控制台', platform: 'Android', relativePath: 'receiver/android', source: 'receiver/android/app/build.gradle.kts' },
+  { label: '控制台', platform: 'Web', relativePath: 'receiver/web', source: 'receiver/web/src/main.tsx' },
+  { label: '通知节点', platform: 'Android', relativePath: 'notifier/android', source: 'notifier/android/app/build.gradle.kts' },
+  { label: '统一服务', platform: '服务端', relativePath: 'server', source: 'server/src/index.ts' }
 ];
 
 const WS_ROLES = ['detector', 'console', 'notifier', 'lifecycle'];
@@ -108,7 +108,7 @@ function checkVersionSources(root, version, errors) {
     ['receiver/android/app/build.gradle.kts', `versionName = "${version}"`],
     ['receiver/android/app/build.gradle.kts', `versionCode = ${versionCode}`],
     ['receiver/android/app/src/main/java/com/xgwnje/visionguard/receiver/AppConstants.kt', `VERSION = "${version}"`],
-    ['server/src/index.ts', `VisionGuard 统一服务 v${version} 已启动`]
+    ['server/src/index.ts', `统一服务 v${version} 已启动`]
   ];
   for (const project of [
     'detector/windows-launcher/VisionGuard.Detector.Windows.Launcher.csproj',
@@ -328,16 +328,16 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
   const rawCells = row => row.split('|').slice(1, -1).map(cell => cell.trim());
   const cells = row => rawCells(row).map(cell => cell.replaceAll('`', ''));
   const namingRows = tableRows(naming, '## 规范名称').map(cells);
-  const expectedNaming = COMPONENTS.map(({label, english, short, platform}) => [label, english, short, platform]);
+  const expectedNaming = COMPONENTS.map(({label, platform}) => [label, platform]);
   if (JSON.stringify(namingRows) !== JSON.stringify(expectedNaming)) {
-    errors.push(`[naming] ${namingPath} must use the canonical Chinese, English, short names and platforms in order`);
+    errors.push(`[naming] ${namingPath} must use the canonical Chinese names and platforms in order`);
   }
   requireText(naming, '品牌简称 **VG**', namingPath, 'the canonical brand abbreviation', errors);
   const protocolRows = tableRows(naming, '## 登录组件与协议身份').slice(1).map(cells);
   const expectedProtocol = [
     ['视觉节点（Windows）', 'windows-inference', 'detector', 'visual', 'windows'],
     ['视觉节点（驻留子进程）', 'windows-resident', 'lifecycle', 'resident', 'windows'],
-    ['镜头推流（Android）', 'android-camera', 'detector', 'visual', 'android'],
+    ['相机推流节点（Android）', 'android-camera', 'detector', 'visual', 'android'],
     ['控制台（Android）', 'android-console', 'console', 'console', 'android'],
     ['控制台（Web）', 'web-console', 'console', 'console', 'web'],
     ['通知节点（Android）', 'android-notifier', 'notifier', 'notification', 'android']
@@ -350,10 +350,10 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
   const expectedBuild = [
     ['视觉节点（Windows）', ['Windows', 'WPF'], ['wpf'], 'detector/windows-package/bin/Release/VisionGuard.Detector.Windows.exe'],
     ['视觉节点（驻留子进程）', ['WindowsResident'], ['wpf'], 'detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe'],
-    ['镜头推流（Android）', ['AndroidDetector'], ['android-detector'], 'detector/android/app/build/outputs/apk/release/app-release.apk'],
+    ['相机推流节点（Android）', ['AndroidDetector'], ['android-detector'], 'detector/android/app/build/outputs/apk/release/app-release.apk'],
     ['控制台（Android）', ['AndroidReceiver'], ['android-receiver'], 'receiver/android/app/build/outputs/apk/release/app-release.apk'],
     ['控制台（Web）', ['Server'], [], 'server/dist/console/index.html'],
-    ['通知节点（Android）', ['AndroidNotifier'], [], 'notifier/android/app/build/outputs/apk/release/app-release.apk'],
+    ['通知节点（Android）', ['AndroidNotifier'], ['android-notifier'], 'notifier/android/app/build/outputs/apk/release/app-release.apk'],
     ['统一服务（服务端）', ['Server'], [], 'server/dist/index.js']
   ];
   const codes = cell => [...cell.matchAll(/`([^`]+)`/g)].map(match => match[1]);
@@ -362,7 +362,7 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
     errors.push(`[naming] ${namingPath} must keep build targets, update keys and output paths mapped to their components`);
   }
   const notifierBuild = buildRows.find(row => row[0] === '通知节点（Android）') || [];
-  requireText(notifierBuild[2] || '', '当前未接入正式发布/自动更新流程', namingPath, 'the notifier build-only delivery boundary', errors);
+  requireText(notifierBuild[2] || '', '应用内自动更新未实现', namingPath, 'the notifier manual update boundary', errors);
   if (readmeRows.length !== COMPONENTS.length) {
     errors.push(`[component] README.md current component table has ${readmeRows.length} data rows; expected ${COMPONENTS.length}`);
   }
@@ -413,9 +413,9 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
   }
 
   for (const [directory, role, name, engineering, rowName] of [
-    ['detector', 'detector', 'VisionGuard 镜头推流', 'VisionGuard.Detector.Android', '镜头推流（Android）'],
-    ['receiver', 'receiver', 'VisionGuard 控制台', 'VisionGuard.Receiver.Android', '控制台（Android）'],
-    ['notifier', 'notifier', 'VisionGuard 通知节点', 'VisionGuard.Notifier.Android', '通知节点（Android）']
+    ['detector', 'detector', '相机推流节点', 'VisionGuard.Detector.Android', '相机推流节点（Android）'],
+    ['receiver', 'receiver', '控制台', 'VisionGuard.Receiver.Android', '控制台（Android）'],
+    ['notifier', 'notifier', '通知节点', 'VisionGuard.Notifier.Android', '通知节点（Android）']
   ]) {
     const base = directory + '/android';
     const packageName = 'com.xgwnje.visionguard.' + role;
@@ -433,9 +433,9 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
     requireText(row.join('|'), engineering, namingPath, 'the engineering name mapped to ' + name, errors);
   }
   for (const [project, assembly, title, product] of [
-    ['detector/windows-wpf/VisionGuard.Detector.Windows.csproj', 'VisionGuard.Detector.Windows', 'VisionGuard 视觉节点', 'VisionGuard 视觉节点'],
-    ['detector/windows-launcher/VisionGuard.Detector.Windows.Launcher.csproj', 'VisionGuard.Detector.Windows', 'VisionGuard 视觉节点', 'VisionGuard 视觉节点'],
-    ['detector/windows-resident/VisionGuard.Resident.Windows.csproj', 'VisionGuard.Resident.Windows', 'VisionGuard 视觉节点驻留程序', 'VisionGuard 视觉节点']
+    ['detector/windows-wpf/VisionGuard.Detector.Windows.csproj', 'VisionGuard.Detector.Windows', '视觉节点', '视觉节点'],
+    ['detector/windows-launcher/VisionGuard.Detector.Windows.Launcher.csproj', 'VisionGuard.Detector.Windows', '视觉节点', '视觉节点'],
+    ['detector/windows-resident/VisionGuard.Resident.Windows.csproj', 'VisionGuard.Resident.Windows', '视觉节点驻留程序', '视觉节点']
   ]) {
     const content = readUtf8(root, project, errors, { checkBom: false });
     requireText(content, '<AssemblyName>' + assembly + '</AssemblyName>', project, 'the canonical executable identity', errors);
@@ -451,7 +451,7 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
   }
   const packageJson = JSON.parse(readUtf8(root, 'server/package.json', errors, { checkBom: false }));
   if (packageJson.name !== 'visionguard-relay') errors.push('[component] server/package.json must use the canonical relay package name');
-  for (const name of ['VisionGuard 统一服务', 'VisionGuard Server']) {
+  for (const name of ['统一服务']) {
     requireText(packageJson.description, name, 'server/package.json', 'the canonical server display name', errors);
   }
   const webPackage = JSON.parse(readUtf8(root, 'receiver/web/package.json', errors, { checkBom: false }));

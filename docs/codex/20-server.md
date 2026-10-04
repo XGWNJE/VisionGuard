@@ -1,6 +1,6 @@
-# VisionGuard 统一服务
+# 统一服务
 
-`server/` 的规范名称是 **VisionGuard 统一服务 / VisionGuard Server**，沿用内部工程标识 `VisionGuard.Relay` 和 npm 包名 `visionguard-relay`。它提供账号登录、节点身份、实时媒体转发、状态、事件、控制、截图及公共模型和更新文件分发；名称与技术标识见[命名规范](15-component-naming.md)，组件分工见[项目概览](10-project-overview.md)。
+`server/` 的规范名称是 **统一服务**，沿用内部工程标识 `VisionGuard.Relay` 和 npm 包名 `visionguard-relay`。它提供账号登录、节点身份、实时媒体转发、状态、事件、控制、截图及公共模型和更新文件分发；名称与技术标识见[命名规范](15-component-naming.md)，组件分工见[项目概览](10-project-overview.md)。
 
 正式地址为 `https://visionguard.xgwnje.cn`。既有生产入口由 Nginx SNI 经 `127.0.0.1:9443` 转发至 `127.0.0.1:3000`，服务目录为 `/opt/visionguard-server`；根域 `https://xgwnje.cn` 是个人主页。源码更新不代表生产服务已升级，当前测试和生产证据见[验证报告](90-verification-report.md)。
 
@@ -10,7 +10,7 @@
 
 一套账号对应一套系统链路。所有组件使用账号密码登录，设备 ID、所属账号、角色、平台及随机会话凭据由服务端确定。客户端无需填写节点凭据或手动匹配通道；认证只使用本实例签发的会话。
 
-各客户端的 `component / role / nodeType / platform` 固定映射见[命名规范](15-component-naming.md#登录组件与协议身份)。镜头推流与 Windows 视觉节点同属 `visual` 类型，推理和事件上传能力按具体组件区分。
+各客户端的 `component / role / nodeType / platform` 固定映射见[命名规范](15-component-naming.md#登录组件与协议身份)。相机推流节点与 Windows 视觉节点同属 `visual` 类型，推理和事件上传能力按具体组件区分。
 
 Windows 登录自动获得同设备 ID 的 `windows-resident` 子会话，角色为 `lifecycle / resident / windows`。主会话退出、轮换、到期或设备解绑同时使子会话失效；独立刷新子会话仍保留主会话约束。平台是身份信息，权限由服务端组件映射决定。
 
@@ -22,7 +22,7 @@ HTTP 使用 `Authorization: Bearer <token>`；`/ws` 的首条消息为 `{type:'a
 
 ## 账号隔离与数据
 
-设备列表、媒体绑定、画面、事件、截图、控制请求、通知范围及显示时区均限定在当前账号。跨账号目标按不存在处理；截图必须关联当前账号中已保存的事件。HTTP 历史和截图仅控制台可读取，HTTP 事件上传仅推理组件可调用，镜头推流不能上报推理事件。
+设备列表、媒体绑定、画面、事件、截图、控制请求、通知范围及显示时区均限定在当前账号。跨账号目标按不存在处理；截图必须关联当前账号中已保存的事件。HTTP 历史和截图仅控制台可读取，HTTP 事件上传仅推理组件可调用，相机推流节点不能上报推理事件。
 
 ```text
 VISIONGUARD_DATA_DIR/
@@ -39,7 +39,7 @@ VISIONGUARD_DATA_DIR/
 
 ## 实时媒体
 
-`/media/ws` 与控制 socket 分开。首条消息为 `{type:'media-auth',token,direction:'publish'|'subscribe'}`，只有镜头推流可发布，只有 Windows 推理节点可订阅。每个摄像设备有独立 `streamId`；同账号只有一个兼容推理设备时自动绑定，多个时由控制台选择。`sourceId` 与绑定保存，重新连接使用新的媒体 `sessionId`，缓冲随连接或绑定变化清空。
+`/media/ws` 与控制 socket 分开。首条消息为 `{type:'media-auth',token,direction:'publish'|'subscribe'}`，只有相机推流节点可发布，只有 Windows 推理节点可订阅。每个摄像设备有独立 `streamId`；同账号只有一个兼容推理设备时自动绑定，多个时由控制台选择。`sourceId` 与绑定保存，重新连接使用新的媒体 `sessionId`，缓冲随连接或绑定变化清空。
 
 二进制帧为 4 字节大端 JSON 头长度、UTF-8 头和 JPEG。头包含 `streamId/sessionId/sequence/capturedAt/width/height/rotation`；转发时增加服务端 `receivedAt` 毫秒时间用于观测。JSON 头最多 4096 字节、JPEG 最多 2 MiB，分辨率最长边不超过 1280、短边不超过 720，服务检查 JPEG 声明尺寸与帧元数据一致。媒体订阅端仍须实际解码，错误帧不能算推理进展。
 

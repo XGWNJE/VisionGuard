@@ -238,3 +238,8 @@ button:active:not(:disabled) { filter: brightness(.88); }
 @media (forced-colors: active) { .node-row.selected, .nav-item.active { outline: 2px solid Highlight; outline-offset: -2px; } }
 
 [dir="rtl"] .lucide-chevron-left, [dir="rtl"] .lucide-log-out { transform: scaleX(-1); }
+
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand img { flex-shrink: 0; border-radius: 8px; }
+
+.brand span { font-size: 20px; font-weight: 650; color: var(--text); margin: 0; }

@@ -154,7 +154,7 @@ class ReceiverHomeModelsTest {
         assertEquals("视觉节点（Windows）", windowsModel.typeLabel)
 
         assertEquals(DeviceCardIllustration.ANDROID_CAMERA, androidModel.illustration)
-        assertEquals("镜头推流", androidModel.typeLabel)
+        assertEquals("相机推流节点", androidModel.typeLabel)
 
         assertEquals(DeviceCardIllustration.GENERIC_VIEWFINDER, unknownModel.illustration)
         assertEquals("节点", unknownModel.typeLabel)

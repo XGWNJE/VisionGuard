@@ -4,7 +4,7 @@
 
 ## 当前模型集合
 
-### VisionGuard 视觉节点 legacy 档（Win7 SP1 x64，YOLOv5）
+### 视觉节点 legacy 档（Win7 SP1 x64，YOLOv5）
 
 legacy 档的 ONNX Runtime 原生库是 1.1.0，算子覆盖不足以支撑 YOLO26，因此固定使用 YOLOv5 系列：
 
@@ -15,7 +15,7 @@ legacy 档的 ONNX Runtime 原生库是 1.1.0，算子覆盖不足以支撑 YOLO
 - `yolov5mu_320.onnx`
 - `yolov5mu_640.onnx`
 
-### VisionGuard 视觉节点 modern 档（Win10/11，YOLO26）
+### 视觉节点 modern 档（Win10/11，YOLO26）
 
 - `yolo26n_320.onnx`
 - `yolo26n_640.onnx`
@@ -24,7 +24,7 @@ legacy 档的 ONNX Runtime 原生库是 1.1.0，算子覆盖不足以支撑 YOLO
 - `yolo26m_320.onnx`
 - `yolo26m_640.onnx`
 
-Android 镜头推流不加载模型、不在手机推理；模型只由 Windows 视觉节点下载与执行。`scripts/prepare-android-nnapi-model.py` 仍用于既有 YOLO26 模型归一化，名称和发布资产契约未变，不代表当前 Android 有 NNAPI 推理链。
+Android 相机推流节点不加载模型、不在手机推理；模型只由 Windows 视觉节点下载与执行。`scripts/prepare-android-nnapi-model.py` 仍用于既有 YOLO26 模型归一化，名称和发布资产契约未变，不代表当前 Android 有 NNAPI 推理链。
 
 ## 模型按需下载
 
@@ -43,7 +43,7 @@ Android 镜头推流不加载模型、不在手机推理；模型只由 Windows 
 
 | 端/档位 | 路径 | 管理类 |
 |---|---|---|
-| VisionGuard 视觉节点（legacy 与 modern 两档共用同一缓存目录，清单按档位切换） | `%APPDATA%\VisionGuard\models\{modelKey}.onnx` | `Utils\ModelManager.cs` |
+| 视觉节点（legacy 与 modern 两档共用同一缓存目录，清单按档位切换） | `%APPDATA%\VisionGuard\models\{modelKey}.onnx` | `Utils\ModelManager.cs` |
 
 ### 首次安装 / 旧版升级
 
@@ -56,13 +56,13 @@ Android 镜头推流不加载模型、不在手机推理；模型只由 Windows 
 
 ## 输出格式
 
-- VisionGuard 视觉节点 legacy 档 YOLOv5：`[1,84,N]`
-- VisionGuard 视觉节点 modern 档 YOLO26：`[1,300,6]`
+- 视觉节点 legacy 档 YOLOv5：`[1,84,N]`
+- 视觉节点 modern 档 YOLO26：`[1,300,6]`
 
 ## COCO 映射真相源
 
-- VisionGuard 视觉节点：`detector/windows-wpf/Data/CocoClassMap.cs`
-- VisionGuard 控制台：`receiver/android/.../CocoClassMap.kt`
+- 视觉节点：`detector/windows-wpf/Data/CocoClassMap.cs`
+- 控制台：`receiver/android/.../CocoClassMap.kt`
 
 ## 统一目标子集
 
@@ -78,6 +78,6 @@ Android 镜头推流不加载模型、不在手机推理；模型只由 Windows 
 ## 维护规则
 
 - 模型文件不入 git 版本控制（`.gitignore` 排除 Windows `Assets/*.onnx`；Android 当前没有模型 assets 目录）。
-- VisionGuard 视觉节点项目文件从构建项中排除 `Assets/`；目录仍可保存发布所需模型，正式压缩阶段也排除该目录。
+- 视觉节点项目文件从构建项中排除 `Assets/`；目录仍可保存发布所需模型，正式压缩阶段也排除该目录。
 - 类目中英文映射引用源码静态表，不手动复制文档
 - 导出脚本、模型文件名、输入尺寸只在源码已存在时写入说明

@@ -53,7 +53,7 @@ function App() {
   if (!login) return <LoginScreen error={loginError} onLogin={value => { updateLogin(value); setLoginError(''); setPage('节点'); setEvent(null); }} />;
   return <div className="app-shell">
     <aside className="sidebar">
-      <div className="brand">VisionGuard<span>控制台</span></div>
+      <div className="brand"><img src="/console/icon.png" width="40" height="40" alt=""/><span>控制台</span></div>
       <nav aria-label="主导航">{([['节点',Monitor],['事件',Activity],['通知范围',Bell],['设置',Settings]] as const).map(([label,Icon]) => <button key={label} aria-current={page === label ? 'page' : undefined} className={page === label ? 'nav-item active' : 'nav-item'} onClick={() => { setPage(label); setMobileDetail(false); }}><Icon size={20}/><span>{label}</span></button>)}</nav>
       <div className="sidebar-footer"><span className={'dot '+(relay.connected ? 'online' : '')}/>{relay.status}<span className="subtle">跟随系统外观</span></div>
     </aside>
@@ -98,7 +98,7 @@ function LoginScreen({onLogin,error}:{onLogin:(value:Login)=>void;error:string})
   const [busy,setBusy] = useState(false); const [failure,setFailure] = useState('');
   async function submit() { setBusy(true); setFailure(''); try { websocketURL(location.origin); const value = await accountRequest('/api/account/login', undefined, {username:username.trim(),password,component:'web-console',deviceName:'Web 控制台'}); onLogin(parseLogin(value)); setPassword(''); } catch (e) { setFailure((e as Error).message); } finally { setBusy(false); } }
   return <div className="login-page"><form className="panel login-form" onSubmit={e => { e.preventDefault(); void submit(); }}>
-    <div className="brand">VisionGuard<span>控制台</span></div><h1>登录账号</h1><p>查看和管理同一账号下的设备</p>
+    <div className="brand"><img src="/console/icon.png" width="40" height="40" alt=""/><span>控制台</span></div><h1>登录账号</h1><p>查看和管理同一账号下的设备</p>
     {(failure || error) && <p className="error" role="alert">{failure || error}</p>}
     <label>账号<input required maxLength={64} autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} disabled={busy}/></label>
     <label>密码<input required type="password" maxLength={256} autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} disabled={busy}/></label>

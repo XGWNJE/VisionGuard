@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">VisionGuard 通知节点</string>
+    <string name="app_name">通知节点</string>
     <string name="no_ringtone_selected">系统默认闹钟铃声</string>
     <string name="default_ringtone_name">默认提醒音</string>
     <string name="ringtone_file_missing">铃声已失效，将回落系统闹钟</string>
