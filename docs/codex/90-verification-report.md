@@ -21,7 +21,7 @@
 | 真机通知闭环 | 小米 15 与红米平板后台收件、无声 WAV 有限次数、两条队列进程恢复、手动确认、时间切换、服务中断及恢复 | 通过：已列范围，不包含可听声音和持续运行 |
 | 真实镜头与人员报警链 | 当前真机 CameraX 720P、后台停止/手动恢复；可见 Release WPF → 本机服务 → 真机通知节点同事件及截图验证 | 阻塞：镜头需重新登录；快速输入工具安装被手机拒绝。隔离 WPF 登录/启动操作被自动审批拒绝；旧链路结果不替代当前包验证 |
 | UI 专项 | Windows 最新浅色间距/窗口选择、托盘、键盘焦点；Web 实际关联/解绑/改密及缩放；Android 权限、辅助功能与未覆盖状态 | Windows/浏览器自动操作工具启动失败，恢复重试仍报 `CryptUnprotectData 2148073483`；其余未覆盖项后续独立完善 |
-| 提交与云端 CI | 整理文档，检查改动范围和私有文件，提交并 push；核对本次提交的云端五项任务 | 本机检查通过；云端结果在完成后更新 |
+| 提交与云端 CI | 整理文档，检查改动范围和私有文件，提交并 push；核对云端五项任务 | 开发分支已 push，五项开发 CI 通过 |
 
 进入硬件联网与告警现场试验前，优先补齐当前包的真实人员报警链。权限、登录状态和自动操作工具恢复后再补受限项；不要求 owner 重复检查已通过内容。
 
@@ -33,14 +33,15 @@
 | Web | 18 项测试及 TypeScript/Vite 构建通过 | 并发刷新、迟到响应、旧账号缓存隔离、设备关联、时间与实时断线状态；实际页面范围另见 UI 行 |
 | Android | 三端共 84 项 JVM 单测通过；lintDebug 和 lintVitalRelease 均无错误 | 镜头 8、控制台 70、通知 6；lintDebug 警告 27 / 29 / 107，含既有 API/资源与 Gradle 弃用提示；不代替设备流程 |
 | Windows 账号与媒体 | Release `AccountMedia.Probe` 通过 | 分片/大消息、ping、取消/限额、最新帧/序列/过期/停止、DPAPI 会话、跨进程刷新、退出重登与隔离配置 |
+| Windows 重试与实例 | `WpfAlertChain.Probe --outbox-contract` 与 `SingleInstance.Probe` 通过 | 过期事件清除、活事件/确认落盘及恢复；相同身份拒绝第二实例、独立身份允许、退出释放；不替代真实主窗 |
 | Windows 布局与参数 | `CardLayoutPlan` 42、`SourceAutoSave` 12、`PerformanceWatchdog` 10 项通过 | 布局计算、320-DIP 画面边界与滚动、保存防抖及重置、性能阈值；不作为完整窗口交互验收 |
 | Windows 双模型 | legacy 与 modern 解析契约均通过 | 实际 ONNX：YOLOv5 `[1,84,2100]`、YOLO26 `[1,300,6]`，均从真实夹具图片得到 person；不证明动态视频、GPU 或完整报警链 |
 | 主题与图标 | 468 项主题检查、40 个 Lucide 官方 SVG 校验通过 | 颜色/对比、主题复用、资源和机械转换一致；已接开发 CI |
 | 文档与脚本 | 49 项文档、发行、编码、版本、账号 CLI 与启动器回归通过 | 后台不完整更新元数据正确降为警告，仍拒绝不完整更新包；不修改历史下载元数据 |
 | 全组件 Release | 9 个构建目标通过，三端 apksigner verify 通过，六个真机 APK 哈希一致 | Windows 0 警告/错误，统一目录 34 文件；服务/Web，Windows 启动器、驻留、modern/legacy 与统一目录，三个签名 Android 包 |
-| 云端 CI | 本轮 push 后核对 `Development checks` | 服务/Web、三个 Android 项目及 Windows 共五项任务；不把本机通过写成云端通过 |
+| 云端 CI | [Development checks 五项通过](https://github.com/XGWNJE/VisionGuard/actions/runs/37179287747) | 服务/Web、三个 Android 项目及 Windows 均为 success；此云端记录独立于本机与真机结果 |
 
-本轮证据集中在 `.local/pre-hardware-verification/`：测试与构建日志、两个设备目录、API 快照、故障时间与恢复记录。WPF 专项报告位于 `artifacts/e2e/`。签名 APK 为各工程 `app/build/outputs/apk/release/app-release.apk`；原始配置、会话、签名材料和设备截图均不提交。
+本轮证据集中在 `.local/pre-hardware-verification/`：`summary.json`、测试与构建日志、两个设备目录、API 快照、故障时间与恢复记录。WPF 专项报告位于 `artifacts/e2e/`。签名 APK 为各工程 `app/build/outputs/apk/release/app-release.apk`；原始配置、会话、签名材料和设备截图均不提交。
 
 ## 真实运行证据
 
