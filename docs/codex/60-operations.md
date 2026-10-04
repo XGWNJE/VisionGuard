@@ -157,7 +157,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish-release.ps1 -Version 
 ## 配置与服务边界
 
 - 统一服务真实账号库、会话、TLS 私钥及生产配置使用独立私有目录或部署环境变量，不能提交。
-- 各端只要求服务地址和账号密码；设备、组件与驻留身份由服务签发，不注入 API key、设备 ID 或通道。`VISIONGUARD_SERVER_URL` 可设置 Windows 和构建默认服务地址；客户端仍可在登录页更改地址。
+- 发行客户端只填写账号密码，服务地址内置；设备、默认名称、组件与驻留身份由服务签发，不注入 API key、设备 ID 或通道。Windows Debug 或显式隔离配置可使用 `VISIONGUARD_SERVER_URL`，Android Debug 可在隔离测试设置中修改地址；普通 Release 不受测试地址覆盖。
 - 本地签名配置位于被忽略的 `.local/` 和 Android `local.properties`，不与账号配置混用；移工作区时按需额外备份签名材料，不能提交到 Git。
 - 服务默认 HTTP；配置 `VISIONGUARD_TLS_CERT_FILE` 与 `VISIONGUARD_TLS_KEY_FILE` 可启动独立 HTTPS/WSS 测试实例。测试需独立进程、端口、数据目录和账号库，不覆盖线上目录、监听或代理配置。
 - 开发 CI 在 `.github/workflows/development.yml`：服务/Web 契约与构建、文档及 `check-ui-theme.js` 跨端主题/文字对比守卫、三个 Android 的 Debug 单测/lint/构建，以及 Windows 双档构建与媒体探针。CI 不使用生产凭据、不发布，云端执行结果须单独核实。
