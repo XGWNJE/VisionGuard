@@ -90,6 +90,8 @@ if (releasePackagingRequested && !hasReleaseKeystore && !allowUnsignedRelease) {
 }
 
 android {
+    sourceSets.getByName("main").res.srcDir(repositoryRoot.resolve("android-shared/src/main/res"))
+    sourceSets.getByName("main").assets.srcDir(repositoryRoot.resolve("android-shared/src/main/assets"))
     sourceSets.getByName("main").kotlin.srcDir(repositoryRoot.resolve("android-shared/src/main/java"))
     sourceSets.getByName("test").kotlin.srcDir(repositoryRoot.resolve("android-shared/src/test/java"))
     namespace = "com.xgwnje.visionguard.receiver"
@@ -157,7 +159,6 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.okhttp)

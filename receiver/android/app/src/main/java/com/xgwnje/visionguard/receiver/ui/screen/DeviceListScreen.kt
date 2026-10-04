@@ -1,5 +1,7 @@
 package com.xgwnje.visionguard.receiver.ui.screen
 
+import com.xgwnje.visionguard.icons.LucideIcons
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -12,17 +14,18 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
@@ -42,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import com.xgwnje.visionguard.account.VisionGuardControlColors
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -58,7 +62,11 @@ import com.xgwnje.visionguard.receiver.ui.theme.ReceiverAlert
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverAlertSoft
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverBackground
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverMuted
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverPrimaryText
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverInk
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverPrimary
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverOutline
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverOnPrimary
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverSurface
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverSurfaceMuted
 import com.xgwnje.visionguard.receiver.ui.viewmodel.DeviceViewModel
@@ -80,8 +88,7 @@ fun DeviceListScreen(
     val hapticFeedback = LocalHapticFeedback.current
     val lazyListState = rememberLazyListState()
     val onlineCount = remember(devices) { devices.count { it.online } }
-    val statusTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    val navigationBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val navigationBottomPadding = 0.dp
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
         val fromDeviceIndex = from.index - 1
         val toDeviceIndex = to.index - 1
@@ -104,10 +111,12 @@ fun DeviceListScreen(
 
     pendingUnbind?.let { device ->
         AlertDialog(
+            shape = MaterialTheme.shapes.large,
+            containerColor = ReceiverSurface,
             onDismissRequest = { if (!unbinding) pendingUnbind = null },
             title = { Text("解绑设备") },
-            text = { Text("解绑 ${device.deviceName} 后，该设备需要重新登录。已有事件记录会保留。") },
-            confirmButton = { TextButton(enabled = !unbinding, onClick = {
+            text = { Text("解绑 ${device.deviceName} 后，该设备需要重新登录。已有事件记录会保留。", modifier = Modifier.verticalScroll(rememberScrollState())) },
+            confirmButton = { TextButton(enabled = !unbinding, colors = VisionGuardControlColors.textButton(), shape = MaterialTheme.shapes.small, onClick = {
                 unbinding = true
                 scope.launch {
                     val success = deviceVm.unbindDevice(device.deviceId)
@@ -115,8 +124,8 @@ fun DeviceListScreen(
                     unbinding = false
                     snackbarHost.showSnackbar(if (success) "已解绑：${device.deviceName}" else "解绑失败，请重试")
                 }
-            }) { Text(if (unbinding) "正在解绑…" else "确认解绑") } },
-            dismissButton = { TextButton(enabled = !unbinding, onClick = { pendingUnbind = null }) { Text("取消") } }
+            }) { Text(if (unbinding) "正在解绑…" else "确认解绑", color = if (unbinding) ReceiverMuted else ReceiverAlert) } },
+            dismissButton = { TextButton(enabled = !unbinding, colors = VisionGuardControlColors.textButton(), shape = MaterialTheme.shapes.small, onClick = { pendingUnbind = null }) { Text("取消") } }
         )
     }
 
@@ -128,11 +137,11 @@ fun DeviceListScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 18.dp),
+                .padding(horizontal = 16.dp),
             state = lazyListState,
             contentPadding = PaddingValues(
-                top = statusTopPadding + 24.dp,
-                bottom = navigationBottomPadding + 122.dp
+                top = 24.dp,
+                bottom = 12.dp
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -177,8 +186,8 @@ fun DeviceListScreen(
                                 )
                             )
                             if (!device.online) TextButton(
-                                onClick = { pendingUnbind = device }, modifier = Modifier.align(Alignment.End)
-                            ) { Text("解绑设备") }
+                                onClick = { pendingUnbind = device }, modifier = Modifier.align(Alignment.End), shape = MaterialTheme.shapes.small
+                            ) { Text("解绑设备", color = ReceiverAlert) }
                         }
                     }
                 }
@@ -189,12 +198,12 @@ fun DeviceListScreen(
             hostState = snackbarHost,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(horizontal = 18.dp)
-                .padding(bottom = navigationBottomPadding + 106.dp)
+                .padding(horizontal = 16.dp)
+                .padding(bottom = navigationBottomPadding + 12.dp)
         ) { data ->
             CommandSnackbar(
                 message = data.visuals.message,
-                isError = data.visuals.message.startsWith("命令失败")
+                isError = data.visuals.message.startsWith("执行失败") || data.visuals.message.startsWith("解绑失败")
             )
         }
     }
@@ -208,15 +217,15 @@ private fun DeviceListHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 2.dp),
+            .padding(bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = "设备",
                 style = MaterialTheme.typography.titleLarge,
-                color = ReceiverPrimary,
-                fontWeight = FontWeight.Black
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold
             )
             Text(
                 text = if (totalCount > 0) "$onlineCount 台在线 / 共 $totalCount 台" else "暂无已登记节点",
@@ -234,32 +243,32 @@ private fun EmptyDeviceState(connected: Boolean) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(188.dp),
-        shape = RoundedCornerShape(28.dp),
+            .heightIn(min = 188.dp),
+        shape = MaterialTheme.shapes.medium,
         color = ReceiverSurface,
-        border = BorderStroke(1.dp, Color.White),
+        border = BorderStroke(1.dp, ReceiverOutline),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(22.dp),
+                .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
             Icon(
-                imageVector = Icons.Default.PowerSettingsNew,
+                imageVector = LucideIcons.Power,
                 contentDescription = null,
                 tint = ReceiverMuted,
-                modifier = Modifier.size(34.dp)
+                modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = if (connected) "暂无已登记节点" else "等待连接",
                 style = MaterialTheme.typography.titleMedium,
-                color = ReceiverPrimary,
-                fontWeight = FontWeight.Black
+                color = ReceiverInk,
+                fontWeight = FontWeight.SemiBold
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
@@ -277,15 +286,15 @@ private fun CommandSnackbar(
     isError: Boolean
 ) {
     Snackbar(
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(12.dp),
         containerColor = if (isError) ReceiverAlertSoft else ReceiverSurfaceMuted,
-        contentColor = if (isError) ReceiverAlert else ReceiverPrimary,
+        contentColor = if (isError) ReceiverAlert else ReceiverPrimaryText,
         actionContentColor = ReceiverPrimary
     ) {
         Text(
             text = message,
             style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Black
+            fontWeight = FontWeight.SemiBold
         )
     }
 }

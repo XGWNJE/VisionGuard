@@ -70,19 +70,10 @@ class ReceiverHomeModelsTest {
     }
 
     @Test
-    fun alertListChromeDoesNotReserveTopGapBecauseBannerOverlaysContent() {
+    fun alertListChromeDoesNotReserveExtraTopGap() {
         val chrome = buildAlertListChrome()
 
         assertEquals(0, chrome.topPaddingDp)
-    }
-
-    @Test
-    fun frostedOverlayUsesConsistentTranslucencyForTopAndBottomChrome() {
-        val overlay = buildFrostedOverlaySpec()
-
-        assertEquals(0.86f, overlay.topBannerAlpha, 0.001f)
-        assertEquals(overlay.topBannerAlpha, overlay.bottomBarAlpha, 0.001f)
-        assertEquals(0f, overlay.shadowElevationDp, 0.001f)
     }
 
     @Test
@@ -173,17 +164,12 @@ class ReceiverHomeModelsTest {
     fun deviceCardChromeSeparatesHeroBackgroundFromActionArea() {
         val chrome = buildDeviceCardChrome()
 
-        assertEquals(28, chrome.cardCornerRadiusDp)
+        assertEquals(12, chrome.cardCornerRadiusDp)
         assertEquals(104, chrome.heroHeightDp)
-        assertEquals(22, chrome.heroContentHorizontalPaddingDp)
-        assertEquals(8, chrome.heroContentVerticalPaddingDp)
-        assertEquals(false, chrome.titleHasContainer)
-        assertEquals(true, chrome.statusUsesCompactPill)
-        assertEquals(18, chrome.actionAreaHorizontalPaddingDp)
-        assertEquals(10, chrome.actionAreaVerticalPaddingDp)
-        assertEquals(44, chrome.actionButtonHeightDp)
-        assertEquals(0.58f, chrome.heroBackgroundAlpha, 0.001f)
-        assertEquals(1.08f, chrome.heroBackgroundScale, 0.001f)
+        assertEquals(16, chrome.heroContentHorizontalPaddingDp)
+        assertEquals(16, chrome.actionAreaHorizontalPaddingDp)
+        assertEquals(12, chrome.actionAreaVerticalPaddingDp)
+        assertEquals(48, chrome.actionButtonHeightDp)
     }
 
     @Test

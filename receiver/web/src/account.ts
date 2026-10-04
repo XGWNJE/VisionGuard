@@ -31,11 +31,17 @@ export async function accountRequest<T>(path: string, token?: string, body?: unk
     headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     cache: 'no-store', credentials: 'omit',
+  }).catch((error: unknown) => {
+    if (error instanceof TypeError) throw new Error('连接失败，请检查网络后重试');
+    throw error;
   });
   let data: { ok?: boolean; error?: string };
   try { data = await response.json(); } catch { throw new Error('服务暂不可用'); }
   if (!response.ok || data.ok === false) {
-    const messages: Record<number,string> = { 401:path === '/api/account/login' ? '账号或密码不正确' : '登录已失效，请重新登录', 403:'没有权限操作此设备', 404:'设备或关联目标不存在', 429:'尝试过于频繁，请稍后重试' };
+    const unauthorizedMessage = path === '/api/account/login' ? '账号或密码不正确'
+      : path === '/api/account/password' && data.error === 'Current password is incorrect' ? '当前密码不正确'
+      : '登录已失效，请重新登录';
+    const messages: Record<number,string> = { 401:unauthorizedMessage, 403:'没有权限操作此设备', 404:'设备或关联目标不存在', 429:'尝试过于频繁，请稍后重试' };
     throw new AccountRequestError(response.status, messages[response.status] || (response.status >= 500 ? '服务暂不可用' : '请检查填写内容后重试'));
   }
   return data as T;

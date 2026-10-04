@@ -3,10 +3,11 @@ package com.xgwnje.visionguard.notifier
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.app.ActivityCompat
@@ -40,6 +41,7 @@ class MainActivity : AppCompatActivity() {
                 if (session == null) AccountLogin(account, "VisionGuard 通知节点", "android-notifier")
                 else key(session!!.scope) {
                     val model = remember { SettingsViewModel(application) }
+                    var confirmationError by remember(activeAlert?.id) { mutableStateOf<String?>(null) }
                     DisposableEffect(session!!.scope) {
                         alarms = SharedPreferencesHelper(this@MainActivity)
                         alarms!!.prefs.registerOnSharedPreferenceChangeListener(queueListener)
@@ -52,7 +54,7 @@ class MainActivity : AppCompatActivity() {
                             syncAlarm()
                         }
                     }
-                    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+                    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding()) {
                         AccountHeader(account, session!!, beforeLogout = { stopAccount() })
                         val nav = rememberNavController()
                         NavHost(navController = nav, startDestination = "node", modifier = Modifier.weight(1f)) {
@@ -63,10 +65,11 @@ class MainActivity : AppCompatActivity() {
                     }
                     activeAlert?.let { item ->
                         AlarmDialog(onDismissRequest = {}, onConfirm = {
+                            confirmationError = null
                             if (alarms?.finishActiveAlert(item.id, AlertEndType.MANUAL)?.success != true)
-                                Toast.makeText(this, "确认保存失败，请重试", Toast.LENGTH_LONG).show()
+                                confirmationError = "确认保存失败，请重试"
                             syncAlarm()
-                        }, matchedKeyword = item.keyword, sourceApp = item.sourceApp, snippet = item.snippet, eventTimeMillis = item.firstTriggeredAt)
+                        }, matchedKeyword = item.keyword, sourceApp = item.sourceApp, snippet = item.snippet, eventTimeMillis = item.firstTriggeredAt, confirmationError = confirmationError)
                     }
                 }
             }

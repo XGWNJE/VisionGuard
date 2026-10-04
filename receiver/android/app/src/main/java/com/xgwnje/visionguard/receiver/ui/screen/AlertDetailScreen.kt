@@ -1,4 +1,6 @@
 package com.xgwnje.visionguard.receiver.ui.screen
+
+import com.xgwnje.visionguard.icons.LucideIcons
 import com.xgwnje.visionguard.receiver.data.model.eventLabel
 
 import android.Manifest
@@ -23,6 +25,7 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -34,10 +37,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.ImageNotSupported
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -62,18 +61,25 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.xgwnje.visionguard.receiver.service.AlertForegroundService
 import com.xgwnje.visionguard.receiver.ui.home.buildAlertDetailChrome
-import com.xgwnje.visionguard.receiver.ui.home.buildFrostedOverlaySpec
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverBackground
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverMuted
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverPrimaryText
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverInk
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverPrimary
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverOutline
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverOnPrimary
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverSurface
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverSurfaceMuted
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -93,12 +99,24 @@ fun AlertDetailScreen(
     var screenshotBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var screenshotFailed by remember { mutableStateOf(false) }
     var saveMessage by remember { mutableStateOf<String?>(null) }
+    var savingScreenshot by remember { mutableStateOf(false) }
 
     fun saveCurrentScreenshot() {
+        if (savingScreenshot) return
         val bitmap = screenshotBitmap ?: return
+        savingScreenshot = true
+        saveMessage = null
         scope.launch {
-            val saved = saveBitmapToGallery(context, bitmap)
-            saveMessage = if (saved) "已保存到相册" else "保存失败"
+            try {
+                val saved = saveBitmapToGallery(context, bitmap)
+                saveMessage = if (saved) "已保存到相册" else "保存失败"
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Exception) {
+                saveMessage = "保存失败，请重试"
+            } finally {
+                savingScreenshot = false
+            }
         }
     }
 
@@ -206,13 +224,13 @@ fun AlertDetailScreen(
         )
 
         DetailTopControls(
-            canSave = screenshotBitmap != null && chrome.supportsGallerySave,
+            canSave = screenshotBitmap != null && chrome.supportsGallerySave && !savingScreenshot,
             onBack = onBack,
             onSave = ::requestSaveToGallery,
             modifier = Modifier.align(Alignment.TopCenter)
         )
 
-        saveMessage?.let { message ->
+        (if (savingScreenshot) "正在保存到相册…" else saveMessage)?.let { message ->
             DetailToast(
                 message = message,
                 modifier = Modifier.align(Alignment.BottomCenter)
@@ -273,11 +291,14 @@ private fun ScreenshotViewport(
                 )
             }
             isLoading -> {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(34.dp),
-                    strokeWidth = 2.dp,
-                    color = ReceiverPrimary
-                )
+                Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(34.dp),
+                        strokeWidth = 2.dp,
+                        color = ReceiverPrimaryText
+                    )
+                    Text("正在加载截图…", style = MaterialTheme.typography.bodyLarge, color = ReceiverMuted)
+                }
             }
             hasFailed -> {
                 EmptyScreenshotState()
@@ -293,25 +314,23 @@ private fun DetailTopControls(
     onSave: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val statusPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(top = statusPadding + 12.dp)
-            .padding(horizontal = 18.dp),
+            .padding(top = 12.dp)
+            .padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         DetailIconButton(
-            icon = Icons.AutoMirrored.Filled.ArrowBack,
+            icon = LucideIcons.ArrowLeft,
             contentDescription = "返回",
             enabled = true,
             onClick = onBack
         )
-        Spacer(modifier = Modifier.width(18.dp))
+        Spacer(modifier = Modifier.width(16.dp))
         DetailIconButton(
-            icon = Icons.Default.Download,
+            icon = LucideIcons.Download,
             contentDescription = "保存到相册",
             enabled = canSave,
             onClick = onSave
@@ -326,27 +345,27 @@ private fun DetailIconButton(
     enabled: Boolean,
     onClick: () -> Unit
 ) {
-    val overlay = buildFrostedOverlaySpec()
-    val shape = RoundedCornerShape(22.dp)
+    val shape = MaterialTheme.shapes.small
 
     Surface(
         modifier = Modifier
             .size(52.dp)
             .alpha(if (enabled) 1f else 0.46f)
             .clip(shape)
-            .clickable(enabled = enabled, onClick = onClick),
+            .semantics { this.contentDescription = contentDescription }
+            .clickable(enabled = enabled, role = Role.Button, onClickLabel = contentDescription, onClick = onClick),
         shape = shape,
-        color = ReceiverSurface.copy(alpha = overlay.topBannerAlpha),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = overlay.borderAlpha)),
+        color = ReceiverSurface,
+        border = BorderStroke(1.dp, ReceiverOutline),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 imageVector = icon,
-                contentDescription = contentDescription,
-                tint = ReceiverPrimary,
-                modifier = Modifier.size(26.dp)
+                contentDescription = null,
+                tint = ReceiverInk,
+                modifier = Modifier.size(24.dp)
             )
         }
     }
@@ -355,23 +374,23 @@ private fun DetailIconButton(
 @Composable
 private fun EmptyScreenshotState() {
     Surface(
-        shape = RoundedCornerShape(30.dp),
+        shape = RoundedCornerShape(12.dp),
         color = ReceiverSurface,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.72f)),
+        border = BorderStroke(1.dp, ReceiverOutline),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = Icons.Default.ImageNotSupported,
+                imageVector = LucideIcons.ImageOff,
                 contentDescription = null,
                 tint = ReceiverMuted,
                 modifier = Modifier.size(24.dp)
             )
-            Spacer(modifier = Modifier.width(10.dp))
+            Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = "截图不可用",
                 style = MaterialTheme.typography.labelLarge,
@@ -389,19 +408,19 @@ private fun DetailToast(
     val navigationPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     Surface(
-        modifier = modifier.padding(bottom = navigationPadding + 28.dp),
-        shape = RoundedCornerShape(24.dp),
-        color = ReceiverSurfaceMuted.copy(alpha = 0.94f),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.72f)),
+        modifier = modifier.padding(start = 16.dp, end = 16.dp, bottom = navigationPadding + 24.dp),
+        shape = MaterialTheme.shapes.medium,
+        color = ReceiverSurfaceMuted,
+        border = BorderStroke(1.dp, ReceiverOutline),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
         Text(
             text = message,
             style = MaterialTheme.typography.labelLarge,
-            color = ReceiverPrimary,
-            fontWeight = FontWeight.Black,
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)
+            color = if (message.contains("失败") || message.contains("未获得")) MaterialTheme.colorScheme.error else ReceiverPrimaryText,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
         )
     }
 }

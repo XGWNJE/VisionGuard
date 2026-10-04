@@ -101,6 +101,8 @@
     <!-- 模型文件只作为发布输入，不进入应用构建项或输出。 -->
     <None Remove="Assets\**" />
     <Resource Include="favico3n.ico" />
+    <EmbeddedResource Include="..\..\assets\vendor\lucide\LICENSE" Link="ThirdParty\Lucide.LICENSE" />
+    <Content Include="..\..\assets\vendor\lucide\LICENSE" Link="third-party\lucide-license.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="app.manifest" />
   </ItemGroup>
 

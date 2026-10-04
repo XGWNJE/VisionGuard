@@ -1,5 +1,7 @@
 package com.xgwnje.visionguard.receiver.ui.screen
 
+import com.xgwnje.visionguard.icons.LucideIcons
+
 // ┌─────────────────────────────────────────────────────────┐
 // │ AlertListScreen.kt                                      │
 // │ 角色：主界面，显示接收状态与实时报警列表                    │
@@ -17,25 +19,23 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircleOutline
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.NotificationsOff
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -49,10 +49,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -71,10 +75,16 @@ import com.xgwnje.visionguard.receiver.ui.home.buildUpdateFailedDialogModel
 import com.xgwnje.visionguard.receiver.ui.home.UpdateDialogUiModel
 import com.xgwnje.visionguard.receiver.ui.home.UpdateDialogTone
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverMuted
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverPrimaryText
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverInk
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverPrimary
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverPrimarySoft
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverOutline
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverOnPrimary
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverSurface
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverSurfaceMuted
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverAlert
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverAlertSoft
 import com.xgwnje.visionguard.receiver.ui.viewmodel.AlertViewModel
 import com.xgwnje.visionguard.receiver.util.AutoUpdater
 import com.xgwnje.visionguard.receiver.util.UpdateCheckResult
@@ -107,7 +117,6 @@ fun AlertListScreen(
     var pendingUpdateDialog by remember { mutableStateOf<PendingUpdateDialog?>(null) }
     var isCheckingUpdate by remember { mutableStateOf(false) }
     val chrome = remember { buildAlertListChrome() }
-    val statusTopPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -116,11 +125,48 @@ fun AlertListScreen(
                 .padding(horizontal = chrome.horizontalPaddingDp.dp)
                 .padding(top = chrome.topPaddingDp.dp),
             contentPadding = PaddingValues(
-                top = statusTopPadding + chrome.topOverlayReservedDp.dp,
+                top = 12.dp,
                 bottom = chrome.bottomOverlayReservedDp.dp
             ),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            item {
+                ConnectionBanner(
+                    state = wsState,
+                    onlineCount = onlineDeviceCount,
+                    isCheckingUpdate = isCheckingUpdate,
+                    onClick = {
+                        if (!isCheckingUpdate) {
+                            isCheckingUpdate = true
+                            scope.launch {
+                                when (val result = AutoUpdater.checkUpdateResult()) {
+                                    is UpdateCheckResult.Available -> {
+                                        pendingUpdateDialog = PendingUpdateDialog(
+                                            model = buildUpdateDialogModel(
+                                                latestVersion = result.info.version,
+                                                currentVersion = AppConstants.VERSION
+                                            ),
+                                            updateInfo = result.info
+                                        )
+                                    }
+                                    UpdateCheckResult.NoUpdate -> {
+                                        pendingUpdateDialog = PendingUpdateDialog(
+                                            model = buildNoUpdateDialogModel(AppConstants.VERSION)
+                                        )
+                                    }
+                                    UpdateCheckResult.Failed -> {
+                                        pendingUpdateDialog = PendingUpdateDialog(
+                                            model = buildUpdateFailedDialogModel(AppConstants.VERSION)
+                                        )
+                                    }
+                                }
+                                isCheckingUpdate = false
+                            }
+                        }
+                    }
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+            }
             if (sourceOptions.isNotEmpty()) {
                 item {
                     LazyRow(
@@ -132,7 +178,9 @@ fun AlertListScreen(
                             FilterChip(
                                 selected = selectedSourceKey == null,
                                 onClick = { selectedSourceKey = null },
-                                label = { Text("全部来源") }
+                                label = { Text("全部来源") },
+                                modifier = Modifier.heightIn(min = 48.dp).widthIn(max = 280.dp),
+                                shape = MaterialTheme.shapes.small
                             )
                         }
                         items(sourceOptions, key = { it.key }) { source ->
@@ -140,15 +188,21 @@ fun AlertListScreen(
                             FilterChip(
                                 selected = selectedSourceKey == source.key,
                                 onClick = { selectedSourceKey = source.key },
-                                label = { Text(source.label) },
+                                label = { Text(source.label, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                                modifier = Modifier.heightIn(min = 48.dp).widthIn(max = 280.dp),
+                                shape = MaterialTheme.shapes.small,
                                 trailingIcon = {
-                                    Icon(
-                                        imageVector = if (muted) Icons.Default.NotificationsOff else Icons.Default.Notifications,
-                                        contentDescription = if (muted) "取消静音" else "静音此来源",
-                                        modifier = Modifier.size(18.dp).clickable {
-                                            alertVm.setSourceMuted(source.key, !muted)
-                                        }
-                                    )
+                                    val actionLabel = if (muted) "取消静音" else "静音此来源"
+                                    IconButton(
+                                        onClick = { alertVm.setSourceMuted(source.key, !muted) },
+                                        modifier = Modifier.size(48.dp).semantics { contentDescription = actionLabel }
+                                    ) {
+                                        Icon(
+                                            imageVector = if (muted) LucideIcons.BellOff else LucideIcons.Bell,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
                                 }
                             )
                         }
@@ -173,48 +227,7 @@ fun AlertListScreen(
             }
         }
 
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .padding(horizontal = chrome.horizontalPaddingDp.dp)
-                .padding(top = statusTopPadding + 12.dp)
-        ) {
-            ConnectionBanner(
-                state = wsState,
-                onlineCount = onlineDeviceCount,
-                isCheckingUpdate = isCheckingUpdate,
-                onClick = {
-                    if (!isCheckingUpdate) {
-                        isCheckingUpdate = true
-                        scope.launch {
-                            when (val result = AutoUpdater.checkUpdateResult()) {
-                                is UpdateCheckResult.Available -> {
-                                    pendingUpdateDialog = PendingUpdateDialog(
-                                        model = buildUpdateDialogModel(
-                                            latestVersion = result.info.version,
-                                            currentVersion = AppConstants.VERSION
-                                        ),
-                                        updateInfo = result.info
-                                    )
-                                }
-                                UpdateCheckResult.NoUpdate -> {
-                                    pendingUpdateDialog = PendingUpdateDialog(
-                                        model = buildNoUpdateDialogModel(AppConstants.VERSION)
-                                    )
-                                }
-                                UpdateCheckResult.Failed -> {
-                                    pendingUpdateDialog = PendingUpdateDialog(
-                                        model = buildUpdateFailedDialogModel(AppConstants.VERSION)
-                                    )
-                                }
-                            }
-                            isCheckingUpdate = false
-                        }
-                    }
-                }
-            )
-        }
+
     }
 
     pendingUpdateDialog?.let { dialog ->
@@ -240,15 +253,15 @@ private fun ReceiverUpdateDialog(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(32.dp),
+            shape = MaterialTheme.shapes.large,
             color = ReceiverSurface,
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.72f)),
+            border = BorderStroke(1.dp, ReceiverOutline),
             tonalElevation = 0.dp,
             shadowElevation = 0.dp
         ) {
             Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
+                modifier = Modifier.verticalScroll(rememberScrollState()).padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -256,41 +269,38 @@ private fun ReceiverUpdateDialog(
                 ) {
                     Surface(
                         modifier = Modifier.size(48.dp),
-                        shape = RoundedCornerShape(18.dp),
-                        color = ReceiverPrimarySoft,
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.72f))
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (model.tone == UpdateDialogTone.FAILED) ReceiverAlertSoft else ReceiverPrimarySoft,
+                        border = BorderStroke(1.dp, ReceiverOutline)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = updateDialogIcon(model.tone),
                                 contentDescription = null,
-                                tint = ReceiverPrimary,
-                                modifier = Modifier.size(26.dp)
+                                tint = if (model.tone == UpdateDialogTone.FAILED) ReceiverAlert else ReceiverPrimaryText,
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.width(14.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
                     Text(
                         text = model.title,
                         style = MaterialTheme.typography.titleMedium,
-                        color = ReceiverPrimary,
-                        fontWeight = FontWeight.Black,
+                        color = ReceiverInk,
+                        fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.weight(1f)
                     )
                     model.secondaryActionLabel?.let { closeDescription ->
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = closeDescription,
-                            tint = ReceiverMuted,
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clickable(onClick = onDismiss)
-                                .padding(4.dp)
-                        )
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.size(48.dp).semantics { contentDescription = closeDescription }
+                        ) {
+                            Icon(LucideIcons.X, contentDescription = null, tint = ReceiverMuted, modifier = Modifier.size(24.dp))
+                        }
                     }
                 }
 
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     VersionPill(text = model.currentVersionLabel)
                     VersionPill(text = model.latestVersionLabel)
                 }
@@ -328,24 +338,24 @@ private fun ReceiverUpdateDialog(
 
 private fun updateDialogIcon(tone: UpdateDialogTone): ImageVector =
     when (tone) {
-        UpdateDialogTone.AVAILABLE -> Icons.Default.SystemUpdateAlt
-        UpdateDialogTone.CURRENT -> Icons.Default.CheckCircleOutline
-        UpdateDialogTone.FAILED -> Icons.Default.ErrorOutline
+        UpdateDialogTone.AVAILABLE -> LucideIcons.Download
+        UpdateDialogTone.CURRENT -> LucideIcons.CircleCheck
+        UpdateDialogTone.FAILED -> LucideIcons.CircleAlert
     }
 
 @Composable
 private fun VersionPill(text: String) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(12.dp),
         color = ReceiverSurfaceMuted,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.76f))
+        border = BorderStroke(1.dp, ReceiverOutline)
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelLarge,
-            color = ReceiverPrimary,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+            color = ReceiverInk,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)
         )
     }
 }
@@ -358,25 +368,26 @@ private fun DialogActionPill(
     modifier: Modifier = Modifier
 ) {
     val containerColor = if (selected) ReceiverPrimary else ReceiverSurfaceMuted
-    val contentColor = if (selected) Color.White else ReceiverPrimary
+    val contentColor = if (selected) ReceiverOnPrimary else ReceiverInk
 
-    val shape = RoundedCornerShape(26.dp)
+    val shape = MaterialTheme.shapes.small
 
     Surface(
         modifier = modifier
-            .height(52.dp)
+            .heightIn(min = 48.dp)
             .clip(shape)
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClickLabel = text, onClick = onClick),
         shape = shape,
         color = containerColor,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.76f))
+        border = BorderStroke(1.dp, ReceiverOutline)
     ) {
         Box(contentAlignment = Alignment.Center) {
             Text(
                 text = text,
                 style = MaterialTheme.typography.labelLarge,
                 color = contentColor,
-                fontWeight = FontWeight.Black
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(12.dp)
             )
         }
     }
@@ -387,30 +398,30 @@ private fun EmptyAlertState() {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(188.dp),
-        shape = RoundedCornerShape(28.dp),
+            .heightIn(min = 188.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = ReceiverSurface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = BorderStroke(1.dp, Color.White)
+        border = BorderStroke(1.dp, ReceiverOutline)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(22.dp),
+                .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
         ) {
             Icon(
-                imageVector = Icons.Default.NotificationsOff,
+                imageVector = LucideIcons.BellOff,
                 contentDescription = null,
                 tint = ReceiverMuted,
-                modifier = Modifier.size(34.dp)
+                modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = "暂无报警记录",
                 style = MaterialTheme.typography.titleMedium,
-                color = ReceiverPrimary
+                color = ReceiverInk
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(

@@ -1,78 +1,42 @@
 package com.xgwnje.visionguard.notifier.ui.settings
 
+import com.xgwnje.visionguard.icons.LucideIcons
+
 import android.app.Application
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import com.xgwnje.visionguard.account.VisionGuardControlColors
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xgwnje.visionguard.account.VisionGuardStatusColors
 import com.xgwnje.visionguard.notifier.PermissionUtils
 import com.xgwnje.visionguard.notifier.RingtoneLibrary
+import com.xgwnje.visionguard.notifier.ui.*
 import com.xgwnje.visionguard.notifier.ui.dialogs.PermissionGuideDialog
-import com.xgwnje.visionguard.notifier.ui.main.rememberFrameDrivenProgress
-import com.xgwnje.visionguard.notifier.ui.settings.SettingsViewModel
-import com.xgwnje.visionguard.notifier.ui.settings.SettingsViewModelFactory
-import com.xgwnje.visionguard.notifier.ui.theme.VisionGuardPrimary
-import com.xgwnje.visionguard.notifier.ui.theme.VisionGuardError
-import com.xgwnje.visionguard.notifier.ui.theme.VisionGuardBackground
-import com.xgwnje.visionguard.notifier.ui.theme.VisionGuardTextSecondary
-import com.xgwnje.visionguard.notifier.ui.theme.VisionGuardBorder
-import com.xgwnje.visionguard.notifier.ui.theme.VisionGuardTextPrimary
-import com.xgwnje.visionguard.notifier.ui.theme.VisionGuardDivider
-import com.xgwnje.visionguard.notifier.ui.theme.VisionGuardSurface
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
-/**
- * 「A · 一线」铃声库页：自定义铃声来源管理（导入音频 / 录音）。
- * 条目支持命名、删除、试听；在接警页的「默认铃声」选择使用。
- */
+private data class RingtoneFeedback(override val message: String, val isError: Boolean) : SnackbarVisuals {
+    override val actionLabel: String? = null
+    override val withDismissAction: Boolean = false
+    override val duration: SnackbarDuration = SnackbarDuration.Long
+}
+
+/** 内置铃声、导入音频与录音；预设仅试听，自定义条目可重命名和删除。 */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun RingtoneLibraryScreen(
@@ -81,371 +45,197 @@ fun RingtoneLibraryScreen(
         factory = SettingsViewModelFactory(LocalContext.current.applicationContext as Application)
     )
 ) {
-    val rowLineColor = VisionGuardDivider
     val context = LocalContext.current
     val entries = viewModel.ringtoneLibrary
-    // 版本号必须在组合时真正读取（.value）才会订阅状态：isRecording/previewingFileName
-    // 是 RingtoneLibrary 的普通 getter，自身不可观察，靠版本号变化触发重组刷新。
     @Suppress("UNUSED_VARIABLE") val previewVersion = viewModel.previewVersion.value
     @Suppress("UNUSED_VARIABLE") val recordingVersion = viewModel.recordingVersion.value
     val previewing = viewModel.previewingFileName
     val isRecording = viewModel.isRecording
-
     var showMicGuide by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     var deleteTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
-    var toastMsg by remember { mutableStateOf<String?>(null) }
-
-    // 录音计时（仅 UI 展示）
+    var deleteError by remember { mutableStateOf<String?>(null) }
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val reportFeedback: (String, Boolean) -> Unit = { text, isError ->
+        scope.launch {
+            snackbar.currentSnackbarData?.dismiss()
+            snackbar.showSnackbar(RingtoneFeedback(text, isError))
+        }
+    }
+    var importing by remember { mutableStateOf(false) }
     var recordSeconds by remember { mutableLongStateOf(0L) }
+
     LaunchedEffect(isRecording) {
         recordSeconds = 0L
-        while (isRecording) {
-            delay(1000)
-            recordSeconds++
-        }
+        while (isRecording) { delay(1000); recordSeconds++ }
     }
-
-    // 离开页面时停掉试听与未完成的录音
     DisposableEffect(Unit) {
-        onDispose {
-            RingtoneLibrary.stopPreview()
-            RingtoneLibrary.cancelRecording()
-        }
+        onDispose { RingtoneLibrary.stopPreview(); RingtoneLibrary.cancelRecording() }
     }
-
-    val importLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
+            importing = true
             viewModel.importRingtone(uri) { ok ->
-                toastMsg = if (ok) "已导入铃声" else "导入失败"
+                importing = false
+                reportFeedback(if (ok) "已导入铃声" else "导入失败，请选择可读取的音频文件", !ok)
             }
         }
     }
-
-    val micPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
+    val micPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
-            viewModel.startRecording()
-        } else {
-            showMicGuide = true
-        }
+            if (!viewModel.startRecording()) {
+                reportFeedback("录音启动失败，请检查麦克风权限后重试", true)
+            }
+        } else showMicGuide = true
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(VisionGuardBackground)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 8.dp)
-    ) {
-        // ---- 顶部：返回 + 标题 + 导入 ----
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).navigationBarsPadding()) {
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(top = 16.dp, bottom = 80.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(width = 36.dp, height = 48.dp)
-                        .clickable(onClick = onNavigateBack),
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    Text(text = "←", fontSize = 18.sp, color = VisionGuardTextSecondary)
-                }
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "RINGTONES // 铃声库",
-                    style = BodyTextStyle,
-                    fontSize = 11.sp,
-                    letterSpacing = 2.sp,
-                    color = VisionGuardTextPrimary
-                )
-            }
-            Text(
-                text = "IMPORT",
-                style = BodyTextStyle,
-                fontSize = 10.sp,
-                letterSpacing = 1.2.sp,
-                color = VisionGuardPrimary,
-                modifier = Modifier
-                    .clickable {
-                        importLauncher.launch(arrayOf("audio/*"))
-                    }
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
-            )
-        }
-
-        // ---- 录音行 ----
-        Column(modifier = Modifier.padding(top = 16.dp)) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(VisionGuardDivider)
-            )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .drawBehind {
-                        val stroke = 1.dp.toPx()
-                        drawLine(
-                            rowLineColor,
-                            start = Offset(0f, size.height - stroke / 2),
-                            end = Offset(size.width, size.height - stroke / 2),
-                            strokeWidth = stroke
-                        )
-                    }
-                    .clickable {
-                        if (isRecording) {
-                            val saved = viewModel.stopRecording()
-                            toastMsg = if (saved) "录音已保存" else "录音太短或失败，未保存"
-                        } else {
-                            if (PermissionUtils.isRecordAudioGranted(context)) {
-                                viewModel.startRecording()
-                            } else {
-                                micPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+            item(key = "page_header") {
+                NotifierPageHeader("铃声库", onNavigateBack) {
+                    TextButton(
+                        onClick = {
+                            runCatching { importLauncher.launch(arrayOf("audio/*")) }.onFailure {
+                                reportFeedback("文件选择不可用，请检查系统文件应用后重试", true)
                             }
-                        }
-                    }
-                    .padding(horizontal = 2.dp, vertical = 15.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(text = "录音", fontSize = 12.sp, letterSpacing = 0.6.sp, color = VisionGuardTextSecondary)
-                if (isRecording) {
-                    // 红点 1s 脉冲：透明度 0.15→1 全幅明暗 + 0.8→1.2 缩放，录音进行中一眼可见
-                    val pulse = rememberFrameDrivenProgress(1000)
-                    val pulseTri = if (pulse < 0.5f) pulse * 2f else (1f - pulse) * 2f
-                    val dotAlpha = 0.15f + 0.85f * pulseTri
-                    val dotScale = 0.8f + 0.4f * pulseTri
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "●",
-                            fontSize = 13.sp,
-                            color = VisionGuardError.copy(alpha = dotAlpha),
-                            modifier = Modifier.scale(dotScale)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "${recordSeconds}s 停止",
-                            style = BodyTextStyle,
-                            fontSize = 11.sp,
-                            color = VisionGuardError
-                        )
-                    }
-                } else {
-                    Text(text = "开始录音", fontSize = 13.sp, color = VisionGuardTextPrimary)
+                        },
+                        enabled = !importing,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small,
+                        colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)
+                    ) { Text(if (importing) "导入中" else "导入") }
                 }
             }
-            Text(
-                text = "${RingtoneLibrary.PRESETS.size} PRESET · ${entries.size} RINGTONES · 点击名称重命名",
-                style = BodyTextStyle,
-                fontSize = 10.sp,
-                letterSpacing = 1.sp,
-                color = VisionGuardTextSecondary,
-                modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
-            )
-        }
-
-        // ---- 条目列表（内置预设 + 铃声库文件；预设不可删除/重命名） ----
-        LazyColumn(Modifier.weight(1f)) {
+            item(key = "recording") {
+                NotifierPanel {
+                    Text("录制铃声", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        if (isRecording) "正在录音 · ${recordSeconds} 秒" else "使用麦克风录音，停止后保存到铃声库。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(
+                        onClick = {
+                            if (isRecording) {
+                                val saved = viewModel.stopRecording()
+                                reportFeedback(if (saved) "录音已保存" else "录音太短或失败，未保存", !saved)
+                            } else if (PermissionUtils.isRecordAudioGranted(context)) {
+                                if (!viewModel.startRecording()) {
+                                    reportFeedback("录音启动失败，请检查麦克风权限后重试", true)
+                                }
+                            } else micPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        shape = MaterialTheme.shapes.small,
+                        colors = if (isRecording) VisionGuardControlColors.button(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError) else VisionGuardControlColors.button()
+                    ) { Text(if (isRecording) "停止并保存" else "开始录音") }
+                }
+            }
+            if (importing) item(key = "importing") {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth().semantics { contentDescription = "正在导入铃声" })
+            }
+            item(key = "preset_heading") {
+                Text("内置铃声 · ${RingtoneLibrary.PRESETS.size} 首", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+            }
             items(RingtoneLibrary.PRESETS, key = { "preset:${it.rawName}" }) { preset ->
-                PresetEntryRow(
-                    preset = preset,
-                    isPreviewing = previewing == "preset:${preset.rawName}",
-                    onTogglePreview = { viewModel.togglePresetPreview(preset) }
+                PresetEntryRow(preset, previewing == "preset:${preset.rawName}") {
+                    val wasPreviewing = viewModel.previewingFileName == "preset:${preset.rawName}"
+                    viewModel.togglePresetPreview(preset)
+                    if (!wasPreviewing && viewModel.previewingFileName != "preset:${preset.rawName}") {
+                        reportFeedback("预设铃声试听失败，请重试", true)
+                    }
+                }
+            }
+            item(key = "library_heading") {
+                Text("我的铃声 · ${entries.size} 首", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
+            }
+            if (entries.isEmpty()) item(key = "empty_hint") {
+                NotifierPanel { NotifierEmptyState("还没有自定义铃声", "点击右上角导入音频，或录制一段铃声。") }
+            }
+            items(entries, key = { it.first }) { (fileName, displayName) ->
+                RingtoneEntryRow(
+                    displayName = displayName,
+                    isPreviewing = previewing == fileName,
+                    onTogglePreview = {
+                        val wasPreviewing = viewModel.previewingFileName == fileName
+                        viewModel.togglePreview(fileName)
+                        if (!wasPreviewing && viewModel.previewingFileName != fileName) {
+                            reportFeedback("试听失败，请重新导入可播放的音频", true)
+                        }
+                    },
+                    onRename = { renameTarget = fileName to displayName },
+                    onDelete = { deleteError = null; deleteTarget = fileName to displayName },
+                    modifier = Modifier.animateItemPlacement()
                 )
             }
-            if (entries.isEmpty()) {
-                item(key = "empty_hint") {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 40.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "铃声库为空，点 IMPORT 导入音频或录音",
-                            fontSize = 13.sp,
-                            color = VisionGuardTextSecondary
-                        )
-                    }
-                }
-            } else {
-                items(entries, key = { it.first }) { (fileName, displayName) ->
-                    RingtoneEntryRow(
-                        displayName = displayName,
-                        isPreviewing = previewing == fileName,
-                        onTogglePreview = { viewModel.togglePreview(fileName) },
-                        onRename = { renameTarget = fileName to displayName },
-                        onDelete = { deleteTarget = fileName to displayName },
-                        modifier = Modifier.animateItemPlacement()
-                    )
-                }
-            }
+        }
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(16.dp)) { data ->
+            val isError = (data.visuals as? RingtoneFeedback)?.isError == true
+            Snackbar(
+                snackbarData = data,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                shape = MaterialTheme.shapes.small,
+                containerColor = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.inverseSurface,
+                contentColor = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.inverseOnSurface
+            )
         }
     }
 
-    // ---- 应用内 Toast：底部暗条（fade + 上滑进出，2s 自消），替代风格不统一的系统 Toast ----
-    toastMsg?.let { msg ->
-        LaunchedEffect(msg) {
-            delay(2000)
-            toastMsg = null
-        }
-    }
-    InAppToast(
-        message = toastMsg,
-        modifier = Modifier
-            .align(Alignment.BottomCenter)
-            .padding(bottom = 32.dp)
+    if (showMicGuide) PermissionGuideDialog(
+        title = "需要麦克风权限",
+        message = "录音功能需要麦克风权限。请在系统设置中允许 VisionGuard 使用麦克风。",
+        onConfirm = {
+            showMicGuide = false
+            (context as? android.app.Activity)?.let { PermissionUtils.openAppDetailsSettings(it) }
+        },
+        onDismiss = { showMicGuide = false }
     )
-    }
-
-    // ---- 录音权限引导（PermissionGuideDialog 模式） ----
-    if (showMicGuide) {
-        PermissionGuideDialog(
-            title = "需要麦克风权限",
-            message = "录音功能需要麦克风权限。请在系统设置中允许 VisionGuard 使用麦克风。",
-            onConfirm = {
-                showMicGuide = false
-                (context as? android.app.Activity)?.let { PermissionUtils.openAppDetailsSettings(it) }
-            },
-            onDismiss = { showMicGuide = false }
-        )
-    }
-
-    // ---- 重命名弹窗 ----
     renameTarget?.let { (fileName, oldName) ->
         RenameRingtoneDialog(
             oldName = oldName,
-            onConfirm = { newName ->
-                viewModel.renameLibraryRingtone(fileName, newName)
-                renameTarget = null
-            },
+            onConfirm = { newName -> viewModel.renameLibraryRingtone(fileName, newName); renameTarget = null },
             onDismiss = { renameTarget = null }
         )
     }
-
-    // ---- 删除二次确认 ----
     deleteTarget?.let { (fileName, displayName) ->
-        AlertDialog(
-            onDismissRequest = { deleteTarget = null },
-            containerColor = VisionGuardBackground,
-            shape = RoundedCornerShape(8.dp),
-            tonalElevation = 0.dp,
-            modifier = Modifier.border(1.dp, VisionGuardDivider, RoundedCornerShape(8.dp)),
-            title = {
-                Text(
-                    text = "删除铃声",
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = VisionGuardTextPrimary
-                )
-            },
-            text = {
-                Text(
-                    text = "确认删除「$displayName」？使用它的报警将回落到默认闹钟铃声。",
-                    fontSize = 13.sp,
-                    color = VisionGuardTextSecondary
-                )
-            },
+        NotifierDialog(
+            title = "删除铃声",
+            onDismiss = { deleteTarget = null },
+            focusOnDismiss = true,
             confirmButton = {
-                TextButton(onClick = {
-                    viewModel.deleteLibraryRingtone(fileName)
-                    deleteTarget = null
-                }) {
-                    Text(text = "删除", color = VisionGuardError)
-                }
+                TextButton(
+                    onClick = {
+                        if (viewModel.deleteLibraryRingtone(fileName)) {
+                            deleteTarget = null
+                            reportFeedback("已删除铃声", false)
+                        } else deleteError = "删除失败，铃声已保留，请重试"
+                    },
+                    modifier = Modifier.heightIn(min = 48.dp).semantics { traversalIndex = 1f },
+                    shape = MaterialTheme.shapes.small,
+                    colors = VisionGuardControlColors.textButton(contentColor = MaterialTheme.colorScheme.error)
+                ) { Text("删除") }
             },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) {
-                    Text(text = "取消", color = VisionGuardTextSecondary)
-                }
-            }
-        )
-    }
-}
-
-/** 应用内极简提示条：暗底 + 发丝描边，底部居中，fade + 上滑进出 */
-@Composable
-private fun InAppToast(message: String?, modifier: Modifier = Modifier) {
-    AnimatedVisibility(
-        visible = message != null,
-        modifier = modifier,
-        enter = fadeIn(tween(180)) + slideInVertically(tween(180)) { it / 2 },
-        exit = fadeOut(tween(180)) + slideOutVertically(tween(180)) { it / 2 }
-    ) {
-        Box(
-            modifier = Modifier
-                .background(VisionGuardSurface, RoundedCornerShape(4.dp))
-                .border(1.dp, VisionGuardBorder, RoundedCornerShape(4.dp))
-                .padding(horizontal = 16.dp, vertical = 10.dp)
+            dismissButton = { TextButton({ deleteTarget = null }, Modifier.heightIn(min = 48.dp).semantics { traversalIndex = 0f }, shape = MaterialTheme.shapes.small) { Text("取消") } }
         ) {
-            Text(
-                text = message ?: "",
-                fontSize = 12.sp,
-                color = VisionGuardTextPrimary
-            )
+            Text("确认删除「$displayName」？使用它的报警将回落到默认闹钟铃声。", style = MaterialTheme.typography.bodyLarge)
+            deleteError?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error) }
         }
     }
 }
 
-/** 内置预设铃声条目：展示名 + 试听切换（不可重命名/删除），底部发丝线 */
 @Composable
-private fun PresetEntryRow(
-    preset: RingtoneLibrary.PresetRingtone,
-    isPreviewing: Boolean,
-    onTogglePreview: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val rowLineColor = VisionGuardDivider
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .drawBehind {
-                val stroke = 1.dp.toPx()
-                drawLine(
-                    rowLineColor,
-                    start = Offset(0f, size.height - stroke / 2),
-                    end = Offset(size.width, size.height - stroke / 2),
-                    strokeWidth = stroke
-                )
-            }
-            .padding(horizontal = 2.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "预设",
-                style = BodyTextStyle,
-                fontSize = 10.sp,
-                color = VisionGuardPrimary,
-                modifier = Modifier.padding(end = 8.dp)
-            )
-            Text(
-                text = preset.displayName,
-                fontSize = 14.sp,
-                color = VisionGuardTextPrimary
-            )
-        }
-        Text(
-            text = if (isPreviewing) "■ 停止" else "试听",
-            style = BodyTextStyle,
-            fontSize = 11.sp,
-            color = if (isPreviewing) VisionGuardError else VisionGuardTextSecondary,
-            modifier = Modifier.clickable(onClick = onTogglePreview)
-        )
+private fun PresetEntryRow(preset: RingtoneLibrary.PresetRingtone, isPreviewing: Boolean, onTogglePreview: () -> Unit) {
+    NotifierPanel {
+        Text(preset.displayName, style = MaterialTheme.typography.titleSmall)
+        PreviewButton(isPreviewing, onTogglePreview)
     }
 }
 
-/** 铃声库条目：名称（点按重命名）+ 试听切换 + 删除，底部发丝线 */
 @Composable
 private fun RingtoneEntryRow(
     displayName: String,
@@ -455,107 +245,49 @@ private fun RingtoneEntryRow(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val rowLineColor = VisionGuardDivider
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .drawBehind {
-                val stroke = 1.dp.toPx()
-                drawLine(
-                    rowLineColor,
-                    start = Offset(0f, size.height - stroke / 2),
-                    end = Offset(size.width, size.height - stroke / 2),
-                    strokeWidth = stroke
-                )
+    NotifierPanel(modifier) {
+        Text(displayName, style = MaterialTheme.typography.titleSmall)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PreviewButton(isPreviewing, onTogglePreview, Modifier.weight(1f))
+            IconButton(onRename, Modifier.size(48.dp)) { Icon(LucideIcons.Pencil, contentDescription = "重命名铃声") }
+            IconButton(onDelete, Modifier.size(48.dp), colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                Icon(LucideIcons.Trash2, contentDescription = "删除铃声")
             }
-            .padding(horizontal = 2.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = displayName,
-            fontSize = 14.sp,
-            color = VisionGuardTextPrimary,
-            modifier = Modifier
-                .weight(1f)
-                .clickable(onClick = onRename)
-        )
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                text = if (isPreviewing) "■ 停止" else "试听",
-                style = BodyTextStyle,
-                fontSize = 11.sp,
-                color = if (isPreviewing) VisionGuardError else VisionGuardTextSecondary,
-                modifier = Modifier.clickable(onClick = onTogglePreview)
-            )
-            Text(
-                text = "删除",
-                fontSize = 11.sp,
-                color = VisionGuardTextSecondary,
-                modifier = Modifier.clickable(onClick = onDelete)
-            )
         }
     }
 }
 
-/** 重命名弹窗（与 AddKeywordDialog 同一风格） */
 @Composable
-private fun RenameRingtoneDialog(
-    oldName: String,
-    onConfirm: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var input by remember { mutableStateOf(oldName) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = VisionGuardBackground,
-        shape = RoundedCornerShape(8.dp),
-        tonalElevation = 0.dp,
-        modifier = Modifier.border(1.dp, VisionGuardDivider, RoundedCornerShape(8.dp)),
-        title = {
-            Text(
-                text = "重命名铃声",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = VisionGuardTextPrimary
-            )
-        },
-        text = {
-            OutlinedTextField(
-                value = input,
-                onValueChange = { input = it },
-                singleLine = true,
-                placeholder = { Text("输入名称", fontSize = 14.sp, color = VisionGuardTextSecondary) },
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = VisionGuardPrimary,
-                    unfocusedBorderColor = VisionGuardTextSecondary,
-                    focusedTextColor = VisionGuardTextPrimary,
-                    unfocusedTextColor = VisionGuardTextPrimary,
-                    cursorColor = VisionGuardPrimary
-                ),
-                shape = RoundedCornerShape(4.dp)
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(input) },
-                enabled = input.isNotBlank()
-            ) {
-                Text(
-                    text = "保存",
-                    color = if (input.isNotBlank()) VisionGuardPrimary else VisionGuardTextSecondary
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = "取消", color = VisionGuardTextSecondary)
-            }
-        }
-    )
+private fun PreviewButton(isPreviewing: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth().heightIn(min = 48.dp),
+        shape = MaterialTheme.shapes.small,
+        colors = VisionGuardControlColors.outlinedButton(contentColor = if (isPreviewing) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+    ) { Text(if (isPreviewing) "停止试听" else "试听") }
 }
 
-private val BodyTextStyle = TextStyle(fontFamily = FontFamily.SansSerif)
+@Composable
+private fun RenameRingtoneDialog(oldName: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var input by remember { mutableStateOf(oldName) }
+    NotifierDialog(
+        title = "重命名铃声",
+        onDismiss = onDismiss,
+        confirmButton = {
+            TextButton({ onConfirm(input) }, Modifier.heightIn(min = 48.dp), enabled = input.isNotBlank(), colors = VisionGuardControlColors.textButton(), shape = MaterialTheme.shapes.small) { Text("保存") }
+        },
+        dismissButton = { TextButton(onDismiss, Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("取消") } }
+    ) {
+        OutlinedTextField(
+            value = input,
+            onValueChange = { input = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            isError = input.isBlank(),
+            label = { Text("铃声名称") },
+            supportingText = { if (input.isBlank()) Text("请输入名称") },
+            textStyle = MaterialTheme.typography.bodyLarge,
+            shape = MaterialTheme.shapes.small
+        )
+    }
+}

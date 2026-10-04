@@ -26,6 +26,7 @@ export function useRelay(login: Login | null) {
     let historyAbort: AbortController | null = null;
     const disconnect = (text: string) => {
       authenticated = false; setConnected(false); setStatus(text);
+      setDevices([]); setStreams([]); setNotifiers(items => items.map(notifier => ({...notifier,online:false})));
       const old = ws; ws = null; transport.current = null;
       if (old) { old.onclose = null; old.onerror = null; old.onmessage = null; old.onopen = null; old.close(); }
       nextAttempt = performance.now() + retry; retry = Math.min(retry * 2, 30_000);

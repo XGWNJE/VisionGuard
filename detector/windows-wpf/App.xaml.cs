@@ -34,6 +34,7 @@ namespace VisionGuard.Detector.Windows
             }
 
             EnsureWpfFontEnvironment();
+            Themes.ThemeManager.Start();
 
             // 高 DPI 感知（PerMonitorV2）
             // .NET 9 WPF 下由 app.manifest 声明，此处无需额外调用 SetProcessDPIAware
@@ -64,6 +65,7 @@ namespace VisionGuard.Detector.Windows
 
         protected override void OnExit(ExitEventArgs e)
         {
+            Themes.ThemeManager.Stop();
             _residentBridge?.Dispose();
             _residentBridge = null;
             _singleInstanceGuard?.Dispose();
@@ -97,7 +99,7 @@ namespace VisionGuard.Detector.Windows
                     e.Handled = true;
                     return;
                 }
-                MessageBox.Show($"发生未处理异常:\n{e.Exception.Message}", "VisionGuard 视觉节点错误",
+                VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show($"发生未处理异常:\n{e.Exception.Message}", "VisionGuard 视觉节点错误",
                     MessageBoxButton.OK, MessageBoxImage.Error);
             }
             catch { }

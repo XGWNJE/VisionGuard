@@ -80,6 +80,8 @@ val versionParts = notificationVersion.split('.').map(String::toInt)
 val notificationVersionCode = versionParts[0] * 1000 + versionParts[1] * 100 + versionParts[2]
 
 android {
+    sourceSets.getByName("main").res.srcDir(repositoryRoot.resolve("android-shared/src/main/res"))
+    sourceSets.getByName("main").assets.srcDir(repositoryRoot.resolve("android-shared/src/main/assets"))
     sourceSets.getByName("main").java.srcDir(repositoryRoot.resolve("android-shared/src/main/java"))
     sourceSets.getByName("test").java.srcDir(repositoryRoot.resolve("android-shared/src/test/java"))
     namespace = "com.xgwnje.visionguard.notifier"
@@ -179,11 +181,6 @@ dependencies {
 
     // Compose Material Design 2 (M2) 组件库
     implementation("androidx.compose.material:material")
-    // Compose Material Icons Core (M2 的核心图标，material 依赖通常会带上)
-    implementation("androidx.compose.material:material-icons-core")
-    // Compose Material Icons Extended (M2 的扩展图标，包含 Link 等)
-    // *** 添加此依赖以使用 Icons.Filled.Link 等更多图标 ***
-    implementation("androidx.compose.material:material-icons-extended")
 
     // Compose Material Design 3 (M3) 组件库
     implementation("androidx.compose.material3:material3")

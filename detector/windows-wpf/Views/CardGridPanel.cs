@@ -43,18 +43,29 @@ namespace VisionGuard.Detector.Windows.Views
             set { SetValue(HostProperty, value); }
         }
 
+        public static readonly DependencyProperty ViewportWidthProperty = DependencyProperty.Register(
+            nameof(ViewportWidth), typeof(double), typeof(CardGridPanel), new FrameworkPropertyMetadata(0d, FrameworkPropertyMetadataOptions.AffectsMeasure));
+        public static readonly DependencyProperty ViewportHeightProperty = DependencyProperty.Register(
+            nameof(ViewportHeight), typeof(double), typeof(CardGridPanel), new FrameworkPropertyMetadata(0d, FrameworkPropertyMetadataOptions.AffectsMeasure));
+        public double ViewportWidth { get => (double)GetValue(ViewportWidthProperty); set => SetValue(ViewportWidthProperty, value); }
+        public double ViewportHeight { get => (double)GetValue(ViewportHeightProperty); set => SetValue(ViewportHeightProperty, value); }
+
+        private CardLayoutPlan CreatePlan() => CardLayoutPlanner.ComputeScrollable(new CardLayoutRequest
+        {
+            VisibleCount = InternalChildren.Count, TotalWidth = Math.Max(1, ViewportWidth), TotalHeight = Math.Max(1, ViewportHeight),
+            UniformAspectRatio = Host?.UniformCardAspectRatio
+        });
+
         protected override Size MeasureOverride(Size availableSize)
         {
-            bool hasWidth = !double.IsInfinity(availableSize.Width) && !double.IsNaN(availableSize.Width);
-            bool hasHeight = !double.IsInfinity(availableSize.Height) && !double.IsNaN(availableSize.Height);
+            var plan = CreatePlan();
 
             foreach (UIElement child in InternalChildren)
             {
-                // 无限尺寸直接传下去会把卡片里的 TextBlock 全部当成单行，量出巨大的期望宽度。
-                child.Measure(new Size(hasWidth ? availableSize.Width : 0, hasHeight ? availableSize.Height : 0));
+                child.Measure(new Size(plan.CellWidth, plan.CellHeight));
             }
 
-            return new Size(hasWidth ? availableSize.Width : 0, hasHeight ? availableSize.Height : 0);
+            return new Size(Math.Max(ViewportWidth, plan.ContentWidth), Math.Max(ViewportHeight, plan.ContentHeight));
         }
 
         protected override Size ArrangeOverride(Size finalSize)
@@ -62,15 +73,7 @@ namespace VisionGuard.Detector.Windows.Views
             int itemCount = InternalChildren.Count;
             if (itemCount == 0) return finalSize;
 
-            var host = Host;
-            double? aspectRatio = host == null ? (double?)null : host.UniformCardAspectRatio;
-            var plan = CardLayoutPlanner.Compute(new CardLayoutRequest
-            {
-                VisibleCount = itemCount,
-                TotalWidth = finalSize.Width,
-                TotalHeight = finalSize.Height,
-                UniformAspectRatio = aspectRatio,
-            });
+            var plan = CreatePlan();
 
             if (!plan.IsValid)
             {

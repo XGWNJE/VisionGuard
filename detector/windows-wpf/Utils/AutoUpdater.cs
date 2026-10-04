@@ -19,7 +19,7 @@ namespace VisionGuard.Detector.Windows.Utils
                     const string message = "当前是开发构建或旧式目录，无法执行整包更新。请使用统一 Windows 安装包。";
                     LogManager.StaticWarn("[AutoUpdater] " + message);
                     if (userInitiated)
-                        MessageBox.Show(message, "VisionGuard 视觉节点更新", MessageBoxButton.OK, MessageBoxImage.Information);
+                        VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show(message, "VisionGuard 视觉节点更新", MessageBoxButton.OK, MessageBoxImage.Information);
                     return Task.CompletedTask;
                 }
 
@@ -38,7 +38,7 @@ namespace VisionGuard.Detector.Windows.Utils
             {
                 LogManager.StaticWarn("[AutoUpdater] 无法启动更新检查: " + ex.Message);
                 if (userInitiated)
-                    MessageBox.Show("无法启动更新检查：" + ex.Message, "VisionGuard 视觉节点更新", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show("无法启动更新检查：" + ex.Message, "VisionGuard 视觉节点更新", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             return Task.CompletedTask;
         }

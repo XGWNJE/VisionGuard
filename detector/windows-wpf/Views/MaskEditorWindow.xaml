@@ -4,7 +4,7 @@
         xmlns:vm="clr-namespace:VisionGuard.Detector.Windows.ViewModels"
         Title="遮罩区域编辑"
         WindowStyle="None"
-        Background="Black"
+        Background="{DynamicResource CanvasBrush}"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
         MinWidth="520"
@@ -24,22 +24,22 @@
                     MouseLeftButtonDown="MaskCanvas_MouseLeftButtonDown"
                     MouseMove="MaskCanvas_MouseMove"
                     MouseLeftButtonUp="MaskCanvas_MouseLeftButtonUp"/>
-            <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="18" Padding="12,8" Background="#E6171719" CornerRadius="10" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-                <TextBlock Text="拖拽绘制遮罩 · 遮罩区域不会参与检测" Foreground="White" FontSize="13"/>
+            <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="16" Padding="12,8" Background="{DynamicResource OverlaySurfaceBrush}" CornerRadius="12" BorderBrush="{DynamicResource OverlayAccentBrush}" BorderThickness="1" MaxWidth="480">
+                <TextBlock Text="拖拽绘制遮罩 · 遮罩区域不会参与检测" Foreground="{DynamicResource OverlayTextBrush}" FontSize="14" TextWrapping="Wrap"/>
             </Border>
         </Grid>
 
         <!-- 底部工具栏 -->
-        <Border Grid.Row="1" Background="#FA171719" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="12">
+        <Border Grid.Row="1" Background="{DynamicResource SurfaceDark}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
+            <WrapPanel HorizontalAlignment="Center" Margin="12">
                 <Button Content="撤销" Style="{StaticResource GhostButton}" Margin="4,0"
                         Command="{Binding UndoCommand}"/>
                 <Button Content="清空遮罩" Style="{StaticResource DangerButton}" Margin="4,0"
                         Command="{Binding ClearCommand}"/>
-                <Separator Margin="8,0" Style="{x:Null}" Width="1" Background="{StaticResource BorderBrush}"/>
+                <Separator Margin="8,0" Style="{x:Null}" Width="1" Background="{DynamicResource BorderBrush}"/>
                 <Button Content="取消" Style="{StaticResource DarkButton}" Margin="4,0" Click="Cancel_Click"/>
                 <Button Content="保存遮罩" Style="{StaticResource PrimaryButton}" Margin="4,0" Click="Confirm_Click"/>
-            </StackPanel>
+            </WrapPanel>
         </Border>
     </Grid>
 </Window>

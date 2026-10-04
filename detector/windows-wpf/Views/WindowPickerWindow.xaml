@@ -3,32 +3,35 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="选择采集窗口"
         Height="560" Width="680" MinHeight="420" MinWidth="520"
-        Background="{StaticResource BackgroundDark}"
+        Background="{DynamicResource BackgroundDark}"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResizeWithGrip">
-    <Grid Margin="22">
+    <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Margin="2,0,2,16">
-            <TextBlock Text="选择采集窗口" Style="{StaticResource HeroText}" FontSize="22"/>
+        <StackPanel Grid.Row="0" Margin="0,0,0,16">
+            <TextBlock Text="选择采集窗口" Style="{StaticResource HeroText}"/>
             <TextBlock x:Name="HeaderText" Text="仅显示宽度和高度均大于 100 像素的可见窗口。"
-                       Style="{StaticResource CaptionText}" Margin="0,5,0,0"/>
+                       Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
         </StackPanel>
 
-        <Border Style="{StaticResource CardBorder}" Grid.Row="1" Padding="7" Margin="0,0,0,16">
+        <Border Style="{StaticResource CardBorder}" Grid.Row="1" Padding="8" Margin="0,0,0,16">
             <Grid>
                 <ListBox x:Name="WindowList" Background="Transparent" BorderThickness="0"
-                         MouseDoubleClick="WindowList_MouseDoubleClick">
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         MouseDoubleClick="WindowList_MouseDoubleClick" SelectionChanged="WindowList_SelectionChanged">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
-                            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+                            <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
                             <Setter Property="Background" Value="Transparent"/>
-                            <Setter Property="Padding" Value="12,10"/>
-                            <Setter Property="Margin" Value="2"/>
+                            <Setter Property="Padding" Value="12,12"/>
+                            <Setter Property="Margin" Value="4"/>
+                            <Setter Property="MinHeight" Value="40"/>
                             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                             <Setter Property="Template">
                                 <Setter.Value>
@@ -37,8 +40,8 @@
                                             <ContentPresenter/>
                                         </Border>
                                         <ControlTemplate.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Row" Property="Background" Value="{StaticResource SurfaceLight}"/></Trigger>
-                                            <Trigger Property="IsSelected" Value="True"><Setter TargetName="Row" Property="Background" Value="#26FF3B30"/><Setter Property="Foreground" Value="White"/></Trigger>
+                                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Row" Property="Background" Value="{DynamicResource SurfaceLight}"/></Trigger>
+                                            <Trigger Property="IsSelected" Value="True"><Setter TargetName="Row" Property="Background" Value="{DynamicResource SelectedBrush}"/><Setter Property="Foreground" Value="{DynamicResource SelectedTextBrush}"/></Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
                                 </Setter.Value>
@@ -49,8 +52,8 @@
                         <DataTemplate>
                             <Grid>
                                 <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding Title}" Foreground="{StaticResource TextPrimary}" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                                <TextBlock Grid.Column="1" Foreground="{StaticResource TextSecondary}" FontSize="11" Margin="12,0,0,0">
+                                <TextBlock Text="{Binding Title}" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" FontSize="14" LineHeight="20" LineStackingStrategy="BlockLineHeight" FontWeight="SemiBold" TextWrapping="Wrap" ToolTip="{Binding Title}"/>
+                                <TextBlock Grid.Column="1" Foreground="{DynamicResource TextSecondary}" FontSize="12" LineHeight="18" LineStackingStrategy="BlockLineHeight" Margin="12,0,0,0">
                                     <TextBlock.Text>
                                         <MultiBinding StringFormat=" ({0}x{1})">
                                             <Binding Path="Bounds.Width"/>
@@ -63,16 +66,19 @@
                     </ListBox.ItemTemplate>
                 </ListBox>
                 <TextBlock x:Name="LoadingIndicator" Text="正在枚举窗口..."
-                           Foreground="{StaticResource TextSecondary}" FontSize="12"
+                           Style="{StaticResource CaptionText}"
                            HorizontalAlignment="Center" VerticalAlignment="Center"
                            Visibility="Collapsed"/>
+                <TextBlock x:Name="EmptyIndicator" Text="暂无可用窗口。打开要采集的应用后，刷新列表。"
+                           Style="{StaticResource CaptionText}" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="360"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
             </Grid>
         </Border>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="刷新列表" Style="{StaticResource GhostButton}" MinWidth="96" Margin="0,0,8,0" Click="Refresh_Click"/>
-            <Button Content="取消" Style="{StaticResource DarkButton}" MinWidth="88" Margin="0,0,8,0" Click="Cancel_Click"/>
-            <Button Content="使用此窗口" Style="{StaticResource PrimaryButton}" MinWidth="118" Click="Ok_Click"/>
+            <Button Content="取消" Style="{StaticResource DarkButton}" MinWidth="88" Margin="0,0,8,0" Click="Cancel_Click" IsCancel="True"/>
+            <Button x:Name="OkButton" Content="使用此窗口" Style="{StaticResource PrimaryButton}" MinWidth="118" Click="Ok_Click" IsDefault="True" IsEnabled="False"/>
         </StackPanel>
     </Grid>
 </Window>

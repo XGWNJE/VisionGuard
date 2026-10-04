@@ -25,6 +25,11 @@ internal static class Program
     {
         try
         {
+            if (args.Length == 2 && args[0] == "--settings-environment")
+            {
+                SettingsEnvironmentChild(args[1]);
+                Console.WriteLine("PASS isolated settings initialization/read/write"); return 0;
+            }
             if (args.Length == 1 && args[0] == "--delayed-refresh")
             {
                 AccountSession.Load(); Require(AccountSession.EnsureFresh() != null, "Child refresh failed");
@@ -199,6 +204,20 @@ internal static class Program
         var config = new Dictionary<string, string> { ["serviceUrl"] = "http://127.0.0.1:3100", ["accountDir"] = Path.Combine(directory, "accounts"), ["settingsPath"] = Path.Combine(directory, "settings.ini"), ["modelsDirectory"] = Path.Combine(directory, "models"), ["logDirectory"] = Path.Combine(directory, "logs") };
         File.WriteAllText(file, JsonSerializer.Serialize(config)); AccountSession.ConfigureIsolatedEnvironment(file);
         Require(AccountSession.IsIsolated && AccountSession.Root == config["accountDir"] && AccountSession.ServiceUrl == config["serviceUrl"] && AccountSession.LogRoot == config["logDirectory"], "Explicit isolated environment did not apply");
+        File.WriteAllText(config["settingsPath"], "SettingsEnvironmentProbe.Marker=isolated-read" + Environment.NewLine);
+        var childStart = new ProcessStartInfo(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AccountMedia.Probe.exe"), "--settings-environment \"" + file + "\"")
+        {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
+        };
+        foreach (string name in new[] { "VISIONGUARD_ACCOUNT_DIR", "VISIONGUARD_SERVER_URL", "VISIONGUARD_SETTINGS_PATH", "VISIONGUARD_MODELS_DIR", "VISIONGUARD_LOG_DIR" })
+            childStart.EnvironmentVariables.Remove(name);
+        using (var child = Process.Start(childStart) ?? throw new Exception("Settings initialization child did not start"))
+        {
+            Require(child.WaitForExit(10000), "Settings initialization child timed out");
+            string childError = child.StandardError.ReadToEnd();
+            Require(child.ExitCode == 0, "CLI-only settings initialization failed: " + childError);
+        }
+        Require(File.ReadAllText(config["settingsPath"]).Contains("SettingsEnvironmentProbe.Marker=isolated-write"), "Settings save missed the explicitly selected file");
         config["password"] = "must-not-be-supported"; File.WriteAllText(file, JsonSerializer.Serialize(config)); bool rejectedSecret = false;
         try { AccountSession.ConfigureIsolatedEnvironment(file); } catch (InvalidDataException) { rejectedSecret = true; }
         Require(rejectedSecret, "Secret-bearing test environment was accepted"); config.Remove("password");
@@ -206,6 +225,19 @@ internal static class Program
         try { AccountSession.ConfigureIsolatedEnvironment(file); } catch (InvalidDataException) { rejectedShared = true; }
         Require(rejectedShared, "Explicit test environment reused the normal account directory");
         Directory.Delete(directory, true);
+    }
+    static void SettingsEnvironmentChild(string configurationPath)
+    {
+        var settings = typeof(AccountSession).Assembly.GetType("VisionGuard.Detector.Windows.Utils.SettingsStore", true)!;
+        // The CLR may run beforefieldinit initializers before CLI environment parsing.
+        Require((settings.Attributes & System.Reflection.TypeAttributes.BeforeFieldInit) == 0,
+            "Settings storage may initialize before the isolated environment is selected");
+        AccountSession.ConfigureIsolatedEnvironment(configurationPath);
+        settings.GetMethod("Load")!.Invoke(null, null);
+        string marker = (string)settings.GetMethod("GetString")!.Invoke(null, new object[] { "SettingsEnvironmentProbe.Marker", "missing" })!;
+        Require(marker == "isolated-read", "Settings load did not read the CLI-selected file");
+        settings.GetMethod("Set", new[] { typeof(string), typeof(string) })!.Invoke(null, new object[] { "SettingsEnvironmentProbe.Marker", "isolated-write" });
+        settings.GetMethod("Save")!.Invoke(null, null);
     }
     static void DeviceIdentityMemoryProbe()
     {

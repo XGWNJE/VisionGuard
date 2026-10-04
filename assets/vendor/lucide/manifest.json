@@ -1,0 +1,413 @@
+{
+  "version": "1.49.0",
+  "source": "https://www.npmjs.com/package/lucide-static/v/1.49.0",
+  "icons": [
+    {
+      "name": "activity",
+      "symbol": "Activity",
+      "platforms": [
+        "android",
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "604b8d691ce01131195ebf8d6a5b0ba877f94dd3fd71d3cddce7d5a2ec3ad0f3"
+    },
+    {
+      "name": "arrow-left",
+      "symbol": "ArrowLeft",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": true,
+      "notification": false,
+      "sha256": "7d6d0cfbf8a43028fd75e776cc4116aa402cb2beb5fb08963b490d9c72c0e1ad"
+    },
+    {
+      "name": "bell",
+      "symbol": "Bell",
+      "platforms": [
+        "android",
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": true,
+      "sha256": "5227140d3559a4794233779b5008c75e2475db4f761aaa4fdbec14c914721f8a"
+    },
+    {
+      "name": "bell-off",
+      "symbol": "BellOff",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "a39add393280e131b508d880e8d42d23934d0899b92dc7af74a96b2edf847fb0"
+    },
+    {
+      "name": "bell-ring",
+      "symbol": "BellRing",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": true,
+      "sha256": "91a746d8b761ce34e3f250bf9d66a651be0508e8c123df77baecfceb43f105db"
+    },
+    {
+      "name": "bike",
+      "symbol": "Bike",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "5ffd1fa4842d8528a691f5d8a4c1e3b46359869758cc5fa8695b2d31f9c02d86"
+    },
+    {
+      "name": "bus-front",
+      "symbol": "BusFront",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "0544b7e18580fc8ff5f7093b58cbe932a3390a91a46d198ec093e4208cfd6851"
+    },
+    {
+      "name": "camera",
+      "symbol": "Camera",
+      "platforms": [
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "5702e28d75e57ec05aa0ec98ae74e928c3604f5ea4634c4584e33363fd886c3a"
+    },
+    {
+      "name": "car",
+      "symbol": "Car",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "d7605015b10cfafeedcf4ebe532964a8964bb8fed14a5e58f6dca9cb9790381a"
+    },
+    {
+      "name": "check",
+      "symbol": "Check",
+      "platforms": [
+        "windows"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "ff17520d560da21c41dc6d876bd45ec1f04903ccc0283339ff20f4e45adf6328"
+    },
+    {
+      "name": "chevron-down",
+      "symbol": "ChevronDown",
+      "platforms": [
+        "windows"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "126b01187a1d36dcda7a79093248e1c4a760091ebc809bf8cb12b56c17c79d33"
+    },
+    {
+      "name": "chevron-left",
+      "symbol": "ChevronLeft",
+      "platforms": [
+        "web"
+      ],
+      "autoMirror": true,
+      "notification": false,
+      "sha256": "9d4c68b2301b07a424056d43a7cda715678be2b10d5344183261a3b48a752d36"
+    },
+    {
+      "name": "chevron-right",
+      "symbol": "ChevronRight",
+      "platforms": [
+        "android",
+        "windows"
+      ],
+      "autoMirror": true,
+      "notification": false,
+      "sha256": "ac41487b7ceea933b0f036a4b9d9c18c972285159528a7ddd8d7d81b6476fd34"
+    },
+    {
+      "name": "circle-alert",
+      "symbol": "CircleAlert",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "d2aa7afce39fc68959b23372e3bb9f4fbf06c0c962a69f2c201bada428d57e5f"
+    },
+    {
+      "name": "circle-check",
+      "symbol": "CircleCheck",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "201e790f3a05c65b2c4b0f952c9b9e1f35cd1c5b21698b3f4be131883fe90bc8"
+    },
+    {
+      "name": "circle-help",
+      "symbol": "CircleHelp",
+      "platforms": [
+        "android",
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "4c98aa38a1b10d938d6a51b89f29f484277662df09c816ccfabbcbf5c28c3de4"
+    },
+    {
+      "name": "cloud-off",
+      "symbol": "CloudOff",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "ce59c252b444c75fc2ea3274de43ba5a559d1c312c866d3e350577490a0178f5"
+    },
+    {
+      "name": "download",
+      "symbol": "Download",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": true,
+      "sha256": "d29f0143a9c0c11b344db6bb07c9f917143f211860ad7e2360682b3bbdc76b20"
+    },
+    {
+      "name": "grip-horizontal",
+      "symbol": "GripHorizontal",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "54bbfbd748421f4c38a01cd886fac18dc785ab7c9d380b5233761d55ffa923b3"
+    },
+    {
+      "name": "image-off",
+      "symbol": "ImageOff",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "ad8e009893383a9937982d3d5aa27d22feba9238fab124eecace69e6974a0de1"
+    },
+    {
+      "name": "log-out",
+      "symbol": "LogOut",
+      "platforms": [
+        "web"
+      ],
+      "autoMirror": true,
+      "notification": false,
+      "sha256": "61b2e34a195833ffe9b893e7562eb8dec14c58d30ef1574f5377e907ec7949cc"
+    },
+    {
+      "name": "monitor",
+      "symbol": "Monitor",
+      "platforms": [
+        "android",
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "73552286acb7d250c2701014da6865ed2102a6bc51c22eb130ba0a561c08f89c"
+    },
+    {
+      "name": "motorbike",
+      "symbol": "Motorbike",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "cb385773b5a24f44d4aa8a6eae5bb46aabd3bfdbc5f23d23193d4e8bd05be45f"
+    },
+    {
+      "name": "pause",
+      "symbol": "Pause",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "22d0f74f0160d9250c1e9fee79958917087892a22fb94a15ac927d9ddbf21257"
+    },
+    {
+      "name": "pencil",
+      "symbol": "Pencil",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "a73f639dbe723e9aea20a08ecd48b0e1aa50d7a176c71ac615bdfa720c3b6e86"
+    },
+    {
+      "name": "percent",
+      "symbol": "Percent",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "6c1423cfc57e3a79501df335ca715a95ea1b0922f637304c4ba7088cf9addb56"
+    },
+    {
+      "name": "play",
+      "symbol": "Play",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "56b6c22f91045d4ee2bd5529668e454bfdc13760f82f89fb868a9e08a875bf26"
+    },
+    {
+      "name": "plus",
+      "symbol": "Plus",
+      "platforms": [
+        "windows"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "8b79ff2c72f7caece552e552939179e63e79708037ee6a931c645d9b61d5a086"
+    },
+    {
+      "name": "power",
+      "symbol": "Power",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "b0bb4c574aab54ad2c6c9ad3bedb66afcd65d4d7a1ee6f56f40fc58bb074efb9"
+    },
+    {
+      "name": "radio",
+      "symbol": "Radio",
+      "platforms": [
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "98ec840b6bd96f81452b5600599638545bf5eaf606d48d47848a11a391d34724"
+    },
+    {
+      "name": "refresh-cw",
+      "symbol": "RefreshCw",
+      "platforms": [
+        "android",
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "1106bb56a814a423edd1c03c6935c1a16f048f365eb43a567840da3f1e8e3fa4"
+    },
+    {
+      "name": "search",
+      "symbol": "Search",
+      "platforms": [
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "fb56eee57ec4d05d29f1925503c911448f9837c6849a2cdbe66920fa25e923a8"
+    },
+    {
+      "name": "settings",
+      "symbol": "Settings",
+      "platforms": [
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "e1a4b3d021b2063bf8a76f95ba9abeebbce08d0872e358a46eb1dc4e8cb911a0"
+    },
+    {
+      "name": "shield-check",
+      "symbol": "ShieldCheck",
+      "platforms": [
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "1b98a38ef1bf5fe95d0ec8795d83fde64a211759fabf3a00eb0a1d26f147843a"
+    },
+    {
+      "name": "sliders-horizontal",
+      "symbol": "SlidersHorizontal",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "f0a755619fdbbff89fb3e517cf45e74e9581f5d5783639f07f50ea08607c2788"
+    },
+    {
+      "name": "timer",
+      "symbol": "Timer",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "6c03133b15c904ab591d80d3f17d5e8c704a2ff594ddf2ad259ee7ee1ecf34d5"
+    },
+    {
+      "name": "trash-2",
+      "symbol": "Trash2",
+      "platforms": [
+        "android",
+        "windows"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "6758190a97e7cd6b857e0cf244130726265643a5adfffe3df1ace2792e1ecd16"
+    },
+    {
+      "name": "truck",
+      "symbol": "Truck",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "fb82b20d227f80ac817d3e3664ca34a0482f0cb9e62dba99682efb512b7df9a8"
+    },
+    {
+      "name": "user-round",
+      "symbol": "UserRound",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "15811db4bba24c2f413a252a78e5ba885e8fe9234ca0f182d0b6039685dee6b0"
+    },
+    {
+      "name": "x",
+      "symbol": "X",
+      "platforms": [
+        "android"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "f0c8edc0adc2dc42a45e286fb2342c164c761d52f3c366f20278f4e661a91745"
+    }
+  ]
+}

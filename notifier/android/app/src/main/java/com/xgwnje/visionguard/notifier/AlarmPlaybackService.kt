@@ -20,6 +20,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -477,18 +478,20 @@ class AlarmPlaybackService : Service() {
         val detail = sourceApp?.let { "检测到“$keyword”，来自 $it；点击进入处理" }
             ?: "检测到“$keyword”；点击进入处理"
         val publicVersion = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
+            .setColor(ContextCompat.getColor(this, R.color.md_theme_error))
             .setContentTitle("VisionGuard 报警进行中")
             .setContentText("点击进入应用处理")
-            .setSmallIcon(R.drawable.ic_notification_icon)
+            .setSmallIcon(R.drawable.ic_lucide_bell_ring)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build()
 
         return NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
+            .setColor(ContextCompat.getColor(this, R.color.md_theme_error))
             .setContentTitle("VisionGuard 报警进行中")
             .setContentText(detail)
-            .setSmallIcon(R.drawable.ic_notification_icon)
+            .setSmallIcon(R.drawable.ic_lucide_bell_ring)
             .setContentIntent(pendingIntent)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -503,7 +506,8 @@ class AlarmPlaybackService : Service() {
     private fun createForegroundServiceNotification(): Notification {
         val launch = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this, FOREGROUND_CHANNEL_ID)
+            .setColor(ContextCompat.getColor(this, R.color.md_theme_primary))
             .setContentTitle("VisionGuard 通知节点").setContentText("恢复已保存的报警队列")
-            .setSmallIcon(R.drawable.ic_notification_icon).setContentIntent(launch).setOngoing(true).setSilent(true).build()
+            .setSmallIcon(R.drawable.ic_lucide_bell).setContentIntent(launch).setOngoing(true).setSilent(true).build()
     }
 }

@@ -1,9 +1,11 @@
 package com.xgwnje.visionguard.receiver.ui.component
 
+import com.xgwnje.visionguard.icons.LucideIcons
+
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,16 +25,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircleOutline
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DragHandle
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.Percent
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -47,27 +42,24 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import com.xgwnje.visionguard.account.VisionGuardControlColors
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.xgwnje.visionguard.receiver.R
 import com.xgwnje.visionguard.receiver.data.model.DeviceConfig
 import com.xgwnje.visionguard.receiver.data.model.DeviceInfo
 import com.xgwnje.visionguard.receiver.data.model.targetEnZhPairs
 import com.xgwnje.visionguard.receiver.ui.home.DeviceCardChrome
-import com.xgwnje.visionguard.receiver.ui.home.DeviceCardIllustration
 import com.xgwnje.visionguard.receiver.ui.home.DeviceCardUiModel
 import com.xgwnje.visionguard.receiver.ui.home.DeviceStatusTone
 import com.xgwnje.visionguard.receiver.ui.home.buildDeviceCardChrome
@@ -79,9 +71,14 @@ import com.xgwnje.visionguard.receiver.ui.home.cooldownLabel
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverAlert
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverAlertSoft
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverAmber
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverAmberSoft
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverMuted
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverPrimaryText
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverInk
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverPrimary
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverPrimarySoft
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverOutline
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverOnPrimary
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverSurface
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverSurfaceMuted
 import kotlin.math.roundToInt
@@ -104,7 +101,7 @@ fun DeviceCard(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(chrome.cardCornerRadiusDp.dp),
         color = ReceiverSurface,
-        border = BorderStroke(1.dp, Color.White),
+        border = BorderStroke(1.dp, ReceiverOutline),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
@@ -128,7 +125,7 @@ fun DeviceCard(
                     text = "来源数量超过服务端上限（$limit），超出部分未被上报；下面显示的是上一次成功上报的来源。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
             }
             if (device.sources.isNotEmpty()) {
@@ -146,6 +143,7 @@ fun DeviceCard(
         val deviceConfig = initialConfig ?: DeviceConfig()
         DeviceConfigBottomSheet(
             device = device,
+            sourceId = configSourceId,
             initialConfig = source?.let {
                 DeviceConfig(
                     it.cooldown ?: deviceConfig.cooldown,
@@ -172,60 +170,36 @@ private fun DeviceCardHero(
         topEnd = chrome.cardCornerRadiusDp.dp
     )
 
-    Box(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(chrome.heroHeightDp.dp)
+            .heightIn(min = chrome.heroHeightDp.dp)
             .clip(heroShape)
             .background(ReceiverSurfaceMuted)
+            .padding(horizontal = chrome.heroContentHorizontalPaddingDp.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        DeviceCardBackgroundBitmap(
-            illustration = model.illustration,
-            alpha = chrome.heroBackgroundAlpha,
-            scale = chrome.heroBackgroundScale,
-            modifier = Modifier.matchParentSize()
-        )
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .background(
-                    Brush.horizontalGradient(
-                        colorStops = arrayOf(
-                            0f to ReceiverSurface.copy(alpha = 0.86f),
-                            0.54f to ReceiverSurface.copy(alpha = 0.54f),
-                            1f to Color.Transparent
-                        )
-                    )
-                )
-        )
         Column(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .fillMaxWidth(0.62f)
-                .padding(
-                    horizontal = chrome.heroContentHorizontalPaddingDp.dp,
-                    vertical = chrome.heroContentVerticalPaddingDp.dp
-                ),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
                 text = model.deviceName,
                 style = MaterialTheme.typography.headlineSmall,
-                color = ReceiverPrimary,
-                fontWeight = FontWeight.Black,
-                maxLines = 1,
+                color = ReceiverInk,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth()
             )
+            Text(model.typeLabel, style = MaterialTheme.typography.bodySmall, color = ReceiverMuted)
             DeviceStatusPill(
                 label = model.statusLabel,
                 tone = model.statusTone
             )
         }
         DeviceDragHandle(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 14.dp, end = 14.dp),
+            modifier = Modifier.padding(start = 12.dp),
             dragHandleModifier = dragHandleModifier
         )
     }
@@ -236,22 +210,22 @@ private fun DeviceDragHandle(
     modifier: Modifier = Modifier,
     dragHandleModifier: Modifier = Modifier
 ) {
-    val shape = RoundedCornerShape(18.dp)
+    val shape = MaterialTheme.shapes.small
 
     Surface(
         modifier = modifier
-            .size(42.dp)
+            .size(48.dp)
             .clip(shape)
             .then(dragHandleModifier),
         shape = shape,
-        color = ReceiverSurface.copy(alpha = 0.78f),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.68f)),
+        color = ReceiverSurface,
+        border = BorderStroke(1.dp, ReceiverOutline),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
-                imageVector = Icons.Default.DragHandle,
+                imageVector = LucideIcons.GripHorizontal,
                 contentDescription = "拖拽排序",
                 tint = ReceiverMuted,
                 modifier = Modifier.size(24.dp)
@@ -261,36 +235,18 @@ private fun DeviceDragHandle(
 }
 
 @Composable
-private fun DeviceCardBackgroundBitmap(
-    illustration: DeviceCardIllustration,
-    alpha: Float,
-    scale: Float,
-    modifier: Modifier = Modifier
-) {
-    Image(
-        painter = painterResource(id = illustrationDrawableRes(illustration)),
-        contentDescription = null,
-        alignment = Alignment.CenterEnd,
-        contentScale = ContentScale.Crop,
-        modifier = modifier
-            .scale(scale)
-            .alpha(alpha)
-    )
-}
-
-@Composable
 private fun DeviceStatusPill(
     label: String,
     tone: DeviceStatusTone
 ) {
     Surface(
-        shape = RoundedCornerShape(18.dp),
+        shape = MaterialTheme.shapes.small,
         color = statusContainer(tone),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
@@ -303,8 +259,8 @@ private fun DeviceStatusPill(
                 text = label,
                 style = MaterialTheme.typography.labelLarge,
                 color = statusForeground(tone),
-                fontWeight = FontWeight.Black,
-                maxLines = 1,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
         }
@@ -331,7 +287,7 @@ private fun DeviceCardActions(
             Row(horizontalArrangement = Arrangement.spacedBy(chrome.columnGapDp.dp)) {
                 DeviceActionButton(
                     label = model.controlActionLabel,
-                    icon = if (model.controlCommand == "pause") Icons.Default.Pause else Icons.Default.PlayArrow,
+                    icon = if (model.controlCommand == "pause") LucideIcons.Pause else LucideIcons.Play,
                     enabled = model.controlsEnabled,
                     emphasized = model.controlCommand == "resume",
                     danger = model.controlCommand == "pause",
@@ -342,7 +298,7 @@ private fun DeviceCardActions(
                 )
                 DeviceActionButton(
                     label = "参数调节",
-                    icon = Icons.Default.Tune,
+                    icon = LucideIcons.SlidersHorizontal,
                     enabled = model.controlsEnabled,
                     emphasized = false,
                     danger = false,
@@ -358,7 +314,7 @@ private fun DeviceCardActions(
             Row(horizontalArrangement = Arrangement.spacedBy(chrome.columnGapDp.dp)) {
                 DeviceActionButton(
                     label = if (command.startsWith("open")) "打开视觉节点" else "关闭视觉节点",
-                    icon = if (command.startsWith("open")) Icons.Default.PlayArrow else Icons.Default.Pause,
+                    icon = if (command.startsWith("open")) LucideIcons.Play else LucideIcons.Pause,
                     enabled = model.lifecycleControlsEnabled, emphasized = command.startsWith("open"), danger = false,
                     heightDp = chrome.actionButtonHeightDp, contentHorizontalPaddingDp = 8,
                     onClick = { onCommand(command) }, modifier = Modifier.weight(1f)
@@ -375,30 +331,30 @@ private fun SourceControlList(
     onConfig: (String) -> Unit
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         device.sources.forEach { source ->
             Surface(
-                shape = RoundedCornerShape(16.dp), color = ReceiverSurfaceMuted,
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.7f))
+                shape = MaterialTheme.shapes.medium, color = ReceiverSurfaceMuted,
+                border = BorderStroke(1.dp, ReceiverOutline)
             ) {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = source.sourceName,
                             style = MaterialTheme.typography.titleSmall,
-                            color = ReceiverPrimary,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
+                            color = ReceiverInk,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
                         SourceIconAction(
-                            icon = if (source.isMonitoring) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            icon = if (source.isMonitoring) LucideIcons.Pause else LucideIcons.Play,
                             label = if (source.isMonitoring) "停止${source.sourceName}" else "启动${source.sourceName}",
                             enabled = device.online && "source-control" in device.capabilities &&
                                 source.isReady && source.error.isNullOrBlank(),
@@ -406,9 +362,9 @@ private fun SourceControlList(
                             danger = source.isMonitoring,
                             onClick = { onCommand(if (source.isMonitoring) "pause" else "resume", source.sourceId) }
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         SourceIconAction(
-                            icon = Icons.Default.Tune,
+                            icon = LucideIcons.SlidersHorizontal,
                             label = "调节${source.sourceName}参数",
                             // 检测端拒绝运行中修改来源配置。
                             enabled = device.online && "source-control" in device.capabilities &&
@@ -419,6 +375,7 @@ private fun SourceControlList(
                         )
                     }
                     val status = when {
+                        !device.online -> "节点离线 · 等待重新连接"
                         source.error?.isNotBlank() == true -> source.error
                         !source.isReady -> "目标暂不可用"
                         source.isMonitoring -> "检测中 · ${source.actualFps?.let { "%.1f FPS".format(it) } ?: "频率计算中"}"
@@ -427,11 +384,16 @@ private fun SourceControlList(
                     Text(
                         text = status,
                         style = MaterialTheme.typography.bodySmall,
-                        color = ReceiverMuted,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                        color = when { !device.online -> ReceiverMuted; source.error?.isNotBlank() == true -> ReceiverAlert; !source.isReady -> ReceiverAmber; source.isMonitoring -> ReceiverPrimaryText; else -> ReceiverMuted },
                         modifier = Modifier.fillMaxWidth()
                     )
+                    if (device.online && "source-control" in device.capabilities && source.isMonitoring) {
+                        Text(
+                            text = "停止此来源监控后可调节参数。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = ReceiverMuted
+                        )
+                    }
                 }
             }
         }
@@ -448,26 +410,28 @@ private fun SourceIconAction(
     onClick: () -> Unit
 ) {
     val containerColor = when {
+        !enabled -> ReceiverSurfaceMuted
         emphasized -> ReceiverPrimary
         danger -> ReceiverAlertSoft
         else -> ReceiverSurface
     }
     val contentColor = when {
-        emphasized -> Color.White
+        !enabled -> ReceiverMuted
+        emphasized -> ReceiverOnPrimary
         danger -> ReceiverAlert
-        else -> ReceiverPrimary
+        else -> ReceiverInk
     }
     Surface(
         modifier = Modifier
-            .size(40.dp)
-            .alpha(if (enabled) 1f else 0.48f)
-            .clip(CircleShape)
-            .clickable(enabled = enabled, onClickLabel = label, onClick = onClick),
-        shape = CircleShape,
+            .size(48.dp)
+            .clip(MaterialTheme.shapes.small)
+            .semantics { contentDescription = label }
+            .clickable(enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onClick),
+        shape = MaterialTheme.shapes.small,
         color = containerColor
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = label, tint = contentColor, modifier = Modifier.size(19.dp))
+            Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(24.dp))
         }
     }
 }
@@ -485,34 +449,35 @@ private fun DeviceActionButton(
     modifier: Modifier = Modifier
 ) {
     val containerColor = when {
+        !enabled -> ReceiverSurfaceMuted
         emphasized -> ReceiverPrimary
         danger -> ReceiverAlertSoft
         else -> ReceiverSurfaceMuted
     }
     val contentColor = when {
-        emphasized -> Color.White
+        !enabled -> ReceiverMuted
+        emphasized -> ReceiverOnPrimary
         danger -> ReceiverAlert
-        else -> ReceiverPrimary
+        else -> ReceiverInk
     }
 
-    val shape = RoundedCornerShape((heightDp / 2).dp)
+    val shape = MaterialTheme.shapes.small
 
     Surface(
         modifier = modifier
-            .height(heightDp.dp)
-            .alpha(if (enabled) 1f else 0.48f)
+            .heightIn(min = heightDp.coerceAtLeast(48).dp)
             .clip(shape)
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onClick),
         shape = shape,
         color = containerColor,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.76f)),
+        border = BorderStroke(1.dp, ReceiverOutline),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
         Row(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = contentHorizontalPaddingDp.dp),
+                .fillMaxWidth()
+                .padding(horizontal = contentHorizontalPaddingDp.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -520,16 +485,17 @@ private fun DeviceActionButton(
                 imageVector = icon,
                 contentDescription = null,
                 tint = contentColor,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelLarge,
                 color = contentColor,
-                fontWeight = FontWeight.Black,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
             )
         }
     }
@@ -538,6 +504,7 @@ private fun DeviceActionButton(
 @Composable
 private fun DeviceConfigBottomSheet(
     device: DeviceInfo,
+    sourceId: String?,
     initialConfig: DeviceConfig,
     onSetConfig: (key: String, value: String) -> Unit,
     onDismiss: () -> Unit
@@ -559,9 +526,12 @@ private fun DeviceConfigBottomSheet(
     var targetSamplingRate by remember(initialConfig.targetSamplingRate) {
         mutableStateOf(initialConfig.targetSamplingRate.coerceIn(1, 5))
     }
+    val source = device.sources.firstOrNull { it.sourceId == sourceId }
+    val sourceConfigEnabled = sourceId == null || source?.let { it.isReady && !it.isMonitoring } == true
+    val monitoring = source?.isMonitoring ?: device.isMonitoring
     val modelOptions = device.modelOptions.orEmpty()
     val modelSelectionEnabled = modelOptions.isNotEmpty() &&
-        (!device.isMonitoring || device.canSwitchModelWhileMonitoring)
+        sourceConfigEnabled && (!monitoring || device.canSwitchModelWhileMonitoring)
     var selectedModelKey by remember(initialConfig.modelKey, modelOptions) {
         mutableStateOf(
             initialConfig.modelKey
@@ -587,7 +557,8 @@ private fun DeviceConfigBottomSheet(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.32f)),
+                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.32f))
+                .imePadding(),
             contentAlignment = Alignment.BottomCenter
         ) {
             Box(
@@ -599,33 +570,43 @@ private fun DeviceConfigBottomSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .navigationBarsPadding()
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
                     .heightIn(max = 780.dp),
-                shape = RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp, bottomStart = 28.dp, bottomEnd = 28.dp),
+                shape = MaterialTheme.shapes.extraLarge,
                 color = ReceiverSurface,
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.74f)),
+                border = BorderStroke(1.dp, ReceiverOutline),
                 tonalElevation = 0.dp,
                 shadowElevation = 0.dp
             ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 18.dp),
+                    modifier = Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     BottomSheetHandle()
                     ConfigSheetHeader(
-                        deviceName = editorModel.deviceName,
-                        statusLabel = buildDeviceCardUiModel(device).statusLabel,
+                        deviceName = editorModel.deviceName + (source?.let { " · ${it.sourceName}" } ?: ""),
+                        statusLabel = if (sourceId == null) buildDeviceCardUiModel(device).statusLabel else when {
+                            source == null -> "来源已移除"
+                            source.isMonitoring -> "此来源检测中"
+                            !source.isReady -> "此来源未就绪"
+                            else -> "此来源已停止"
+                        },
                         onDismiss = onDismiss
                     )
+                    if (!sourceConfigEnabled) {
+                        Text(
+                            text = if (source == null) "来源已移除，请关闭后刷新设备列表。" else "停止此来源并等待目标就绪后可应用参数。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = ReceiverAmber
+                        )
+                    }
                     if (device.hasPendingConfigChanges) {
                         PendingConfigNotice()
                     }
 
                     Column(
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                        modifier = Modifier,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         CooldownEditor(
                             value = cooldown,
@@ -639,6 +620,11 @@ private fun DeviceConfigBottomSheet(
                             selectedModelKey = selectedModelKey,
                             modelOptions = modelOptions,
                             enabled = modelSelectionEnabled,
+                            disabledReason = if (sourceId == null || sourceConfigEnabled) null else when {
+                                source == null -> "来源已移除"
+                                source.isMonitoring -> "停止此来源后可切换模型"
+                                else -> "目标就绪后可切换模型"
+                            },
                             onChange = { selectedModelKey = it }
                         )
                         ConfidenceEditor(
@@ -671,7 +657,7 @@ private fun DeviceConfigBottomSheet(
                         SheetActionButton(
                             text = editorModel.applyActionLabel,
                             selected = true,
-                            enabled = editorModel.applyEnabled,
+                            enabled = editorModel.applyEnabled && sourceConfigEnabled,
                             onClick = {
                                 buildDeviceConfigChanges(
                                     initialConfig = initialConfig,
@@ -698,8 +684,8 @@ private fun DeviceConfigBottomSheet(
 private fun PendingConfigNotice() {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = ReceiverAmber.copy(alpha = 0.14f),
+        shape = RoundedCornerShape(12.dp),
+        color = ReceiverAmberSoft,
         border = BorderStroke(1.dp, ReceiverAmber.copy(alpha = 0.24f)),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
@@ -708,8 +694,8 @@ private fun PendingConfigNotice() {
             text = "已保存，停止后重新开启生效",
             style = MaterialTheme.typography.labelLarge,
             color = ReceiverAmber,
-            fontWeight = FontWeight.Black,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(12.dp)
         )
     }
 }
@@ -722,8 +708,8 @@ private fun BottomSheetHandle() {
     ) {
         Box(
             modifier = Modifier
-                .size(width = 42.dp, height = 5.dp)
-                .background(ReceiverSurfaceMuted, RoundedCornerShape(3.dp))
+                .size(width = 48.dp, height = 4.dp)
+                .background(ReceiverMuted, RoundedCornerShape(4.dp))
         )
     }
 }
@@ -736,50 +722,45 @@ private fun ConfigSheetHeader(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.Top
     ) {
         Surface(
             modifier = Modifier.size(48.dp),
-            shape = RoundedCornerShape(18.dp),
+            shape = RoundedCornerShape(12.dp),
             color = ReceiverPrimarySoft,
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.74f)),
+            border = BorderStroke(1.dp, ReceiverOutline),
             tonalElevation = 0.dp,
             shadowElevation = 0.dp
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = Icons.Default.Tune,
+                    imageVector = LucideIcons.SlidersHorizontal,
                     contentDescription = null,
-                    tint = ReceiverPrimary,
-                    modifier = Modifier.size(26.dp)
+                    tint = ReceiverPrimaryText,
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
-        Spacer(modifier = Modifier.width(14.dp))
+        Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = "参数调节",
                 style = MaterialTheme.typography.titleMedium,
-                color = ReceiverPrimary,
-                fontWeight = FontWeight.Black
+                color = ReceiverInk,
+                fontWeight = FontWeight.SemiBold
             )
             Text(
                 text = "$deviceName · $statusLabel",
                 style = MaterialTheme.typography.labelLarge,
-                color = ReceiverMuted,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                color = ReceiverMuted
             )
         }
-        Icon(
-            imageVector = Icons.Default.Close,
-            contentDescription = "关闭",
-            tint = ReceiverMuted,
-            modifier = Modifier
-                .size(36.dp)
-                .clickable(onClick = onDismiss)
-                .padding(6.dp)
-        )
+        IconButton(
+            onClick = onDismiss,
+            modifier = Modifier.size(48.dp).semantics { contentDescription = "关闭参数调节" }
+        ) {
+            Icon(LucideIcons.X, contentDescription = null, tint = ReceiverMuted, modifier = Modifier.size(24.dp))
+        }
     }
 }
 
@@ -792,7 +773,7 @@ private fun CooldownEditor(
     var customDraft by remember { mutableStateOf<String?>(null) }
     val isPreset = CooldownOptions.any { it.first == value }
     ConfigSection(
-        icon = Icons.Default.Timer,
+        icon = LucideIcons.Timer,
         title = "警报推送冷却时间",
         valueLabel = cooldownLabel(value)
     ) {
@@ -826,9 +807,11 @@ private fun CooldownEditor(
                     label = { Text("1–300 秒") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    shape = MaterialTheme.shapes.small,
+                    colors = VisionGuardControlColors.outlinedField(focusedLabelColor = ReceiverPrimaryText)
                 )
-                TextButton(onClick = {
+                TextButton(shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = ReceiverPrimaryText), onClick = {
                     customDraft?.toIntOrNull()?.let { onChange(it.coerceIn(1, 300)) }
                     customDraft = null
                 }) { Text("确定") }
@@ -843,7 +826,7 @@ private fun SamplingRateEditor(
     onChange: (Int) -> Unit
 ) {
     ConfigSection(
-        icon = Icons.Default.Timer,
+        icon = LucideIcons.Timer,
         title = "目标采样率",
         valueLabel = "$value 次/秒"
     ) {
@@ -868,15 +851,16 @@ private fun ModelKeyEditor(
     selectedModelKey: String,
     modelOptions: List<String>,
     enabled: Boolean,
+    disabledReason: String?,
     onChange: (String) -> Unit
 ) {
     val disabledText = when {
-        modelOptions.isEmpty() -> "旧端暂未上报模型列表"
-        !enabled -> "停止监控后可切换模型"
+        modelOptions.isEmpty() -> "设备暂未上报模型列表"
+        !enabled -> disabledReason ?: "停止监控后可切换模型"
         else -> null
     }
     ConfigSection(
-        icon = Icons.Default.Tune,
+        icon = LucideIcons.SlidersHorizontal,
         title = "模型选择",
         valueLabel = selectedModelKey.ifBlank { "不可用" }
     ) {
@@ -912,7 +896,7 @@ private fun ConfidenceEditor(
     val quickValues = listOf(0.30f, 0.45f, 0.60f, 0.75f, 0.90f)
 
     ConfigSection(
-        icon = Icons.Default.Percent,
+        icon = LucideIcons.Percent,
         title = "置信度阈值",
         valueLabel = "${(value * 100).roundToInt()}%"
     ) {
@@ -946,7 +930,7 @@ private fun TargetsEditor(
     onToggle: (String) -> Unit
 ) {
     ConfigSection(
-        icon = Icons.Default.CheckCircleOutline,
+        icon = LucideIcons.CircleCheck,
         title = "监控目标",
         valueLabel = "${selectedTargets.size} 项"
     ) {
@@ -975,9 +959,9 @@ private fun ConfigSection(
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        color = ReceiverSurfaceMuted.copy(alpha = 0.72f),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.74f)),
+        shape = RoundedCornerShape(12.dp),
+        color = ReceiverSurfaceMuted,
+        border = BorderStroke(1.dp, ReceiverOutline),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
@@ -992,23 +976,24 @@ private fun ConfigSection(
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = ReceiverPrimary,
-                    modifier = Modifier.size(22.dp)
+                    tint = ReceiverPrimaryText,
+                    modifier = Modifier.size(24.dp)
                 )
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = title,
                     style = MaterialTheme.typography.labelLarge,
-                    color = ReceiverPrimary,
-                    fontWeight = FontWeight.Black,
+                    color = ReceiverInk,
+                    fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f)
                 )
                 Text(
                     text = valueLabel,
                     style = MaterialTheme.typography.titleMedium,
-                    color = ReceiverPrimary,
-                    fontWeight = FontWeight.Black,
-                    textAlign = TextAlign.End
+                    color = ReceiverInk,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.weight(1f)
                 )
             }
             content()
@@ -1025,21 +1010,21 @@ private fun QuickValueChip(
 ) {
     Surface(
         modifier = Modifier
-            .alpha(if (enabled) 1f else 0.46f)
-            .clip(RoundedCornerShape(22.dp))
-            .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(22.dp),
-        color = if (selected) ReceiverPrimary else ReceiverSurface,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.76f)),
+            .heightIn(min = 48.dp)
+            .clip(MaterialTheme.shapes.small)
+            .selectable(selected = selected, enabled = enabled, onClick = onClick),
+        shape = MaterialTheme.shapes.small,
+        color = if (!enabled) ReceiverSurfaceMuted else if (selected) ReceiverPrimarySoft else ReceiverSurface,
+        border = BorderStroke(1.dp, ReceiverOutline),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelLarge,
-            color = if (selected) Color.White else ReceiverPrimary,
-            fontWeight = FontWeight.Black,
-            modifier = Modifier.padding(horizontal = 13.dp, vertical = 9.dp)
+            color = if (!enabled) ReceiverMuted else if (selected) ReceiverPrimaryText else ReceiverInk,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)
         )
     }
 }
@@ -1061,10 +1046,10 @@ private fun ReceiverSlider(
             thumbColor = ReceiverPrimary,
             activeTrackColor = ReceiverPrimary,
             inactiveTrackColor = ReceiverSurface,
-            activeTickColor = Color.White,
+            activeTickColor = ReceiverOnPrimary,
             inactiveTickColor = ReceiverMuted.copy(alpha = 0.35f)
         ),
-        modifier = modifier
+        modifier = modifier.heightIn(min = 48.dp)
     )
 }
 
@@ -1076,20 +1061,19 @@ private fun SheetActionButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val containerColor = if (selected) ReceiverPrimary else ReceiverSurfaceMuted
-    val contentColor = if (selected) Color.White else ReceiverPrimary
+    val containerColor = if (selected && enabled) ReceiverPrimary else ReceiverSurfaceMuted
+    val contentColor = if (!enabled) ReceiverMuted else if (selected) ReceiverOnPrimary else ReceiverInk
 
-    val shape = RoundedCornerShape(26.dp)
+    val shape = MaterialTheme.shapes.small
 
     Surface(
         modifier = modifier
-            .height(52.dp)
-            .alpha(if (enabled) 1f else 0.46f)
+            .heightIn(min = 48.dp)
             .clip(shape)
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled, role = Role.Button, onClickLabel = text, onClick = onClick),
         shape = shape,
         color = containerColor,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.76f)),
+        border = BorderStroke(1.dp, ReceiverOutline),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp
     ) {
@@ -1098,35 +1082,31 @@ private fun SheetActionButton(
                 text = text,
                 style = MaterialTheme.typography.labelLarge,
                 color = contentColor,
-                fontWeight = FontWeight.Black
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(12.dp)
             )
         }
     }
 }
 
-private fun illustrationDrawableRes(illustration: DeviceCardIllustration): Int =
-    when (illustration) {
-        DeviceCardIllustration.WINDOWS_DESKTOP -> R.drawable.device_bg_windows
-        DeviceCardIllustration.ANDROID_CAMERA -> R.drawable.device_bg_android_detector
-        DeviceCardIllustration.GENERIC_VIEWFINDER -> R.drawable.device_bg_generic
-    }
-
+@Composable
 private fun statusForeground(tone: DeviceStatusTone): Color =
     when (tone) {
         DeviceStatusTone.OFFLINE -> ReceiverMuted
         DeviceStatusTone.RESIDENT_ONLY -> ReceiverAmber
-        DeviceStatusTone.MONITORING -> ReceiverPrimary
+        DeviceStatusTone.MONITORING -> ReceiverPrimaryText
         DeviceStatusTone.PARTIAL_MONITORING -> ReceiverAmber
         DeviceStatusTone.NOT_READY -> ReceiverAmber
-        DeviceStatusTone.READY -> ReceiverPrimary
+        DeviceStatusTone.READY -> ReceiverPrimaryText
     }
 
+@Composable
 private fun statusContainer(tone: DeviceStatusTone): Color =
     when (tone) {
-        DeviceStatusTone.OFFLINE -> ReceiverSurface.copy(alpha = 0.74f)
-        DeviceStatusTone.RESIDENT_ONLY -> ReceiverAmber.copy(alpha = 0.14f)
-        DeviceStatusTone.MONITORING -> ReceiverPrimarySoft.copy(alpha = 0.78f)
-        DeviceStatusTone.PARTIAL_MONITORING -> ReceiverAmber.copy(alpha = 0.14f)
-        DeviceStatusTone.NOT_READY -> ReceiverAmber.copy(alpha = 0.14f)
-        DeviceStatusTone.READY -> ReceiverPrimarySoft.copy(alpha = 0.78f)
+        DeviceStatusTone.OFFLINE -> ReceiverSurface
+        DeviceStatusTone.RESIDENT_ONLY -> ReceiverAmberSoft
+        DeviceStatusTone.MONITORING -> ReceiverPrimarySoft
+        DeviceStatusTone.PARTIAL_MONITORING -> ReceiverAmberSoft
+        DeviceStatusTone.NOT_READY -> ReceiverAmberSoft
+        DeviceStatusTone.READY -> ReceiverPrimarySoft
     }

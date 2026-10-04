@@ -13,10 +13,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import androidx.core.app.NotificationCompat
-import androidx.core.graphics.drawable.IconCompat
 import com.xgwnje.visionguard.detector.MainActivity
 import com.xgwnje.visionguard.detector.R
 
@@ -59,7 +56,7 @@ object NotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val builder = NotificationCompat.Builder(context, FOREGROUND_CHANNEL_ID)
-        setSmallAppIcon(builder, context)
+        builder.setSmallIcon(R.drawable.ic_lucide_bell)
         builder.setContentTitle(context.getString(R.string.app_name))
             .setContentText(stateText)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -68,39 +65,5 @@ object NotificationHelper {
         return builder.build()
     }
 
-    /** 将 smallIcon 设为完整应用图标（24dp 标准通知尺寸） */
-    private fun setSmallAppIcon(builder: NotificationCompat.Builder, context: Context) {
-        val bitmap = getAppIconBitmap(context, sizeDp = 24)
-        if (bitmap != null) {
-            builder.setSmallIcon(IconCompat.createWithBitmap(bitmap))
-        } else {
-            builder.setSmallIcon(R.mipmap.ic_launcher_foreground)
-        }
-    }
-
-    /**
-     * 获取应用图标 Bitmap（自适应图标也会合成完整图像）。
-     * @param sizeDp 目标尺寸（dp），通知 smallIcon 标准 24dp，原图传 0。
-     */
-    private fun getAppIconBitmap(context: Context, sizeDp: Int = 0): Bitmap? {
-        return try {
-            val drawable = context.packageManager.getApplicationIcon(context.packageName)
-            val density = context.resources.displayMetrics.density
-            val w: Int
-            val h: Int
-            if (sizeDp > 0) {
-                w = (sizeDp * density).toInt().coerceAtLeast(1)
-                h = w
-            } else {
-                w = drawable.intrinsicWidth.coerceAtLeast(1)
-                h = drawable.intrinsicHeight.coerceAtLeast(1)
-            }
-            val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            drawable.setBounds(0, 0, canvas.width, canvas.height)
-            drawable.draw(canvas)
-            bitmap
-        } catch (_: Exception) { null }
-    }
 
 }

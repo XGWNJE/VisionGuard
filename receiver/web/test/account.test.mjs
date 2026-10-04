@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseLogin, accountRequest, rotateLogin } from '../src/account.ts';
+import { parseLogin, accountRequest, rotateLogin, AccountRequestError } from '../src/account.ts';
 
 const session = { token:'a'.repeat(32), expiresAt:'2026-12-01T00:00:00Z', channel:'isolated', account:{accountId:'one',username:'test'}, device:{deviceId:'console',deviceName:'Web 控制台',role:'console',nodeType:'console',platform:'web',component:'web-console'} };
 
@@ -32,6 +32,49 @@ test('revoked account credentials require login and unreadable responses fail vi
     await assert.rejects(accountRequest('/api/account/session',session.token),/重新登录/);
     globalThis.fetch=async()=>new Response('<html>bad gateway</html>',{status:502});
     await assert.rejects(accountRequest('/api/account/session',session.token),/服务暂不可用/);
+  }finally{globalThis.fetch=original;}
+});
+
+test('rejected network fetch gives actionable Chinese feedback without pretending to have an HTTP status',async()=>{
+  const original=globalThis.fetch;
+  globalThis.fetch=()=>Promise.reject(new TypeError('Failed to fetch'));
+  try{
+    await assert.rejects(accountRequest('/api/account/password',session.token,{}),failure=>{
+      assert.equal(failure.message,'连接失败，请检查网络后重试');
+      assert.equal(failure instanceof AccountRequestError,false);
+      return true;
+    });
+  }finally{globalThis.fetch=original;}
+});
+
+test('fetch cancellation retains its original AbortError',async()=>{
+  const original=globalThis.fetch; const cancellation=new DOMException('Aborted','AbortError');
+  globalThis.fetch=()=>Promise.reject(cancellation);
+  try{
+    await assert.rejects(accountRequest('/api/account/session',session.token),failure=>{
+      assert.equal(failure,cancellation);
+      return true;
+    });
+  }finally{globalThis.fetch=original;}
+});
+
+test('password change reports an incorrect current password while other 401 failures retain authentication feedback',async()=>{
+  const original=globalThis.fetch;
+  try{
+    for(const [path,error,message] of [
+      ['/api/account/password','Current password is incorrect','当前密码不正确'],
+      ['/api/account/password','unauthorized','登录已失效，请重新登录'],
+      ['/api/account/session','Current password is incorrect','登录已失效，请重新登录'],
+      ['/api/account/login','unauthorized','账号或密码不正确'],
+    ]){
+      globalThis.fetch=async()=>new Response(JSON.stringify({ok:false,error}),{status:401});
+      await assert.rejects(accountRequest(path,session.token,{}),failure=>{
+        assert.ok(failure instanceof AccountRequestError);
+        assert.equal(failure.status,401);
+        assert.equal(failure.message,message);
+        return true;
+      });
+    }
   }finally{globalThis.fetch=original;}
 });
 

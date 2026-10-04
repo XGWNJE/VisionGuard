@@ -59,7 +59,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         }
 
         /// <summary>右侧状态文案：已下载 / 下载中 42% / 未下载。</summary>
-        public string StatusText => IsDownloaded ? "✓ 已下载" : IsDownloading ? $"下载中 {Progress}%" : "未下载";
+        public string StatusText => IsDownloaded ? "已下载" : IsDownloading ? $"下载中 {Progress}%" : "未下载";
 
         /// <summary>按钮文案：已下载时不可点，下载中显示进度，未下载时提示下载。</summary>
         public string ActionText => IsDownloaded ? "已就绪" : IsDownloading ? Progress + "%" : "下载";

@@ -107,7 +107,7 @@ object AutoUpdater {
 
         val channelId = NotificationHelper.FOREGROUND_CHANNEL_ID
         val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_lucide_download)
             .setContentTitle(context.getString(R.string.app_name) + "更新")
             .setContentText("发现新版本 ${info.version}，点击查看")
             .setPriority(NotificationCompat.PRIORITY_HIGH)

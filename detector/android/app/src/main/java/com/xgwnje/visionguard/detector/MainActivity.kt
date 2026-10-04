@@ -25,15 +25,18 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import com.xgwnje.visionguard.account.*
 import com.xgwnje.visionguard.detector.stream.*
 import com.xgwnje.visionguard.detector.ui.theme.VisionguardTheme
@@ -65,7 +68,14 @@ class MainActivity : ComponentActivity() {
         val account = AccountStore.get(this)
         setContent {
             val session by account.session.collectAsState()
-            VisionguardTheme(darkTheme = if (streaming && dimScreen) true else androidx.compose.foundation.isSystemInDarkTheme()) {
+            val darkTheme = if (streaming && dimScreen) true else androidx.compose.foundation.isSystemInDarkTheme()
+            SideEffect {
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !darkTheme
+                    isAppearanceLightNavigationBars = !darkTheme
+                }
+            }
+            VisionguardTheme(darkTheme = darkTheme) {
                 if (session == null) AccountLogin(account, "VisionGuard 镜头推流", "android-camera")
                 else key(session!!.scope) {
                     val connection = remember { CameraPublisher(account) }
@@ -154,37 +164,75 @@ class MainActivity : ComponentActivity() {
 private fun CameraHome(state: PublisherState, preview: Bitmap?, streaming: Boolean, highResolution: Boolean,
     dim: Boolean, hidden: Boolean, captureSize: Pair<Int, Int>?, sentSize: Pair<Int, Int>?, onStart: () -> Unit, onStop: () -> Unit, onBind: (String) -> Unit,
     onRefresh: () -> Unit, onResolution: (Boolean) -> Unit, onDim: (Boolean) -> Unit, onHidePreview: (Boolean) -> Unit) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("镜头推流", fontSize = 26.sp, fontWeight = FontWeight.Bold)
-        Text(state.status, color = MaterialTheme.colorScheme.primary)
+    val colors = MaterialTheme.colorScheme
+    val statusColor = when {
+        state.status.contains("失败") || state.status.contains("无法") || state.status.contains("超时") -> colors.error
+        !state.connected || state.status.contains("等待") || state.status.contains("重连") -> VisionGuardStatusColors.warning
+        streaming -> VisionGuardStatusColors.onSuccessContainer
+        else -> colors.onSurface
+    }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("镜头推流", style = MaterialTheme.typography.titleLarge)
+        Text(state.status, color = statusColor, style = MaterialTheme.typography.titleSmall)
         Text("保持应用在前台；离开应用或锁屏后停止推流。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row { Text("目标视觉节点", Modifier.weight(1f), fontWeight = FontWeight.SemiBold); TextButton(onRefresh) { Text("刷新") } }
-                if (state.targets.isEmpty()) Text("请先在视觉推理节点登录同一账号。")
+        OutlinedCard(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, colors = CardDefaults.outlinedCardColors(containerColor = colors.surface), border = BorderStroke(1.dp, colors.outlineVariant)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) { Text("目标视觉节点", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium); TextButton(onRefresh, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("刷新") } }
+                when {
+                    !state.connected -> Text("连接统一服务后获取目标视觉节点。", color = colors.onSurfaceVariant)
+                    state.targetsLoading -> Text("正在加载视觉节点…", color = colors.onSurfaceVariant)
+                    state.targetsLoadFailed -> Text("暂时无法加载视觉节点，请点击刷新重试。", color = colors.error)
+                    state.targets.isEmpty() -> Text("当前账号下没有视觉节点，请先在视觉节点登录同一账号。", color = colors.onSurfaceVariant)
+                }
+                if (streaming) Text("停止推流后可更换目标节点。", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                 state.targets.forEach { target ->
-                    OutlinedButton({ onBind(target.deviceId) }, enabled = !streaming, modifier = Modifier.fillMaxWidth()) {
+                    val selected = state.stream?.targetDeviceId == target.deviceId
+                    OutlinedButton({ onBind(target.deviceId) }, enabled = !streaming, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small,
+                        colors = VisionGuardControlColors.outlinedButton(containerColor = if (selected) colors.primaryContainer else colors.surface, contentColor = VisionGuardStatusColors.onSuccessContainer),
+                        border = BorderStroke(1.dp, if (selected) colors.primary else colors.outlineVariant)) {
                         Text((if (state.stream?.targetDeviceId == target.deviceId) "已关联 · " else "选择 · ") + target.deviceName)
                     }
                 }
                 state.stream?.sourceName?.takeIf { it.isNotBlank() }?.let { Text("推理来源：$it") }
             }
         }
-        if (!hidden) OutlinedCard(Modifier.fillMaxWidth().height(220.dp)) {
+        if (!hidden) OutlinedCard(Modifier.fillMaxWidth().aspectRatio(4f / 3f), shape = MaterialTheme.shapes.medium, colors = CardDefaults.outlinedCardColors(containerColor = colors.surfaceVariant), border = BorderStroke(1.dp, colors.outlineVariant)) {
             if (preview != null) Image(preview.asImageBitmap(), "实时摄像头画面", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-            else Box(Modifier.fillMaxSize()) { Text(if (streaming) "等待实时画面" else "开始后显示实时画面", Modifier.padding(20.dp)) }
+            else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(if (streaming) "等待实时画面" else "开始后显示实时画面", Modifier.padding(16.dp), color = colors.onSurfaceVariant) }
         }
-        if (streaming) Button(onStop, Modifier.fillMaxWidth().height(50.dp)) { Text("停止推流") }
-        else Button(onStart, Modifier.fillMaxWidth().height(50.dp), enabled = state.connected && state.stream?.targetDeviceId != null) { Text("开始推流") }
-        Row { Text(if (highResolution) "最高720P · 5 帧/秒" else "最高640×480 · 5 帧/秒", Modifier.weight(1f)); Switch(highResolution, onResolution, enabled = !streaming) }
+        if (streaming) Button(onStop, Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small,
+            colors = VisionGuardControlColors.button(containerColor = colors.error, contentColor = colors.onError)) { Text("停止推流") }
+        else {
+            Button(onStart, Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = state.connected && state.stream?.targetDeviceId != null, colors = VisionGuardControlColors.button(), shape = MaterialTheme.shapes.small) { Text("开始推流") }
+            if (!state.connected || state.stream?.targetDeviceId == null) Text(if (!state.connected) "连接统一服务后可以开始。" else "先选择目标视觉节点，再开始推流。", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        }
+        CameraSetting(if (highResolution) "最高 720P · 5 帧/秒" else "最高 640×480 · 5 帧/秒", "推流时保持画面规格；停止后可调整。", highResolution, !streaming, onResolution)
         if (captureSize != null && sentSize != null) {
             Text("实际采集 ${captureSize.first}×${captureSize.second} · 发送 ${sentSize.first}×${sentSize.second}", style = MaterialTheme.typography.bodySmall)
             if (highResolution && (maxOf(captureSize.first, captureSize.second) < 1280 || minOf(captureSize.first, captureSize.second) < 720))
                 Text("此摄像头已按可用规格回退。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Row { Text("省电暗色界面", Modifier.weight(1f)); Switch(dim, onDim) }
-        Row { Text("收起画面预览", Modifier.weight(1f)); Switch(hidden, onHidePreview) }
-        Text("画面发送 ${state.sentFrames} · 服务确认 ${state.acknowledgedFrames} · 丢弃 ${state.droppedFrames}", style = MaterialTheme.typography.bodySmall)
+        CameraSetting("省电暗色界面", "推流时使用暗色并降低当前窗口亮度。", dim, true, onDim)
+        CameraSetting("收起画面预览", "推流继续进行，隐藏本机预览。", hidden, true, onHidePreview)
+        OutlinedCard(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, border = BorderStroke(1.dp, colors.outlineVariant), colors = CardDefaults.outlinedCardColors(containerColor = colors.surface)) {
+            FlowRow(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("画面发送 ${state.sentFrames}", style = MaterialTheme.typography.labelLarge)
+                Text("服务确认 ${state.acknowledgedFrames}", style = MaterialTheme.typography.labelLarge)
+                Text("丢弃 ${state.droppedFrames}", style = MaterialTheme.typography.labelLarge)
+            }
+        }
         Text("服务确认表示视频已送达统一服务；检测结果请在控制台查看。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun CameraSetting(label: String, description: String, checked: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onChange).padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }

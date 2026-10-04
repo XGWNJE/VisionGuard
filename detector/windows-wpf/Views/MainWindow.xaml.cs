@@ -17,6 +17,9 @@ namespace VisionGuard.Detector.Windows.Views
         public MainWindow()
         {
             InitializeComponent();
+            SourceInitialized += (s, e) => Themes.ThemeManager.ApplyTitleBar(this);
+            Loaded += (s, e) => ConstrainInspectorWidth();
+            SizeChanged += (s, e) => ConstrainInspectorWidth();
             SetupTrayIcon();
         }
 
@@ -34,6 +37,7 @@ namespace VisionGuard.Detector.Windows.Views
             _notifyIcon.DoubleClick += (s, e) => ShowFromTray();
 
             var menu = new ContextMenuStrip();
+            Themes.ThemedTrayMenu.Apply(menu);
             menu.Items.Add("显示主窗口", null, (s, e) => ShowFromTray());
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("退出主体（保留驻留）", null, (s, e) => ExitApp());
@@ -96,8 +100,17 @@ namespace VisionGuard.Detector.Windows.Views
         /// </summary>
         private void CardsSplitter_OnDragCompleted(object sender, DragCompletedEventArgs e)
         {
+            ConstrainInspectorWidth();
             CardsColumn.Width = new GridLength(1, GridUnitType.Star);
             VisionGuard.Detector.Windows.Utils.SettingsStore.Save();
+        }
+
+        private void ConstrainInspectorWidth()
+        {
+            if (MainLayout == null || MainLayout.ActualWidth <= 0) return;
+            InspectorColumn.MaxWidth = Math.Min(Services.CardLayoutPlanner.MaximumInspectorPanelWidth,
+                Math.Max(Services.CardLayoutPlanner.MinimumInspectorPanelWidth,
+                    MainLayout.ActualWidth - Services.CardLayoutPlanner.MinimumCardsPanelWidth - Services.CardLayoutPlanner.SplitterWidth));
         }
 
         private void DisposeResourcesOnce()

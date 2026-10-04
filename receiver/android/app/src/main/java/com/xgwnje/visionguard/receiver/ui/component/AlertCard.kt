@@ -1,5 +1,7 @@
 package com.xgwnje.visionguard.receiver.ui.component
 
+import com.xgwnje.visionguard.icons.LucideIcons
+
 // ┌─────────────────────────────────────────────────────────┐
 // │ AlertCard.kt                                            │
 // │ 角色：报警列表卡片，只展示关键信息并引导进入详情            │
@@ -17,20 +19,12 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.DirectionsBike
-import androidx.compose.material.icons.automirrored.filled.HelpOutline
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.DirectionsBus
-import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.LocalShipping
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.TwoWheeler
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -41,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -56,7 +51,10 @@ import com.xgwnje.visionguard.receiver.ui.theme.ReceiverAlert
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverAlertSoft
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverAmber
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverMuted
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverPrimaryText
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverPrimary
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverOutline
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverOnPrimary
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverSurface
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverSurfaceMuted
 
@@ -67,30 +65,31 @@ fun AlertCard(
 ) {
     val model = remember(alert) { buildAlertCardUiModel(alert) }
 
-    val shape = RoundedCornerShape(28.dp)
+    val shape = RoundedCornerShape(12.dp)
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(112.dp)
+            .heightIn(min = 112.dp)
             .clip(shape)
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClickLabel = "查看报警详情", onClick = onClick),
         shape = shape,
         colors = CardDefaults.cardColors(containerColor = ReceiverSurface),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        border = BorderStroke(1.dp, Color.White)
+        border = BorderStroke(1.dp, ReceiverOutline)
     ) {
-        Row(
+        Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(start = 20.dp, top = 16.dp, end = 16.dp, bottom = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            DeviceColumn(model = model, modifier = Modifier.weight(0.34f))
-            Spacer(modifier = Modifier.width(14.dp))
-            AlertInfoColumn(model = model, modifier = Modifier.weight(0.56f))
-            Spacer(modifier = Modifier.width(10.dp))
-            DetailCueIcon(model = model)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                DeviceColumn(model = model, modifier = Modifier.weight(1f))
+                Spacer(modifier = Modifier.width(12.dp))
+                DetailCueIcon(model = model)
+            }
+            AlertInfoColumn(model = model)
         }
     }
 }
@@ -101,15 +100,15 @@ private fun DeviceColumn(
     modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = modifier.fillMaxHeight(),
+        modifier = modifier,
         verticalArrangement = Arrangement.Center
     ) {
         Text(
             text = model.deviceName,
-            style = MaterialTheme.typography.titleLarge,
-            color = ReceiverPrimary,
-            fontWeight = FontWeight.Black,
-            maxLines = 1,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
     }
@@ -121,21 +120,20 @@ private fun AlertInfoColumn(
     modifier: Modifier = Modifier
 ) {
     Column(
-        modifier = modifier.fillMaxHeight(),
+        modifier = modifier,
         verticalArrangement = Arrangement.Center
     ) {
         Text(
             text = model.dateTimeLabel,
             style = MaterialTheme.typography.labelLarge,
             color = ReceiverMuted,
-            maxLines = 1
+            maxLines = 2
         )
-        Spacer(modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
-            maxItemsInEachRow = 2
         ) {
             model.targetChips.forEach { chip ->
                 DetectionChip(chip = chip)
@@ -150,21 +148,21 @@ private fun DetectionChip(chip: DetectionChipUiModel) {
     val background = if (chip.target == DetectionTarget.PERSON) ReceiverAlertSoft else ReceiverSurfaceMuted
 
     Surface(
-        shape = RoundedCornerShape(22.dp),
+        shape = MaterialTheme.shapes.small,
         color = background,
-        border = BorderStroke(1.dp, Color.White)
+        border = BorderStroke(1.dp, ReceiverOutline)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = targetIcon(chip.target),
                 contentDescription = null,
                 tint = foreground,
-                modifier = Modifier.size(17.dp)
+                modifier = Modifier.size(24.dp)
             )
-            Spacer(modifier = Modifier.width(7.dp))
+            Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = if (chip.confidencePercent > 0)
                     "${chip.label} ${chip.confidencePercent}%"
@@ -172,7 +170,7 @@ private fun DetectionChip(chip: DetectionChipUiModel) {
                     chip.label,
                 style = MaterialTheme.typography.labelLarge,
                 color = foreground,
-                maxLines = 1
+                maxLines = 2
             )
         }
     }
@@ -182,25 +180,24 @@ private fun DetectionChip(chip: DetectionChipUiModel) {
 private fun DetailCueIcon(model: AlertCardUiModel) {
     Box(
         modifier = Modifier
-            .widthIn(min = 52.dp)
-            .fillMaxHeight(),
+            .widthIn(min = 48.dp),
         contentAlignment = Alignment.Center
     ) {
         Surface(
             modifier = Modifier.size(48.dp),
-            shape = RoundedCornerShape(20.dp),
+            shape = MaterialTheme.shapes.small,
             color = ReceiverSurfaceMuted,
-            border = BorderStroke(1.dp, Color.White)
+            border = BorderStroke(1.dp, ReceiverOutline)
         ) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    imageVector = LucideIcons.ChevronRight,
                     contentDescription = model.detailIconContentDescription,
-                    tint = ReceiverPrimary,
-                    modifier = Modifier.size(30.dp)
+                    tint = ReceiverPrimaryText,
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
@@ -209,19 +206,20 @@ private fun DetailCueIcon(model: AlertCardUiModel) {
 
 private fun targetIcon(target: DetectionTarget): ImageVector =
     when (target) {
-        DetectionTarget.PERSON -> Icons.Default.Person
-        DetectionTarget.BICYCLE -> Icons.AutoMirrored.Filled.DirectionsBike
-        DetectionTarget.CAR -> Icons.Default.DirectionsCar
-        DetectionTarget.MOTORCYCLE -> Icons.Default.TwoWheeler
-        DetectionTarget.BUS -> Icons.Default.DirectionsBus
-        DetectionTarget.TRUCK -> Icons.Default.LocalShipping
-        DetectionTarget.UNKNOWN -> Icons.AutoMirrored.Filled.HelpOutline
+        DetectionTarget.PERSON -> LucideIcons.UserRound
+        DetectionTarget.BICYCLE -> LucideIcons.Bike
+        DetectionTarget.CAR -> LucideIcons.Car
+        DetectionTarget.MOTORCYCLE -> LucideIcons.Motorbike
+        DetectionTarget.BUS -> LucideIcons.BusFront
+        DetectionTarget.TRUCK -> LucideIcons.Truck
+        DetectionTarget.UNKNOWN -> LucideIcons.CircleHelp
     }
 
+@Composable
 private fun targetColor(target: DetectionTarget): Color =
     when (target) {
         DetectionTarget.PERSON -> ReceiverAlert
         DetectionTarget.MOTORCYCLE -> ReceiverAmber
         DetectionTarget.UNKNOWN -> ReceiverMuted
-        else -> ReceiverPrimary
+        else -> ReceiverPrimaryText
     }

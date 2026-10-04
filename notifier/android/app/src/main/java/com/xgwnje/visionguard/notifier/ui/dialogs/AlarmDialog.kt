@@ -1,59 +1,28 @@
-// src/main/java/com/example/vg_notifier/ui/dialogs/AlarmDialog.kt
 package com.xgwnje.visionguard.notifier.ui.dialogs
 
 import android.os.Build
 import android.view.WindowManager
-import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
-import com.xgwnje.visionguard.notifier.ui.main.rememberFrameDrivenProgress
-import com.xgwnje.visionguard.notifier.ui.theme.VisionGuardPrimary
-import com.xgwnje.visionguard.notifier.ui.theme.VisionGuardBackground
-import com.xgwnje.visionguard.notifier.ui.theme.VisionGuardTextSecondary
-import com.xgwnje.visionguard.notifier.ui.theme.VisionGuardTextPrimary
 import com.xgwnje.visionguard.notifier.node.alarmTimeStandardLabel
 import com.xgwnje.visionguard.notifier.node.formatAlarmTime
+import com.xgwnje.visionguard.notifier.ui.NotifierStatus
 import com.xgwnje.visionguard.notifier.ui.rememberAlarmTimeZone
 
-/**
- * 「A · 一线」报警弹窗：酸橙绿 1dp 边框大框 + 等宽元信息 + 实心大按钮。
- * 确认/关闭逻辑与原实现一致。
- */
+/** 强提醒保持不可从外部或返回键关闭；停止动作仍由调用方确认并保存。 */
 @Composable
 fun AlarmDialog(
     onDismissRequest: () -> Unit,
@@ -61,7 +30,8 @@ fun AlarmDialog(
     matchedKeyword: String?,
     sourceApp: String? = null,
     snippet: String? = null,
-    eventTimeMillis: Long? = null
+    eventTimeMillis: Long? = null,
+    confirmationError: String? = null
 ) {
     val timeZone = rememberAlarmTimeZone()
     Dialog(
@@ -69,137 +39,58 @@ fun AlarmDialog(
         properties = DialogProperties(
             dismissOnClickOutside = false,
             dismissOnBackPress = false,
-            usePlatformDefaultWidth = false,
+            // Honor the actual window bounds; full width is set on the window below.
+            usePlatformDefaultWidth = true,
             decorFitsSystemWindows = false
         )
     ) {
-        // 横屏刘海/打孔避让修复：Dialog 窗口默认按 cutout 安全区内缩，
-        // 横屏时挖孔（竖屏顶部）落在左侧，窗口被右推 136px 导致内容右缘被裁、按钮文字跑出屏外。
-        // 本弹窗本来就是全屏暗底设计，声明 always 直接占用完整显示区。
         val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
         LaunchedEffect(dialogWindow) {
+            dialogWindow?.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && dialogWindow != null) {
                 val lp = dialogWindow.attributes
-                lp.layoutInDisplayCutoutMode =
-                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
                 dialogWindow.attributes = lp
             }
         }
-
-        // 进入动效：整体淡入 + 内容轻微上滑（帧驱动进度，避免 InfiniteTransition 被动画缩放挂起）
-        var enterProgress by remember { mutableFloatStateOf(0f) }
-        LaunchedEffect(Unit) {
-            val start = System.nanoTime()
-            val durationMs = 260L
-            while (enterProgress < 1f) {
-                withFrameNanos {
-                    enterProgress = ((System.nanoTime() - start) / 1_000_000L / durationMs.toFloat())
-                        .coerceIn(0f, 1f)
-                }
-            }
-        }
-        val enterAlpha = FastOutSlowInEasing.transform(enterProgress)
-        val enterOffset = ((1f - FastOutSlowInEasing.transform(enterProgress)) * 40).dp
-        // 酸橙边框呼吸脉冲：报警是强提醒，边框 1.2s 周期全幅明暗（0.25→1）
-        val pulse = rememberFrameDrivenProgress(1200)
-        val pulseTri = if (pulse < 0.5f) pulse * 2f else (1f - pulse) * 2f
-        val borderAlpha = 0.25f + 0.75f * FastOutSlowInEasing.transform(pulseTri)
-
-        // 外层：暗底，内容整体居中，避开系统手势栏/导航栏
         Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(VisionGuardBackground)
-                .padding(horizontal = 24.dp, vertical = 48.dp)
-                .graphicsLayer { alpha = enterAlpha }
-                .offset(y = enterOffset),
+            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).safeDrawingPadding().padding(16.dp),
             contentAlignment = Alignment.Center
         ) {
-            // 内层：酸橙绿 1dp 大框（呼吸脉冲），wrap 内容并垂直居中；
-            // verticalScroll：横屏高度紧张（411dp 级）时内容可滚动，保证按钮完整可达
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .border(1.dp, VisionGuardPrimary.copy(alpha = borderAlpha))
-                    .padding(horizontal = 22.dp, vertical = 28.dp),
-                horizontalAlignment = Alignment.Start,
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+            Surface(
+                modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(),
+                color = MaterialTheme.colorScheme.surface,
+                shape = MaterialTheme.shapes.large,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                tonalElevation = 0.dp
             ) {
-                Text(
-                    text = "VISIONGUARD // 节点报警",
-                    style = BodyTextStyle,
-                    fontSize = 10.sp,
-                    letterSpacing = 3.sp,
-                    color = VisionGuardPrimary
-                )
-
-                Text(
-                    text = matchedKeyword ?: "未知",
-                    fontSize = 38.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 1.6.sp,
-                    lineHeight = 44.sp,
-                    color = VisionGuardTextPrimary
-                )
-
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    AlertMetaRow("FROM", sourceApp?.takeIf { it.isNotBlank() } ?: "--")
-                    AlertMetaRow("TEXT", snippet?.takeIf { it.isNotBlank() } ?: "--", maxLines = 3)
-                    AlertMetaRow("TIME", formatAlarmTime(eventTimeMillis ?: System.currentTimeMillis(), "yyyy-MM-dd HH:mm:ss", timeZone))
-                    AlertMetaRow("ZONE", alarmTimeStandardLabel(timeZone))
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // 底部：酸橙绿实心大按钮
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(VisionGuardPrimary, RoundedCornerShape(2.dp))
-                        .clickable {
-                            onConfirm()
-                        }
-                        .padding(17.dp),
-                    contentAlignment = Alignment.Center
+                Column(
+                    Modifier.verticalScroll(rememberScrollState()).padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text(
-                        text = "已知晓，停止报警",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 1.5.sp,
-                        color = VisionGuardBackground
-                    )
+                    NotifierStatus("节点报警", MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
+                    Text(matchedKeyword ?: "未知报警", style = MaterialTheme.typography.headlineMedium)
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    AlertMeta("来源", sourceApp?.takeIf { it.isNotBlank() } ?: "未知来源")
+                    AlertMeta("内容", snippet?.takeIf { it.isNotBlank() } ?: "无附加内容")
+                    AlertMeta("时间", formatAlarmTime(eventTimeMillis ?: System.currentTimeMillis(), "yyyy-MM-dd HH:mm:ss", timeZone))
+                    AlertMeta("时间标准", alarmTimeStandardLabel(timeZone))
+                    confirmationError?.let {
+                        Text(it, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
+                    }
+                    Button(onConfirm, Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) {
+                        Text("已知晓，停止报警")
+                    }
                 }
             }
         }
     }
 }
 
-private val BodyTextStyle = TextStyle(fontFamily = FontFamily.SansSerif)
-
 @Composable
-private fun AlertMetaRow(label: String, value: String, maxLines: Int = 1) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.Top
-    ) {
-        Text(
-            text = label,
-            style = BodyTextStyle,
-            fontSize = 11.sp,
-            color = VisionGuardTextSecondary
-        )
-        Text(
-            text = value,
-            style = BodyTextStyle,
-            fontSize = 11.sp,
-            color = VisionGuardTextPrimary,
-            maxLines = maxLines,
-            overflow = TextOverflow.Ellipsis
-        )
+private fun AlertMeta(label: String, value: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodyLarge)
     }
 }

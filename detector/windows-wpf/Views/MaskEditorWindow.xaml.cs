@@ -126,18 +126,21 @@ namespace VisionGuard.Detector.Windows.Views
             double scaleY = imgRect.Height / BackgroundImage.Source.Height;
             var rect = new Rectangle
             {
-                Stroke = Brushes.LimeGreen,
                 StrokeThickness = 2,
-                Fill = new SolidColorBrush(Color.FromArgb(60, 255, 0, 0)),
                 Width = mask.Width * scaleX,
                 Height = mask.Height * scaleY,
                 Cursor = Cursors.Hand
             };
+            bool selected = ReferenceEquals(_vm.SelectedMask, mask);
+            rect.StrokeThickness = selected ? 3 : 2;
+            rect.SetResourceReference(Shape.StrokeProperty, selected ? "OverlayWarningBrush" : "OverlayAccentBrush");
+            rect.SetResourceReference(Shape.FillProperty, selected ? "OverlayWarningFillBrush" : "OverlaySelectionBrush");
             Canvas.SetLeft(rect, imgRect.X + mask.X * scaleX);
             Canvas.SetTop(rect, imgRect.Y + mask.Y * scaleY);
             rect.MouseLeftButtonDown += (s, e) =>
             {
                 _vm.SelectedMask = mask;
+                RefreshMaskVisuals();
                 e.Handled = true;
             };
             return rect;
@@ -149,13 +152,13 @@ namespace VisionGuard.Detector.Windows.Views
             _dragStart = e.GetPosition(MaskCanvas);
             _dragRect = new Rectangle
             {
-                Stroke = Brushes.Yellow,
                 StrokeThickness = 2,
                 StrokeDashArray = new DoubleCollection { 4, 2 },
-                Fill = new SolidColorBrush(Color.FromArgb(40, 255, 255, 0)),
                 Width = 0,
                 Height = 0
             };
+            _dragRect.SetResourceReference(Shape.StrokeProperty, "OverlayWarningBrush");
+            _dragRect.SetResourceReference(Shape.FillProperty, "OverlayWarningFillBrush");
             Canvas.SetLeft(_dragRect, _dragStart.X);
             Canvas.SetTop(_dragRect, _dragStart.Y);
             MaskCanvas.Children.Add(_dragRect);

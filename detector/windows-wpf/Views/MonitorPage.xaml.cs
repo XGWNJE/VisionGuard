@@ -9,13 +9,14 @@ namespace VisionGuard.Detector.Windows.Views
     public partial class MonitorPage : UserControl
     {
         private string _nameBeforeEdit = string.Empty;
+        private bool _restoreTargetMenuFocus;
 
         public MonitorPage()
         {
             InitializeComponent();
         }
 
-        private void SourceNameText_OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        private void SourceNameText_OnClick(object sender, RoutedEventArgs e)
         {
             if (SourceNameText.DataContext is not SourceViewModel source) return;
 
@@ -57,8 +58,37 @@ namespace VisionGuard.Detector.Windows.Views
 
         private void EndSourceNameEdit()
         {
+            bool restoreFocus = SourceNameEditor.IsKeyboardFocusWithin;
             SourceNameEditor.Visibility = Visibility.Collapsed;
             SourceNameText.Visibility = Visibility.Visible;
+            if (restoreFocus) SourceNameText.Focus();
+        }
+
+        private void TargetMenuPopup_OnOpened(object sender, System.EventArgs e)
+        {
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (TargetMenuPopup.IsOpen) TargetOptionsHost.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
+            }, DispatcherPriority.Input);
+        }
+
+        private void TargetMenuPopup_OnPreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Escape) return;
+            _restoreTargetMenuFocus = true;
+            TargetMenuPopup.IsOpen = false;
+            e.Handled = true;
+        }
+
+        private void TargetMenuPopup_OnClosed(object sender, System.EventArgs e)
+        {
+            if (_restoreTargetMenuFocus && TargetMenuButton.IsEnabled) TargetMenuButton.Focus();
+            _restoreTargetMenuFocus = false;
+        }
+
+        private void TargetMenuButton_OnIsEnabledChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if (TargetMenuPopup != null && !TargetMenuButton.IsEnabled) TargetMenuPopup.IsOpen = false;
         }
     }
 }

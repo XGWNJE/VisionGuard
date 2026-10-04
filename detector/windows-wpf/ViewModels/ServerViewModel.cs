@@ -12,16 +12,23 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public event EventHandler AccountChanging;
         public event EventHandler AccountChanged;
         private string _serviceAddress = AccountSession.ServiceUrl, _username = "", _password = "", _loginMessage = "";
-        private bool _isSigningIn, _isRefreshing;
+        private bool _isChangingAccount, _isRefreshing, _isLoginError;
+        public bool CanEditAccount => !_isChangingAccount;
         public string ServiceAddress { get => _serviceAddress; set => SetProperty(ref _serviceAddress, value); }
         public string Username { get => _username; set => SetProperty(ref _username, value); }
         public string Password { get => _password; set => SetProperty(ref _password, value); }
         public string LoginMessage { get => _loginMessage; private set => SetProperty(ref _loginMessage, value); }
+        public bool IsLoginError { get => _isLoginError; private set => SetProperty(ref _isLoginError, value); }
+        private void SetLoginError(string message) { LoginMessage = message; IsLoginError = true; }
         public string AccountText => AccountSession.Current == null ? "未登录" : "已登录 · " + AccountSession.Current.account.username;
         public RelayCommand LoginCommand { get; }
         public RelayCommand LogoutCommand { get; }
 
-        private string _connectionState = "● 未连接";
+        private string _connectionState = "未连接";
+        private bool _isConnected, _isConnecting, _isResidentRunning;
+        public bool IsConnected { get => _isConnected; private set => SetProperty(ref _isConnected, value); }
+        public bool IsConnecting { get => _isConnecting; private set => SetProperty(ref _isConnecting, value); }
+        public bool IsResidentRunning { get => _isResidentRunning; private set => SetProperty(ref _isResidentRunning, value); }
         public string ConnectionState
         {
             get => _connectionState;
@@ -93,6 +100,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public void RefreshResidentStatus(bool allowLaunch)
         {
             var status = Runtime.ResidentLauncher.RefreshStatus();
+            IsResidentRunning = status.IsRunning;
             ResidentStatusText = status.Describe();
             if (allowLaunch && !status.IsRunning) Runtime.ResidentLauncher.EnsureStarted();
         }
@@ -133,26 +141,28 @@ namespace VisionGuard.Detector.Windows.ViewModels
             };
             LoginCommand = new RelayCommand(async () =>
             {
-                if (_isSigningIn) return;
-                _isSigningIn = true; LoginMessage = "正在登录…";
+                if (_isChangingAccount) return;
+                _isChangingAccount = true; OnPropertyChanged(nameof(CanEditAccount)); IsLoginError = false; LoginMessage = "正在登录…";
                 try
                 {
                     AccountChanging?.Invoke(this, EventArgs.Empty);
                     await Task.Run(() => AccountSession.Login(ServiceAddress, Username, Password, DeviceName));
                     Password = ""; AccountChanged?.Invoke(this, EventArgs.Empty); LoginMessage = "登录成功";
                 }
-                catch (Exception ex) { LoginMessage = ex.Message; }
-                finally { _isSigningIn = false; OnPropertyChanged(nameof(AccountText)); }
+                catch (Exception ex) { SetLoginError(ex.Message); }
+                finally { _isChangingAccount = false; OnPropertyChanged(nameof(CanEditAccount)); OnPropertyChanged(nameof(AccountText)); }
             });
             LogoutCommand = new RelayCommand(async () =>
             {
+                if (_isChangingAccount) return;
+                _isChangingAccount = true; OnPropertyChanged(nameof(CanEditAccount)); IsLoginError = false; LoginMessage = "正在退出登录…";
                 try
                 {
                     AccountChanging?.Invoke(this, EventArgs.Empty); _serverPushService.Disconnect();
                     await Task.Run(AccountSession.Logout); LoginMessage = "已退出登录";
                 }
-                catch (Exception ex) { LoginMessage = "本机已退出；服务撤销未确认：" + ex.Message; }
-                finally { AccountChanged?.Invoke(this, EventArgs.Empty); Password = ""; OnPropertyChanged(nameof(AccountText)); }
+                catch (Exception ex) { SetLoginError("本机已退出；服务撤销未确认：" + ex.Message); }
+                finally { _isChangingAccount = false; OnPropertyChanged(nameof(CanEditAccount)); AccountChanged?.Invoke(this, EventArgs.Empty); Password = ""; OnPropertyChanged(nameof(AccountText)); }
             });
 
             RetryCommand = new RelayCommand(() =>
@@ -176,7 +186,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                     var result = await Task.Run(() => Runtime.ResidentLauncher.StopForCompleteExit());
                     if (!result.Succeeded)
                     {
-                        MessageBox.Show("主体仍在运行，未执行完整退出。\n" + result.FailureReason,
+                        VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show("主体仍在运行，未执行完整退出。\n" + result.FailureReason,
                             "VisionGuard 视觉节点错误", MessageBoxButton.OK, MessageBoxImage.Warning);
                         return;
                     }
@@ -185,7 +195,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show("主体仍在运行，未执行完整退出。\n" + ex.Message,
+                    VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show("主体仍在运行，未执行完整退出。\n" + ex.Message,
                         "VisionGuard 视觉节点错误", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
                 finally
@@ -212,7 +222,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 await Task.Run(() => Runtime.ResidentLauncher.EnsureStarted());
                 RefreshResidentStatus(allowLaunch: false);
                 }
-                catch (Exception ex) { LoginMessage = ex.Message; }
+                catch (Exception ex) { SetLoginError(ex.Message); }
             });
 
             CheckUpdateCommand = new RelayCommand(async () =>
@@ -235,7 +245,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         }
         public async void MaintainSession()
         {
-            if (_isRefreshing || _isSigningIn) return;
+            if (_isRefreshing || _isChangingAccount) return;
             _isRefreshing = true;
             try
             {
@@ -244,20 +254,22 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 if (old?.token != current?.token)
                 {
                     AccountChanged?.Invoke(this, EventArgs.Empty);
-                    if (current == null) LoginMessage = "登录已失效，请重新登录。";
+                    if (current == null) SetLoginError("登录已失效，请重新登录。");
                 }
             }
-            catch (Exception ex) { LoginMessage = ex.Message; }
+            catch (Exception ex) { SetLoginError(ex.Message); }
             finally { _isRefreshing = false; }
         }
 
         private void OnConnectionStateChanged(object? sender, string state)
         {
+            IsConnected = state == "connected";
+            IsConnecting = state == "connecting";
             ConnectionState = state switch
             {
-                "connected" => "● 已连接",
-                "connecting" => "● 连接中…",
-                _ => "● 未连接",
+                "connected" => "已连接",
+                "connecting" => "连接中…",
+                _ => "未连接",
             };
         }
     }

@@ -17,6 +17,8 @@
 
 档位、依赖与原生库布局以 `detector/windows-shared/NativeLibraries.props` 为准。原生库放在 `native/<档位>/`，应用根目录不能残留 ONNX/DirectML DLL；启动时绝对路径预加载并核验实际模块路径，失败明确报错。模型清单与缓存见[模型资源](35-model-assets.md)。Win7 前提是 .NET Framework 4.7.2 与 TLS 1.2 系统支持，构建不能替代实机验收。
 
+后台更新检查失败只记录日志，不阻断主窗口启动；手动检查以更新提示显示错误。缺少下载地址或 SHA256 的元数据仍拒绝使用，不启动下载。
+
 ## 检测与来源
 
 `Capture → MaskApply → Preprocess → ONNX Inference → Parse → AlertDecision → Push`
@@ -36,11 +38,12 @@
 
 ## 界面与配置
 
+- 主窗口、设置、工具窗口、应用提示与托盘采用[统一 UI 规范](../design/unified-ui.md)。WPF 主题跟随系统浅深色；采集画面与编辑覆盖层使用专用颜色，不改变选区及遮罩语义。
 - 主界面为来源预览与右侧检查区；“当前来源”按采集目标、识别设置、检测参数排列，“全局设定”维护运行环境、模型、连接、身份、驻留和更新。
-- 实时预览最多四个来源，其他来源继续推理；全局来源视图选择预览对象。卡片由 `CardLayoutPlanner` 求网格，画面等比显示；最小窗口 1200×880。
+- 实时预览最多四个来源，其他来源继续推理；全局来源视图选择预览对象。卡片由 `CardLayoutPlanner` 求网格，画面等比显示；最小窗口 1200×880。预览区空间不足时滚动，保留画面区域下限与 40DIP 操作区域；不通过缩小按钮或提高最小窗口来容纳四路。
 - 模型资源按档位显示下载清单；来源选择只列本机已下载模型。失败原因可读，长度不符删除临时文件重下。
 - 全局设定提供账号登录、退出、修改密码与服务地址。共享 `AccountSession` 使用当前 Windows 用户的 DPAPI 加密会话，不保存密码；驻留与启动器沿用该会话。退出、撤销或换账号停止连接与推理并清理当前画面。
-- 唯一设置入口 `Utils/SettingsStore.cs`，按服务、账号和设备写入 `%APPDATA%\VisionGuard\accounts/<scope>/settings.ini`，可用 `VISIONGUARD_SETTINGS_PATH` 指定独立父目录。共享设置写入重读磁盘、合并改动、原子替换。`VISIONGUARD_ACCOUNT_DIR` 隔离会话、驻留配置与单实例标识；隔离实例不改 Windows 登录自启。
+- 唯一设置入口 `Utils/SettingsStore.cs`，按服务、账号和设备写入 `%APPDATA%\VisionGuard\accounts/<scope>/settings.ini`，可用 `VISIONGUARD_SETTINGS_PATH` 指定独立父目录。设置存储通过显式静态构造在隔离参数生效后初始化；共享设置写入重读磁盘、合并改动、原子替换。`VISIONGUARD_ACCOUNT_DIR` 隔离会话、驻留配置与单实例标识；隔离实例不改 Windows 登录自启。
 - 默认日志位于 `%LOCALAPPDATA%\VisionGuard`；隔离实例使用独立日志目录，`detector-crash.log`、`inference-error.log`、`resident-launch.log` 用于诊断。
 
 ## 后台驻留

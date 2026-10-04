@@ -74,6 +74,10 @@ namespace VisionGuard.Detector.Windows.Views
 
         private void OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
+            HintText.Text = "拖拽绘制采集区域 · 宽高 > 100 px · ESC 取消";
+            HintText.SetResourceReference(TextBlock.ForegroundProperty, "OverlayTextBrush");
+            HintSurface.SetResourceReference(Border.BorderBrushProperty, "OverlayAccentBrush");
+            DimensionLabel.SetResourceReference(TextBlock.ForegroundProperty, "OverlayTextBrush");
             _isDragging = true;
             _startPoint = e.GetPosition(OverlayCanvas);
             SelectionRect.Visibility = Visibility.Visible;
@@ -99,8 +103,7 @@ namespace VisionGuard.Detector.Windows.Views
             DimensionLabel.Text = VisionGuard.Detector.Windows.Capture.CaptureSizeConstraints.IsValid(captureRegion)
                 ? $"{captureRegion.Width} × {captureRegion.Height} px"
                 : $"{captureRegion.Width} × {captureRegion.Height} px · 最小 101 × 101";
-            Canvas.SetLeft(DimensionLabel, x + w + 4);
-            Canvas.SetTop(DimensionLabel, y + h + 4);
+            PositionDimensionLabel(x, y, w, h);
         }
 
         private void OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -125,7 +128,11 @@ namespace VisionGuard.Detector.Windows.Views
             {
                 DimensionLabel.Visibility = Visibility.Visible;
                 DimensionLabel.Text = $"{SelectedRegion.Width} × {SelectedRegion.Height} px · 选区过小";
+                PositionDimensionLabel(left, top, width, height);
                 HintText.Text = "选区过小 · 宽度和高度必须都至少为 101 px · 请重新拖拽";
+                HintText.SetResourceReference(TextBlock.ForegroundProperty, "OverlayDangerBrush");
+                HintSurface.SetResourceReference(Border.BorderBrushProperty, "OverlayDangerBrush");
+                DimensionLabel.SetResourceReference(TextBlock.ForegroundProperty, "OverlayDangerBrush");
                 IsConfirmed = false;
                 return;
             }
@@ -153,6 +160,13 @@ namespace VisionGuard.Detector.Windows.Views
             top = Math.Min(startY, currentY);
             width = Math.Abs(currentX - startX);
             height = Math.Abs(currentY - startY);
+        }
+
+        private void PositionDimensionLabel(double left, double top, double width, double height)
+        {
+            DimensionLabel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            Canvas.SetLeft(DimensionLabel, Math.Max(8, Math.Min(left + width + 8, OverlayCanvas.ActualWidth - DimensionLabel.DesiredSize.Width - 8)));
+            Canvas.SetTop(DimensionLabel, Math.Max(8, Math.Min(top + height + 8, OverlayCanvas.ActualHeight - DimensionLabel.DesiredSize.Height - 8)));
         }
 
         private System.Drawing.Rectangle MapToCapturePixels(double left, double top, double width, double height)

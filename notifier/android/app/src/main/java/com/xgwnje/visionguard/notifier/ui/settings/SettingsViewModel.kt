@@ -47,14 +47,17 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val historyListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "alert_history") _alertHistoryVersion.value++
     }
+    private val previewListener: () -> Unit = { _previewVersion.value++ }
     init {
         sharedPreferencesHelper.prefs.registerOnSharedPreferenceChangeListener(historyListener)
+        RingtoneLibrary.onPreviewStateChanged = previewListener
         updateSelectedRingtoneName()
         loadRingtoneLibrary()
     }
     fun disposeAccount() {
         sharedPreferencesHelper.prefs.unregisterOnSharedPreferenceChangeListener(historyListener)
         RingtoneLibrary.stopPreview()
+        if (RingtoneLibrary.onPreviewStateChanged === previewListener) RingtoneLibrary.onPreviewStateChanged = null
     }
     override fun onCleared() { disposeAccount(); super.onCleared() }
     val isRecording: Boolean get() = RingtoneLibrary.isRecording
@@ -93,10 +96,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun deleteLibraryRingtone(fileName: String) {
-        RingtoneLibrary.deleteFile(context, fileName)
+    fun deleteLibraryRingtone(fileName: String): Boolean {
+        val file = java.io.File(RingtoneLibrary.libraryDir(context), fileName)
+        if (file.exists() && !RingtoneLibrary.deleteFile(context, fileName)) return false
         sharedPreferencesHelper.removeRingtoneLibraryEntry(fileName)
         loadRingtoneLibrary()
+        updateSelectedRingtoneName()
+        return true
     }
 
     fun renameLibraryRingtone(fileName: String, newName: String) {
@@ -104,6 +110,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         if (trimmed.isEmpty()) return
         sharedPreferencesHelper.putRingtoneLibraryEntry(fileName, trimmed)
         loadRingtoneLibrary()
+        updateSelectedRingtoneName()
     }
 
     // --- 录音 ---

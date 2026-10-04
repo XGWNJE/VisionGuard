@@ -17,16 +17,16 @@
 
         <!-- 交互画布 -->
         <Canvas x:Name="OverlayCanvas">
-            <Border Canvas.Left="20" Canvas.Top="20" Background="#E6171719" BorderBrush="#66FF3B30" BorderThickness="1" CornerRadius="10" Padding="14,9">
+            <Border x:Name="HintSurface" Canvas.Left="16" Canvas.Top="16" Background="{DynamicResource OverlaySurfaceBrush}" BorderBrush="{DynamicResource OverlayAccentBrush}" BorderThickness="1" CornerRadius="12" Padding="16,8" MaxWidth="480">
                 <TextBlock x:Name="HintText" Text="拖拽绘制采集区域 · 宽高 &gt; 100 px · ESC 取消"
-                           Foreground="White" FontSize="14" FontWeight="SemiBold"/>
+                           Foreground="{DynamicResource OverlayTextBrush}" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap"/>
             </Border>
             <Rectangle x:Name="SelectionRect"
-                       Stroke="#FFFF3B30" StrokeThickness="2"
-                       Fill="#20FF3B30"
+                       Stroke="{DynamicResource OverlayAccentBrush}" StrokeThickness="2"
+                       Fill="{DynamicResource OverlaySelectionBrush}"
                        Visibility="Collapsed"/>
             <TextBlock x:Name="DimensionLabel" Text=""
-                       Foreground="#FFFF3B30" FontSize="13" FontFamily="Cascadia Mono, Consolas"
+                       Foreground="{DynamicResource OverlayTextBrush}" Background="{DynamicResource OverlaySurfaceBrush}" Padding="8,4" FontSize="14" LineHeight="20" FontFamily="Cascadia Mono, Consolas"
                        Visibility="Collapsed"/>
         </Canvas>
     </Grid>

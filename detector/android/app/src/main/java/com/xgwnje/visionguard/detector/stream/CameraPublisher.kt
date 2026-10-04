@@ -17,7 +17,8 @@ import java.util.concurrent.TimeUnit
 data class StreamTarget(val deviceId: String, val deviceName: String)
 data class CameraStream(val streamId: String, val targetDeviceId: String? = null, val sourceId: String? = null, val sourceName: String = "", val isStreaming: Boolean = false)
 data class PublisherState(val connected: Boolean = false, val status: String = "正在连接", val stream: CameraStream? = null,
-    val targets: List<StreamTarget> = emptyList(), val sentFrames: Long = 0, val acknowledgedFrames: Long = 0, val droppedFrames: Long = 0)
+    val targets: List<StreamTarget> = emptyList(), val targetsLoading: Boolean = true, val targetsLoadFailed: Boolean = false,
+    val sentFrames: Long = 0, val acknowledgedFrames: Long = 0, val droppedFrames: Long = 0)
 
 class CameraPublisher(private val account: AccountStore) {
     private val mutableState = MutableStateFlow(PublisherState())
@@ -102,6 +103,7 @@ class CameraPublisher(private val account: AccountStore) {
         })
     }
     fun refreshTargets() { scope.launch {
+        update { it.copy(targetsLoading = true, targetsLoadFailed = false) }
         runCatching {
             val body = account.request("/api/devices")
             val devices = body.optJSONArray("devices") ?: JSONArray()
@@ -112,9 +114,9 @@ class CameraPublisher(private val account: AccountStore) {
                         add(StreamTarget(item.getString("deviceId"), item.getString("deviceName")))
                 }
             }
-            update { it.copy(targets = targets) }
             updateStreams(account.request("/api/streams").optJSONArray("streams") ?: JSONArray())
-        }.onFailure { update { state -> state.copy(status = "暂时无法获取视觉节点，请刷新") } }
+            update { it.copy(targets = targets, targetsLoading = false) }
+        }.onFailure { update { it.copy(targetsLoading = false, targetsLoadFailed = true) } }
     } }
     fun bind(targetId: String) { scope.launch {
         runCatching {
@@ -122,7 +124,9 @@ class CameraPublisher(private val account: AccountStore) {
             account.request("/api/streams/bind", "POST", JSONObject().put("publisherDeviceId", value.deviceId).put("targetDeviceId", targetId))
             refreshTargets()
             if (wanted) connectMedia(value)
-        }.onFailure { update { state -> state.copy(status = it.message ?: "无法选择视觉节点") } }
+        }.onFailure { failure ->
+            update { state -> state.copy(status = "选择视觉节点失败：${failure.message?.takeIf { it.isNotBlank() } ?: "请稍后重试"}") }
+        }
     } }
     private fun updateStreams(streams: JSONArray) {
         val own = account.session.value?.deviceId ?: return

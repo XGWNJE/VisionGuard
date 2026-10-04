@@ -4,16 +4,31 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.autofill.AutofillNode
+import androidx.compose.ui.autofill.AutofillType
+import androidx.compose.ui.composed
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalAutofill
+import androidx.compose.ui.platform.LocalAutofillTree
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,6 +60,23 @@ data class AccountSession(val endpoint: String, val token: String, val expiresAt
 }
 
 private class AccountHttpException(val status: Int, message: String) : IllegalStateException(message)
+
+/** The account UI is shared by Compose 1.6 and 1.10 clients. */
+@OptIn(ExperimentalComposeUiApi::class)
+@Suppress("DEPRECATION")
+private fun Modifier.accountAutofill(type: AutofillType, onFill: (String) -> Unit): Modifier = composed {
+    val autofill = LocalAutofill.current
+    val tree = LocalAutofillTree.current
+    val latestOnFill by rememberUpdatedState(onFill)
+    val node = remember(type) { AutofillNode(autofillTypes = listOf(type), onFill = { latestOnFill(it) }) }
+    DisposableEffect(node, tree, autofill) {
+        tree += node
+        onDispose { autofill?.cancelAutofillForNode(node); tree.children.remove(node.id) }
+    }
+    onGloballyPositioned { node.boundingBox = it.boundsInWindow() }.onFocusChanged {
+        if (it.isFocused) autofill?.requestAutofillForNode(node) else autofill?.cancelAutofillForNode(node)
+    }
+}
 
 /** Passwords only exist in the login request; saved bearer sessions are encrypted by Android Keystore. */
 class AccountStore private constructor(private val prefs: android.content.SharedPreferences) {
@@ -181,6 +213,8 @@ class AccountStore private constructor(private val prefs: android.content.Shared
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
+@Suppress("DEPRECATION")
 @Composable
 fun AccountLogin(store: AccountStore, title: String, component: String, beforeLogin: suspend () -> Unit = {}) {
     var username by remember { mutableStateOf("") }
@@ -192,17 +226,17 @@ fun AccountLogin(store: AccountStore, title: String, component: String, beforeLo
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(username, endpoint) { name = store.rememberedDeviceName(endpoint, username, component, title) }
-    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(24.dp),
+    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Spacer(Modifier.height(28.dp))
-        Text("VisionGuard", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(24.dp))
+        Text("VisionGuard", style = MaterialTheme.typography.titleLarge)
         Text(title, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("登录同一账号，自动关联这套系统中的设备。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedTextField(username, { username = it }, label = { Text("账号") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy)
-        OutlinedTextField(password, { password = it }, label = { Text("密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy)
-        OutlinedTextField(name, { name = it }, label = { Text("本机名称") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy)
-        TextButton({ advanced = !advanced }, enabled = !busy) { Text(if (advanced) "收起测试设置" else "服务与局域网测试设置") }
-        if (advanced) OutlinedTextField(endpoint, { endpoint = it }, label = { Text("服务地址") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy)
+        OutlinedTextField(username, { username = it }, label = { Text("账号") }, singleLine = true, modifier = Modifier.fillMaxWidth().accountAutofill(AutofillType.Username) { if (!busy) username = it }, enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next))
+        OutlinedTextField(password, { password = it }, label = { Text("密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth().accountAutofill(AutofillType.Password) { if (!busy) password = it }, enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next))
+        OutlinedTextField(name, { name = it }, label = { Text("本机名称") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer))
+        TextButton({ advanced = !advanced }, enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text(if (advanced) "收起测试设置" else "服务与局域网测试设置") }
+        if (advanced) OutlinedTextField(endpoint, { endpoint = it }, label = { Text("服务地址") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
         message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Button(onClick = {
             busy = true; message = null
@@ -211,7 +245,7 @@ fun AccountLogin(store: AccountStore, title: String, component: String, beforeLo
                 catch (e: Exception) { message = e.message?.take(160) ?: "无法登录，请检查网络" }
                 finally { busy = false }
             }
-        }, enabled = !busy && username.isNotBlank() && password.isNotBlank(), modifier = Modifier.fillMaxWidth().height(50.dp)) {
+        }, enabled = !busy && username.isNotBlank() && password.isNotBlank(), colors = VisionGuardControlColors.button(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) {
             Text(if (busy) "正在登录…" else "登录")
         }
     }
@@ -219,6 +253,8 @@ fun AccountLogin(store: AccountStore, title: String, component: String, beforeLo
 
 private fun kotlinx.coroutines.CoroutineScope.launchAccount(block: suspend () -> Unit) = launch { block() }
 
+@OptIn(ExperimentalComposeUiApi::class)
+@Suppress("DEPRECATION")
 @Composable
 fun AccountHeader(store: AccountStore, session: AccountSession, beforeLogout: suspend () -> Unit = {}) {
     val scope = rememberCoroutineScope()
@@ -227,28 +263,70 @@ fun AccountHeader(store: AccountStore, session: AccountSession, beforeLogout: su
     var newPassword by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-        Column(Modifier.weight(1f)) {
-            Text(session.username, fontWeight = FontWeight.SemiBold)
-            Text(session.deviceName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    var menuOpen by remember { mutableStateOf(false) }
+    Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(session.username, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(session.deviceName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Box {
+                TextButton({ menuOpen = true }, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text("账号") }
+            }
         }
-        TextButton({ editing = true }) { Text("修改密码") }
-        TextButton({ scope.launchAccount { beforeLogout(); store.logout() } }) { Text("退出") }
     }
-    if (editing) AlertDialog(onDismissRequest = { if (!busy) editing = false }, title = { Text("修改账号密码") }, text = {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("修改后所有设备需要重新登录。")
-            OutlinedTextField(oldPassword, { oldPassword = it }, label = { Text("当前密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
-            OutlinedTextField(newPassword, { newPassword = it }, label = { Text("新密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+    if (menuOpen) AlertDialog(
+        onDismissRequest = { menuOpen = false }, shape = MaterialTheme.shapes.large,
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = { Text("账号", style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(session.username, style = MaterialTheme.typography.titleSmall)
+                Text(session.deviceName, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                TextButton({ menuOpen = false; oldPassword = ""; newPassword = ""; error = null; editing = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text("修改密码") }
+                TextButton({ menuOpen = false; scope.launchAccount { beforeLogout(); store.logout() } }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text("退出") }
+            }
+        },
+        confirmButton = { TextButton({ menuOpen = false }, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text("关闭") } }
+    )
+    if (editing) Dialog(
+        onDismissRequest = { if (!busy) editing = false },
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Box(
+            Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                tonalElevation = 0.dp
+            ) {
+                Column(
+                    Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text("修改账号密码", style = MaterialTheme.typography.titleMedium)
+                    Text("修改后所有设备需要重新登录。")
+                    OutlinedTextField(oldPassword, { oldPassword = it }, label = { Text("当前密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth().accountAutofill(AutofillType.Password) { if (!busy) oldPassword = it }, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next))
+                    OutlinedTextField(newPassword, { newPassword = it }, label = { Text("新密码") }, supportingText = { Text("至少 8 个字符") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth().accountAutofill(AutofillType.NewPassword) { if (!busy) newPassword = it }, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done))
+                    error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton({ editing = false }, enabled = !busy, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton()) { Text("取消") }
+                        TextButton({
+                            busy = true; error = null
+                            scope.launchAccount {
+                                try { store.changePassword(oldPassword, newPassword); beforeLogout(); store.clear(); editing = false; oldPassword = ""; newPassword = "" }
+                                catch (e: Exception) { error = e.message }
+                                finally { busy = false }
+                            }
+                        }, enabled = !busy && oldPassword.isNotBlank() && newPassword.length >= 8, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton()) { Text(if (busy) "保存中…" else "保存") }
+                    }
+                }
+            }
         }
-    }, confirmButton = { TextButton({
-        busy = true
-        scope.launchAccount {
-            try { store.changePassword(oldPassword, newPassword); beforeLogout(); store.clear(); editing = false; oldPassword = ""; newPassword = "" }
-            catch (e: Exception) { error = e.message }
-            finally { busy = false }
-        }
-    }, enabled = !busy && oldPassword.isNotBlank() && newPassword.length >= 8) { Text(if (busy) "保存中…" else "保存") } },
-        dismissButton = { TextButton({ editing = false }, enabled = !busy) { Text("取消") } })
+    }
 }

@@ -25,13 +25,6 @@ data class AlertListChrome(
     val horizontalPaddingDp: Int
 )
 
-data class FrostedOverlaySpec(
-    val topBannerAlpha: Float,
-    val bottomBarAlpha: Float,
-    val borderAlpha: Float,
-    val shadowElevationDp: Float
-)
-
 data class AlertDetailChrome(
     val showMetadataText: Boolean,
     val supportsPinchZoom: Boolean,
@@ -82,16 +75,11 @@ data class DeviceCardChrome(
     val cardCornerRadiusDp: Int,
     val heroHeightDp: Int,
     val heroContentHorizontalPaddingDp: Int,
-    val heroContentVerticalPaddingDp: Int,
-    val titleHasContainer: Boolean,
-    val statusUsesCompactPill: Boolean,
     val actionAreaHorizontalPaddingDp: Int,
     val actionAreaVerticalPaddingDp: Int,
     val columnGapDp: Int,
     val actionButtonHeightDp: Int,
-    val actionContentHorizontalPaddingDp: Int,
-    val heroBackgroundAlpha: Float,
-    val heroBackgroundScale: Float
+    val actionContentHorizontalPaddingDp: Int
 )
 
 data class DeviceConfigEditorUiModel(
@@ -167,17 +155,9 @@ fun buildAlertListChrome(): AlertListChrome =
     AlertListChrome(
         showStandaloneHeader = false,
         topPaddingDp = 0,
-        topOverlayReservedDp = 104,
-        bottomOverlayReservedDp = 132,
-        horizontalPaddingDp = 18
-    )
-
-fun buildFrostedOverlaySpec(): FrostedOverlaySpec =
-    FrostedOverlaySpec(
-        topBannerAlpha = 0.86f,
-        bottomBarAlpha = 0.86f,
-        borderAlpha = 0.58f,
-        shadowElevationDp = 0f
+        topOverlayReservedDp = 0,
+        bottomOverlayReservedDp = 12,
+        horizontalPaddingDp = 16
     )
 
 fun buildAlertDetailChrome(): AlertDetailChrome =
@@ -243,19 +223,14 @@ private fun lifecycleCommand(device: DeviceInfo, component: String, suffix: Stri
 
 fun buildDeviceCardChrome(): DeviceCardChrome =
     DeviceCardChrome(
-        cardCornerRadiusDp = 28,
+        cardCornerRadiusDp = 12,
         heroHeightDp = 104,
-        heroContentHorizontalPaddingDp = 22,
-        heroContentVerticalPaddingDp = 8,
-        titleHasContainer = false,
-        statusUsesCompactPill = true,
-        actionAreaHorizontalPaddingDp = 18,
-        actionAreaVerticalPaddingDp = 10,
-        columnGapDp = 10,
-        actionButtonHeightDp = 44,
-        actionContentHorizontalPaddingDp = 16,
-        heroBackgroundAlpha = 0.58f,
-        heroBackgroundScale = 1.08f
+        heroContentHorizontalPaddingDp = 16,
+        actionAreaHorizontalPaddingDp = 16,
+        actionAreaVerticalPaddingDp = 12,
+        columnGapDp = 12,
+        actionButtonHeightDp = 48,
+        actionContentHorizontalPaddingDp = 16
     )
 
 private fun deviceCardIllustrationOf(clientType: String): DeviceCardIllustration =

@@ -10,7 +10,11 @@ namespace VisionGuard.Detector.Windows.Utils
     /// </summary>
     internal static class SettingsStore
     {
-        private static SharedSettingsFile Store = new SharedSettingsFile(ResolveSettingsPath());
+        private static SharedSettingsFile Store;
+
+        // Prevent beforefieldinit from resolving the path before Program parses the isolated environment.
+        static SettingsStore() { Store = new SharedSettingsFile(ResolveSettingsPath()); }
+
         public static void SwitchAccount() { Store.Save(); Store = new SharedSettingsFile(ResolveSettingsPath()); Store.Load(); }
 
         /// <summary>

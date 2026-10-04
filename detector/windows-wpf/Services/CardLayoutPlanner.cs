@@ -38,6 +38,10 @@ namespace VisionGuard.Detector.Windows.Services
         public double CellWidth { get; set; }
         public double CellHeight { get; set; }
 
+        /// <summary>完整卡片网格的尺寸；滚动容器使用它保留全部画面和操作区。</summary>
+        public double ContentWidth => IsValid ? Columns * CellWidth + (Columns - 1) * CardLayoutPlanner.CardSpacing : 0;
+        public double ContentHeight => IsValid ? Rows * CellHeight + (Rows - 1) * CardLayoutPlanner.CardSpacing : 0;
+
         /// <summary>卡片内留给画面的区域（已扣除标题行、操作行与内边距）。</summary>
         public double PictureAreaWidth { get; set; }
         public double PictureAreaHeight { get; set; }
@@ -75,10 +79,10 @@ namespace VisionGuard.Detector.Windows.Services
     /// <summary>
     /// 实时预览卡片区的求解器：给定「要预览几张」和可用像素，求网格行列、单元格尺寸与画面尺寸。
     ///
-    /// 2026-09-20 的布局契约（由使用侧确认）：
+    /// 当前布局契约：
     /// ① 卡片必须是接近方形的，宽高比限制在 1:1.2 ~ 1.2:1（最多偏 20%）；超出时把格子收窄、
     ///    多出来的空间留成间隔——宁可卡片之间有空白，也不把卡片拉成宽扁条。
-    /// ② 卡片内**画面区域**的较短边不得低于 320 DIP；这条由窗口最小尺寸兜底（见
+    /// ② 卡片内**画面区域**的较短边不得低于 320 DIP；这条由滚动内容最小尺寸兜底（窗口最小尺寸见
     ///    <see cref="MinimumWindowWidth"/> / <see cref="MinimumWindowHeight"/> 的推导），
     ///    求解器负责把实际值算出来并给出 <see cref="CardLayoutPlan.PictureMeetsMinimumEdge"/>。
     /// ③ 不再分页：超出 4 个的来源不在这一屏排布，由「全局来源」的编号卡片展示与勾选。
@@ -91,7 +95,7 @@ namespace VisionGuard.Detector.Windows.Services
 
         /// <summary>
         /// 卡片内画面区域较短边的最小值（DIP）。320 是「看检测框不至于糊」的下限，
-        /// 由窗口最小尺寸保证；小于它时求解器仍然给出布局，只是 <see cref="CardLayoutPlan.PictureMeetsMinimumEdge"/> 为 false。
+        /// 由滚动内容最小尺寸保证；原始 Compute 小于它时求解器仍然给出布局，只是 <see cref="CardLayoutPlan.PictureMeetsMinimumEdge"/> 为 false。
         /// </summary>
         public const double MinimumPictureEdge = 320;
 
@@ -102,26 +106,21 @@ namespace VisionGuard.Detector.Windows.Services
         public const double MinimumCardAspectRatio = 1d / 1.2;
         public const double MaximumCardAspectRatio = 1.2;
 
-        /// <summary>相邻卡片之间的间距，必须与卡片 DataTemplate 的 Margin（2+2）一致。</summary>
-        public const double CardSpacing = 4;
+        /// <summary>相邻卡片间距，与卡片 Margin（4+4）一致。</summary>
+        public const double CardSpacing = 8;
 
-        /// <summary>卡片自身的水平占位：两侧 Margin 2+2 与内边距 3+3。单元格宽减去它就是卡片内容宽度。</summary>
-        public const double CardChromeWidth = 4 + 6;
+        /// <summary>卡片水平占位：Margin 4+4、Padding 8+8、选中态边框 2+2。</summary>
+        public const double CardChromeWidth = 8 + 16 + 4;
 
         /// <summary>
-        /// 卡片自身的垂直占位：两侧 Margin 2+2、内边距 3+3、标题行 26 + 2、
-        /// 操作行 28 + 2（与 MainWindow 的卡片 DataTemplate 逐项对应）。
-        ///
-        /// 2026-09-20 第二次压缩：标题行 36→26、操作行 40→28、内边距 7→3、外边距 3→2，
-        /// 合计从 103 降到 68——把省下来的 35 DIP 全部交给画面区，让 4 张同屏也能满足
-        /// 「画面区短边 ≥320」（使用侧要求：压缩卡片内 UI 与信息量来换画面空间）。
-        /// 改这里必须同步 MainWindow 的卡片 DataTemplate，否则画面区会被算错。
+        /// 卡片垂直占位：Margin 4+4、Padding 8+8、边框 2+2、标题与操作按钮各 40 DIP、上下间距各 4。
+        /// 必须与 MainWindow 的卡片 DataTemplate 对应；空间不足通过滚动保留完整画面和操作区。
         /// </summary>
-        public const double CardChromeHeight = 4 + 6 + (26 + 2) + (28 + 2);
+        public const double CardChromeHeight = 8 + 16 + 4 + (40 + 4) + (40 + 4);
 
         /// <summary>卡片区在页面里的外边距，与 MainWindow 中承载面板的 Grid Margin 一致。</summary>
-        public const double HostMarginWidth = 10;
-        public const double HostMarginHeight = 6;
+        public const double HostMarginWidth = 16;
+        public const double HostMarginHeight = 16;
 
         /// <summary>可拖分隔条宽度。</summary>
         public const double SplitterWidth = 6;
@@ -131,19 +130,13 @@ namespace VisionGuard.Detector.Windows.Services
 
         /// <summary>
         /// 卡片区（左侧预览区）宽度下限，与 MainWindow 中该列的 MinWidth 一致。
-        /// 2 列画面区各需 330（320 + 水平占位 10）；卡片区本身是自适应列，宽度取「窗口 − 检查区 − 分隔条」。
+        /// 卡片区宽度取「窗口 − 检查区 − 分隔条」；低于完整两列所需宽度时由滚动区域保留画面下限。
         /// </summary>
         public const int MinimumCardsPanelWidth = 680;
 
         /// <summary>
-        /// 窗口最小尺寸（DIP），与 MainWindow 的 MinWidth/MinHeight 一致。
-        ///
-        /// 推导（4 张 2×2、1:1 画面，垂直占位 68）：
-        /// 高度：画面区 320 + 垂直占位 68 = 单元格 388 → 两行 780 → 加卡片区外边距 6、工具条 44、
-        ///       窗口标题栏约 45 → 875，取 880；此时 4 张同屏的画面短边约 322，1 张约 717、2 张约 420。
-        /// 宽度：画面区 330 + 水平占位 10 → 两列 664 → 加外边距 7、分隔条 6、检查区最窄 320、窗口边框约 16
-        ///       → 1013，取 1200 给卡片区留余量。
-        /// 本机屏幕工作区为 892 DIP（3008×1784 物理 @200%），880 放得下。
+        /// 窗口最小尺寸与 MainWindow 一致。预览区空间不足时扩展滚动内容，
+        /// 不提高窗口最小高度；四路的 1:1 画面短边仍至少 320 DIP。
         /// </summary>
         public const double MinimumWindowWidth = 1200;
         public const double MinimumWindowHeight = 880;
@@ -160,6 +153,25 @@ namespace VisionGuard.Detector.Windows.Services
 
         /// <summary>设置键：进入实时预览的来源槽位索引（最多 <see cref="MaximumVisibleCards"/> 个，逗号分隔）。</summary>
         public const string PreviewSourceIndexesSettingKey = "Layout.PreviewSourceIndexes";
+
+        /// <summary>
+        /// 根据可见区域选择网格方向；空间不足时扩展滚动内容，而不缩小画面或裁切 40 DIP 操作按钮。
+        /// 画面比例只影响画面等比缩放，不能改变卡片外框。320 DIP 约束作用于画面区域。
+        /// </summary>
+        public static CardLayoutPlan ComputeScrollable(CardLayoutRequest request)
+        {
+            if (request == null) throw new ArgumentNullException(nameof(request));
+            if (request.VisibleCount <= 0 || request.TotalWidth <= 0 || request.TotalHeight <= 0)
+                return new CardLayoutPlan();
+            int count = Math.Min(request.VisibleCount, MaximumVisibleCards);
+            int rows = count >= 3 ? 2 : count == 2 && request.TotalWidth < request.TotalHeight ? 2 : 1;
+            int columns = count >= 3 ? 2 : count == 2 && request.TotalWidth >= request.TotalHeight ? 2 : 1;
+            double minimumCellHeight = MinimumPictureEdge + CardChromeHeight;
+            double minimumCellWidth = Math.Max(MinimumPictureEdge + CardChromeWidth, minimumCellHeight * MinimumCardAspectRatio);
+            double width = Math.Max(request.TotalWidth, columns * minimumCellWidth + (columns - 1) * CardSpacing);
+            double height = Math.Max(request.TotalHeight, rows * minimumCellHeight + (rows - 1) * CardSpacing);
+            return ComputeGrid(width, height, request.UniformAspectRatio, rows, columns);
+        }
 
         public static CardLayoutPlan Compute(CardLayoutRequest request)
         {
@@ -178,6 +190,12 @@ namespace VisionGuard.Detector.Windows.Services
             if (count == 2) { if (usableWidth >= usableHeight) columns = 2; else rows = 2; }
             else if (count >= 3) { rows = 2; columns = 2; }
 
+            return ComputeGrid(usableWidth, usableHeight, request.UniformAspectRatio, rows, columns);
+        }
+
+        private static CardLayoutPlan ComputeGrid(double usableWidth, double usableHeight, double? aspect, int rows, int columns)
+        {
+            var plan = new CardLayoutPlan();
             double cellWidth = (usableWidth - (columns - 1) * CardSpacing) / columns;
             double cellHeight = (usableHeight - (rows - 1) * CardSpacing) / rows;
             if (cellWidth <= 0 || cellHeight <= 0) return plan;
@@ -193,7 +211,7 @@ namespace VisionGuard.Detector.Windows.Services
             plan.PictureAreaWidth = Math.Max(1, cellWidth - CardChromeWidth);
             plan.PictureAreaHeight = Math.Max(1, cellHeight - CardChromeHeight);
 
-            double aspectRatio = ResolveAspectRatio(request.UniformAspectRatio);
+            double aspectRatio = ResolveAspectRatio(aspect);
             plan.TargetAspectRatio = aspectRatio;
             if (aspectRatio > 0)
             {

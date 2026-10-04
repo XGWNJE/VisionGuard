@@ -1,5 +1,7 @@
 package com.xgwnje.visionguard.receiver
 
+import com.xgwnje.visionguard.icons.LucideIcons
+
 // ┌─────────────────────────────────────────────────────────┐
 // │ MainActivity.kt                                         │
 // │ 角色：NavHost 宿主 + 通知权限申请 + Service 绑定          │
@@ -22,25 +24,23 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ListAlt
-import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.collectAsState
 import com.xgwnje.visionguard.account.*
 import com.xgwnje.visionguard.receiver.data.repository.SettingsRepository
@@ -56,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -65,7 +66,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.xgwnje.visionguard.receiver.service.AlertForegroundService
-import com.xgwnje.visionguard.receiver.ui.home.buildFrostedOverlaySpec
 import com.xgwnje.visionguard.receiver.ui.home.receiverMainTabs
 import com.xgwnje.visionguard.receiver.ui.screen.AlertDetailScreen
 import com.xgwnje.visionguard.receiver.ui.screen.AlertListScreen
@@ -73,6 +73,8 @@ import com.xgwnje.visionguard.receiver.ui.screen.DeviceListScreen
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverBackground
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverMuted
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverPrimary
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverPrimaryText
+import com.xgwnje.visionguard.receiver.ui.theme.ReceiverOutline
 import com.xgwnje.visionguard.receiver.ui.theme.ReceiverSurface
 import com.xgwnje.visionguard.receiver.ui.theme.VisionGuardReceiverTheme
 
@@ -126,7 +128,12 @@ class MainActivity : ComponentActivity() {
                 else Column(Modifier.fillMaxSize().statusBarsPadding()) {
                     AccountHeader(account, session!!, beforeLogout = { clearAccountData(); stopConnection() })
                     Box(Modifier.weight(1f)) {
-                        if (!serviceBound || boundService == null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                        if (!serviceBound || boundService == null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                CircularProgressIndicator()
+                                Text("正在加载控制台…", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
                         else VisionGuardNavHost(service = boundService!!, initialAlertId = pendingAlertId)
                     }
                 }
@@ -225,7 +232,7 @@ fun MainScreen(
     val navBackStackEntry by tabNavController.currentBackStackEntryAsState()
     val currentDest = navBackStackEntry?.destination
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(ReceiverBackground)
@@ -233,7 +240,7 @@ fun MainScreen(
         NavHost(
             navController = tabNavController,
             startDestination = "alertList",
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.weight(1f)
         ) {
             composable("alertList") {
                 AlertListScreen(
@@ -255,7 +262,7 @@ fun MainScreen(
                     restoreState = true
                 }
             },
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier
         )
     }
 }
@@ -266,28 +273,26 @@ private fun ReceiverBottomBar(
     onNavigate: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val overlay = buildFrostedOverlaySpec()
-
     Box(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(start = 18.dp, end = 18.dp, bottom = 14.dp)
+            .padding(start = 16.dp, end = 16.dp, bottom = 12.dp)
     ) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(76.dp),
-            shape = RoundedCornerShape(40.dp),
-            color = ReceiverSurface.copy(alpha = overlay.bottomBarAlpha),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = overlay.borderAlpha)),
+                .heightIn(min = 72.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = ReceiverSurface,
+            border = BorderStroke(1.dp, ReceiverOutline),
             tonalElevation = 0.dp,
-            shadowElevation = overlay.shadowElevationDp.dp
+            shadowElevation = 0.dp
         ) {
             Row(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(6.dp)
+                    .fillMaxWidth()
+                    .padding(8.dp)
             ) {
                 receiverMainTabs().forEach { tab ->
                     ReceiverBottomBarItem(
@@ -305,9 +310,9 @@ private fun ReceiverBottomBar(
 
 private fun receiverTabIcon(route: String): ImageVector =
     when (route) {
-        "alertList" -> Icons.AutoMirrored.Filled.ListAlt
-        "deviceList" -> Icons.Default.PhoneAndroid
-        else -> Icons.AutoMirrored.Filled.ListAlt
+        "alertList" -> LucideIcons.Activity
+        "deviceList" -> LucideIcons.Monitor
+        else -> LucideIcons.Activity
     }
 
 @Composable
@@ -318,21 +323,21 @@ private fun ReceiverBottomBarItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val itemColor = if (selected) ReceiverPrimary.copy(alpha = 0.92f) else Color.Transparent
-    val contentColor = if (selected) Color.White else ReceiverMuted
+    val itemColor = if (selected) androidx.compose.material3.MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    val contentColor = if (selected) ReceiverPrimaryText else ReceiverMuted
 
-    val shape = RoundedCornerShape(34.dp)
+    val shape = RoundedCornerShape(8.dp)
 
     Surface(
         modifier = modifier
-            .fillMaxHeight()
+            .heightIn(min = 56.dp)
             .clip(shape)
-            .clickable(onClick = onClick),
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick),
         shape = shape,
         color = itemColor
     ) {
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
         ) {
@@ -344,7 +349,8 @@ private fun ReceiverBottomBarItem(
             Text(
                 text = label,
                 color = contentColor,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                style = androidx.compose.material3.MaterialTheme.typography.labelLarge
             )
         }
     }

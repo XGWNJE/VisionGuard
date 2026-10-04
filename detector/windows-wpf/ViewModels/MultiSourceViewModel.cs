@@ -329,6 +329,8 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 RefreshSummary();
                 return;
             }
+            if (Views.ThemedMessageBox.Show($"删除来源“{slot.SourceName}”？它将从来源列表和实时预览中移除。", "删除来源",
+                    MessageBoxButton.YesNo, MessageBoxImage.Warning, "删除来源", destructive: true) != MessageBoxResult.Yes) return;
             _sourceLimitWarning = "";
             _coordinator.Remove(slot.SourceId);
             RemovePreview(slot);
@@ -477,7 +479,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             {
                 // 应用已在关闭过程中时不能弹窗（MessageBox 自己也是窗口，会抛“窗口正在关闭”）。
                 if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished) return;
-                MessageBox.Show(
+                VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show(
                     "当前设备的推理性能已达不到设定的检测频率：" + Environment.NewLine + Environment.NewLine +
                     detail + Environment.NewLine + Environment.NewLine +
                     "采集、推理与报警仍在继续，不会自动减路或降帧。" + Environment.NewLine +
@@ -914,7 +916,9 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public bool IsTargetBound => IsRemoteStream ? !string.IsNullOrWhiteSpace(_remoteStreamId) : _captureMode == CaptureMode.WindowHandle
             ? !string.IsNullOrWhiteSpace(_targetWindowTitle)
             : _screenRegion != Rectangle.Empty;
-        public string StatusText { get => _statusText; private set => SetProperty(ref _statusText, value); }
+        private bool _hasStatusError;
+        public bool HasStatusError { get => _hasStatusError; private set => SetProperty(ref _hasStatusError, value); }
+        public string StatusText { get => _statusText; private set { SetProperty(ref _statusText, value); HasStatusError = false; StatusToolTip = value; } }
         public string TargetInfo => IsRemoteStream ? "远程镜头：" + _remotePublisherName : _captureMode == CaptureMode.WindowHandle
             ? (string.IsNullOrWhiteSpace(_targetWindowTitle) ? "未选择窗口" : $"窗口：{_targetWindowTitle}{(_windowSubRegion == Rectangle.Empty ? "" : $" · 选区 {_windowSubRegion.Width}×{_windowSubRegion.Height}")}")
             : (CaptureSizeConstraints.IsValid(_screenRegion) ? $"屏幕选区：{_screenRegion.X},{_screenRegion.Y} {_screenRegion.Width}×{_screenRegion.Height}" : "未选择屏幕区域");
@@ -1152,7 +1156,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             BitmapSource? background = null;
             var windowMode = _captureMode == CaptureMode.WindowHandle && !string.IsNullOrWhiteSpace(_targetWindowTitle);
             if (windowMode && _targetWindow == null) ResolveWindow();
-            if (windowMode && _targetWindow == null) { MessageBox.Show("目标窗口当前不存在，请重新选择窗口或清除目标后选择屏幕区域。", "VisionGuard 视觉节点", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            if (windowMode && _targetWindow == null) { VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show("目标窗口当前不存在，请重新选择窗口或清除目标后选择屏幕区域。", "VisionGuard 视觉节点", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             try { using var bitmap = windowMode ? WindowCapturer.CaptureWindow(_targetWindow!.Handle, Rectangle.Empty) : ScreenCapturer.CapturePrimaryScreen(); background = BitmapSourceConverter.Convert(bitmap); } catch { }
             var selector = new RegionSelectorWindow(background) { Owner = Application.Current.MainWindow };
             selector.ShowDialog();
@@ -1179,7 +1183,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             _screenRegion = Rectangle.Empty; _windowSubRegion = Rectangle.Empty; ClearMasksInternal(); NotifyTargetChanged();
         }
 
-        private bool ConfirmTargetChange() => MaskRegions.Count == 0 || MessageBox.Show("更换捕获目标或选区会清除当前遮罩。是否继续？", "VisionGuard 视觉节点", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes;
+        private bool ConfirmTargetChange() => MaskRegions.Count == 0 || VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show("更换捕获目标或选区会清除当前遮罩。是否继续？", "VisionGuard 视觉节点", MessageBoxButton.YesNo, MessageBoxImage.Warning, "更换目标", destructive: true) == MessageBoxResult.Yes;
 
         private void EditMasks()
         {
@@ -1191,7 +1195,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 if (!editor.IsConfirmed) return;
                 MaskRegions = editor.ResultMasks; OnPropertyChanged(nameof(MaskInfo)); MarkDirty();
             }
-            catch (Exception ex) { MessageBox.Show($"抓图失败：{ex.Message}", "VisionGuard 视觉节点", MessageBoxButton.OK, MessageBoxImage.Error); }
+            catch (Exception ex) { VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show($"抓图失败：{ex.Message}", "VisionGuard 视觉节点", MessageBoxButton.OK, MessageBoxImage.Error); }
         }
 
         private Bitmap GrabFrame()
@@ -1306,7 +1310,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
         private void Start() { try { _owner.Start(this); } catch (Exception ex) { SetError(ex.Message); } }
         internal void MarkStarting() => StatusText = "启动中";
-        internal void SetError(string message) => StatusText = string.IsNullOrWhiteSpace(message) ? "异常" : message;
+        internal void SetError(string message) { StatusText = string.IsNullOrWhiteSpace(message) ? "异常" : message; HasStatusError = true; }
         internal void ApplyStatus(MonitorSourceStatus status)
         {
             IsMonitoring = status.IsMonitoring;
@@ -1323,7 +1327,8 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 : status.IsMonitoring
                     ? "检测中"
                     : (IsReady ? (PreviewImage == null ? "就绪" : "已停止 · 保留最后画面") : (!string.IsNullOrWhiteSpace(_targetWindowTitle) ? (string.IsNullOrWhiteSpace(_windowResolutionError) ? "窗口未找到" : _windowResolutionError) : "未配置"));
-            StatusToolTip = IsPerformanceInsufficient ? status.PerformanceWarning : StatusText;
+            HasStatusError = !string.IsNullOrWhiteSpace(status.Error);
+            StatusToolTip = HasStatusError ? StatusText : IsPerformanceInsufficient ? status.PerformanceWarning : StatusText;
         }
 
         internal void ApplyFrame(BitmapSource image, List<Detection> detections, long inferenceMs)

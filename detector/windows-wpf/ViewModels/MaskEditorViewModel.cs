@@ -51,6 +51,8 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
             ClearCommand = new RelayCommand(() =>
             {
+                if (Views.ThemedMessageBox.Show("清空全部遮罩？取消编辑仍可保留原有遮罩，保存后清空才会生效。", "清空遮罩",
+                        MessageBoxButton.YesNo, MessageBoxImage.Warning, "清空遮罩", destructive: true) != MessageBoxResult.Yes) return;
                 Masks.Clear();
                 SelectedMask = null;
             }, () => Masks.Count > 0);

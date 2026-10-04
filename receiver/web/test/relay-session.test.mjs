@@ -41,6 +41,29 @@ function harness(fetcher){
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
+test('losing the transport invalidates live status while retaining registered identities and notification scopes',async t=>{
+  const h=harness(()=>Promise.resolve(new Response(JSON.stringify({alerts:[]}),{status:200})));
+  t.after(()=>h.stop());h.render();const socket=h.sockets[0];socket.open();socket.receive({type:'auth-result',success:true});
+  const camera={deviceId:'camera-one',deviceName:'Camera',nodeType:'visual',platform:'android',role:'detector',component:'android-camera'};
+  const notifier={deviceId:'notifier-one',deviceName:'Notifier',nodeType:'notification',platform:'android',role:'notifier',online:true,scope:{mode:'selected',targets:[{deviceId:camera.deviceId}]}};
+  socket.receive({type:'notification-scopes',detectors:[camera],notifiers:[notifier]});
+  socket.receive({type:'device-list',devices:[{...camera,online:true,isMonitoring:true,isReady:true,capabilities:['video-publish'],sources:[]}]});
+  socket.receive({type:'stream-list',streams:[{streamId:'stream-one',publisherDeviceId:camera.deviceId,publisherName:camera.deviceName,sourceName:'Camera',isStreaming:true}]});
+  assert.equal(h.render().devices.length,1);assert.equal(h.render().streams.length,1);assert.equal(h.render().notifiers[0].online,true);
+  socket.close();
+  const disconnected=h.render();
+  assert.equal(disconnected.connected,false);assert.equal(disconnected.authExpired,false);
+  assert.equal(disconnected.devices.length,0);assert.equal(disconnected.streams.length,0);
+  assert.equal(disconnected.registered[0].deviceId,camera.deviceId);
+  assert.equal(disconnected.notifiers[0].online,false);assert.equal(disconnected.notifiers[0].scope.targets[0].deviceId,camera.deviceId);
+  const nodes=protocol.mergeDevices(disconnected.devices,[...disconnected.registered,...disconnected.notifiers]);
+  assert.equal(nodes.length,2);assert.ok(nodes.every(node=>!node.online&&!node.isMonitoring&&node.capabilities.length===0));
+  assert.equal(disconnected.send({type:'command',targetDeviceId:camera.deviceId,command:'resume'}),'');
+  assert.equal(socket.sent.filter(message=>message.type==='command').length,0);
+  socket.receive({type:'device-list',devices:[{...camera,online:true}]});
+  assert.equal(h.render().devices.length,0);
+});
+
 test('a late old-account HTTP 401 cannot expire the next account or expose its cached events',async t=>{
   let resolveOld;const oldResponse=new Promise(resolve=>{resolveOld=resolve;});
   const h=harness((_path,init)=>init.headers.Authorization===`Bearer ${login.token}`?oldResponse:Promise.resolve(new Response(JSON.stringify({alerts:[]}),{status:200})));

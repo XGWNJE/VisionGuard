@@ -45,7 +45,7 @@ namespace VisionGuard.Detector.Windows.Launcher
             catch (Exception ex)
             {
                 WriteLog("fatal", ex.ToString());
-                MessageBox.Show("VisionGuard 视觉节点启动失败：\n" + ex.Message, "VisionGuard 视觉节点", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ThemedDialog.Show("VisionGuard 视觉节点启动失败：\n" + ex.Message, "VisionGuard 视觉节点", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return 1;
             }
         }
@@ -88,23 +88,27 @@ namespace VisionGuard.Detector.Windows.Launcher
         private static int CheckUpdate(string[] args)
         {
             bool interactive = args.Any(x => x == "--interactive");
+            try { return CheckUpdateCore(args, interactive); }
+            catch (Exception ex)
+            {
+                WriteLog("update-check-failed", ex.ToString());
+                if (interactive) ThemedDialog.Show("检查更新失败：\n" + ex.Message, "VisionGuard 视觉节点更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return 1;
+            }
+        }
+
+        private static int CheckUpdateCore(string[] args, bool interactive)
+        {
             int ownerPid;
             int.TryParse(GetOption(args, "--owner-pid"), out ownerPid);
             using (var mutex = new Mutex(false, @"Local\VisionGuard.Launcher.UpdateCheck", out bool created))
             {
                 if (!created) return 0;
-                UpdateInfo info;
-                try { info = QueryUpdate(); }
-                catch (Exception ex)
-                {
-                    WriteLog("update-check-failed", ex.ToString());
-                    if (interactive) MessageBox.Show("检查更新失败：\n" + ex.Message, "VisionGuard 视觉节点更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return 1;
-                }
+                UpdateInfo info = QueryUpdate();
 
                 if (!info.HasUpdate)
                 {
-                    if (interactive) MessageBox.Show("当前已是最新版本。", "VisionGuard 视觉节点更新", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    if (interactive) ThemedDialog.Show("当前已是最新版本。", "VisionGuard 视觉节点更新", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return 0;
                 }
                 if (string.IsNullOrWhiteSpace(info.LatestVersion) || string.IsNullOrWhiteSpace(info.DownloadUrl))
@@ -112,7 +116,7 @@ namespace VisionGuard.Detector.Windows.Launcher
                 if (string.IsNullOrWhiteSpace(info.Sha256) || info.Sha256.Length != 64)
                     throw new InvalidDataException("服务器没有提供更新包 SHA256，已拒绝不完整的更新元数据。");
 
-                var answer = MessageBox.Show(
+                var answer = ThemedDialog.Show(
                     "发现新版本 " + info.LatestVersion + "（当前 " + Version + "）。\n\n" +
                     "更新器会校验完整包、关闭检测端和驻留程序，并在失败时恢复旧版本。现在更新吗？",
                     "VisionGuard 视觉节点更新", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
@@ -302,7 +306,7 @@ namespace VisionGuard.Detector.Windows.Launcher
                 {
                     throw new AggregateException("更新失败且自动回滚失败。旧目录：" + backup, ex, rollbackError);
                 }
-                MessageBox.Show("更新失败，已经恢复旧版本：\n" + ex.Message, "VisionGuard 视觉节点更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                ThemedDialog.Show("更新失败，已经恢复旧版本：\n" + ex.Message, "VisionGuard 视觉节点更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return 1;
             }
             finally
