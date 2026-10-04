@@ -31,7 +31,7 @@ Windows 发行输出不得包含 `.pdb`、`.lib`、`.dll.config`、`.onnx`、`As
 
 ## 应用名称与安装身份
 
-名称、英文名、简称及工程/包名的唯一对应关系见[命名规范](15-component-naming.md)。
+中文显示名与工程、包名的唯一对应关系见[命名规范](15-component-naming.md)。
 
 当前 Android 包名为 `com.xgwnje.visionguard.detector`、`com.xgwnje.visionguard.receiver` 和 `com.xgwnje.visionguard.notifier`。包名决定安装身份；不能覆盖其他包名的应用，Debug 与 Release 签名不同也不能直接覆盖。三端使用被忽略的共享 Release 签名配置，当前镜头改造保留原包名。
 
@@ -145,6 +145,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish-release.ps1 -Version 
 该命令会同步版本、构建、准备签名包、更新 release 元数据、按目标上传并可部署统一服务；每一步都需要明确发布授权。仅检查前置条件时使用 `-PreflightOnly`，明确只发客户端时使用 `-SkipServerDeploy`。GitHub push、tag 和 Release 仍需显式开关。
 
 `All` 包含 Windows 整包、三个 Android 签名包、服务及 Web；通知节点可单独使用 `-Target AndroidNotifier`。更新查询键为 `wpf`、`android-detector`、`android-receiver`、`android-notifier`，通知节点当前通过下载安装。基础设施目录不在默认相邻路径时，显式传入当前 `Server-infra/server.local.env` 的 `-ServerEnvPath`，不能改写真实凭据或沿用旧路径。上线前备份运行代码、配置和私有数据；发布上传按 SHA256 跳过相同文件，同时核验 Windows 所需公共模型。
+
+部署使用统一服务专属的 Node.js `24.21.0`，可用 `-ServerNodeVersion` 指定其他 24.x 版本。脚本从官方发行目录下载 Linux x64 运行时并校验 SHA256，保存在运行根目录的 `runtime/`；systemd drop-in 指向该运行时，不修改其他服务的全局 Node.js。部署后核对实际进程路径与服务版本。
 
 发布前必须确认 Android 签名材料、Windows ZIP 清洁度、元数据大小和目标范围；发布后才可执行公网 `/health`、`/api/update`、`HEAD 200` 和 byte-range `206` 验证。发布脚本是唯一的正式打包/部署实现。
 

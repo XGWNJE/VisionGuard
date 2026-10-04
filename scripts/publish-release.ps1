@@ -19,6 +19,8 @@
     [string]$ServerEnvPath,
     [string]$RemoteRoot = '/opt/visionguard-server',
     [string]$BaseUrl = 'https://visionguard.xgwnje.cn',
+    [ValidatePattern('^24\.\d+\.\d+$')]
+    [string]$ServerNodeVersion = '24.21.0',
     [string]$GitHubReleaseNotesPath,
     [string]$GitHubTagTarget = 'HEAD',
     [string]$GitHubRepository = 'XGWNJE/VisionGuard'
@@ -957,6 +959,7 @@ function Deploy-ServerCode {
         $env:VG_SERVER_ENV_PATH = $ServerEnvPath
         $env:VG_REMOTE_ROOT = $RemoteRoot
         $env:VG_RELEASE_VERSION = $Version
+        $env:VG_SERVER_NODE_VERSION = $ServerNodeVersion
 
         $python = @'
 import os
@@ -995,6 +998,9 @@ key_filename = pick(values, "SSH_KEY", "SSH_KEY_PATH")
 archive = os.environ["VG_DEPLOY_ARCHIVE"]
 remote_root = os.environ["VG_REMOTE_ROOT"].rstrip("/")
 version = os.environ["VG_RELEASE_VERSION"]
+node_version = os.environ["VG_SERVER_NODE_VERSION"]
+node_directory = remote_root + "/runtime/node-v" + node_version + "-linux-x64"
+node_binary = node_directory + "/bin/node"
 remote_archive = "/tmp/visionguard-server-deploy.tgz"
 remote_stage = "/tmp/visionguard-server-deploy"
 
@@ -1004,6 +1010,19 @@ if not host:
 q = shlex.quote
 remote_command = f"""
 set -euo pipefail
+test "$(uname -m)" = x86_64
+task_node_directory={q(node_directory)}
+task_node_file={q("node-v" + node_version + "-linux-x64.tar.xz")}
+task_node_base={q("https://nodejs.org/dist/v" + node_version)}
+if [ ! -x "$task_node_directory/bin/node" ]; then
+  mkdir -p {q(remote_root + "/runtime")}
+  curl -fLS --retry 2 --connect-timeout 15 --max-time 120 "$task_node_base/$task_node_file" -o "/tmp/$task_node_file"
+  curl -fLS --retry 2 --connect-timeout 15 --max-time 30 "$task_node_base/SHASUMS256.txt" -o "/tmp/$task_node_file.sha256"
+  (cd /tmp && grep "  $task_node_file$" "$task_node_file.sha256" | sha256sum -c -)
+  tar -xJf "/tmp/$task_node_file" -C {q(remote_root + "/runtime")}
+  rm -f "/tmp/$task_node_file" "/tmp/$task_node_file.sha256"
+fi
+test "$({q(node_binary)} --version)" = {q("v" + node_version)}
 rm -rf {q(remote_stage)}
 mkdir -p {q(remote_stage)} {q(remote_root)}
 tar -xzf {q(remote_archive)} -C {q(remote_stage)}
@@ -1011,16 +1030,22 @@ rm -rf {q(remote_root + "/dist")}
 mv {q(remote_stage + "/dist")} {q(remote_root + "/dist")}
 cp {q(remote_stage + "/package.json")} {q(remote_root + "/package.json")}
 cp {q(remote_stage + "/package-lock.json")} {q(remote_root + "/package-lock.json")}
-cd {q(remote_root)} && npm ci --omit=dev
+cd {q(remote_root)} && PATH="$task_node_directory/bin:$PATH" npm ci --omit=dev
+mkdir -p /etc/systemd/system/visionguard.service.d
+printf '%s\n' '[Service]' 'ExecStart=' {q('ExecStart=' + node_binary + ' ' + remote_root + '/dist/index.js')} > /etc/systemd/system/visionguard.service.d/20-node-runtime.conf
+systemctl daemon-reload
 systemctl restart visionguard
 sleep 2
 systemctl is-active --quiet visionguard
-remote_version="$(cd {q(remote_root)} && node -p "require('./package.json').version")"
+remote_pid="$(systemctl show visionguard -p MainPID --value)"
+test "$(readlink /proc/$remote_pid/exe)" = {q(node_binary)}
+remote_version="$(cd {q(remote_root)} && {q(node_binary)} -p "require('./package.json').version")"
 if [ "$remote_version" != {q(version)} ]; then
   echo "remote server version mismatch: $remote_version != {version}" >&2
   exit 1
 fi
 curl -fsS http://127.0.0.1:3000/health
+echo "server runtime Node.js $({q(node_binary)} --version)"
 rm -rf {q(remote_stage)} {q(remote_archive)}
 """
 
@@ -1055,6 +1080,7 @@ finally:
         Remove-Item Env:\VG_SERVER_ENV_PATH -ErrorAction SilentlyContinue
         Remove-Item Env:\VG_REMOTE_ROOT -ErrorAction SilentlyContinue
         Remove-Item Env:\VG_RELEASE_VERSION -ErrorAction SilentlyContinue
+        Remove-Item Env:\VG_SERVER_NODE_VERSION -ErrorAction SilentlyContinue
     }
 }
 

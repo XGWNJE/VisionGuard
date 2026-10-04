@@ -4,7 +4,7 @@
 
 # VisionGuard
 
-VisionGuard 由检测节点、统一服务和控制台协作。当前用 视觉节点在 Windows 电脑上检测画面中的目标，经服务转发告警和截图，通过 Web 控制台查看、配置和管理检测节点，由 通知节点在后台接警与响铃。
+VisionGuard 由检测节点、统一服务和控制台协作。视觉节点在 Windows 电脑上检测画面中的目标，经服务转发告警和截图；控制台管理节点，通知节点在 Android 后台接警与响铃。
 
 [使用方式](#使用方式) · [快速开始](#快速开始) · [当前组件](#当前组件) · [路线规划](#路线规划) · [文档与许可](#文档与许可)
 
@@ -18,17 +18,19 @@ VisionGuard 由检测节点、统一服务和控制台协作。当前用 视觉�
 
 **适合**需要在自己的设备上运行视觉检测，并在手机、平板或电脑上管理节点，在 Android 通知节点中接警的个人或团队。
 
-**当前边界**：当前源码加入基础账号与实时相机推流节点，尚未发布；设备、视频、控制和事件按账号隔离。连接状态不等于通知收件确认，通知收件确认不等于声音播放。漏报风险是检测效果与故障处置的最高优先级，人员检测以 `person` 类验证。既有 v4.5.1 测试包的范围见[分发说明](./docs/releases/v4.5.1.md)。
+**当前边界**：0.5.2 包含基础账号与实时相机推流节点；设备、视频、控制和事件按账号隔离。连接状态不等于通知收件确认，通知收件确认不等于声音播放。漏报风险是检测效果与故障处置的最高优先级，人员检测以 `person` 类验证。安装与升级见[发行说明](./docs/releases/v0.5.2.md)，实机覆盖见[验证报告](./docs/codex/90-verification-report.md)。
 
 1. 各组件登录同一账号后自动登记和匹配；相机推流节点以前台摄像头采集画面，经服务交给 Windows 视觉节点推理，也可继续使用本地屏幕或窗口来源。
 2. 视觉节点把告警、截图和状态发往统一服务；所有公网业务数据统一通过统一服务转发，不使用 P2P、ICE、STUN 或 TURN。正式服务地址为 `https://visionguard.xgwnje.cn`。
 3. Web 控制台展示事件、截图和设备状态，按能力提供节点/来源启停与参数配置，并分配各通知节点的全部或指定接收范围。通知节点保存实时报警后确认收件，再进入本地声音队列。
 
-当前源码构建统一 Windows 目录：从目录根启动 `VisionGuard.Detector.Windows.exe`，Win7 SP1 x64 选择 legacy 内部运行时，Windows 10/11 选择 modern。既有测试包的安装与升级以[分发说明](./docs/releases/v4.5.1.md)为准；当前构建与实机覆盖见[验证报告](./docs/codex/90-verification-report.md)。
+Windows 发行包使用统一目录：从目录根启动 `VisionGuard.Detector.Windows.exe`，Win7 SP1 x64 选择 legacy 内部运行时，Windows 10/11 选择 modern。
 
 ## 快速开始
 
-验收当前分支时使用当前源码构建及[隔离测试入口](./docs/codex/90-verification-report.md#测试环境)。使用既有 v4.5.1 测试包时先阅读[分发说明](./docs/releases/v4.5.1.md)，确认该版本的范围与升级提示。
+[客户端发行包](https://github.com/XGWNJE/VisionGuard/releases/tag/v0.5.2) · [线上控制台](https://visionguard.xgwnje.cn/console/) · [发行说明](./docs/releases/v0.5.2.md)
+
+管理员先创建账号，各组件填写正式服务地址 `https://visionguard.xgwnje.cn` 并登录同一账号。开发验收使用当前源码构建及[隔离测试入口](./docs/codex/60-operations.md#本机隔离测试)。
 
 以下命令从仓库根目录运行，用于验证源码和构建产物。需要 Windows、PowerShell、Node.js 22.18 或以上及 npm；构建 Windows 端还需支持 C# 12 的 .NET SDK。客户端服务配置见[运维文档](./docs/codex/60-operations.md#配置与服务边界)。
 
@@ -43,7 +45,7 @@ npm run build
 cd ..
 ```
 
-成功后应生成 `server/dist/index.js` 和 `server/dist/console/index.html`；启动服务后从同一服务的 `/console/` 打开控制台，外部访问须使用 HTTPS。构建 视觉节点、驻留程序与统一包：
+成功后应生成 `server/dist/index.js` 和 `server/dist/console/index.html`；启动服务后从同一服务的 `/console/` 打开控制台，外部访问须使用 HTTPS。构建视觉节点、驻留程序与统一包：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scripts\build-all.ps1 -Target Windows
@@ -62,11 +64,11 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scri
 | 通知节点 | Android | VG 后台接警、声音队列、收件确认与告警记录 | [`notifier/android/`](./notifier/android/) |
 | 统一服务 | 服务端 | 基础账号、设备隔离、实时画面转发、状态、告警和控制 | [`server/`](./server/) |
 
-组件的中文名、英文名、简称及包名见[命名规范](./docs/codex/15-component-naming.md)，实现状态见[项目概览](./docs/codex/10-project-overview.md)，自动化与真机证据只在[验证报告](./docs/codex/90-verification-report.md)维护。
+组件的中文显示名与工程、包名对应关系见[命名规范](./docs/codex/15-component-naming.md)，实现状态见[项目概览](./docs/codex/10-project-overview.md)，自动化与真机证据只在[验证报告](./docs/codex/90-verification-report.md)维护。
 
-统一接入基础（第 1 组）已实现：角色、节点类型与平台分开登记，复用能力、配置、控制和事件链；支持无图传感器事件、实时重试、通知节点收件确认与本地服务中断监测。通知节点后台接警、Web 控制台和通知范围已接入当前源码；硬件驱动待后续实施。通知节点源码在 `notifier/android/`，专用于 VG 接警；独立包名与数据目录，可和原 Vigil 分开安装。当前分支尚未发布。契约见[统一服务](./docs/codex/20-server.md#统一接入契约)。
+统一接入基础已实现：角色、节点类型与平台分开登记，复用能力、配置、控制和事件链；支持无图传感器事件、实时重试、通知节点收件确认与本地服务中断监测。硬件驱动待后续实施。通知节点使用独立包名与数据目录，可和原 Vigil 分开安装。契约见[统一服务](./docs/codex/20-server.md#统一接入契约)。
 
-上述应用名对应当前源码构建；既有测试包的显示名以该版本产物为准。
+各端共用青色盾牌镜头应用图标，功能图标采用 Lucide；显示名全部使用中文。
 
 ## 路线规划
 
