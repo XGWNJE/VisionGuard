@@ -86,6 +86,12 @@ object VisionGuardStatusColors {
 /** Readable neutral disabled states, shared by the three Android applications. */
 object VisionGuardControlColors {
     @Composable
+    fun checkbox() = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary,
+        uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant, checkmarkColor = MaterialTheme.colorScheme.onPrimary,
+        disabledCheckedColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        disabledUncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant)
+
+    @Composable
     fun button(containerColor: Color = MaterialTheme.colorScheme.primary, contentColor: Color = MaterialTheme.colorScheme.onPrimary) =
         ButtonDefaults.buttonColors(containerColor = containerColor, contentColor = contentColor,
             disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant, disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity, Bell, Camera, ChevronLeft, CircleHelp, LogOut, Monitor, Radio, RefreshCw, Search, Settings, ShieldCheck } from 'lucide-react';
+import { Activity, Bell, Camera, ChevronLeft, CircleHelp, LogOut, Monitor, Radio, RefreshCw, Search, Settings, ShieldCheck, Users } from 'lucide-react';
 import { eventLabel, formatTime, mergeDevices, timeStandardLabel, typeLabel, websocketURL, type Ack, type AlarmTimeZone, type Alert, type Device, type Notifier, type Scope, type Source, type Stream, type Target, type TimeStandard } from './protocol';
 import { useRelay } from './useRelay';
 import { accountRequest, AccountRequestError, parseLogin, rotateLogin, type Login } from './account';
+import { AccountManagement } from './AccountManagement';
 import './style.css';
 
-type Page = '节点' | '事件' | '通知范围' | '设置';
+type Page = '节点' | '事件' | '通知范围' | '设置' | '账号管理';
 function App() {
   const [login, setLogin] = useState<Login | null>(null);
   const loginRef = useRef<Login | null>(null);
@@ -54,11 +55,11 @@ function App() {
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><img src="/console/icon.png" width="40" height="40" alt=""/><span>控制台</span></div>
-      <nav aria-label="主导航">{([['节点',Monitor],['事件',Activity],['通知范围',Bell],['设置',Settings]] as const).map(([label,Icon]) => <button key={label} aria-current={page === label ? 'page' : undefined} className={page === label ? 'nav-item active' : 'nav-item'} onClick={() => { setPage(label); setMobileDetail(false); }}><Icon size={20}/><span>{label}</span></button>)}</nav>
+      <nav aria-label="主导航">{([['节点',Monitor],['事件',Activity],['通知范围',Bell],['设置',Settings],['账号管理',Users]] as const).filter(([label])=>label!=='账号管理'||login.account.isAdmin).map(([label,Icon]) => <button key={label} aria-current={page === label ? 'page' : undefined} className={page === label ? 'nav-item active' : 'nav-item'} onClick={() => { setPage(label); setMobileDetail(false); }}><Icon size={20}/><span>{label}</span></button>)}</nav>
       <div className="sidebar-footer"><span className={'dot '+(relay.connected ? 'online' : '')}/>{relay.status}<span className="subtle">跟随系统外观</span></div>
     </aside>
     <main>
-      <header className="page-header"><div><h1>{page}</h1><p>{({节点:'检测节点与通知节点',事件:'实时事件与最近历史',通知范围:'为每个通知节点分配接收范围',设置:'当前会话与连接信息'} as Record<Page,string>)[page]}</p></div><div className="toolbar"><span className="connection" role="status"><span className={'dot '+(relay.connected ? 'online' : '')}/>{relay.status}</span><button className="icon-button" aria-label="刷新" onClick={relay.refresh} disabled={!relay.connected}><RefreshCw size={20}/></button></div></header>
+      <header className="page-header"><div><h1>{page}</h1><p>{({节点:'检测节点与通知节点',事件:'实时事件与最近历史',通知范围:'为每个通知节点分配接收范围',设置:'当前会话与连接信息',账号管理:'账号启用、密码与管理员权限'} as Record<Page,string>)[page]}</p></div><div className="toolbar"><span className="connection" role="status"><span className={'dot '+(relay.connected ? 'online' : '')}/>{relay.status}</span><button className="icon-button" aria-label="刷新" onClick={relay.refresh} disabled={!relay.connected}><RefreshCw size={20}/></button></div></header>
       {page === '节点' && <><section className="panel node-filters"><label className="search-field"><Search size={20}/><input aria-label="搜索节点名称" placeholder="搜索节点名称" value={search} onChange={e => setSearch(e.target.value)}/></label><select aria-label="节点类型" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}><option value="">全部类型</option><option value="visual">视觉节点</option><option value="sensor">传感器节点</option><option value="notification">通知节点</option></select></section><div className={'master-detail '+(mobileDetail ? 'show-detail' : '')}>
         <section className="panel node-list"><div className="section-title"><h2>全部节点</h2><span className="subtle">{visibleNodes.length} 个</span></div>
           {visibleNodes.length === 0 && <Empty text={nodes.length ? '没有匹配的节点' : '尚无已登记节点'} />}
@@ -75,7 +76,8 @@ function App() {
       </div></>}
       {page === '事件' && <section className="panel"><div className="section-title"><h2>最近事件</h2><span className="subtle">{timeStandardLabel(timeZone)} · 最多 100 条</span></div>{relay.alerts.length === 0 ? <Empty text="暂无事件"/> : <div className="event-table">{relay.alerts.map(a => <button className="event-row" key={a.alertId} onClick={() => setEvent(a)}><span className="event-kind">{eventLabel(a.eventKind)}</span><span><strong>{a.deviceName || a.deviceId}{a.sourceName && ` · ${a.sourceName}`}</strong><small>{a.summary || '查看检测详情'}</small></span><span className="subtle">{formatTime(a.timestamp,timeZone)}<small>{(relay.receipts[a.alertId] ?? []).length > 0 ? `${relay.receipts[a.alertId].length} 个通知节点已收件` : '查看详情'}</small></span></button>)}</div>}</section>}
       {page === '通知范围' && <div className="scope-list">{relay.notifiers.length === 0 ? <section className="panel"><Empty text="尚无已登记的通知节点"/></section> : relay.notifiers.map(notifier => <ScopeEditor key={notifier.deviceId} notifier={notifier} nodes={nodes.filter(n => n.role === 'detector')} connected={relay.connected} acks={relay.acks} send={relay.send}/>)}</div>}
-      {page === '设置' && <><TimeStandardSettings standard={relay.timeStandard} connected={relay.connected} acks={relay.acks} send={relay.send}/><AccountSettings login={login} onLogout={() => { void logout(); }} onPasswordChanged={() => { if (loginRef.current?.token === login.token) clearSession('密码已修改，请重新登录'); }}/></>}
+      {page === '设置' && <><TimeStandardSettings standard={relay.timeStandard} connected={relay.connected} acks={relay.acks} send={relay.send}/><AccountSettings login={login} onDeviceNameChanged={name=>{if(loginRef.current?.token===login.token)updateLogin({...login,device:{...login.device,deviceName:name}});}} onLogout={() => { void logout(); }} onPasswordChanged={() => { if (loginRef.current?.token === login.token) clearSession('密码已修改，请重新登录'); }}/></>}
+      {page === '账号管理' && login.account.isAdmin && <AccountManagement login={login}/>}
     </main>
     {visibleEvent && <EventDialog key={visibleEvent.alertId} alert={visibleEvent} timeZone={timeZone} login={login} receipts={relay.receipts[visibleEvent.alertId] ?? []} onClose={() => setEvent(null)}/>}
   </div>;
@@ -96,7 +98,7 @@ function TimeStandardSettings({standard,connected,acks,send}:{standard:TimeStand
 function LoginScreen({onLogin,error}:{onLogin:(value:Login)=>void;error:string}) {
   const [username,setUsername] = useState(''); const [password,setPassword] = useState('');
   const [busy,setBusy] = useState(false); const [failure,setFailure] = useState('');
-  async function submit() { setBusy(true); setFailure(''); try { websocketURL(location.origin); const value = await accountRequest('/api/account/login', undefined, {username:username.trim(),password,component:'web-console',deviceName:'Web 控制台'}); onLogin(parseLogin(value)); setPassword(''); } catch (e) { setFailure((e as Error).message); } finally { setBusy(false); } }
+  async function submit() { setBusy(true); setFailure(''); try { websocketURL(location.origin); const value = await accountRequest('/api/account/login', undefined, {username:username.trim(),password,component:'web-console',deviceCode:navigator.platform || 'Web'}); onLogin(parseLogin(value)); setPassword(''); } catch (e) { setFailure((e as Error).message); } finally { setBusy(false); } }
   return <div className="login-page"><form className="panel login-form" onSubmit={e => { e.preventDefault(); void submit(); }}>
     <div className="brand"><img src="/console/icon.png" width="40" height="40" alt=""/><span>控制台</span></div><h1>登录账号</h1><p>查看和管理同一账号下的设备</p>
     {(failure || error) && <p className="error" role="alert">{failure || error}</p>}
@@ -105,11 +107,14 @@ function LoginScreen({onLogin,error}:{onLogin:(value:Login)=>void;error:string})
     <button className="button" type="submit" disabled={busy}><ShieldCheck size={20}/>{busy ? '登录中…' : '登录'}</button><small className="subtle">设备登录同一账号后自动关联。</small>
   </form></div>;
 }
-function AccountSettings({login,onLogout,onPasswordChanged}:{login:Login;onLogout:()=>void;onPasswordChanged:()=>void}) {
+function AccountSettings({login,onLogout,onPasswordChanged,onDeviceNameChanged}:{login:Login;onLogout:()=>void;onPasswordChanged:()=>void;onDeviceNameChanged:(name:string)=>void}) {
+  const [deviceName,setDeviceName] = useState(login.device.deviceName); const [nameBusy,setNameBusy] = useState(false); const [nameMessage,setNameMessage] = useState(''); const [nameError,setNameError] = useState('');
+  useEffect(()=>setDeviceName(login.device.deviceName),[login.device.deviceName]);
+  async function renameSelf() { setNameBusy(true);setNameMessage('');setNameError('');try { const name=deviceName.trim();await accountRequest(`/api/devices/${encodeURIComponent(login.device.deviceId)}`,login.token,{deviceName:name},'PATCH');onDeviceNameChanged(name);setNameMessage('名称已保存'); } catch(e) { setNameError((e as Error).message); } finally { setNameBusy(false); } }
   const [currentPassword,setCurrentPassword] = useState(''); const [newPassword,setNewPassword] = useState('');
   const [busy,setBusy] = useState(false); const [error,setError] = useState('');
   async function changePassword() { setBusy(true); setError(''); try { await accountRequest('/api/account/password',login.token,{currentPassword,newPassword}); setCurrentPassword(''); setNewPassword(''); onPasswordChanged(); } catch(e) { setError((e as Error).message); } finally { setBusy(false); } }
-  return <section className="panel settings-panel"><h2>账号</h2><dl><dt>当前账号</dt><dd>{login.account.username}</dd><dt>服务地址</dt><dd>{location.origin}</dd><dt>外观</dt><dd>跟随系统：浅色 / 深色</dd></dl><button className="button secondary" onClick={onLogout}><LogOut size={20}/>退出登录</button><form className="account-password" onSubmit={e=>{e.preventDefault();void changePassword();}}><h3>修改密码</h3><label>当前密码<input required type="password" autoComplete="current-password" value={currentPassword} onChange={e=>setCurrentPassword(e.target.value)} disabled={busy}/></label><label>新密码<input required type="password" minLength={8} maxLength={256} autoComplete="new-password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} disabled={busy}/></label><p className="subtle">修改后，本账号的设备需要重新登录。</p><button className="button" disabled={busy}>{busy?'保存中…':'修改密码'}</button>{error&&<p className="error" role="alert">{error}</p>}</form></section>;
+  return <section className="panel settings-panel"><h2>账号</h2><dl><dt>当前账号</dt><dd>{login.account.username}</dd><dt>服务地址</dt><dd>{location.origin}</dd><dt>外观</dt><dd>跟随系统：浅色 / 深色</dd></dl><form onSubmit={e=>{e.preventDefault();void renameSelf();}}><h3>本机名称</h3><label>设备名称<input required maxLength={64} value={deviceName} onChange={e=>setDeviceName(e.target.value)} disabled={nameBusy}/></label><button className="button secondary" disabled={nameBusy||!deviceName.trim()}>{nameBusy?'保存中…':'保存名称'}</button>{nameMessage&&<p role="status">{nameMessage}</p>}{nameError&&<p className="error" role="alert">{nameError}</p>}</form><button className="button secondary" onClick={onLogout}><LogOut size={20}/>退出登录</button><form className="account-password" onSubmit={e=>{e.preventDefault();void changePassword();}}><h3>修改密码</h3><label>当前密码<input required type="password" autoComplete="current-password" value={currentPassword} onChange={e=>setCurrentPassword(e.target.value)} disabled={busy}/></label><label>新密码<input required type="password" minLength={8} maxLength={256} autoComplete="new-password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} disabled={busy}/></label><p className="subtle">修改后，本账号的设备需要重新登录。</p><button className="button" disabled={busy}>{busy?'保存中…':'修改密码'}</button>{error&&<p className="error" role="alert">{error}</p>}</form></section>;
 }
 function DeviceSettings({node,nodes,streams,login,onChanged}:{node:Device;nodes:Device[];streams:Stream[];login:Login;onChanged:()=>void}) {
   const [name,setName] = useState(node.deviceName); const [busy,setBusy] = useState(false); const [message,setMessage] = useState(''); const [error,setError] = useState('');

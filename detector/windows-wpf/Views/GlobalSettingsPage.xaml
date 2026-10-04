@@ -82,8 +82,10 @@
                 <StackPanel Margin="0,0,0,16" IsEnabled="{Binding CanEditAccount}">
                     <TextBlock Text="账号" Style="{StaticResource SectionLabel}" Margin="0,0,0,8"/>
                     <TextBlock Text="{Binding AccountText}" Style="{StaticResource BodyText}" Margin="0,0,0,8"/>
-                    <TextBlock Text="服务地址" Style="{StaticResource CaptionText}" Margin="0,0,0,4"/>
-                    <TextBox Text="{Binding ServiceAddress, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}" AutomationProperties.Name="服务地址" ToolTip="服务地址；局域网或隔离测试时修改" Margin="0,0,0,12"/>
+                    <StackPanel Visibility="{Binding AllowsTestEndpoint, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="隔离服务地址" Style="{StaticResource CaptionText}" Margin="0,0,0,4"/>
+                        <TextBox Text="{Binding ServiceAddress, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}" AutomationProperties.Name="隔离服务地址" Margin="0,0,0,12"/>
+                    </StackPanel>
                     <TextBlock Text="账号" Style="{StaticResource CaptionText}" Margin="0,0,0,4"/>
                     <TextBox Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}" AutomationProperties.Name="账号" Margin="0,0,0,12"/>
                     <TextBlock Text="密码" Style="{StaticResource CaptionText}" Margin="0,0,0,4"/>
@@ -115,7 +117,7 @@
                     </Grid>
                 </StackPanel>
 
-                <StackPanel Margin="0,0,0,16">
+                <StackPanel Margin="0,0,0,16" IsEnabled="{Binding CanEditDeviceName}">
                     <TextBlock Text="设备身份" Style="{StaticResource SectionLabel}" Margin="0,0,0,8"/>
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="64"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>

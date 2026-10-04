@@ -41,7 +41,9 @@ Windows 当前构建从统一目录根启动 `VisionGuard.Detector.Windows.exe`�
 
 ### 基础账号与客户端登录
 
-一个账号对应一套系统。管理员先构建服务，在服务停止时指定独立数据目录并创建账号；密码仅经环境变量或标准输入传入，不打印或写入公开配置：
+一个账号对应一套系统。统一服务自动初始化管理员 `xgwnje`，现有同名账号沿用密码；全新数据目录的随机初始密码保存在 `VISIONGUARD_DATA_DIR/initial-administrator.json`，仅在私有环境查看，不上传或写入公开配置。已有有效管理员时不重新初始化。管理员从 Web 或 Android 控制台的“账号管理”创建账号、启用/禁用、重置密码与设置管理员权限；至少保留一个启用的管理员，禁用、重置密码和变更权限会撤销该账号会话。
+
+离线维护仍可在服务停止时指定独立数据目录使用 CLI；密码仅经环境变量或标准输入传入：
 
 ```powershell
 $env:VISIONGUARD_DATA_DIR = '<absolute-private-data-directory>'
@@ -54,7 +56,7 @@ Remove-Item Env:VISIONGUARD_ACCOUNT_PASSWORD
 
 Web 打开同服务 `/console/` 输入账号密码；Android 和 Windows 登录同一账号，设备自动登记，驻留自动获得主节点子会话。Web 会话在页面内存，Android 用 Keystore、Windows 用 DPAPI 保存会话，不保存密码。退出、改密和解绑会撤销相关会话。Web 节点详情可改名、解绑及选择镜头目标；账号内只有一个推理节点时自动关联。
 
-公网使用 HTTPS/WSS；局域网和模拟器测试允许私有地址 HTTP/WS，当前 Android 测试包也支持该入口。登录页可更改服务地址，不能把生产服务与测试账号库混用。统一时间与通知范围均按账号保存，历史不触发声音。
+Release 内置正式地址 `https://visionguard.xgwnje.cn`，登录只填写账号密码，初始设备名称由服务自动生成，进入程序后再修改。Android Debug 与 Windows Debug/显式隔离配置才允许填写测试地址；旧 Android 隔离会话在 Release 中不使用。Web 使用当前页面同源服务。测试不得混用正式账号库；统一时间与通知范围均按账号保存，历史不触发声音。
 
 ### 本机隔离测试
 

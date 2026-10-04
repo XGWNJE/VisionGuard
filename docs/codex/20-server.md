@@ -14,7 +14,9 @@
 
 Windows 登录自动获得同设备 ID 的 `windows-resident` 子会话，角色为 `lifecycle / resident / windows`。主会话退出、轮换、到期或设备解绑同时使子会话失效；独立刷新子会话仍保留主会话约束。平台是身份信息，权限由服务端组件映射决定。
 
-账号通过根目录 `scripts/provision-account.js <username>` 创建，无公开注册入口。必须指定私有 `VISIONGUARD_DATA_DIR`；密码只通过 `VISIONGUARD_ACCOUNT_PASSWORD` 临时环境变量或标准输入传入。CLI 与服务共用单进程 JSON 存储，应停止对应服务后创建账号再启动，操作入口见[运维](60-operations.md)。密码使用随机盐与 scrypt，磁盘会话只保存 token 哈希；有效期为 30 天。
+启动时初始化管理员 `xgwnje`：已有账号保留密码；全新数据目录生成随机密码，写入私有 `initial-administrator.json`，不输出凭据。有有效管理员时不重复初始化。管理员在 Web 或 Android 控制台创建账号、启用/禁用、重置密码及设置管理员权限；接口要求管理员账号的控制台会话，普通账号和检测/通知组件不能管理账号。至少保留一个启用的管理员。禁用、重置密码或变更权限撤销目标账号全部会话和连接。
+
+无公开注册入口。维护 CLI `scripts/provision-account.js <username>` 仍可在服务停止后使用；密码仅经临时环境变量或标准输入，操作见[运维](60-operations.md)。密码使用随机盐与 scrypt，磁盘会话只保存 token 哈希；有效期为 30 天。默认设备名称与持久化序号遵循[命名规范](15-component-naming.md)。
 
 HTTP 使用 `Authorization: Bearer <token>`；`/ws` 的首条消息为 `{type:'auth',token}`。认证结果包含账号、设备身份、组件、`maxSources` 和账号的 `timeStandard`。客户端自称的身份字段不参与权限判断，同角色同设备的新连接替换旧连接。
 
@@ -70,6 +72,7 @@ VISIONGUARD_DATA_DIR/
 - `/console/`：同源 Web 控制台，需要真实账号登录。
 - `/api/account/login`、`session`、`refresh`、`logout`、`password`：登录、读取会话、轮换、退出、改密。
 - `/api/devices` 及 `/:deviceId`：账号设备列表、改名、解绑。
+- `/api/admin/accounts`：管理员控制台读取和创建账号；`PATCH /api/admin/accounts/:accountId` 设置启用状态、密码和管理员权限。响应只含账号元数据，不含密码、盐或凭据。
 - `/api/streams` 和 `/api/streams/bind`：账号媒体列表与绑定。
 - `/api/alerts`、`/api/alert`、`/screenshots/*`：鉴权历史、可选上传和截图。
 - `/ws`、`/media/ws`：控制和媒体 WS。

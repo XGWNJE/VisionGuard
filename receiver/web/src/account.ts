@@ -4,7 +4,7 @@ export type Login = {
   token: string;
   expiresAt: string;
   channel: string;
-  account: { accountId: string; username: string };
+  account: { accountId: string; username: string; isAdmin?: boolean };
   device: Identity & { deviceName: string; component: string };
 };
 
@@ -41,7 +41,7 @@ export async function accountRequest<T>(path: string, token?: string, body?: unk
     const unauthorizedMessage = path === '/api/account/login' ? '账号或密码不正确'
       : path === '/api/account/password' && data.error === 'Current password is incorrect' ? '当前密码不正确'
       : '登录已失效，请重新登录';
-    const messages: Record<number,string> = { 401:unauthorizedMessage, 403:'没有权限操作此设备', 404:'设备或关联目标不存在', 429:'尝试过于频繁，请稍后重试' };
+    const messages: Record<number,string> = { 401:unauthorizedMessage, 403:'没有权限执行此操作', 404:'账号、设备或关联目标不存在', 409:data.error === 'The last active administrator must be retained' ? '必须保留至少一个启用的管理员' : '账号已存在', 429:'尝试过于频繁，请稍后重试' };
     throw new AccountRequestError(response.status, messages[response.status] || (response.status >= 500 ? '服务暂不可用' : '请检查填写内容后重试'));
   }
   return data as T;

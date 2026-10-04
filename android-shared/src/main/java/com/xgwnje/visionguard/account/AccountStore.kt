@@ -53,7 +53,7 @@ import javax.crypto.spec.GCMParameterSpec
 
 data class AccountSession(val endpoint: String, val token: String, val expiresAt: String,
     val accountId: String, val username: String, val deviceId: String, val deviceName: String,
-    val component: String) {
+    val component: String, val isAdmin: Boolean = false) {
     val webSocketUrl: String get() = endpoint.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://") + "/ws"
     val mediaUrl: String get() = endpoint.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://") + "/media/ws"
     val scope: String get() = "$endpoint|$accountId|$deviceId"
@@ -79,16 +79,13 @@ private fun Modifier.accountAutofill(type: AutofillType, onFill: (String) -> Uni
 }
 
 /** Passwords only exist in the login request; saved bearer sessions are encrypted by Android Keystore. */
-class AccountStore private constructor(private val prefs: android.content.SharedPreferences) {
+class AccountStore private constructor(private val prefs: android.content.SharedPreferences, val allowsTestEndpoint: Boolean) {
     private val http = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build()
     private val lock = Mutex()
     private val mutableSession = MutableStateFlow(readSaved())
     val session = mutableSession.asStateFlow()
-    val savedEndpoint: String get() = prefs.getString("endpoint", DEFAULT_ENDPOINT) ?: DEFAULT_ENDPOINT
+    val savedEndpoint: String get() = if (allowsTestEndpoint) prefs.getString("endpoint", DEFAULT_ENDPOINT) ?: DEFAULT_ENDPOINT else DEFAULT_ENDPOINT
     private fun deviceKey(endpoint: String, username: String, component: String) = "device:$endpoint:${username.trim().lowercase(Locale.ROOT)}:$component"
-    fun rememberedDeviceName(endpoint: String, username: String, component: String, fallback: String): String = runCatching {
-        prefs.getString(deviceKey(normalizeEndpoint(endpoint), username, component) + ":name", fallback) ?: fallback
-    }.getOrDefault(fallback)
 
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -99,6 +96,7 @@ class AccountStore private constructor(private val prefs: android.content.Shared
         }.generateKey()
     }
     private fun readSaved(): AccountSession? = runCatching {
+        if (!allowsTestEndpoint && prefs.getString("endpoint", DEFAULT_ENDPOINT) != DEFAULT_ENDPOINT) return null
         val encrypted = prefs.getString("encrypted", null) ?: return null
         val bytes = Base64.decode(encrypted, Base64.NO_WRAP)
         require(bytes.size > 12)
@@ -111,7 +109,7 @@ class AccountStore private constructor(private val prefs: android.content.Shared
         val device = body.getJSONObject("device")
         return AccountSession(endpoint, body.getString("token"), body.getString("expiresAt"),
             account.getString("accountId"), account.getString("username"),
-            device.getString("deviceId"), device.getString("deviceName"), device.getString("component"))
+            device.getString("deviceId"), device.getString("deviceName"), device.getString("component"), account.optBoolean("isAdmin"))
     }
     @Synchronized private fun save(body: JSONObject, endpoint: String): AccountSession {
         val value = parse(body, endpoint)
@@ -124,14 +122,14 @@ class AccountStore private constructor(private val prefs: android.content.Shared
         mutableSession.value = value
         return value
     }
-    suspend fun login(endpoint: String, username: String, password: String, component: String, name: String): AccountSession =
+    suspend fun login(endpoint: String, username: String, password: String, component: String): AccountSession =
         lock.withLock { withContext(Dispatchers.IO) {
-            val base = normalizeEndpoint(endpoint)
+            val base = if (allowsTestEndpoint) normalizeEndpoint(endpoint) else DEFAULT_ENDPOINT
             val user = username.trim().lowercase(Locale.ROOT)
             require(user.isNotBlank() && password.isNotBlank()) { "请输入账号和密码" }
             val idKey = deviceKey(base, user, component)
             val existingId = prefs.getString(idKey, null)
-            val body = JSONObject().put("username", user).put("password", password).put("component", component).put("deviceName", name.trim().ifBlank { name })
+            val body = JSONObject().put("username", user).put("password", password).put("component", component).put("deviceCode", android.os.Build.DEVICE)
             if (existingId != null) body.put("deviceId", existingId)
             val response = try { call(base, "/api/account/login", "POST", body) }
                 catch (e: AccountHttpException) {
@@ -159,13 +157,29 @@ class AccountStore private constructor(private val prefs: android.content.Shared
     suspend fun changePassword(currentPassword: String, newPassword: String) {
         request("/api/account/password", "POST", JSONObject().put("currentPassword", currentPassword).put("newPassword", newPassword))
     }
+    suspend fun refreshIdentity() = lock.withLock { withContext(Dispatchers.IO) {
+        val current = mutableSession.value ?: return@withContext
+        val body = call(current.endpoint, "/api/account/session", "GET", null, current.token).put("token", current.token)
+        saveIfCurrent(body, current)
+    } }
+    suspend fun renameDevice(name: String) = lock.withLock { withContext(Dispatchers.IO) {
+        val current = mutableSession.value ?: error("登录已失效，请重新登录")
+        val trimmed = name.trim()
+        require(trimmed.isNotEmpty() && trimmed.length <= 64 && trimmed.none { it.code < 32 }) { "名称须为 1–64 个字符" }
+        call(current.endpoint, "/api/devices/${current.deviceId}", "PATCH", JSONObject().put("deviceName", trimmed), current.token)
+        val body = call(current.endpoint, "/api/account/session", "GET", null, current.token).put("token", current.token)
+        saveIfCurrent(body, current)
+    } }
+    @Synchronized private fun saveIfCurrent(body: JSONObject, expected: AccountSession) {
+        if (mutableSession.value?.token == expected.token && mutableSession.value?.scope == expected.scope) save(body, expected.endpoint)
+    }
     suspend fun updateDevice(device: JSONObject) = lock.withLock { withContext(Dispatchers.IO) {
         val current = mutableSession.value ?: return@withContext
         if (device.optString("deviceId") != current.deviceId) return@withContext
         val name = device.optString("deviceName").takeIf { it.isNotBlank() } ?: return@withContext
         if (name == current.deviceName) return@withContext
         save(JSONObject().put("token", current.token).put("expiresAt", current.expiresAt)
-            .put("account", JSONObject().put("accountId", current.accountId).put("username", current.username))
+            .put("account", JSONObject().put("accountId", current.accountId).put("username", current.username).put("isAdmin", current.isAdmin))
             .put("device", JSONObject().put("deviceId", current.deviceId).put("deviceName", name).put("component", current.component)), current.endpoint)
     } }
     @Synchronized fun clear() { check(prefs.edit().remove("encrypted").commit()); mutableSession.value = null }
@@ -183,6 +197,8 @@ class AccountStore private constructor(private val prefs: android.content.Shared
             if (!response.isSuccessful) throw AccountHttpException(response.code, when (response.code) {
                 401 -> if (path == "/api/account/password") "当前密码不正确或登录已失效" else "账号、密码错误或登录已失效"
                 429 -> "请求过于频繁，请稍后重试"
+                403 -> "没有权限执行此操作"
+                409 -> "账号已存在，或必须保留至少一个启用的管理员"
                 else -> "服务暂时不可用（${response.code}）"
             })
             val result = JSONObject(response.body?.string() ?: error("服务返回空响应"))
@@ -198,7 +214,7 @@ class AccountStore private constructor(private val prefs: android.content.Shared
             .take(12).joinToString("") { "%02x".format(it) }
         private const val KEY_ALIAS = "visionguard-account-session-v1"
         @Volatile private var instance: AccountStore? = null
-        fun get(context: Context): AccountStore = instance ?: synchronized(this) { instance ?: AccountStore(context.applicationContext.getSharedPreferences("account_session", Context.MODE_PRIVATE)).also { instance = it } }
+        fun get(context: Context): AccountStore = instance ?: synchronized(this) { instance ?: AccountStore(context.applicationContext.getSharedPreferences("account_session", Context.MODE_PRIVATE), context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0).also { instance = it } }
         fun normalizeEndpoint(value: String): String {
             val base = value.trim().trimEnd('/')
             val uri = URI(base)
@@ -220,12 +236,10 @@ fun AccountLogin(store: AccountStore, title: String, component: String, beforeLo
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var endpoint by remember { mutableStateOf(store.savedEndpoint) }
-    var name by remember { mutableStateOf(title) }
     var advanced by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(username, endpoint) { name = store.rememberedDeviceName(endpoint, username, component, title) }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Spacer(Modifier.height(24.dp))
@@ -233,14 +247,15 @@ fun AccountLogin(store: AccountStore, title: String, component: String, beforeLo
         Text("登录同一账号，自动关联这套系统中的设备。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedTextField(username, { username = it }, label = { Text("账号") }, singleLine = true, modifier = Modifier.fillMaxWidth().accountAutofill(AutofillType.Username) { if (!busy) username = it }, enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next))
         OutlinedTextField(password, { password = it }, label = { Text("密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth().accountAutofill(AutofillType.Password) { if (!busy) password = it }, enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next))
-        OutlinedTextField(name, { name = it }, label = { Text("本机名称") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer))
-        TextButton({ advanced = !advanced }, enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text(if (advanced) "收起测试设置" else "服务与局域网测试设置") }
-        if (advanced) OutlinedTextField(endpoint, { endpoint = it }, label = { Text("服务地址") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
+        if (store.allowsTestEndpoint) {
+            TextButton({ advanced = !advanced }, enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text(if (advanced) "收起测试设置" else "隔离测试设置") }
+            if (advanced) OutlinedTextField(endpoint, { endpoint = it }, label = { Text("隔离服务地址") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
+        }
         message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Button(onClick = {
             busy = true; message = null
             scope.launchAccount {
-                try { beforeLogin(); store.login(endpoint, username, password, component, name); password = "" }
+                try { beforeLogin(); store.login(endpoint, username, password, component); password = "" }
                 catch (e: Exception) { message = e.message?.take(160) ?: "无法登录，请检查网络" }
                 finally { busy = false }
             }
@@ -263,6 +278,12 @@ fun AccountHeader(store: AccountStore, session: AccountSession, beforeLogout: su
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
+    var deviceName by remember(session.deviceName) { mutableStateOf(session.deviceName) }
+    var managingAccounts by remember { mutableStateOf(false) }
+    LaunchedEffect(menuOpen, session.token) {
+        if (menuOpen) runCatching { store.refreshIdentity() }
+    }
     Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -283,11 +304,29 @@ fun AccountHeader(store: AccountStore, session: AccountSession, beforeLogout: su
                 Text(session.username, style = MaterialTheme.typography.titleSmall)
                 Text(session.deviceName, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                if (session.isAdmin && session.component == "android-console") TextButton({ menuOpen = false; managingAccounts = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton()) { Text("账号管理") }
+                TextButton({ menuOpen = false; error = null; renaming = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text("本机名称") }
                 TextButton({ menuOpen = false; oldPassword = ""; newPassword = ""; error = null; editing = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text("修改密码") }
                 TextButton({ menuOpen = false; scope.launchAccount { beforeLogout(); store.logout() } }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text("退出") }
             }
         },
         confirmButton = { TextButton({ menuOpen = false }, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text("关闭") } }
+    )
+    if (managingAccounts) AccountManagement(store, session, onClose = { managingAccounts = false })
+    if (renaming) AlertDialog(
+        onDismissRequest = { if (!busy) renaming = false }, shape = MaterialTheme.shapes.large,
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = { Text("本机名称", style = MaterialTheme.typography.titleMedium) },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(deviceName, { deviceName = it }, label = { Text("设备名称") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField())
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        } },
+        confirmButton = { TextButton({ busy = true; error = null; scope.launchAccount {
+            try { store.renameDevice(deviceName); renaming = false }
+            catch (e: Exception) { error = e.message?.take(160) ?: "名称保存失败" }
+            finally { busy = false }
+        } }, enabled = !busy && deviceName.isNotBlank(), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton()) { Text(if (busy) "保存中…" else "保存") } },
+        dismissButton = { TextButton({ renaming = false; deviceName = session.deviceName }, enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton()) { Text("取消") } }
     )
     if (editing) Dialog(
         onDismissRequest = { if (!busy) editing = false },

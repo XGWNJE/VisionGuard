@@ -14,6 +14,8 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private string _serviceAddress = AccountSession.ServiceUrl, _username = "", _password = "", _loginMessage = "";
         private bool _isChangingAccount, _isRefreshing, _isLoginError;
         public bool CanEditAccount => !_isChangingAccount;
+        public bool AllowsTestEndpoint => AccountSession.AllowsTestEndpoint;
+        public bool CanEditDeviceName => AccountSession.Current != null && !_isChangingAccount;
         public string ServiceAddress { get => _serviceAddress; set => SetProperty(ref _serviceAddress, value); }
         public string Username { get => _username; set => SetProperty(ref _username, value); }
         public string Password { get => _password; set => SetProperty(ref _password, value); }
@@ -118,6 +120,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             Username = AccountSession.Current?.account.username ?? "";
             if (AccountSession.Current != null) DeviceName = AccountSession.Current.device.deviceName;
             OnPropertyChanged(nameof(AccountText));
+            OnPropertyChanged(nameof(CanEditDeviceName));
         }
 
         public void Save()
@@ -142,27 +145,27 @@ namespace VisionGuard.Detector.Windows.ViewModels
             LoginCommand = new RelayCommand(async () =>
             {
                 if (_isChangingAccount) return;
-                _isChangingAccount = true; OnPropertyChanged(nameof(CanEditAccount)); IsLoginError = false; LoginMessage = "正在登录…";
+                _isChangingAccount = true; OnPropertyChanged(nameof(CanEditAccount)); OnPropertyChanged(nameof(CanEditDeviceName)); IsLoginError = false; LoginMessage = "正在登录…";
                 try
                 {
                     AccountChanging?.Invoke(this, EventArgs.Empty);
-                    await Task.Run(() => AccountSession.Login(ServiceAddress, Username, Password, DeviceName));
+                    await Task.Run(() => AccountSession.Login(ServiceAddress, Username, Password, Environment.MachineName));
                     Password = ""; AccountChanged?.Invoke(this, EventArgs.Empty); LoginMessage = "登录成功";
                 }
                 catch (Exception ex) { SetLoginError(ex.Message); }
-                finally { _isChangingAccount = false; OnPropertyChanged(nameof(CanEditAccount)); OnPropertyChanged(nameof(AccountText)); }
+                finally { _isChangingAccount = false; OnPropertyChanged(nameof(CanEditAccount)); OnPropertyChanged(nameof(CanEditDeviceName)); OnPropertyChanged(nameof(AccountText)); }
             });
             LogoutCommand = new RelayCommand(async () =>
             {
                 if (_isChangingAccount) return;
-                _isChangingAccount = true; OnPropertyChanged(nameof(CanEditAccount)); IsLoginError = false; LoginMessage = "正在退出登录…";
+                _isChangingAccount = true; OnPropertyChanged(nameof(CanEditAccount)); OnPropertyChanged(nameof(CanEditDeviceName)); IsLoginError = false; LoginMessage = "正在退出登录…";
                 try
                 {
                     AccountChanging?.Invoke(this, EventArgs.Empty); _serverPushService.Disconnect();
                     await Task.Run(AccountSession.Logout); LoginMessage = "已退出登录";
                 }
                 catch (Exception ex) { SetLoginError("本机已退出；服务撤销未确认：" + ex.Message); }
-                finally { _isChangingAccount = false; OnPropertyChanged(nameof(CanEditAccount)); AccountChanged?.Invoke(this, EventArgs.Empty); Password = ""; OnPropertyChanged(nameof(AccountText)); }
+                finally { _isChangingAccount = false; OnPropertyChanged(nameof(CanEditAccount)); OnPropertyChanged(nameof(CanEditDeviceName)); AccountChanged?.Invoke(this, EventArgs.Empty); Password = ""; OnPropertyChanged(nameof(AccountText)); }
             });
 
             RetryCommand = new RelayCommand(() =>

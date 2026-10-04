@@ -8,7 +8,7 @@ VisionGuard 由检测节点、统一服务和控制台协作。视觉节点在 W
 
 [使用方式](#使用方式) · [快速开始](#快速开始) · [当前组件](#当前组件) · [路线规划](#路线规划) · [文档与许可](#文档与许可)
 
-[![Version](https://img.shields.io/badge/version-0.5.2-1f6feb)](./VERSION) [![License](https://img.shields.io/badge/license-MIT-7c3aed)](./LICENSE)
+[![Version](https://img.shields.io/badge/version-0.6.0-1f6feb)](./VERSION) [![License](https://img.shields.io/badge/license-MIT-7c3aed)](./LICENSE)
 
 </div>
 
@@ -18,7 +18,7 @@ VisionGuard 由检测节点、统一服务和控制台协作。视觉节点在 W
 
 **适合**需要在自己的设备上运行视觉检测，并在手机、平板或电脑上管理节点，在 Android 通知节点中接警的个人或团队。
 
-**当前边界**：0.5.2 包含基础账号与实时相机推流节点；设备、视频、控制和事件按账号隔离。连接状态不等于通知收件确认，通知收件确认不等于声音播放。漏报风险是检测效果与故障处置的最高优先级，人员检测以 `person` 类验证。安装与升级见[发行说明](./docs/releases/v0.5.2.md)，实机覆盖见[验证报告](./docs/codex/90-verification-report.md)。
+**当前边界**：0.6.0 提供管理员账号管理、自动设备命名与实时相机推流节点；设备、视频、控制和事件按账号隔离。连接状态不等于通知收件确认，通知收件确认不等于声音播放。漏报风险是检测效果与故障处置的最高优先级，人员检测以 `person` 类验证。安装与升级见[发行说明](./docs/releases/v0.6.0.md)，实机覆盖见[验证报告](./docs/codex/90-verification-report.md)。
 
 1. 各组件登录同一账号后自动登记和匹配；相机推流节点以前台摄像头采集画面，经服务交给 Windows 视觉节点推理，也可继续使用本地屏幕或窗口来源。
 2. 视觉节点把告警、截图和状态发往统一服务；所有公网业务数据统一通过统一服务转发，不使用 P2P、ICE、STUN 或 TURN。正式服务地址为 `https://visionguard.xgwnje.cn`。
@@ -28,9 +28,9 @@ Windows 发行包使用统一目录：从目录根启动 `VisionGuard.Detector.W
 
 ## 快速开始
 
-[客户端发行包](https://github.com/XGWNJE/VisionGuard/releases/tag/v0.5.2) · [线上控制台](https://visionguard.xgwnje.cn/console/) · [发行说明](./docs/releases/v0.5.2.md)
+[客户端发行包](https://github.com/XGWNJE/VisionGuard/releases/tag/v0.6.0) · [线上控制台](https://visionguard.xgwnje.cn/console/) · [发行说明](./docs/releases/v0.6.0.md)
 
-管理员先创建账号，各组件填写正式服务地址 `https://visionguard.xgwnje.cn` 并登录同一账号。开发验收使用当前源码构建及[隔离测试入口](./docs/codex/60-operations.md#本机隔离测试)。
+各组件的发行版内置正式服务地址，只需登录同一账号；进入程序后可修改自动生成的本机名称。初始管理员为 `xgwnje`，已有账号沿用密码；全新服务的随机初始密码仅存私有数据目录，见[账号管理](./docs/codex/60-operations.md#基础账号与客户端登录)。管理员可在控制台创建账号、禁用账号、重置密码及设置权限。开发验收使用[隔离测试入口](./docs/codex/60-operations.md#本机隔离测试)。
 
 以下命令从仓库根目录运行，用于验证源码和构建产物。需要 Windows、PowerShell、Node.js 22.18 或以上及 npm；构建 Windows 端还需支持 C# 12 的 .NET SDK。客户端服务配置见[运维文档](./docs/codex/60-operations.md#配置与服务边界)。
 

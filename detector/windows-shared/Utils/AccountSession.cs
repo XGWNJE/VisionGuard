@@ -56,6 +56,17 @@ namespace VisionGuard.Detector.Windows.Utils
         {
             get { return !string.Equals(Path.GetFullPath(Root).TrimEnd(Path.DirectorySeparatorChar), Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionGuard", "accounts")).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase); }
         }
+        public static bool AllowsTestEndpoint
+        {
+            get
+            {
+#if DEBUG
+                return true;
+#else
+                return IsIsolated;
+#endif
+            }
+        }
         public static string InstanceSuffix { get { return IsIsolated ? "." + Hash(Path.GetFullPath(Root)).Substring(0, 16) : ""; } }
         public static string ApplicationId { get { return "Detector" + InstanceSuffix; } }
         public static string ResidentMutexName { get { return @"Local\VisionGuard.Resident.SingleInstance" + InstanceSuffix; } }
@@ -136,7 +147,7 @@ namespace VisionGuard.Detector.Windows.Utils
         {
             lock (Sync)
             {
-                _serviceUrl = Environment.GetEnvironmentVariable("VISIONGUARD_SERVER_URL");
+                _serviceUrl = AllowsTestEndpoint ? Environment.GetEnvironmentVariable("VISIONGUARD_SERVER_URL") : ProductionUrl;
                 if (string.IsNullOrWhiteSpace(_serviceUrl))
                 {
                     string endpoint = Path.Combine(Root, "endpoint.txt");
@@ -191,14 +202,14 @@ namespace VisionGuard.Detector.Windows.Utils
                 return value;
             }
         }
-        public static AccountSnapshot Login(string serviceUrl, string username, string password, string deviceName)
+        public static AccountSnapshot Login(string serviceUrl, string username, string password, string deviceCode)
         {
             lock (Sync)
             {
                 var previousService = ServiceUrl; var previousCurrent = _current;
                 try
                 {
-                    _serviceUrl = NormalizeUrl(serviceUrl); _loaded = true;
+                    _serviceUrl = AllowsTestEndpoint ? NormalizeUrl(serviceUrl) : ProductionUrl; _loaded = true;
                     using (var sessionLock = new SessionWriteLock())
                     {
                         var previous = Read();
@@ -206,13 +217,12 @@ namespace VisionGuard.Detector.Windows.Utils
                         string rememberedId;
                         RememberedDevices().TryGetValue(normalizedUser, out rememberedId);
                         if (string.IsNullOrWhiteSpace(rememberedId) && previous != null && string.Equals(previous.account.username, normalizedUser, StringComparison.OrdinalIgnoreCase)) rememberedId = previous.device.deviceId;
-                        var body = new Dictionary<string, object> { ["username"] = normalizedUser, ["password"] = password, ["component"] = "windows-inference" };
+                        var body = new Dictionary<string, object> { ["username"] = normalizedUser, ["password"] = password, ["component"] = "windows-inference", ["deviceCode"] = deviceCode };
                         if (!string.IsNullOrWhiteSpace(rememberedId)) body["deviceId"] = rememberedId;
-                        else body["deviceName"] = deviceName;
                         try { _current = RequestSession("/api/account/login", body, null); }
                         catch (DeviceRegistrationRejectedException) when (body.ContainsKey("deviceId"))
                         {
-                            body.Remove("deviceId"); body["deviceName"] = deviceName;
+                            body.Remove("deviceId");
                             _current = RequestSession("/api/account/login", body, null);
                         }
                         RememberDevice(normalizedUser, _current.device.deviceId);

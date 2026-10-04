@@ -13,7 +13,11 @@ export class AccountFixture {
       for (const item of names) {
         if (this.sessions.has(item.name)) continue;
         const component = item.component === 'windows-resident' ? 'windows-inference' : item.component;
-        this.sessions.set(item.name, await accountStore.login({ username, password, component, deviceName: item.name }));
+        const session = await accountStore.login({ username, password, component, deviceCode: 'fixture' });
+        accountStore.rename(session.account.accountId, session.device.deviceId, item.name);
+        session.device.deviceName = item.name;
+        if (session.resident) session.resident.device.deviceName = item.name;
+        this.sessions.set(item.name, session);
       }
     })();
   }

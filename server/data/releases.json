@@ -1,26 +1,26 @@
 {
     "wpf":  {
-                "version":  "0.5.2",
-                "url":  "/releases/VisionGuard-WPF-v0.5.2.zip",
-                "size":  18128664,
-                "sha256":  "7F12E5BB398585FA0E3AEEB33A3B9A467FD111049E8C754E3ED17DC773714F63"
+                "version":  "0.6.0",
+                "url":  "/releases/VisionGuard-WPF-v0.6.0.zip",
+                "size":  18129264,
+                "sha256":  "028BF02F60F0D88E6E57C14271BA058907D00614E995CA5CC07C455922F43177"
             },
     "android-detector":  {
-                             "version":  "0.5.2",
-                             "url":  "/releases/VisionGuard-Detector-v0.5.2.apk",
-                             "size":  11987939,
-                             "sha256":  "E5EE249E8925848794964D0B229257EE8DD6FD182A6F88A140C094336762C2A6"
+                             "version":  "0.6.0",
+                             "url":  "/releases/VisionGuard-Detector-v0.6.0.apk",
+                             "size":  12004323,
+                             "sha256":  "D9047448BEB5317773E931C9A9F4725F6DE752B422CBB5C8252BA926489BD29D"
                          },
     "android-receiver":  {
-                             "version":  "0.5.2",
-                             "url":  "/releases/VisionGuard-Receiver-v0.5.2.apk",
-                             "size":  11705077,
-                             "sha256":  "35EE7A2C96DBDFAC48C92DDEC205C246F5F16CE88E3B30A715B86EF1020DC693"
+                             "version":  "0.6.0",
+                             "url":  "/releases/VisionGuard-Receiver-v0.6.0.apk",
+                             "size":  11737841,
+                             "sha256":  "245BCF6E055201A2B943B09F827A84595EBF3404AAEC29F4A3F500D390005792"
                          },
     "android-notifier":  {
-                             "version":  "0.5.2",
-                             "url":  "/releases/VisionGuard-Notifier-v0.5.2.apk",
-                             "size":  3005430,
-                             "sha256":  "2975AD5E491ED0E03D05DB55ED6C5181835035AFD601E1A90FE4F546BD3A40B0"
+                             "version":  "0.6.0",
+                             "url":  "/releases/VisionGuard-Notifier-v0.6.0.apk",
+                             "size":  3020202,
+                             "sha256":  "6C8029304C2B5CEC861713CF1FFA8D0A4416A3DB7A59593A1E2E03F40D214F44"
                          }
 }

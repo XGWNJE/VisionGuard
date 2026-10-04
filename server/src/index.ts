@@ -1,5 +1,5 @@
 // ┌─────────────────────────────────────────────────────────┐
-// │ index.ts  v0.5.2                                         │
+// │ index.ts  v0.6.0                                         │
 // │ 角色：服务器入口 — 组装 HTTP + WebSocket 服务器           │
 // │ 职责：加载配置 → 创建 Express app → 挂载路由 →           │
 // │       创建 HTTP server → 附加 WS server → 启动监听       │
@@ -22,6 +22,7 @@ import { cleanupExpiredAlerts } from './services/AlertStore';
 import screenshotRouter from './routes/screenshot';
 import updateRouter from './routes/update';
 import accountRouter from './routes/account';
+import { accountStore } from './services/AccountStore';
 import streamsRouter from './routes/streams';
 import { mediaRelay } from './services/MediaRelay';
 import { websocketLimits } from './services/WebSocketLimits';
@@ -31,6 +32,7 @@ import path from 'path';
 // ── Express app ────────────────────────────────────────────
 
 const app = express();
+accountStore.ensureAdministrator('xgwnje');
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '16kb' }));
 
@@ -112,7 +114,7 @@ cleanupScreenshots();
 startCleanupTimer();
 
 server.listen(config.port, config.host, () => {
-  console.log(`[server] 统一服务 v0.5.2 已启动`);
+  console.log(`[server] 统一服务 v0.6.0 已启动`);
   console.log(`[server] 隔离通道: ${config.channelId} / 数据目录: ${config.dataDir}`);
   console.log(`[server] HTTP + WS 监听地址: ${config.host}:${config.port}`);
   console.log(`[server] 截图模式: WebSocket 独立推送并备份；HTTP 上传${config.enableHttpScreenshotUpload ? '开启' : '关闭'}`);

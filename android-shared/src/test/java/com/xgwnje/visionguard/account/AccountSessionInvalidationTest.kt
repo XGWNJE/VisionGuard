@@ -15,6 +15,26 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class AccountSessionInvalidationTest {
+    @Test fun releasePinsProductionAndRejectsPreviouslySavedIsolatedSession() {
+        var encryptedReads = 0
+        val prefs = Proxy.newProxyInstance(javaClass.classLoader, arrayOf(SharedPreferences::class.java)) { _, method, args ->
+            check(method.name == "getString")
+            when (args[0]) {
+                "endpoint" -> "http://127.0.0.1:3173"
+                "encrypted" -> { encryptedReads++; "test-ciphertext" }
+                else -> args[1]
+            }
+        } as SharedPreferences
+        val constructor = AccountStore::class.java.getDeclaredConstructor(SharedPreferences::class.java, java.lang.Boolean.TYPE).apply { isAccessible = true }
+        val release = constructor.newInstance(prefs, false)
+        assertEquals(AccountStore.DEFAULT_ENDPOINT, release.savedEndpoint)
+        assertNull(release.session.value)
+        assertEquals("An isolated credential must not be decoded as a production session", 0, encryptedReads)
+        val debug = constructor.newInstance(prefs, true)
+        assertEquals("http://127.0.0.1:3173", debug.savedEndpoint)
+        assertEquals(1, encryptedReads)
+    }
+
     @Test fun delayedUnauthorizedResponseOnlyClearsItsCurrentCredential() {
         listOf("current", "rotated", "other-service").forEach { scenario ->
             val arrived = CountDownLatch(1)
@@ -51,7 +71,7 @@ class AccountSessionInvalidationTest {
                         else -> error("Unexpected preferences read: ${method.name}")
                     }
                 } as SharedPreferences
-                val store = AccountStore::class.java.getDeclaredConstructor(SharedPreferences::class.java).apply { isAccessible = true }.newInstance(prefs)
+                val store = AccountStore::class.java.getDeclaredConstructor(SharedPreferences::class.java, java.lang.Boolean.TYPE).apply { isAccessible = true }.newInstance(prefs, true)
                 @Suppress("UNCHECKED_CAST")
                 val sessions = AccountStore::class.java.getDeclaredField("mutableSession").apply { isAccessible = true }.get(store) as MutableStateFlow<AccountSession?>
                 val old = AccountSession("http://127.0.0.1:${server.localPort}", "old-token", "2099-01-01T00:00:00Z", "account", "user", "device", "Camera", "android-camera")

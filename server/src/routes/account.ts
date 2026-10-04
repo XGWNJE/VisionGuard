@@ -27,6 +27,21 @@ router.get('/api/account/session', accountAuth, (_req, res) => res.json(sessionR
 router.post('/api/account/refresh', accountAuth, (_req, res) => { try { res.json(sessionResponse(accountStore.refresh(res.locals.session))); } catch (error) { accountFailure(res, error); } });
 router.post('/api/account/logout', accountAuth, (_req, res) => { try { accountStore.logout(res.locals.session); res.json({ ok: true }); } catch (error) { accountFailure(res, error); } });
 router.post('/api/account/password', accountAuth, async (req, res) => { try { await accountStore.changePassword(res.locals.session, req.body?.currentPassword, req.body?.newPassword); res.json({ ok: true }); } catch (error) { accountFailure(res, error); } });
+router.use('/api/admin/accounts', accountAuth, (_req, res, next) => {
+  if (!res.locals.session.account.isAdmin || res.locals.session.device.role !== 'console') { res.status(403).json({ ok: false, error: 'Administrator console required' }); return; }
+  res.setHeader('Cache-Control', 'no-store'); next();
+});
+router.get('/api/admin/accounts', (_req, res) => res.json({ ok: true, accounts: accountStore.accounts() }));
+router.post('/api/admin/accounts', (req, res) => {
+  try {
+    if (req.body?.isAdmin !== undefined && typeof req.body.isAdmin !== 'boolean') throw new AccountError(400, 'Invalid account role');
+    const account = accountStore.createAccount(req.body?.username, req.body?.password, req.body?.isAdmin === true);
+    res.status(201).json({ ok: true, account });
+  } catch (error) { accountFailure(res, error); }
+});
+router.patch('/api/admin/accounts/:accountId', (req, res) => {
+  try { accountStore.manageAccount(String(req.params.accountId), req.body); res.json({ ok: true }); } catch (error) { accountFailure(res, error); }
+});
 router.get('/api/devices', accountAuth, (_req, res) => { res.setHeader('Cache-Control', 'no-store'); res.json({ ok: true, devices: accountDeviceList(res.locals.session) }); });
 router.patch('/api/devices/:deviceId', accountAuth, (req, res) => {
   try { accountStore.rename(res.locals.session.account.accountId, String(req.params.deviceId), req.body?.deviceName); res.json({ ok: true }); } catch (error) { accountFailure(res, error); }

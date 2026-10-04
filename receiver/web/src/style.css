@@ -197,8 +197,8 @@ button:active:not(:disabled) { filter: brightness(.88); }
   .app-shell { display: block; }
   .sidebar { height: auto; width: 100%; position: static; padding: 16px 16px 8px; border-right: 0; border-bottom: 1px solid var(--border); overflow: visible; }
   .brand span { display: inline; margin-left: 12px; }
-  nav { flex-direction: row; margin-top: 16px; gap: 4px; }
-  .nav-item { justify-content: center; gap: 4px; padding: 8px 4px; font-size: 14px; }
+  nav { flex-direction: row; margin-top: 16px; gap: 4px; overflow-x: auto; }
+  .nav-item { width: auto; flex: 1 0 auto; justify-content: center; gap: 4px; padding: 8px 4px; font-size: 14px; }
   .nav-item svg { width: 20px; height: 20px; }
   .nav-item span { white-space: nowrap; }
   .sidebar-footer { display: none; }
