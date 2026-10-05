@@ -312,3 +312,13 @@ test('文档审核工作流定时核验线上发布契约', () => {
   assert.match(workflow, /online-release-contract:/, 'the online contract job is missing');
   assert.match(workflow, /node scripts\/check-online-release-contract\.js/, 'the online contract command is missing');
 });
+
+test('both release entrypoints keep assets private until uploaded size and digest match',()=>{
+  const script=read('scripts/publish-release.ps1'), workflow=read('.github/workflows/release.yml');
+  assert.ok(script.indexOf("'--draft'") < script.indexOf("'release', 'upload'"));
+  assert.ok(script.indexOf('Assert-GitHubUploadedAssets -Artifacts') < script.indexOf("'--draft=false'"));
+  assert.match(script,/\$assets\[0\]\.digest -ne \$digest/);
+  assert.match(script,/already public.*Refuse to replace/);
+  assert.ok(workflow.indexOf('--draft \\') < workflow.indexOf('uploaded-release.json'));
+  assert.ok(workflow.indexOf('.[0].digest == $digest') < workflow.indexOf('--draft=false'));
+});

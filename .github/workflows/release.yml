@@ -75,19 +75,34 @@ jobs:
           echo "published:$published"
           echo "held back:${skipped:- none}"
 
-      - name: Create GitHub Release
+      - name: Draft, verify uploads, then publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
         run: |
+          set -euo pipefail
           if gh release view "v$VERSION" >/dev/null 2>&1; then
+            test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" --jq '.draft')" = true
             gh release edit "v$VERSION" \
+              --draft=true \
               --title "VisionGuard v$VERSION" \
               --notes-file "docs/releases/v$VERSION.md"
             gh release upload "v$VERSION" release-assets/* --clobber
           else
             gh release create "v$VERSION" release-assets/* \
+              --draft \
               --target "${{ github.sha }}" \
               --title "VisionGuard v$VERSION" \
               --notes-file "docs/releases/v$VERSION.md"
           fi
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" > uploaded-release.json
+          test "$(jq -r '.draft' uploaded-release.json)" = true
+          for file in release-assets/*; do
+            name="$(basename "$file")"
+            expected_size="$(stat -c%s "$file")"
+            expected_digest="sha256:$(sha256sum "$file" | cut -d' ' -f1)"
+            jq -e --arg name "$name" --arg digest "$expected_digest" --argjson size "$expected_size" \
+              '[.assets[] | select(.name == $name)] | length == 1 and .[0].state == "uploaded" and .[0].size == $size and .[0].digest == $digest' uploaded-release.json
+          done
+          test "$(jq '.assets | length' uploaded-release.json)" = "$(find release-assets -type f | wc -l)"
+          gh release edit "v$VERSION" --draft=false --prerelease=false --latest

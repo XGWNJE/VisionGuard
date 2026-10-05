@@ -1203,24 +1203,42 @@ function Invoke-GitHubSteps {
                 '--title', "VisionGuard v$Version",
                 '--notes-file', $notesPath,
                 '--verify-tag',
-                '--latest'
+                '--draft'
             )
         }
         else {
+            $existing = (Invoke-NativeCapture -FilePath 'gh' -Arguments @('api', "repos/$GitHubRepository/releases/tags/$tagName")) | ConvertFrom-Json
+            if (-not $existing.draft) { throw "Release $tagName is already public. Refuse to replace published assets; create a new version." }
             Invoke-Native -FilePath 'gh' -Arguments @(
                 'release', 'edit', $tagName,
                 '--repo', $GitHubRepository,
                 '--title', "VisionGuard v$Version",
                 '--notes-file', $notesPath,
-                '--draft=false',
-                '--prerelease=false',
-                '--latest'
+                '--draft=true',
+                '--prerelease=false'
             )
         }
         Invoke-Native -FilePath 'gh' -Arguments (@(
             'release', 'upload', $tagName,
             '--repo', $GitHubRepository
         ) + $assetPaths + @('--clobber'))
+        Assert-GitHubUploadedAssets -Artifacts $Artifacts -TagName $tagName
+        Invoke-Native -FilePath 'gh' -Arguments @('release', 'edit', $tagName, '--repo', $GitHubRepository, '--draft=false', '--prerelease=false', '--latest')
+    }
+}
+
+function Assert-GitHubUploadedAssets {
+    param([object[]]$Artifacts, [string]$TagName)
+    $release = (Invoke-NativeCapture -FilePath 'gh' -Arguments @('api', "repos/$GitHubRepository/releases/tags/$TagName")) | ConvertFrom-Json
+    if (-not $release.draft) { throw 'Upload verification requires a draft release.' }
+    $expectedNames = @($Artifacts | ForEach-Object { [IO.Path]::GetFileName($_.Path) })
+    foreach ($extra in @($release.assets | Where-Object { $expectedNames -notcontains $_.name })) { throw "Unexpected draft asset: $($extra.name)" }
+    foreach ($artifact in $Artifacts) {
+        $name = [IO.Path]::GetFileName($artifact.Path)
+        $assets = @($release.assets | Where-Object { $_.name -eq $name })
+        $size = (Get-Item -LiteralPath $artifact.Path).Length
+        $digest = 'sha256:' + (Get-Sha256 -Path $artifact.Path)
+        if ($assets.Count -ne 1 -or $assets[0].state -ne 'uploaded' -or $assets[0].size -ne $size -or $assets[0].digest -ne $digest) { throw "GitHub upload verification failed for $name; draft retained." }
     }
 }
 
