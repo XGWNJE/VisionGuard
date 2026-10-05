@@ -23,7 +23,7 @@ const roles = [
   ['错误文字 / 表面', 'error', 'error', 'DangerBrush'],
 ];
 const spec = new Map();
-for (const line of read('docs/design/unified-ui.md').split('\n')) {
+for (const line of read('docs/70-UI设计规范.md').split('\n')) {
   const cells = line.split('|').map(cell => cell.trim());
   if (cells.length < 5) continue;
   const colors = cells.slice(2, 4).map(cell => [...cell.matchAll(/#([0-9A-F]{6})\b/gi)].map(m => m[1].toUpperCase()));

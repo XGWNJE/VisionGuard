@@ -5,7 +5,7 @@ description: Build and verify one or more VisionGuard targets without packaging,
 
 # VisionGuard Build
 
-Compile the requested targets through the maintained project script and verify the expected artifacts exist. 组件名与构建目标的对应关系见 [命名规范](../../../../docs/codex/15-component-naming.md)。
+Compile the requested targets through the maintained project script and verify the expected artifacts exist. 组件名与构建目标的对应关系见 [命名规范](../../../../docs/15-命名规范.md)。
 
 ## Boundaries
 

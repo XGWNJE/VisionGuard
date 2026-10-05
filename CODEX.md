@@ -1,21 +1,30 @@
 # VisionGuard Codex Guide
 
-这是给 Codex/AI agent 的仓库导航，不维护第二套项目事实。先读[文档索引](docs/codex/00-index.md)和[项目规则](AGENTS.md)，再进入对应专题。
+这是给 Codex/AI agent 的仓库导航，不维护第二套项目事实。先读[文档索引](docs/00-文档索引.md)和[项目规则](AGENTS.md)，再进入对应专题。
 
 ## 专题文档
 
-- [项目概览](docs/codex/10-project-overview.md)：检测节点、统一服务与控制台的职责，仓库组件、独立通知节点与当前实现边界
-- [命名规范](docs/codex/15-component-naming.md)：中文名、英文名、简称、工程/包名、登录组件与构建更新标识
-- [统一服务](docs/codex/20-server.md)：统一服务当前职责、接口和协议角色
-- [Windows](docs/codex/30-windows-detector.md)：统一启动器、WPF 运行时和驻留程序
-- [模型资源](docs/codex/35-model-assets.md)：模型、类别映射和打包边界
-- [相机推流节点](docs/codex/40-android-detector.md)：前台摄像头与实时画面发送
-- [控制台与通知节点](docs/codex/50-android-receiver.md)
-- [运维](docs/codex/60-operations.md)：构建、验证和发布授权边界
-- [验证报告](docs/codex/90-verification-report.md)：证据、状态和未覆盖项
+- [05-路线图](docs/05-路线图.md)
+- [06-任务清单](docs/06-任务清单.md)
+- [10-当前架构](docs/10-当前架构.md)
+- [15-命名规范](docs/15-命名规范.md)
+- [20-统一服务](docs/20-统一服务.md)
+- [30-Windows视觉节点](docs/30-Windows视觉节点.md)
+- [35-模型资源](docs/35-模型资源.md)
+- [40-Android相机节点](docs/40-Android相机节点.md)
+- [50-控制台与通知节点](docs/50-控制台与通知节点.md)
+- [60-构建验证与发布](docs/60-构建验证与发布.md)
+- [70-UI设计规范](docs/70-UI设计规范.md)
+- [71-Android界面规范](docs/71-Android界面规范.md)
+- [90-验证记录](docs/90-验证记录.md)
+- [100-发行说明v0.5.2](docs/100-发行说明v0.5.2.md)
+- [101-发行说明v0.6.0](docs/101-发行说明v0.6.0.md)
+- [102-发行说明v4.4.4](docs/102-发行说明v4.4.4.md)
+- [103-发行说明v4.5.0](docs/103-发行说明v4.5.0.md)
+- [104-发行说明v4.5.1](docs/104-发行说明v4.5.1.md)
 
 ## 维护入口
 
 - 操作规则与授权边界：[AGENTS.md](AGENTS.md)。
-- 文档职责与维护检查：[文档索引](docs/codex/00-index.md#维护原则)。
-- 设计规范：[设计索引](docs/design/README.md)。
+- 文档职责与维护检查：[文档索引](docs/00-文档索引.md#维护原则)。
+- 设计规范：[设计索引](docs/00-文档索引.md)。

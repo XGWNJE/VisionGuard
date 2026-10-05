@@ -1,6 +1,9 @@
 # 相机推流节点
 
-`detector/android/` 是 **相机推流节点**，属于视觉节点类型（`visual`）。它在前台采集摄像头画面，经统一服务转发给账号内的 Windows 视觉节点；本机不加载模型、不执行目标推理或生成视觉报警。应用名与安装身份见[命名规范](15-component-naming.md)。
+负责：相机推流节点。不负责：其他模块事实、任务状态或重复验证记录。更新时机：该主题源码或约束变化时；历史发行说明只纠正事实，不随当前版本改写。
+
+
+`detector/android/` 是 **相机推流节点**，属于视觉节点类型（`visual`）。它在前台采集摄像头画面，经统一服务转发给账号内的 Windows 视觉节点；本机不加载模型、不执行目标推理或生成视觉报警。应用名与安装身份见[命名规范](15-命名规范.md)。
 
 ## 当前职责
 
@@ -17,7 +20,7 @@
 
 显示名为 **相机推流节点**，工程目录和包名仍是 `detector/android/` 与 `com.xgwnje.visionguard.detector`。服务器按登录组件 `android-camera` 分配 `detector / visual / android` 身份；摄像端声明 `video-publish` 能力，不声明本地推理、模型或参数控制能力。
 
-三个 Android 组件共用 [`android-shared/`](../../android-shared/) 的账号 HTTP、Keystore 加密会话、登录界面和主题。密码只用于登录请求；会话凭证保存在本机加密存储，退出后撤销服务会话。服务、账号和本机设备共同决定本地缓存分区，关闭系统备份。Release 内置正式服务地址，登录只填账号密码；Debug 才显示隔离测试设置，允许明确的私网 HTTP 地址。旧测试会话不会在 Release 中发往正式服务。默认设备名称遵循[命名规范](15-component-naming.md)，登录后在账号菜单修改本机名称。
+三个 Android 组件共用 [`android-shared/`](../android-shared) 的账号 HTTP、Keystore 加密会话、登录界面和主题。密码只用于登录请求；会话凭证保存在本机加密存储，退出后撤销服务会话。服务、账号和本机设备共同决定本地缓存分区，关闭系统备份。Release 内置正式服务地址，登录只填账号密码；Debug 才显示隔离测试设置，允许明确的私网 HTTP 地址。旧测试会话不会在 Release 中发往正式服务。默认设备名称遵循[命名规范](15-命名规范.md)，登录后在账号菜单修改本机名称。
 
 ## 媒体与推理边界
 
@@ -38,8 +41,8 @@
 - YUV 转换与规格限制：`stream/CameraFrameCodec.kt`、`stream/MediaPacket.kt`
 - 账号与统一主题：`android-shared/src/main/java/com/xgwnje/visionguard/account/`
 - 编译与签名：`detector/android/app/build.gradle.kts`；不限制为单一 ARM ABI，支持本机 x86_64 模拟器构建。
-- UI 规范：[Android 设计说明](../design/android-ui-guidelines.md)
+- UI 规范：[Android 设计说明](71-Android界面规范.md)
 
 ## 验证边界
 
-构建、模拟器链路与未覆盖项以[验证报告](90-verification-report.md)为准。模拟器的视频摄像头不证明真实老手机的功耗、镜头画质、厂商管理或硬件编码能力；镜头收到服务器确认也不等于完整报警链验收。
+构建、模拟器链路与未覆盖项以[验证报告](90-验证记录.md)为准。模拟器的视频摄像头不证明真实老手机的功耗、镜头画质、厂商管理或硬件编码能力；镜头收到服务器确认也不等于完整报警链验收。
