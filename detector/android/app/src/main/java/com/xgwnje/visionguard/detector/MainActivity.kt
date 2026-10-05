@@ -130,7 +130,8 @@ class MainActivity : ComponentActivity() {
                     try {
                         val now = SystemClock.elapsedRealtime()
                         val active = publisher
-                        if (own != cameraGeneration || !streaming || now < nextFrameAt || active == null) return@setAnalyzer
+                        if (own != cameraGeneration || !streaming || active == null) return@setAnalyzer
+                        if (now < nextFrameAt) { active.sampledOut(); return@setAnalyzer }
                         nextFrameAt = now + 200
                         if (!active.canPublish()) { active.dropped(); return@setAnalyzer }
                         val frame = CameraFrameCodec.encode(image, if (highResolution) 1280 else 640, if (highResolution) 720 else 480)
@@ -142,6 +143,7 @@ class MainActivity : ComponentActivity() {
                             runOnUiThread { if (own == cameraGeneration && streaming) preview = oriented }
                         }
                     } catch (_: Exception) {
+                        if (own == cameraGeneration) publisher?.dropped()
                         runOnUiThread { if (own == cameraGeneration) Toast.makeText(this, "画面处理失败，已跳过这一帧", Toast.LENGTH_SHORT).show() }
                     } finally { image.close() }
                 }
@@ -218,10 +220,10 @@ private fun CameraHome(state: PublisherState, preview: Bitmap?, streaming: Boole
             FlowRow(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("画面发送 ${state.sentFrames}", style = MaterialTheme.typography.labelLarge)
                 Text("服务确认 ${state.acknowledgedFrames}", style = MaterialTheme.typography.labelLarge)
-                Text("丢弃 ${state.droppedFrames}", style = MaterialTheme.typography.labelLarge)
+                Text("本机丢弃 ${state.droppedFrames} · 服务丢弃 ${state.relayDroppedFrames}", style = MaterialTheme.typography.labelLarge)
             }
         }
-        Text("服务确认表示视频已送达统一服务；检测结果请在控制台查看。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("发送数表示进入本机发送队列，服务收件不代表 Windows 已接收。主动未采样 ${state.sampledOutFrames} 帧。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

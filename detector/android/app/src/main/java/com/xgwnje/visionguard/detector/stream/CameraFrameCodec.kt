@@ -13,6 +13,8 @@ data class CameraFrame(val jpeg: ByteArray, val width: Int, val height: Int, val
 
 object CameraFrameCodec {
     fun encode(image: ImageProxy, longSide: Int, shortSide: Int): CameraFrame {
+        // 本机采样开始时间；不同相机的 sensor timestamp 时钟域不能猜测。
+        val sampledAt = SystemClock.elapsedRealtime()
         require(image.format == ImageFormat.YUV_420_888 && image.planes.size == 3)
         val width = image.width; val height = image.height
         val nv21 = ByteArray(width * height * 3 / 2)
@@ -38,7 +40,6 @@ object CameraFrameCodec {
             if (scaled !== original) scaled.recycle()
             original.recycle()
         }
-        val age = ((SystemClock.elapsedRealtimeNanos() - image.imageInfo.timestamp) / 1_000_000).takeIf { it in 0..2000 } ?: 0
-        return CameraFrame(jpeg, size.first, size.second, image.imageInfo.rotationDegrees, System.currentTimeMillis() - age)
+        return CameraFrame(jpeg, size.first, size.second, image.imageInfo.rotationDegrees, sampledAt)
     }
 }

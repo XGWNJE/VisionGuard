@@ -18,7 +18,8 @@ data class StreamTarget(val deviceId: String, val deviceName: String)
 data class CameraStream(val streamId: String, val targetDeviceId: String? = null, val sourceId: String? = null, val sourceName: String = "", val isStreaming: Boolean = false)
 data class PublisherState(val connected: Boolean = false, val status: String = "正在连接", val stream: CameraStream? = null,
     val targets: List<StreamTarget> = emptyList(), val targetsLoading: Boolean = true, val targetsLoadFailed: Boolean = false,
-    val sentFrames: Long = 0, val acknowledgedFrames: Long = 0, val droppedFrames: Long = 0)
+    val sentFrames: Long = 0, val acknowledgedFrames: Long = 0, val droppedFrames: Long = 0,
+    val relayDroppedFrames: Long = 0, val sampledOutFrames: Long = 0)
 
 class CameraPublisher(private val account: AccountStore) {
     private val mutableState = MutableStateFlow(PublisherState())
@@ -30,7 +31,10 @@ class CameraPublisher(private val account: AccountStore) {
     private var control: WebSocket? = null
     private var media: WebSocket? = null
     private var controlGeneration = 0
-    private var mediaGeneration = 0
+    @Volatile private var mediaGeneration = 0
+    private val mediaHealth = MediaLiveness()
+    private var lastMediaHeartbeat = 0L
+    private var mediaAuthenticated = false
     private var authenticated = false
     private var lastControlResponse = 0L
     private var controlOpenedAt = 0L
@@ -65,6 +69,13 @@ class CameraPublisher(private val account: AccountStore) {
                     if (wanted && media == null && current != null && now >= nextRetryAt) connectMedia(current)
                 }
                 if (credit.stalled(now)) { dropMedia(); nextRetryAt = now + 1000; update { it.copy(status = "画面发送超时，正在重连") } }
+                if (wanted && media != null) {
+                    if (mediaHealth.expired(now)) { dropMedia(); nextRetryAt = now + 1000; update { it.copy(status = "媒体无响应，正在重连") } }
+                    else if (mediaAuthenticated && now - lastMediaHeartbeat >= 3000) {
+                        lastMediaHeartbeat = now
+                        if (media?.send(JSONObject().put("type", "media-heartbeat").toString()) != true) dropMedia()
+                    }
+                }
                 delay(1000)
             }
         }
@@ -72,6 +83,7 @@ class CameraPublisher(private val account: AccountStore) {
     private fun connectControl(value: AccountSession) {
         if (closed) return
         controlCredential = value.endpoint + "|" + value.token
+        dropMedia()
         val own = ++controlGeneration
         control?.cancel(); authenticated = false
         controlOpenedAt = SystemClock.elapsedRealtime()
@@ -123,7 +135,7 @@ class CameraPublisher(private val account: AccountStore) {
             val value = account.session.value ?: error("请先登录")
             account.request("/api/streams/bind", "POST", JSONObject().put("publisherDeviceId", value.deviceId).put("targetDeviceId", targetId))
             refreshTargets()
-            if (wanted) connectMedia(value)
+            if (wanted && media == null) connectMedia(value)
         }.onFailure { failure ->
             update { state -> state.copy(status = "选择视觉节点失败：${failure.message?.takeIf { it.isNotBlank() } ?: "请稍后重试"}") }
         }
@@ -149,13 +161,14 @@ class CameraPublisher(private val account: AccountStore) {
         update { it.copy(status = if (reason == "background" || reason == "locked") "离开前台，推流已停止" else "推流已停止") }
     }
     private fun connectMedia(value: AccountSession) {
-        if (!wanted || closed || !authenticated) return
+        if (!wanted || closed || !authenticated || media != null) return
         val own = ++mediaGeneration
         synchronized(credit) { media?.cancel(); ready = false; credit.reset("") }
+        mediaHealth.opened(SystemClock.elapsedRealtime()); mediaAuthenticated = false; lastMediaHeartbeat = 0
         media = http.newWebSocket(Request.Builder().url(value.mediaUrl).build(), object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) { handler.post {
                 if (own != mediaGeneration || closed || !wanted) ws.cancel()
-                else ws.send(JSONObject().put("type", "media-auth").put("token", value.token).put("direction", "publish").toString())
+                else if (!ws.send(JSONObject().put("type", "media-auth").put("token", value.token).put("direction", "publish").toString())) dropMedia()
             } }
             override fun onMessage(ws: WebSocket, text: String) { handler.post {
                 if (own != mediaGeneration || closed || !wanted || text.length > 16_384) return@post
@@ -167,10 +180,16 @@ class CameraPublisher(private val account: AccountStore) {
                                 mediaSession = body.getString("sessionId"); readyStream = body.getString("streamId")
                                 credit.reset(mediaSession); ready = true
                             }
+                            mediaAuthenticated = true; mediaHealth.responded(SystemClock.elapsedRealtime())
                             update { it.copy(status = "正在推流") }
                         }
-                        "frame-ack" -> if (body.optString("streamId") == readyStream && credit.acknowledge(body.optString("sessionId"), body.optLong("sequence")))
-                            update { it.copy(acknowledgedFrames = it.acknowledgedFrames + 1) }
+                        "frame-ack" -> if (body.optString("streamId") == readyStream && credit.acknowledge(body.optString("sessionId"), body.optLong("sequence"))) {
+                            mediaHealth.responded(SystemClock.elapsedRealtime())
+                            update { it.copy(acknowledgedFrames = it.acknowledgedFrames + 1,
+                                relayDroppedFrames = body.optJSONObject("stats")?.optLong("dropped") ?: it.relayDroppedFrames) }
+                        }
+                        "media-heartbeat-ack" -> if (mediaAuthenticated) mediaHealth.responded(SystemClock.elapsedRealtime())
+                        "media-error" -> { dropMedia(); update { it.copy(status = "媒体请求失败，正在重连") } }
                     }
                 }
             } }
@@ -178,18 +197,20 @@ class CameraPublisher(private val account: AccountStore) {
                 if (own == mediaGeneration && !closed) { dropMedia(); nextRetryAt = SystemClock.elapsedRealtime() + 1000; update { it.copy(status = "视频连接中断，正在重连") } }
             } }
             override fun onClosed(ws: WebSocket, code: Int, reason: String) { handler.post { if (own == mediaGeneration && !closed) dropMedia() } }
+            override fun onClosing(ws: WebSocket, code: Int, reason: String) { handler.post { if (own == mediaGeneration && !closed) { ws.close(code, reason); dropMedia() } } }
         })
     }
     fun canPublish(): Boolean = synchronized(credit) { wanted && ready && credit.available() }
     fun dropped() { update { it.copy(droppedFrames = it.droppedFrames + 1) } }
+    fun sampledOut() { update { it.copy(sampledOutFrames = it.sampledOutFrames + 1) } }
     fun publish(frame: CameraFrame): Boolean = synchronized(credit) {
-        if (!canPublish()) { dropped(); return@synchronized false }
+        if (!canPublish() || SystemClock.elapsedRealtime() - frame.capturedAt !in 0..2500) { dropped(); return@synchronized false }
         val sequence = credit.take(SystemClock.elapsedRealtime()) ?: return@synchronized false
         val header = JSONObject().put("streamId", readyStream).put("sessionId", mediaSession).put("sequence", sequence)
             .put("capturedAt", frame.capturedAt).put("width", frame.width).put("height", frame.height).put("rotation", frame.rotation)
         val packet = MediaPacket.encode(header.toString().toByteArray(Charsets.UTF_8), frame.jpeg)
-        val accepted = media?.send(packet.toByteString()) == true
-        if (accepted) update { it.copy(sentFrames = it.sentFrames + 1) } else credit.acknowledge(mediaSession, sequence)
+        val accepted = runCatching { media?.send(packet.toByteString()) == true }.getOrDefault(false)
+        if (accepted) update { it.copy(sentFrames = it.sentFrames + 1) } else { dropped(); dropMedia() }
         accepted
     }
     private fun dropControl() {
@@ -197,7 +218,7 @@ class CameraPublisher(private val account: AccountStore) {
         dropMedia(); nextRetryAt = SystemClock.elapsedRealtime() + 1000
         update { it.copy(connected = false, status = "连接中断，正在重连") }
     }
-    private fun dropMedia() = synchronized(credit) { ++mediaGeneration; ready = false; credit.reset(""); media?.cancel(); media = null }
+    private fun dropMedia() = synchronized(credit) { ++mediaGeneration; ready = false; mediaAuthenticated = false; credit.reset(""); media?.cancel(); media = null }
     private inline fun update(transform: (PublisherState) -> PublisherState) { synchronized(mutableState) { mutableState.value = transform(mutableState.value) } }
     fun close() {
         if (closed) return

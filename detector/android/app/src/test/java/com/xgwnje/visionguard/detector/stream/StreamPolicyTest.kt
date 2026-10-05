@@ -44,4 +44,23 @@ class StreamPolicyTest {
         assertEquals(640 to 480, MediaPacket.boundedSize(640, 480, 1280, 720))
         assertEquals(640 to 480, MediaPacket.boundedSize(1920, 1440, 640, 480))
     }
+    @Test fun repeatedBindingOfSameSessionPreservesSequenceAndInflightCredit() {
+        val credit = FrameCredit(); credit.reset("same-session")
+        assertEquals(1L, credit.take(100))
+        credit.reset("same-session")
+        assertFalse(credit.available()); assertTrue(credit.stalled(3200))
+        assertTrue(credit.acknowledge("same-session", 1))
+        credit.reset("same-session")
+        assertEquals(2L, credit.take(3300))
+        credit.reset("replacement")
+        assertFalse(credit.acknowledge("same-session", 2))
+        assertEquals(1L, credit.take(3400))
+    }
+    @Test fun mediaWithoutFramesStillRequiresResponsesAndNewConnectionsGetTheirOwnDeadline() {
+        val health = MediaLiveness(); health.opened(1000)
+        assertFalse(health.expired(12_999)); assertTrue(health.expired(13_000))
+        health.opened(50_000); assertFalse(health.expired(50_001))
+        health.responded(50_002); assertFalse(health.expired(62_001)); assertTrue(health.expired(62_002))
+        health.responded(70_000); assertFalse(health.expired(70_001))
+    }
 }

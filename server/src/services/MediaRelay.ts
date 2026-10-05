@@ -7,15 +7,16 @@ import { accountStore, accountDirectory, AccountError, type AccountSession } fro
 
 export interface Stream {
   streamId: string; publisherDeviceId: string; publisherName: string; targetDeviceId?: string; sourceId?: string;
-  sourceName: string; isStreaming: boolean; lastFrameAt?: string; stopReason?: string;
+  sourceName: string; isStreaming: boolean; lastFrameAt?: string; stopReason?: string; stats?: FrameStats;
 }
+interface FrameStats { received: number; forwarded: number; confirmed: number; dropped: number; stale: number; replaced: number; unavailable: number; sendFailed: number }
 export interface FrameHeader {
   streamId: string; sessionId: string; sequence: number; capturedAt: number; width: number; height: number; rotation: number;
   receivedAt?: number;
 }
-interface Publisher { ws: WebSocket; token: string; session: AccountSession; sessionId: string; sequence: number; capturedAt: number; offset?: number; lastFrame: number; credit: boolean; stopped: boolean }
+interface Publisher { ws: WebSocket; token: string; session: AccountSession; sessionId: string; sequence: number; capturedAt: number; offset?: number; lastFrame: number; lastSeen: number; credit: boolean; stopped: boolean }
 interface BufferedFrame { packet: Buffer; receivedAt: number }
-interface Subscriber { ws: WebSocket; token: string; session: AccountSession; inflight: Map<string, { sessionId: string; sequence: number; sentAt: number }>; latest: Map<string, BufferedFrame> }
+interface Subscriber { ws: WebSocket; token: string; session: AccountSession; lastSeen: number; inflight: Map<string, { sessionId: string; sequence: number; sentAt: number }>; latest: Map<string, BufferedFrame> }
 const FRAME_BYTES = 2 * 1024 * 1024;
 const FRAME_AGE_MS = 2500;
 const SUBSCRIBER_TIMEOUT_MS = 5000;
@@ -71,6 +72,16 @@ export class MediaRelay {
   private readonly publishers = new Map<string, Publisher>();
   private readonly subscribers = new Map<string, Subscriber>();
   private readonly listeners = new Set<(accountId: string) => void>();
+  private readonly statsDirty = new Set<string>();
+  private stats(accountId: string, streamId: string): FrameStats | undefined {
+    const stream = this.accounts.get(accountId)?.find(item => item.streamId === streamId);
+    if (!stream) return;
+    this.statsDirty.add(accountId);
+    return stream.stats ??= { received: 0, forwarded: 0, confirmed: 0, dropped: 0, stale: 0, replaced: 0, unavailable: 0, sendFailed: 0 };
+  }
+  private dropped(accountId: string, streamId: string, reason: 'stale' | 'replaced' | 'unavailable' | 'sendFailed'): void {
+    const stats = this.stats(accountId, streamId); if (stats) { stats.dropped++; stats[reason]++; }
+  }
   constructor() {
     accountStore.onChange(() => this.credentialsChanged());
     const timer = setInterval(() => this.maintain(), 1000); timer.unref();
@@ -86,7 +97,7 @@ export class MediaRelay {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const temporary = `${file}.tmp`;
     const fd = fs.openSync(temporary, 'w', 0o600);
-    try { fs.writeFileSync(fd, JSON.stringify(streams.map(({ isStreaming: _running, lastFrameAt: _frame, stopReason: _reason, ...binding }) => binding)), 'utf8'); fs.fsyncSync(fd); }
+    try { fs.writeFileSync(fd, JSON.stringify(streams.map(({ isStreaming: _running, lastFrameAt: _frame, stopReason: _reason, stats: _stats, ...binding }) => binding)), 'utf8'); fs.fsyncSync(fd); }
     finally { fs.closeSync(fd); }
     fs.renameSync(temporary, file);
     this.accounts.set(accountId, streams);
@@ -120,6 +131,8 @@ export class MediaRelay {
     if (publisher?.component !== 'android-camera' || target?.component !== 'windows-inference') throw new AccountError(404, 'Compatible devices not found');
     if (session.device.role !== 'console' && !(session.device.component === 'android-camera' && session.device.deviceId === publisherDeviceId)) throw new AccountError(403, 'Binding permission required');
     const previous = this.streams(accountId);
+    const current = previous.find(stream => stream.publisherDeviceId === publisherDeviceId);
+    if (current?.targetDeviceId === targetDeviceId && current.sourceId) return { ...current };
     if (previous.filter(stream => stream.targetDeviceId === targetDeviceId && stream.publisherDeviceId !== publisherDeviceId).length >= BINDING_LIMIT) throw new AccountError(409, 'Inference source limit reached');
     const next = previous.map(stream => stream.publisherDeviceId === publisherDeviceId ? { ...stream, targetDeviceId, sourceId: stream.sourceId || crypto.randomUUID() } : stream);
     this.save(accountId, next); this.clearChangedBindings(previous, next); this.changed(accountId);
@@ -132,7 +145,10 @@ export class MediaRelay {
     for (const stream of previous) {
       const updated = next.find(item => item.streamId === stream.streamId);
       if (updated?.targetDeviceId === stream.targetDeviceId && updated?.sourceId === stream.sourceId) continue;
-      for (const subscriber of this.subscribers.values()) { subscriber.latest.delete(stream.streamId); subscriber.inflight.delete(stream.streamId); }
+      for (const subscriber of this.subscribers.values()) {
+        if (subscriber.latest.delete(stream.streamId)) this.dropped(subscriber.session.account.accountId, stream.streamId, 'unavailable');
+        subscriber.inflight.delete(stream.streamId);
+      }
     }
   }
   handleConnection(ws: WebSocket): void {
@@ -149,13 +165,14 @@ export class MediaRelay {
           clearTimeout(timer); this.ensureAccount(session.account.accountId);
           if (message.direction === 'publish') {
             this.publishers.get(session.device.deviceId)?.ws.close(4000, 'publisher replaced');
-            publisher = { ws, session, token: message.token, sessionId: crypto.randomUUID(), sequence: -1, capturedAt: -1, lastFrame: 0, credit: true, stopped: false };
+            publisher = { ws, session, token: message.token, sessionId: crypto.randomUUID(), sequence: -1, capturedAt: -1, lastFrame: 0, lastSeen: performance.now(), credit: true, stopped: false };
             this.publishers.set(session.device.deviceId, publisher);
             const stream = this.streams(session.account.accountId).find(item => item.publisherDeviceId === session.device.deviceId)!;
             send(ws, { type: 'media-ready', sessionId: publisher.sessionId, streamId: stream.streamId, targetDeviceId: stream.targetDeviceId, sourceId: stream.sourceId });
           } else {
-            this.subscribers.get(session.device.deviceId)?.ws.close(4000, 'subscriber replaced');
-            subscriber = { ws, session, token: message.token, inflight: new Map(), latest: new Map() };
+            const old = this.subscribers.get(session.device.deviceId);
+            if (old) { this.discardConsumer(old); old.ws.close(4000, 'subscriber replaced'); }
+            subscriber = { ws, session, token: message.token, lastSeen: performance.now(), inflight: new Map(), latest: new Map() };
             this.subscribers.set(session.device.deviceId, subscriber);
             send(ws, { type: 'media-ready', sessionId: crypto.randomUUID() });
             send(ws, { type: 'stream-list', streams: this.streams(session.account.accountId) });
@@ -164,6 +181,13 @@ export class MediaRelay {
         }
         const active = publisher ?? subscriber!;
         if (!accountStore.authenticate(active.token)) { ws.close(4001, 'session revoked'); return; }
+        const owner = publisher ? this.publishers.get(publisher.session.device.deviceId) : this.subscribers.get(subscriber!.session.device.deviceId);
+        if (owner !== active) return;
+        active.lastSeen = performance.now();
+        if (!binary) {
+          const heartbeat = JSON.parse(raw.toString());
+          if (heartbeat.type === 'media-heartbeat') { send(ws, { type: 'media-heartbeat-ack' }); return; }
+        }
         if (publisher) {
           if (this.publishers.get(publisher.session.device.deviceId) !== publisher) return;
           if (!binary) {
@@ -179,26 +203,38 @@ export class MediaRelay {
           const now = Date.now(), monotonicNow = performance.now();
           publisher.offset ??= monotonicNow - frame.header.capturedAt;
           const age = monotonicNow - (frame.header.capturedAt + publisher.offset);
+          if (age < -FRAME_AGE_MS) { ws.close(4002, 'capture clock changed'); return; }
           publisher.sequence = frame.header.sequence; publisher.capturedAt = frame.header.capturedAt; publisher.credit = false;
-          ws.send(JSON.stringify({ type: 'frame-ack', streamId: stream.streamId, sessionId: publisher.sessionId, sequence: frame.header.sequence }), error => { if (error) ws.terminate(); else publisher!.credit = true; });
+          this.stats(publisher.session.account.accountId, stream.streamId)!.received++;
+          const fresh = age <= FRAME_AGE_MS && age >= -FRAME_AGE_MS;
+          const acknowledge = (accepted: boolean, dropReason?: string) => ws.send(JSON.stringify({ type: 'frame-ack', streamId: stream.streamId,
+            sessionId: publisher!.sessionId, sequence: frame.header.sequence, accepted, dropReason, stats: stream.stats }), error => {
+              if (this.publishers.get(publisher!.session.device.deviceId) !== publisher) return;
+              if (error) ws.terminate(); else publisher!.credit = true;
+            });
           // Offset is established per connection, never treated as a synchronized capture clock.
-          if (age > FRAME_AGE_MS || age < -FRAME_AGE_MS) return;
+          if (!fresh) { this.dropped(publisher.session.account.accountId, stream.streamId, 'stale'); acknowledge(false, 'stale'); return; }
           publisher.lastFrame = monotonicNow;
           const changed = !stream.isStreaming || !!stream.stopReason;
           stream.isStreaming = true; stream.lastFrameAt = new Date(now).toISOString(); delete stream.stopReason;
           if (changed) this.changed(publisher.session.account.accountId);
-          if (!stream.targetDeviceId) return;
+          if (!stream.targetDeviceId) { this.dropped(publisher.session.account.accountId, stream.streamId, 'unavailable'); acknowledge(false, 'unbound'); return; }
           const consumer = this.subscribers.get(stream.targetDeviceId);
-          if (!consumer || consumer.session.account.accountId !== publisher.session.account.accountId) return;
+          if (!consumer || consumer.session.account.accountId !== publisher.session.account.accountId) { this.dropped(publisher.session.account.accountId, stream.streamId, 'unavailable'); acknowledge(false, 'consumer-unavailable'); return; }
           const forwarded = { packet: framePacket({ ...frame.header, receivedAt: now }, frame.image), receivedAt: monotonicNow };
-          if (consumer.inflight.has(stream.streamId)) consumer.latest.set(stream.streamId, forwarded);
+          if (consumer.inflight.has(stream.streamId)) {
+            if (consumer.latest.has(stream.streamId)) this.dropped(publisher.session.account.accountId, stream.streamId, 'replaced');
+            consumer.latest.set(stream.streamId, forwarded);
+          }
           else this.deliver(consumer, stream.streamId, forwarded);
+          acknowledge(true);
         } else if (subscriber) {
           if (binary || this.subscribers.get(subscriber.session.device.deviceId) !== subscriber) { if (binary) ws.close(4002, 'consumer cannot publish'); return; }
           const message = JSON.parse(raw.toString());
           if (message.type !== 'frame-received') return;
           const sent = subscriber.inflight.get(message.streamId);
           if (!sent || sent.sessionId !== message.sessionId || sent.sequence !== message.sequence) return;
+          const stats = this.stats(subscriber.session.account.accountId, message.streamId); if (stats) stats.confirmed++;
           subscriber.inflight.delete(message.streamId);
           const latest = subscriber.latest.get(message.streamId); subscriber.latest.delete(message.streamId);
           if (latest) this.deliver(subscriber, message.streamId, latest);
@@ -208,25 +244,36 @@ export class MediaRelay {
     ws.on('close', () => {
       clearTimeout(timer);
       if (publisher && this.publishers.get(publisher.session.device.deviceId) === publisher) { this.publishers.delete(publisher.session.device.deviceId); this.stopPublisher(publisher, publisher.stopped ? undefined : 'connection-lost'); }
-      if (subscriber && this.subscribers.get(subscriber.session.device.deviceId) === subscriber) this.subscribers.delete(subscriber.session.device.deviceId);
+      if (subscriber && this.subscribers.get(subscriber.session.device.deviceId) === subscriber) { this.discardConsumer(subscriber); this.subscribers.delete(subscriber.session.device.deviceId); }
     });
+  }
+  private discardConsumer(consumer: Subscriber): void {
+    for (const streamId of consumer.latest.keys()) this.dropped(consumer.session.account.accountId, streamId, 'unavailable');
+    consumer.latest.clear(); consumer.inflight.clear();
   }
   private stopPublisher(publisher: Publisher, reason?: string): void {
     const accountId = publisher.session.account.accountId;
     const stream = this.accounts.get(accountId)?.find(item => item.publisherDeviceId === publisher.session.device.deviceId);
     if (!stream) return;
     stream.isStreaming = false; if (reason) stream.stopReason = reason;
-    for (const consumer of this.subscribers.values()) { consumer.latest.delete(stream.streamId); consumer.inflight.delete(stream.streamId); }
+    for (const consumer of this.subscribers.values()) {
+      if (consumer.latest.delete(stream.streamId)) this.dropped(accountId, stream.streamId, 'unavailable');
+      consumer.inflight.delete(stream.streamId);
+    }
     this.changed(accountId);
   }
   private deliver(consumer: Subscriber, streamId: string, frame: BufferedFrame): void {
     const parsed = parseFrame(frame.packet); if (!parsed) return;
     const stream = this.accounts.get(consumer.session.account.accountId)?.find(item => item.streamId === streamId && item.targetDeviceId === consumer.session.device.deviceId);
     const producer = stream && this.publishers.get(stream.publisherDeviceId);
-    if (!stream || !producer || producer.sessionId !== parsed.header.sessionId || performance.now() - frame.receivedAt > FRAME_AGE_MS) return;
-    if (consumer.ws.readyState !== WebSocket.OPEN || consumer.ws.bufferedAmount > FRAME_BYTES) { consumer.ws.terminate(); return; }
+    if (!stream || !producer || producer.sessionId !== parsed.header.sessionId) return;
+    if (performance.now() - frame.receivedAt > FRAME_AGE_MS) { this.dropped(consumer.session.account.accountId, streamId, 'stale'); return; }
+    if (consumer.ws.readyState !== WebSocket.OPEN || consumer.ws.bufferedAmount > FRAME_BYTES) { this.dropped(consumer.session.account.accountId, streamId, 'sendFailed'); consumer.ws.terminate(); return; }
     consumer.inflight.set(streamId, { sessionId: parsed.header.sessionId, sequence: parsed.header.sequence, sentAt: performance.now() });
-    consumer.ws.send(frame.packet, { binary: true }, error => { if (error) consumer.ws.terminate(); });
+    consumer.ws.send(frame.packet, { binary: true }, error => {
+      if (error) { this.dropped(consumer.session.account.accountId, streamId, 'sendFailed'); consumer.ws.terminate(); }
+      else { const stats = this.stats(consumer.session.account.accountId, streamId); if (stats) stats.forwarded++; }
+    });
   }
   private credentialsChanged(): void {
     for (const producer of this.publishers.values()) if (!accountStore.authenticate(producer.token)) { producer.stopped = true; this.stopPublisher(producer, 'session-revoked'); producer.ws.close(4001, 'session revoked'); }
@@ -236,11 +283,13 @@ export class MediaRelay {
   maintain(now = performance.now()): void {
     for (const producer of this.publishers.values()) {
       if (!accountStore.authenticate(producer.token)) { producer.ws.close(4001, 'session expired'); continue; }
+      if (now - producer.lastSeen > 45_000) { producer.ws.terminate(); continue; }
       if (producer.lastFrame && now - producer.lastFrame > FRAME_AGE_MS) { const stream = this.accounts.get(producer.session.account.accountId)?.find(item => item.publisherDeviceId === producer.session.device.deviceId); if (stream?.isStreaming) this.stopPublisher(producer, 'frame-stalled'); }
     }
     for (const consumer of this.subscribers.values()) {
-      if (!accountStore.authenticate(consumer.token) || [...consumer.inflight.values()].some(frame => now - frame.sentAt > SUBSCRIBER_TIMEOUT_MS)) consumer.ws.close(4002, 'consumer stalled or session expired');
+      if (!accountStore.authenticate(consumer.token) || now - consumer.lastSeen > 45_000 || [...consumer.inflight.values()].some(frame => now - frame.sentAt > SUBSCRIBER_TIMEOUT_MS)) consumer.ws.close(4002, 'consumer stalled or session expired');
     }
+    for (const accountId of this.statsDirty) { this.statsDirty.delete(accountId); this.changed(accountId); }
   }
 }
 export const mediaRelay = new MediaRelay();

@@ -24,7 +24,10 @@ class FrameCredit {
     private var pending: Long? = null
     private var next = 0L
     private var sentAt = 0L
-    @Synchronized fun reset(sessionId: String) { session = sessionId; pending = null; next = 0; sentAt = 0 }
+    @Synchronized fun reset(sessionId: String) {
+        if (sessionId.isNotEmpty() && sessionId == session) return
+        session = sessionId; pending = null; next = 0; sentAt = 0
+    }
     @Synchronized fun available(): Boolean = session.isNotEmpty() && pending == null
     @Synchronized fun take(now: Long): Long? {
         if (!available()) return null
@@ -36,4 +39,14 @@ class FrameCredit {
         pending = null; return true
     }
     @Synchronized fun stalled(now: Long): Boolean = pending != null && now - sentAt > 3000
+}
+
+/** Media needs responses even while no frame is in flight or while waiting to become active. */
+class MediaLiveness {
+    private var openedAt = 0L
+    private var lastResponse = 0L
+    private var ready = false
+    fun opened(now: Long) { openedAt = now; lastResponse = now; ready = false }
+    fun responded(now: Long) { ready = true; lastResponse = now }
+    fun expired(now: Long): Boolean = now - (if (ready) lastResponse else openedAt) >= 12_000
 }
