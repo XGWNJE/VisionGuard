@@ -109,6 +109,8 @@ function Test-NativeSuccess {
 
 function Test-TargetEnabled {
     param([string[]]$Names)
+    # The legacy console is an explicit maintenance target, outside default releases.
+    if ($Names.Count -eq 2 -and $Names -contains 'Android' -and $Names -contains 'AndroidReceiver') { return $Target -eq 'AndroidReceiver' }
     return ($Target -eq 'All' -or $Names -contains $Target)
 }
 
@@ -705,6 +707,7 @@ function Get-GitHubOnlyArtifacts {
 
     $artifacts = New-Object System.Collections.Generic.List[object]
     foreach ($definition in $definitions) {
+        if ($definition.Platform -eq 'android-receiver' -and $Target -ne 'AndroidReceiver') { continue }
         if (-not (Test-TargetEnabled $definition.Targets)) {
             continue
         }

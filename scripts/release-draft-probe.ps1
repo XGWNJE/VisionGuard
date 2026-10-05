@@ -4,7 +4,7 @@ $source = Join-Path $RepositoryRoot 'scripts/publish-release.ps1'
 $tokens = $null; $parseErrors = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($source, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw 'Release script parse failed.' }
-foreach ($name in @('Invoke-GitHubSteps', 'Assert-GitHubUploadedAssets', 'Get-Sha256')) {
+foreach ($name in @('Invoke-GitHubSteps', 'Assert-GitHubUploadedAssets', 'Get-Sha256', 'Test-TargetEnabled')) {
     $function = $ast.Find({ param($item) $item -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $item.Name -eq $name }, $true)
     if (-not $function) { throw "Production function missing: $name" }
     . ([ScriptBlock]::Create($function.Extent.Text))
@@ -15,6 +15,8 @@ try {
     $package = Join-Path $temporary 'VisionGuard-WPF-v0.7.0.zip'
     [IO.File]::WriteAllText($package, 'upload fixture')
     $Version = '0.7.0'; $GitHubRepository = 'fixture/repository'; $PushGitHub = $false; $CreateTag = $false; $CreateGitHubRelease = $true
+    foreach ($Target in @('All', 'Android')) { if (Test-TargetEnabled @('Android', 'AndroidReceiver')) { throw 'Default release included legacy console.' } }
+    $Target = 'AndroidReceiver'; if (-not (Test-TargetEnabled @('Android', 'AndroidReceiver'))) { throw 'Explicit legacy maintenance target missing.' }
     function Assert-GitHubReleaseNotes { return 'fixture-notes.md' }
     function Test-NativeSuccess { return $script:alreadyExists }
     function Invoke-Native { param($FilePath, $Arguments) [void]$script:calls.Add(($Arguments -join ' ')) }
