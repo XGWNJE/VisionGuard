@@ -56,6 +56,7 @@ class ClientUpdaterTransportTest {
     private lateinit var directory: File
     private var initialized = false
     private var foregroundActivity: MainActivity? = null
+    private var preserveInstallerCandidate = false
 
     @Suppress("DEPRECATION") @Before fun prepare() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -98,7 +99,7 @@ class ClientUpdaterTransportTest {
         }
         if (initialized) {
             server.close()
-            target.delete()
+            if (!preserveInstallerCandidate) target.delete()
             File(directory, target.name + ".part").delete()
         }
     }
@@ -259,6 +260,28 @@ class ClientUpdaterTransportTest {
         assertEquals("请返回应用后再点安装", updater.state.value.message)
         assertTrue(updater.state.value.ready)
         assertEquals(0, context.launches.get())
+    }
+
+    /** Opt-in visible system handoff; the operator approves this fixture's permission/install UI.
+     * A completed test proves handoff only. Check the installed package/version/hash separately.
+     */
+    @Test fun actualInstallerHandoffWithOperatorApproval() {
+        assumeTrue("Actual installation requires explicit operator approval",
+            InstrumentationRegistry.getArguments().getString("installHandoff") == "true")
+        assumeTrue("Approve installation permission for this isolated fixture before running",
+            InstrumentationRegistry.getInstrumentation().targetContext.packageManager.canRequestPackageInstalls())
+        foreground()
+        val updater = updater(actualHandoff = true)
+        discover(updater); updater.download(); awaitIdle(updater)
+        assertTrue(updater.state.value.message, updater.state.value.ready)
+        preserveInstallerCandidate = true
+        updater.install(); awaitIdle(updater)
+        assertEquals("已请求打开系统安装器；请以系统界面为准", updater.state.value.message)
+        println("Actual installer requested; installation is not yet confirmed")
+        // Keep the calling Activity/process alive while the operator observes OEM
+        // confirmation and the system installer. Replacing this app may end instrumentation.
+        val deadline = SystemClock.elapsedRealtime() + 60_000
+        while (SystemClock.elapsedRealtime() < deadline) Thread.sleep(100)
     }
 
     @Test fun liveGitHubCheckAllowsUiThreadDisposalWithoutNetworkCrash() {

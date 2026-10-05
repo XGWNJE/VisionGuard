@@ -55,6 +55,15 @@ internal class ProbeProgram {
             var copy = program.GetMethod("CopyDirectory", BindingFlags.NonPublic | BindingFlags.Static);
             var install = program.GetMethod("InstallDirectory", BindingFlags.NonPublic | BindingFlags.Static);
             string package = Path.GetFullPath("detector/windows-package/bin/Release");
+            var validateVersion = program.GetMethod("ValidateStagedVersion", BindingFlags.NonPublic | BindingFlags.Static);
+            string sourceVersion = File.ReadAllText("VERSION").Trim();
+            validateVersion.Invoke(null, new object[] { package, sourceVersion });
+            var currentVersion = Version.Parse(sourceVersion);
+            string differentVersion = currentVersion.Major + "." + currentVersion.Minor + "." + (currentVersion.Build + 1);
+            bool wrongVersion = false;
+            try { validateVersion.Invoke(null, new object[] { package, differentVersion }); }
+            catch (TargetInvocationException e) { wrongVersion = e.InnerException is InvalidDataException; }
+            Require(wrongVersion, "Staged executable with a different numeric version accepted");
             string target = Path.Combine(directory, "installed"), stage = Path.Combine(directory, "stage");
             copy.Invoke(null,new object[]{package,target});copy.Invoke(null,new object[]{package,stage});
             File.WriteAllText(Path.Combine(target,"acceptance-version"),"old"); File.WriteAllText(Path.Combine(stage,"acceptance-version"),"new");

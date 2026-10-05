@@ -46,7 +46,10 @@ namespace VisionGuard.Detector.Windows.Utils
 
         public void Set(string key, string value)
         {
-            _data[key] = value ?? string.Empty;
+            string normalized = value ?? string.Empty;
+            string previous;
+            if (_data.TryGetValue(key, out previous) && string.Equals(previous, normalized, StringComparison.Ordinal)) return;
+            _data[key] = normalized;
             _dirtyKeys.Add(key);
         }
 
@@ -73,7 +76,20 @@ namespace VisionGuard.Detector.Windows.Utils
                     var lines = new List<string> { "# VisionGuard 用户设置（自动生成，可手动编辑）" };
                     foreach (var item in merged) lines.Add(item.Key + "=" + item.Value);
                     File.WriteAllLines(temp, lines.ToArray(), new UTF8Encoding(false));
-                    if (File.Exists(_path)) File.Replace(temp, _path, null);
+                    if (File.Exists(_path))
+                    {
+                        for (int attempt = 0; ; attempt++)
+                        {
+                            try { File.Replace(temp, _path, null); break; }
+                            catch (IOException error)
+                            {
+                                int code = error.HResult & 0xffff;
+                                if (attempt >= 3 || (code != 32 && code != 33 && code != 1175) ||
+                                    !File.Exists(temp) || !File.Exists(_path)) throw;
+                                Thread.Sleep(100);
+                            }
+                        }
+                    }
                     else File.Move(temp, _path);
 
                     _data.Clear();

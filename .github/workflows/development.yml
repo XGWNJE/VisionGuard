@@ -76,6 +76,9 @@ jobs:
       - name: Stable release selection, download verification and directory rollback
         shell: powershell
         run: dotnet run --project tests/LauncherUpdate.Probe/LauncherUpdate.Probe.csproj -c Release
+      - name: Settings persistence under file contention
+        shell: powershell
+        run: dotnet run --project tests/WpfInference.Benchmark/WpfInference.Benchmark.csproj -c Release -- ignored --settings-persistence
       - name: Reject invalid TLS before authentication and release timed out connections
         shell: powershell
         run: |

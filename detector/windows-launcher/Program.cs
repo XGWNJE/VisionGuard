@@ -260,7 +260,7 @@ namespace VisionGuard.Detector.Windows.Launcher
         private static int ApplyUpdateCore(string staged, string target, string version, int launcherPid, int ownerPid)
         {
             ValidatePackage(staged);
-            if (System.Version.Parse(FileVersionInfo.GetVersionInfo(Path.Combine(staged, "VisionGuard.Detector.Windows.exe")).FileVersion) != System.Version.Parse(version + ".0")) throw new InvalidDataException("暂存程序版本与发行不一致。");
+            ValidateStagedVersion(staged, version);
             try
             {
                 InstallDirectory(staged, target, () => {
@@ -284,6 +284,16 @@ namespace VisionGuard.Detector.Windows.Launcher
                 ThemedDialog.Show("更新失败，旧版本已保留或恢复：\n" + ex.Message, "视觉节点更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return 1;
             }
+        }
+
+        private static void ValidateStagedVersion(string staged, string version)
+        {
+            var expected = System.Version.Parse(version);
+            var actual = FileVersionInfo.GetVersionInfo(Path.Combine(staged, "VisionGuard.Detector.Windows.exe"));
+            // FileVersion text may omit the zero revision; compare the PE's numeric parts.
+            if (actual.FileMajorPart != expected.Major || actual.FileMinorPart != expected.Minor ||
+                actual.FileBuildPart != expected.Build || actual.FilePrivatePart != 0)
+                throw new InvalidDataException("暂存程序版本与发行不一致。");
         }
 
         private static void InstallDirectory(string staged, string target, Action beforeReplace, Action<string> startAndConfirm, Action beforeRollback, Action<string> restartOld)
