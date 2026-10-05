@@ -55,24 +55,26 @@ class NotificationNodeService : Service() {
     private var retryMs = 1_000L
     private var connectedAt = 0L
     private var lastResponse = 0L
+    private val recovery = ConnectionRecovery()
+    private var probeId: String? = null
     private var outageId: String? = null
     private var outageAccepted = false
     private val tick = object : Runnable {
         override fun run() {
             if (stopped) return
             val now = SystemClock.elapsedRealtime()
-            if (!terminal && now - lastResponse >= 45_000) {
-                if (outageId == null) outageId = "service-${UUID.randomUUID()}"
-                if (!outageAccepted) {
-                    val wall = System.currentTimeMillis()
-                    outageAccepted = alarms.acceptRemoteAlert(outageId!!, "服务中断", "统一服务", "连续 45 秒未收到服务响应", wall, wall + 30_000)
-                    if (outageAccepted) wakePlayback()
+            if (!terminal) when (recovery.tick(now, socket != null, authenticated)) {
+                ConnectionRecovery.Action.PROBE -> {
+                    probeId = UUID.randomUUID().toString()
+                    mutableState.value = mutableState.value.copy(status = "连接异常，正在主动确认", connected = false)
                 }
-                if (socket != null) reconnect("服务响应超时")
+                ConnectionRecovery.Action.RECONNECT -> reconnect("正在重新连接确认服务状态")
+                ConnectionRecovery.Action.CONFIRM_FAILURE -> { confirmOutage(); reconnect("已确认连接失败，等待重试") }
+                ConnectionRecovery.Action.NONE -> Unit
             }
-            if (socket != null && !authenticated && now - connectedAt >= 12_000) reconnect("认证超时")
             if (!terminal && socket == null && now >= nextAttempt) connect()
-            if (authenticated) socket?.send(JSONObject().put("type", "heartbeat-notifier").put("deviceId", settings.read().deviceId).toString())
+            if (authenticated && socket?.send(JSONObject().put("type", "heartbeat-notifier").put("deviceId", settings.read().deviceId)
+                    .apply { probeId?.let { put("probeId", it) } }.toString()) != true) transportFailed("心跳发送失败")
             handler.postDelayed(this, 3_000)
         }
     }
@@ -82,6 +84,7 @@ class NotificationNodeService : Service() {
         settings = NotificationNodeSettings(this)
         mutableState.value = NodeState(timeZone = settings.timeZone)
         alarms = SharedPreferencesHelper(this)
+        outageId = alarms.serviceOutageId(); outageAccepted = outageId != null
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("notification-node", "通知节点连接", NotificationManager.IMPORTANCE_LOW))
         val launch = PendingIntent.getActivity(this, 718, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
@@ -111,11 +114,13 @@ class NotificationNodeService : Service() {
         val own = ++generation
         authenticated = false
         connectedAt = SystemClock.elapsedRealtime()
+        recovery.attempt(connectedAt)
+        probeId = null
         mutableState.value = mutableState.value.copy(status = "连接中", connected = false)
         socket = client.newWebSocket(Request.Builder().url(value.endpoint).build(), object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) { handler.post {
                 if (own != generation || stopped) { ws.cancel(); return@post }
-                ws.send(JSONObject().put("type", "auth").put("token", value.token).toString())
+                if (!ws.send(JSONObject().put("type", "auth").put("token", value.token).toString())) transportFailed("认证发送失败")
             } }
             override fun onMessage(ws: WebSocket, text: String) { handler.post {
                 if (own != generation || stopped || text.length > 1_000_000) return@post
@@ -123,8 +128,12 @@ class NotificationNodeService : Service() {
                     mutableState.value = mutableState.value.copy(status = "收到无效消息")
                 }
             } }
-            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) { handler.post { if (own == generation && !stopped) reconnect("连接断开，等待重试") } }
-            override fun onClosed(ws: WebSocket, code: Int, reason: String) { handler.post { if (own == generation && !stopped) reconnect("连接关闭，等待重试") } }
+            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) { handler.post { if (own == generation && !stopped) transportFailed("连接断开，正在确认") } }
+            override fun onClosing(ws: WebSocket, code: Int, reason: String) { handler.post { if (own == generation && !stopped) {
+                if (code == 4001 || code == 4003) { terminal = true; reconnect("登录已失效，请重新登录"); account.clear() }
+                else { ws.close(code, reason); transportFailed("连接关闭，正在确认") }
+            } } }
+            override fun onClosed(ws: WebSocket, code: Int, reason: String) { handler.post { if (own == generation && !stopped) transportFailed("连接关闭，正在确认") } }
         })
     }
     private fun handleMessage(ws: WebSocket, message: JSONObject) {
@@ -136,13 +145,16 @@ class NotificationNodeService : Service() {
             message.optJSONObject("notificationScope")?.let { updateScope(it) }
             message.optJSONObject("timeStandard")?.let { updateTimeStandard(it) }
         }
-        if (type == "kicked") { terminal = true; reconnect("此身份已在另一台设备连接"); return }
+        if (type == "kicked" || type == "session-revoked") { terminal = true; reconnect("登录已失效，请重新登录"); account.clear(); return }
         if (!authenticated) return
+        if (type !in setOf("auth-result", "heartbeat-ack", "device-updated", "notification-scope", "time-standard", "alert", "stream-list")) return
         if (type == "device-updated") message.optJSONObject("device")?.let { device -> serviceScope.launch { account.updateDevice(device) } }
-        lastResponse = SystemClock.elapsedRealtime()
-        outageId = null
-        outageAccepted = false
-        mutableState.value = mutableState.value.copy(status = "已连接", connected = true, lastResponse = lastResponse)
+        if (type == "auth-result" || type == "heartbeat-ack" && (!recovery.probing || message.optString("probeId") == probeId)) {
+            lastResponse = SystemClock.elapsedRealtime()
+            recovery.responded(lastResponse); probeId = null
+            if (alarms.markServiceRecovered()) { outageId = null; outageAccepted = false }
+            mutableState.value = mutableState.value.copy(status = "已连接", connected = true, lastResponse = lastResponse)
+        }
         if (type == "notification-scope") message.optJSONObject("scope")?.let { updateScope(it) }
         if (type == "time-standard") updateTimeStandard(message)
         if (type == "alert") {
@@ -171,6 +183,18 @@ class NotificationNodeService : Service() {
     private fun wakePlayback() {
         runCatching { ContextCompat.startForegroundService(this, Intent(this, AlarmPlaybackService::class.java)) }
             .onFailure { mutableState.value = mutableState.value.copy(status = "报警已保存，请打开 VisionGuard 恢复播放") }
+    }
+    private fun confirmOutage() {
+        if (terminal || stopped) return
+        if (outageId == null) outageId = "service-${UUID.randomUUID()}"
+        if (outageAccepted) return
+        val wall = System.currentTimeMillis()
+        outageAccepted = alarms.acceptRemoteAlert(outageId!!, "服务中断", "统一服务", "主动探测无响应且重新连接失败", wall, wall + 30_000, serviceOutage = true)
+        if (outageAccepted) wakePlayback()
+    }
+    private fun transportFailed(reason: String) {
+        if (recovery.failed(SystemClock.elapsedRealtime()) == ConnectionRecovery.Action.CONFIRM_FAILURE) confirmOutage()
+        reconnect(reason)
     }
     private fun reconnect(reason: String) {
         ++generation

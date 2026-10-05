@@ -464,7 +464,8 @@ function handleConnection(ws: WebSocket): void {
       case 'heartbeat-notifier':
         if (role === 'notifier') {
           const client = notifierClients.get(authenticatedDeviceId);
-          if (client?.ws === ws) { client.lastSeen = new Date(); sendJson(ws, { type: 'heartbeat-ack', serverTime: new Date().toISOString() }); }
+          if (client?.ws === ws) { client.lastSeen = new Date(); sendJson(ws, { type: 'heartbeat-ack', serverTime: new Date().toISOString(),
+            ...(typeof msg.probeId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(msg.probeId) ? { probeId: msg.probeId } : {}) }); }
         }
         break;
       case 'notification-receipt':

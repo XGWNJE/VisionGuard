@@ -50,6 +50,7 @@ class SharedPreferencesHelper(context: Context) {
         private const val ALERT_QUEUE_VERSION = 1
         private const val KEY_DEFAULT_LOOP_COUNT = "default_loop_count"
         private const val KEY_ALERT_HISTORY = "alert_history"
+        private const val KEY_SERVICE_OUTAGE = "service_outage"
         private const val MAX_ALERT_HISTORY = 100
         private const val KEY_RINGTONE_LIBRARY = "ringtone_library"
         const val MAX_ALERT_QUEUE_SIZE = 20
@@ -74,9 +75,13 @@ class SharedPreferencesHelper(context: Context) {
 
     fun getActiveAlert(): AlertQueueItem? = getAlertQueue().firstOrNull()
 
+    fun serviceOutageId(): String? = synchronized(alertQueueLock) { prefs.getString(KEY_SERVICE_OUTAGE, null) }
+    fun markServiceRecovered(): Boolean = synchronized(alertQueueLock) { !prefs.contains(KEY_SERVICE_OUTAGE) || commitCritical(prefs.edit().remove(KEY_SERVICE_OUTAGE), KEY_SERVICE_OUTAGE) }
+
     fun acceptRemoteAlert(id: String, label: String, source: String, summary: String,
-                          timestamp: Long, expiresAt: Long, now: Long = System.currentTimeMillis()): Boolean =
+                          timestamp: Long, expiresAt: Long, now: Long = System.currentTimeMillis(), serviceOutage: Boolean = false): Boolean =
         synchronized(alertQueueLock) {
+            if (serviceOutage && prefs.contains(KEY_SERVICE_OUTAGE)) return@synchronized true
             if (id.isBlank() || id.length > 128 || expiresAt <= now || timestamp > now + 5_000 ||
                 expiresAt <= timestamp || expiresAt - timestamp > 30_000) return@synchronized false
             val key = "remote_receipts"
@@ -91,8 +96,9 @@ class SharedPreferencesHelper(context: Context) {
             queue += AlertQueueItem(id, label, "visionguard", source.take(160), timestamp, timestamp,
                 getRingtoneValue(), getDefaultLoopCount(), 0, 1, summary.take(100))
             accepted.put(id, expiresAt)
-            commitCritical(prefs.edit().putString(KEY_ALERT_QUEUE, encodeAlertQueue(queue))
-                .putString(key, accepted.toString()), KEY_ALERT_QUEUE, key)
+            val editor = prefs.edit().putString(KEY_ALERT_QUEUE, encodeAlertQueue(queue)).putString(key, accepted.toString())
+            if (serviceOutage) editor.putString(KEY_SERVICE_OUTAGE, id)
+            commitCritical(editor, KEY_ALERT_QUEUE, key, KEY_SERVICE_OUTAGE)
         }
 
     fun updateActiveAlertPlayedLoops(expectedId: String, playedLoops: Int): Boolean =
