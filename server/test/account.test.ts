@@ -15,21 +15,23 @@ const accountRouter = require('../src/routes/account').default;
 const alertsRouter = require('../src/routes/alerts').default;
 const screenshotRouter = require('../src/routes/screenshot').default;
 const streamsRouter = require('../src/routes/streams').default;
-const { handleConnection } = require('../src/services/ConnectionManager') as typeof import('../src/services/ConnectionManager');
+const { handleConnection, broadcastScreenshotData } = require('../src/services/ConnectionManager') as typeof import('../src/services/ConnectionManager');
 const { addAlert } = require('../src/services/AlertStore') as typeof import('../src/services/AlertStore');
 accountStore.createAccount('account-a', 'private-test-password-a');
 accountStore.createAccount('account-b', 'private-test-password-b');
 test.after(() => fs.rmSync(directory, { recursive: true, force: true }));
 
+let fixtureSequence = 0;
 async function fixture(t: any) {
-  const app = express(); app.use(express.json()); app.use(accountRouter); app.use(alertsRouter); app.use(screenshotRouter); app.use(streamsRouter);
+  const fixtureIp = `192.0.2.${++fixtureSequence}`;
+  const app = express(); app.set('trust proxy', 'loopback'); app.use(express.json()); app.use(accountRouter); app.use(alertsRouter); app.use(screenshotRouter); app.use(streamsRouter);
   const server = http.createServer(app); const wss = new WebSocketServer({ server }); wss.on('connection', handleConnection);
   const peers: WebSocket[] = [];
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = `http://127.0.0.1:${(server.address() as any).port}`;
   t.after(async () => { peers.forEach(ws => ws.terminate()); wss.close(); await new Promise<void>(resolve => server.close(() => resolve())); });
   async function request(url: string, method = 'GET', body?: object, token?: string) {
-    const response = await fetch(origin + url, { method, headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const response = await fetch(origin + url, { method, headers: { 'X-Forwarded-For': fixtureIp, ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
     const text = await response.text(); return { status: response.status, data: (() => { try { return JSON.parse(text); } catch { return text; } })() };
   }
   async function login(component = 'web-console', account = 'a', extra = {}) {
@@ -105,6 +107,52 @@ test('device ownership, lifecycle child, names and credential rotation are enfor
   assert.equal((await f.request('/api/account/logout', 'POST', undefined, next.data.token)).status, 200);
   assert.equal((await f.request('/api/account/session', 'GET', undefined, next.data.resident.token)).status, 401);
   assert.equal((await f.request('/api/account/session', 'GET', undefined, child.data.token)).status, 401);
+});
+
+test('independent web sessions sharing a device coexist; reconnect, rotation and logout affect only their owner', async t => {
+  const f = await fixture(t), first = await f.login();
+  const a = await f.peer(first.token);
+  const second = await f.login('web-console', 'a', { deviceId: first.device.deviceId });
+  const b = await f.peer(second.token);
+  assert.notEqual(accountStore.authenticate(first.token)!.sessionId, accountStore.authenticate(second.token)!.sessionId);
+  assert.ok(accountStore.authenticate(first.token));
+  for (const p of [a, b]) { p.send({ type: 'heartbeat-console' }); assert.equal((await p.take('heartbeat-ack')).deviceId, first.device.deviceId); }
+  const replaced = new Promise(resolve => a.ws.once('close', resolve));
+  const replacement = await f.peer(first.token); await replaced;
+  b.send({ type: 'heartbeat-console' }); await b.take('heartbeat-ack');
+  const rotated = await f.request('/api/account/refresh', 'POST', {}, first.token);
+  assert.equal(rotated.status, 200); assert.equal(accountStore.authenticate(first.token), undefined);
+  assert.ok(accountStore.authenticate(second.token));
+  const c = await f.peer(rotated.data.token);
+  assert.equal((await f.request('/api/account/logout', 'POST', {}, rotated.data.token)).status, 200);
+  b.send({ type: 'get-devices' }); await b.take('device-list');
+  assert.equal(b.ws.readyState, WebSocket.OPEN);
+  assert.ok(accountStore.authenticate(second.token));
+  void replacement; void c;
+});
+
+test('hardware re-login still revokes its earlier credential and parent-bound resident', async t => {
+  const f = await fixture(t), first = await f.login('windows-inference'), peer = await f.peer(first.token);
+  const closed = new Promise(resolve => peer.ws.once('close', resolve));
+  const second = await f.login('windows-inference', 'a', { deviceId: first.device.deviceId }); await closed;
+  assert.equal(accountStore.authenticate(first.token), undefined); assert.equal(accountStore.authenticate(first.resident.token), undefined);
+  assert.ok(accountStore.authenticate(second.token));
+});
+
+test('screenshot queues belong to each connection and stale timers cannot drain a replacement', async t => {
+  const f = await fixture(t), first = await f.login();
+  const second = await f.login('web-console', 'a', { deviceId: first.device.deviceId });
+  const a = await f.peer(first.token), b = await f.peer(second.token);
+  const oldIds = [crypto.randomUUID(), crypto.randomUUID(), crypto.randomUUID()];
+  for (const alertId of oldIds) broadcastScreenshotData(first.account.accountId, { type: 'screenshot-data', alertId, deviceId: 'synthetic-visual', imageBase64: 'test-payload' });
+  await a.take('screenshot-data', message => message.alertId === oldIds[0]);
+  const replacement = await f.peer(first.token);
+  const freshId = crypto.randomUUID();
+  broadcastScreenshotData(first.account.accountId, { type: 'screenshot-data', alertId: freshId, deviceId: 'synthetic-visual', imageBase64: 'test-payload' });
+  await replacement.take('screenshot-data', message => message.alertId === freshId);
+  for (const alertId of oldIds) await b.take('screenshot-data', message => message.alertId === alertId);
+  assert.equal(replacement.messages.some(message => message.type === 'screenshot-data' && oldIds.includes(message.alertId)), false);
+  b.send({ type: 'heartbeat-console' }); await b.take('heartbeat-ack');
 });
 
 test('PATCH names remain authoritative after stale detector and resident heartbeats', async t => {

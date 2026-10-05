@@ -302,6 +302,18 @@ function scheduleBroadcast(): void {
 // ── 截图推送队列 (协议分离: 截图独立异步,按控制台串行 500ms stagger) ──
 const screenshotQueues = new Map<string, Array<{ alertId: string; payload: WsScreenshotDataPush }>>();
 const screenshotProcessing = new Map<string, boolean>();
+const screenshotTimers = new Map<string, NodeJS.Timeout>();
+
+function clearConnectionWork(key: string, ws: WebSocket): void {
+  clearTimeout(screenshotTimers.get(key)); screenshotTimers.delete(key);
+  screenshotQueues.delete(key); screenshotProcessing.delete(key); androidSessions.delete(key);
+  for (const [requestId, pending] of pendingControlRequests) {
+    if (pending.senderWs !== ws && pending.targetWs !== ws) continue;
+    clearTimeout(pending.timer); pendingControlRequests.delete(requestId); rememberCompletedRequest(requestId);
+    if (pending.senderWs !== ws) sendJson(pending.senderWs, { type: 'command-ack', requestId, phase: 'completed', targetDeviceId: pending.targetDeviceId,
+      targetSourceId: pending.targetSourceId, command: pending.command, success: false, reason: '目标连接已更换或断开' });
+  }
+}
 
 function backupScreenshot(payload: WsScreenshotDataPush): boolean {
   try {
@@ -343,7 +355,8 @@ function enqueueScreenshotPush(receiverId: string, alertId: string, payload: WsS
   }
 }
 
-function processScreenshotQueue(receiverId: string): void {
+function processScreenshotQueue(receiverId: string, expectedWs = receiverClients.get(receiverId)?.ws): void {
+  if (!expectedWs || receiverClients.get(receiverId)?.ws !== expectedWs) return;
   const q = screenshotQueues.get(receiverId);
   if (!q || q.length === 0) { screenshotProcessing.set(receiverId, false); return; }
   screenshotProcessing.set(receiverId, true);
@@ -353,7 +366,12 @@ function processScreenshotQueue(receiverId: string): void {
     try { client.ws.send(JSON.stringify(item.payload)); } catch { /* ignore */ }
   }
   // 500ms 后推送下一条
-  const timer = setTimeout(() => processScreenshotQueue(receiverId), 500);
+  const timer = setTimeout(() => {
+    if (screenshotTimers.get(receiverId) !== timer) return;
+    screenshotTimers.delete(receiverId);
+    processScreenshotQueue(receiverId, expectedWs);
+  }, 500);
+  screenshotTimers.set(receiverId, timer);
   timer.unref();
 }
 
@@ -396,6 +414,7 @@ function handleConnection(ws: WebSocket): void {
   let role: NodeRole | null = null;
   let identity: NodeIdentity | undefined;
   let deviceId: string | null = null;
+  let connectionKey: string | null = null;
   const ts = new Date().toISOString();
   const remoteIp = (ws as any).socket?.remoteAddress ?? 'unknown';
 
@@ -418,18 +437,19 @@ function handleConnection(ws: WebSocket): void {
 
     if (!authenticated) {
       if (msg.type === 'auth') {
-        handleAuth(ws, msg as WsAuthMessage, authTimer, (r, d) => {
+        handleAuth(ws, msg as WsAuthMessage, authTimer, (r, d, key) => {
           authenticated = true;
           role = r;
           identity = authenticateNode(msg);
           deviceId = d;
+          connectionKey = key;
         });
       }
       return;
     }
     const authenticatedDeviceId = deviceId;
     if (!authenticatedDeviceId) return;
-    const owner = role === 'detector' ? detectorClients.get(authenticatedDeviceId) : role === 'lifecycle' ? residentWindowsClients.get(authenticatedDeviceId) : role === 'notifier' ? notifierClients.get(authenticatedDeviceId) : receiverClients.get(authenticatedDeviceId);
+    const owner = role === 'detector' ? detectorClients.get(authenticatedDeviceId) : role === 'lifecycle' ? residentWindowsClients.get(authenticatedDeviceId) : role === 'notifier' ? notifierClients.get(authenticatedDeviceId) : receiverClients.get(connectionKey!);
     if (owner?.ws !== ws) return;
 
     switch (msg.type) {
@@ -439,7 +459,7 @@ function handleConnection(ws: WebSocket): void {
         }
         break;
       case 'heartbeat-console':
-        if (role === 'console') handleHeartbeatReceiver({ ...(msg as WsHeartbeatAndroid), deviceId: authenticatedDeviceId });
+        if (role === 'console') handleHeartbeatReceiver({ ...(msg as WsHeartbeatAndroid), deviceId: authenticatedDeviceId }, connectionKey!);
         break;
       case 'heartbeat-notifier':
         if (role === 'notifier') {
@@ -566,11 +586,11 @@ function handleConnection(ws: WebSocket): void {
         if (role === 'detector' || role === 'lifecycle') handleCommandAck(msg as WsCommandAck, deviceId!, ws);
         break;
       case 'disconnect-reason':
-        if (role === 'console') handleDisconnectReason(msg as WsDisconnectReason, role, deviceId);
+        if (role === 'console') handleDisconnectReason(msg as WsDisconnectReason, role, connectionKey);
         break;
       case 'session-info':
         // 会话信息只对控制台有意义，且必须绑定认证身份，不能由消息自称 deviceId。
-        if (role === 'console' && deviceId) handleSessionInfo(msg as WsSessionInfo, deviceId);
+        if (role === 'console' && connectionKey) handleSessionInfo(msg as WsSessionInfo, connectionKey);
         break;
     }
   });
@@ -582,9 +602,9 @@ function handleConnection(ws: WebSocket): void {
     if (deviceId) {
       if (role === 'detector') {
         const existing = detectorClients.get(deviceId);
-        if (existing?.ws === ws) scheduleDetectorRemoval(detectorClients, existing.clientType, deviceId, ws);
+        if (existing?.ws === ws) { clearConnectionWork(deviceId, ws); scheduleDetectorRemoval(detectorClients, existing.clientType, deviceId, ws); }
       } else if (role === 'console') {
-        const existing = receiverClients.get(deviceId);
+        const existing = receiverClients.get(connectionKey!);
         if (existing && existing.ws === ws) {
           const endReason = closeCodeToSessionEndReason(code, deviceId);
           const session = androidSessions.get(deviceId);
@@ -592,7 +612,8 @@ function handleConnection(ws: WebSocket): void {
             session.lastSessionEndReason = endReason;
             session.lastSessionDurationMs = Date.now() - session.connectedAt;
           }
-          receiverClients.delete(deviceId);
+          receiverClients.delete(connectionKey!);
+          clearConnectionWork(connectionKey!, ws);
           console.log(`[ws][${ts2}] 控制台 断开: ${deviceId} code=${code}(${codeName}) 推断原因=${endReason} 控制台在线=${receiverClients.size}`);
         } else {
           console.log(`[ws][${ts2}] 控制台 旧连接关闭: ${deviceId} code=${code}(${codeName})`);
@@ -603,6 +624,7 @@ function handleConnection(ws: WebSocket): void {
       } else if (role === 'lifecycle') {
         const existing = residentWindowsClients.get(deviceId);
         if (existing?.ws === ws) {
+          clearConnectionWork(deviceId, ws);
           residentWindowsClients.delete(deviceId);
           scheduleBroadcast();
           console.log(`[ws][${ts2}] 视觉驻留 断开: ${deviceId}`);
@@ -651,7 +673,7 @@ function broadcastScreenshotData(payload: WsScreenshotDataPush): void {
 
 function handleAuth(
   ws: WebSocket, msg: WsAuthMessage, authTimer: NodeJS.Timeout,
-  onSuccess: (role: NodeRole, deviceId: string) => void,
+  onSuccess: (role: NodeRole, deviceId: string, connectionKey: string) => void,
 ): void {
   clearTimeout(authTimer);
   const identity = authenticateNode(msg);
@@ -661,8 +683,9 @@ function handleAuth(
   }
   const map = identity.role === 'detector' ? detectorClients : identity.role === 'console' ? receiverClients
     : identity.role === 'notifier' ? notifierClients : residentWindowsClients;
-  const existing = map.get(identity.deviceId);
-  if (existing) { map.delete(identity.deviceId); sendJson(existing.ws, { type: 'kicked', reason: 'duplicate connection' }); existing.ws.terminate(); }
+  const key = identity.component === 'web-console' ? accountStore.authenticate(msg.token)!.sessionId : identity.deviceId;
+  const existing = map.get(key);
+  if (existing) { map.delete(key); clearConnectionWork(key, existing.ws); sendJson(existing.ws, { type: 'kicked', reason: 'duplicate connection' }); existing.ws.terminate(); }
   if (identity.role === 'detector') {
     clearPendingDetectorRemoval(clientType(identity), identity.deviceId);
     const client = createDetectorClient(ws, identity, clientType(identity));
@@ -675,13 +698,13 @@ function handleAuth(
       deviceName: detectorClients.get(identity.deviceId)?.deviceName || identity.deviceName,
       lastSeen: new Date(), components: { resident: 'running', detectorApp: 'stopped' } });
   } else {
-    (identity.role === 'console' ? receiverClients : notifierClients).set(identity.deviceId, { ws, deviceId: identity.deviceId, deviceName: identity.deviceName, identity, lastSeen: new Date() });
+    (identity.role === 'console' ? receiverClients : notifierClients).set(key, { ws, deviceId: identity.deviceId, deviceName: identity.deviceName, identity, lastSeen: new Date() });
   }
   sendJson(ws, { type: 'auth-result', success: true, identity, account: accountStore.authenticate(msg.token)!.account, ...identity, channel: config.channelId, maxSources: config.maxSourcesPerDetector,
     timeStandard: timeStandard.get(),
     ...(identity.role === 'notifier' ? { notificationScope: notificationScopes.get(identity.deviceId) } : {}),
     realtimeTtlMs: REALTIME_TTL_MS, heartbeatIntervalMs: identity.role === 'console' ? 30_000 : 3000, connectionTimeoutMs: 45_000 });
-  onSuccess(identity.role, identity.deviceId);
+  onSuccess(identity.role, identity.deviceId, key);
   socketTokens.set(ws, msg.token);
   mediaRelay.ensureAccount(accountId);
   sendJson(ws, { type: 'stream-list', streams: mediaRelay.streams(accountId) });
@@ -777,8 +800,8 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   if (changed) scheduleBroadcast();
 }
 
-function handleHeartbeatReceiver(msg: WsHeartbeatAndroid): void {
-  const client = receiverClients.get(msg.deviceId);
+function handleHeartbeatReceiver(msg: WsHeartbeatAndroid, connectionKey: string): void {
+  const client = receiverClients.get(connectionKey);
   if (!client) {
     console.warn(`[ws][${new Date().toISOString()}] 控制台心跳但客户端不存在: deviceId=${msg.deviceId}`);
     return;
@@ -1266,8 +1289,7 @@ const maintenanceTimer = setInterval(() => {
       console.log(`[ws][${ts}] 控制台幽灵清理: ${id} (静默 ${silentSec}s 阈值 ${config.receiverGhostThresholdMs / 1000}s)`);
       client.ws.terminate();
       receiverClients.delete(id);
-      screenshotQueues.delete(id);
-      screenshotProcessing.delete(id);
+      clearConnectionWork(id, client.ws);
     }
   }
 
@@ -1312,7 +1334,7 @@ function revokeAndRefresh(): void {
       const live = accountStore.authenticate(socketTokens.get(client.ws));
       if (!live) {
         clients.delete(id); clearPendingDetectorRemoval('windows', id); clearPendingDetectorRemoval('android-camera', id);
-        screenshotQueues.delete(id); screenshotProcessing.delete(id); dropDeliveries(id);
+        clearConnectionWork(id, client.ws); dropDeliveries(id);
         for (const [key, delivery] of deliveries) if (delivery.alert.deviceId === id) deliveries.delete(key);
         for (const [key, fault] of faultOutbox) if (fault.deviceId === id) faultOutbox.delete(key);
         for (const key of activeFaults) if (key.startsWith(`${id}:`)) activeFaults.delete(key);

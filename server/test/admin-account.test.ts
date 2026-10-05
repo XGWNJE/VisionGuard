@@ -17,7 +17,9 @@ test.after(() => fs.rmSync(directory, { recursive: true, force: true }));
 test('administrator bootstrap preserves the existing password and is idempotent', async () => {
   const file = path.join(directory, 'existing', 'accounts.json'), store = new AccountStore(file);
   const original = store.createAccount('xgwnje', 'existing-private-password');
+  const ordinarySession = await store.login({ username: 'xgwnje', password: 'existing-private-password', component: 'web-console' });
   store.ensureAdministrator('xgwnje'); store.ensureAdministrator('xgwnje');
+  assert.equal(store.authenticate(ordinarySession.token), undefined);
   assert.deepEqual(store.accounts(), [{ ...original, isAdmin: true, enabled: true }]);
   const login = await store.login({ username: 'xgwnje', password: 'existing-private-password', component: 'web-console' });
   assert.equal(login.account.isAdmin, true);

@@ -72,7 +72,8 @@ export class AccountStore {
     if (!validUsername(username)) throw new AccountError(400, 'Invalid administrator username');
     const existing = this.data.accounts.find(account => account.username === username.toLowerCase());
     if (existing) {
-      this.commit({ ...this.data, accounts: this.data.accounts.map(account => account === existing ? { ...account, isAdmin: true, disabled: false } : account) });
+      this.commit({ ...this.data, accounts: this.data.accounts.map(account => account === existing ? { ...account, isAdmin: true, disabled: false } : account),
+        sessions: this.data.sessions.filter(session => session.accountId !== existing.accountId) });
       return;
     }
     const password = crypto.randomBytes(24).toString('base64url');
@@ -132,7 +133,8 @@ export class AccountStore {
       devices.splice(0, devices.length, ...devices.filter(item => !(item.deviceId === child.deviceId && item.component === child.component)), child);
       resident = this.issue(nextAccount, child, session.stored.sessionId);
     }
-    const replaced = new Set(this.data.sessions.filter(item => item.accountId === account.accountId && item.deviceId === device!.deviceId && item.component === component).map(item => item.sessionId));
+    // 浏览器设备登记可复用；登录会话彼此独立。硬件身份仍只保留最新凭证。
+    const replaced = new Set(this.data.sessions.filter(item => component !== 'web-console' && item.accountId === account.accountId && item.deviceId === device!.deviceId && item.component === component).map(item => item.sessionId));
     this.commit({ ...this.data, accounts: this.data.accounts.map(item => item.accountId === account.accountId ? nextAccount : item), devices, sessions: [...this.data.sessions.filter(item => Date.parse(item.expiresAt) > Date.now() && !replaced.has(item.sessionId) && !replaced.has(item.parentId ?? '')), session.stored, ...(resident ? [resident.stored] : [])] });
     return { ...session.result, ...(resident ? { resident: resident.result } : {}) };
   }
@@ -147,6 +149,7 @@ export class AccountStore {
     return { sessionId: session.sessionId, account: { accountId: account.accountId, username: account.username, isAdmin: !!account.isAdmin }, device: { ...device }, expiresAt: session.expiresAt, ...(session.parentId ? { parentId: session.parentId } : {}) };
   }
   refresh(session: AccountSession): AccountSession & { token: string; resident?: AccountSession & { token: string } } {
+    if (!this.data.sessions.some(item => item.sessionId === session.sessionId && item.accountId === session.account.accountId && Date.parse(item.expiresAt) > Date.now())) throw new AccountError(401, 'Session has been revoked');
     const account = this.data.accounts.find(item => item.accountId === session.account.accountId)!;
     const issued = this.issue(account, session.device, session.parentId);
     const resident = session.device.component === 'windows-inference' ? this.issue(account, { ...session.device, component: 'windows-resident', role: 'lifecycle', nodeType: 'resident' }, issued.stored.sessionId) : undefined;

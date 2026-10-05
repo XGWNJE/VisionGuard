@@ -89,3 +89,16 @@ test('suspending for credential rotation removes old revocation callbacks before
   assert.equal(h.render(replacement).connected,true);assert.equal(h.render(replacement).authExpired,false);
   second.revoked();assert.equal(h.render(replacement).authExpired,true);
 });
+
+test('a new session on the same device cannot expose data from the previous token before effect cleanup',async t=>{
+  const h=harness(()=>Promise.resolve(new Response(JSON.stringify({alerts:[]}),{status:200})));
+  t.after(()=>h.stop());h.render();const first=h.sockets[0];first.open();first.receive({type:'auth-result',success:true});
+  first.receive({type:'alert',alertId:'old-session-event',timestamp:'2026-10-05T00:00:00Z',deviceId:'one'});
+  assert.equal(h.render().alerts.length,1);
+  const next={...login,token:'d'.repeat(32)};
+  const uncommitted=h.render(next,false);
+  assert.equal(uncommitted.connected,false);assert.equal(uncommitted.alerts.length,0);
+  h.commit();
+  first.receive({type:'alert',alertId:'late-event',timestamp:'2026-10-05T00:00:00Z',deviceId:'one'});
+  assert.equal(h.render(next).alerts.length,0);
+});
