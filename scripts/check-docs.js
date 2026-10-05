@@ -310,7 +310,7 @@ function checkDeprecatedEntrypoints(root, markdownFiles, contents, errors) {
 }
 
 function checkComponentContract(root, readme, overview, operations, errors, namingOverride) {
-  const namingPath = 'docs/codex/15-component-naming.md';
+  const namingPath = 'docs/15-命名规范.md';
   const naming = namingOverride ?? readUtf8(root, namingPath, errors);
   const tableRows = (content, heading) => {
     const start = content.indexOf(heading);
@@ -367,11 +367,11 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
     errors.push(`[component] README.md current component table has ${readmeRows.length} data rows; expected ${COMPONENTS.length}`);
   }
   if (overviewRows.length !== COMPONENTS.length) {
-    errors.push(`[component] docs/codex/10-project-overview.md current component table has ${overviewRows.length} data rows; expected ${COMPONENTS.length}`);
+    errors.push(`[component] docs/10-当前架构.md current component table has ${overviewRows.length} data rows; expected ${COMPONENTS.length}`);
   }
 
   const expectedNames = COMPONENTS.map(component => component.label);
-  for (const [relativePath, rows] of [['README.md', readmeRows], ['docs/codex/10-project-overview.md', overviewRows]]) {
+  for (const [relativePath, rows] of [['README.md', readmeRows], ['docs/10-当前架构.md', overviewRows]]) {
     const names = rows.map(row => row.split('|')[1].trim());
     const platforms = rows.map(row => row.split('|')[2].trim());
     if (JSON.stringify(platforms) !== JSON.stringify(COMPONENTS.map(component => component.platform))) {
@@ -391,25 +391,25 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
       continue;
     }
     requireText(readme, component.relativePath, 'README.md', `the component path for ${component.label}`, errors);
-    requireText(overview, component.relativePath, 'docs/codex/10-project-overview.md', `the component path for ${component.label}`, errors);
+    requireText(overview, component.relativePath, 'docs/10-当前架构.md', `the component path for ${component.label}`, errors);
     requireText(readme, component.label, 'README.md', `the canonical component name ${component.label}`, errors);
-    requireText(overview, component.label, 'docs/codex/10-project-overview.md', `the canonical component name ${component.label}`, errors);
+    requireText(overview, component.label, 'docs/10-当前架构.md', `the canonical component name ${component.label}`, errors);
   }
 
   const connectionManager = readUtf8(root, 'server/src/services/ConnectionManager.ts', errors, { checkBom: false });
   for (const role of WS_ROLES) {
     requireText(connectionManager, `'${role}'`, 'server/src/services/ConnectionManager.ts', `the active WebSocket role ${role}`, errors);
-    requireText(overview, `\`${role}\``, 'docs/codex/10-project-overview.md', `the documented WebSocket role ${role}`, errors);
+    requireText(overview, `\`${role}\``, 'docs/10-当前架构.md', `the documented WebSocket role ${role}`, errors);
   }
 
   const residentProgram = readUtf8(root, 'detector/windows-resident/Program.cs', errors, { checkBom: false });
-  for (const [relativePath, content] of [['README.md', readme], ['docs/codex/10-project-overview.md', overview]]) {
+  for (const [relativePath, content] of [['README.md', readme], ['docs/10-当前架构.md', overview]]) {
     requireText(content, 'detector/windows-resident/', relativePath, 'the visual node internal resident source entry', errors);
   }
   // Windows 只剩一个检测端，生命周期命令统一为 detector。
   for (const command of ['open-detector', 'close-detector']) {
     requireText(residentProgram, `"${command}"`, 'detector/windows-resident/Program.cs', `the resident command ${command}`, errors);
-    requireText(operations, `\`${command}\``, 'docs/codex/60-operations.md', `the resident command ${command}`, errors);
+    requireText(operations, `\`${command}\``, 'docs/60-构建验证与发布.md', `the resident command ${command}`, errors);
   }
 
   for (const [directory, role, name, engineering, rowName] of [
@@ -540,25 +540,25 @@ function checkValidationContract(root, readme, operations, verificationReport, e
   requireText(wpfSmokeProgram, 'string.Equals(d.Label, "person"', 'detector/windows-wpf-smoke/Program.cs', 'the exact person-label assertion', errors);
   requireText(wpfSmokeProgram, 'expectedLabel = "person"', 'detector/windows-wpf-smoke/Program.cs', 'the person evidence label', errors);
   requireText(readme, 'person', 'README.md', 'the WPF person semantic assertion', errors);
-  requireText(operations, '真实窗口采集', 'docs/codex/60-operations.md', 'the real-window boundary', errors);
-  requirePattern(operations, /完整(?:报警|告警)链/, 'docs/codex/60-operations.md', 'the full-alert-chain boundary', errors);
-  requireText(verificationReport, '不把源码存在', 'docs/codex/90-verification-report.md', 'the evidence anti-overclaim rule', errors);
-  requirePattern(verificationReport, /待人工[、/].*真机/, 'docs/codex/90-verification-report.md', 'the pending manual/device status vocabulary', errors);
+  requireText(operations, '真实窗口采集', 'docs/60-构建验证与发布.md', 'the real-window boundary', errors);
+  requirePattern(operations, /完整(?:报警|告警)链/, 'docs/60-构建验证与发布.md', 'the full-alert-chain boundary', errors);
+  requireText(verificationReport, '不把源码存在', 'docs/90-验证记录.md', 'the evidence anti-overclaim rule', errors);
+  requirePattern(verificationReport, /待人工[、/].*真机/, 'docs/90-验证记录.md', 'the pending manual/device status vocabulary', errors);
 }
 
 function checkDocumentResponsibilities(readme, index, codexGuide, agents, operations, verificationReport, errors) {
-  requireText(readme, './docs/codex/00-index.md', 'README.md', 'the canonical documentation index link', errors);
-  requireText(readme, './docs/codex/60-operations.md', 'README.md', 'the operational verification pointer', errors);
-  requireText(index, 'README 面向用户和开发者', 'docs/codex/00-index.md', 'the README responsibility statement', errors);
-  requireText(index, 'AGENTS.md 维护项目操作规则', 'docs/codex/00-index.md', 'the AGENTS responsibility statement', errors);
+  requireText(readme, './docs/00-文档索引.md', 'README.md', 'the canonical documentation index link', errors);
+  requireText(readme, './docs/60-构建验证与发布.md', 'README.md', 'the operational verification pointer', errors);
+  requireText(index, 'README 面向用户和开发者', 'docs/00-文档索引.md', 'the README responsibility statement', errors);
+  requireText(index, 'AGENTS.md 维护项目操作规则', 'docs/00-文档索引.md', 'the AGENTS responsibility statement', errors);
 
-  requireText(index, '验证报告维护自动化、人工和真机证据', 'docs/codex/00-index.md', 'the verification responsibility statement', errors);
-  requireText(codexGuide, 'docs/codex/00-index.md', 'CODEX.md', 'the canonical documentation index pointer', errors);
-  requireText(agents, 'docs/codex/90-verification-report.md', 'AGENTS.md', 'the verification evidence pointer', errors);
-  requireText(agents, 'docs/codex/60-operations.md', 'AGENTS.md', 'the operations pointer', errors);
+  requireText(index, '验证报告维护自动化、人工和真机证据', 'docs/00-文档索引.md', 'the verification responsibility statement', errors);
+  requireText(codexGuide, 'docs/00-文档索引.md', 'CODEX.md', 'the canonical documentation index pointer', errors);
+  requireText(agents, 'docs/90-验证记录.md', 'AGENTS.md', 'the verification evidence pointer', errors);
+  requireText(agents, 'docs/60-构建验证与发布.md', 'AGENTS.md', 'the operations pointer', errors);
 
-  requireText(operations, 'ServerBuild', 'docs/codex/60-operations.md', 'the operational ServerBuild entry', errors);
-  requireText(verificationReport, '证据台账', 'docs/codex/90-verification-report.md', 'the verification-ledger ownership', errors);
+  requireText(operations, 'ServerBuild', 'docs/60-构建验证与发布.md', 'the operational ServerBuild entry', errors);
+  requireText(verificationReport, '证据台账', 'docs/90-验证记录.md', 'the verification-ledger ownership', errors);
 }
 
 function checkEvidencePaths(root, documents, errors) {
@@ -591,11 +591,11 @@ function checkEvidencePaths(root, documents, errors) {
 function checkIndexCoverage(codexFiles, index, codexGuide, errors) {
   for (const relativePath of codexFiles) {
     const fileName = path.basename(relativePath);
-    if (fileName === '00-index.md') {
+    if (fileName === '00-文档索引.md') {
       continue;
     }
-    requireText(index, `](${fileName})`, 'docs/codex/00-index.md', `navigation for ${fileName}`, errors);
-    requireText(codexGuide, `](docs/codex/${fileName})`, 'CODEX.md', `navigation for ${fileName}`, errors);
+    requireText(index, `](${fileName})`, 'docs/00-文档索引.md', `navigation for ${fileName}`, errors);
+    requireText(codexGuide, `](docs/${fileName})`, 'CODEX.md', `navigation for ${fileName}`, errors);
   }
 }
 
@@ -606,7 +606,7 @@ function checkVerificationVersionClaims(version, verificationReport, errors) {
     }
     const match = line.match(/\b(\d+\.\d+\.\d+)\b/);
     if (match && match[1] !== version) {
-      errors.push(`[version] docs/codex/90-verification-report.md claims ${match[1]} as current; expected ${version}`);
+      errors.push(`[version] docs/90-验证记录.md claims ${match[1]} as current; expected ${version}`);
     }
   }
 }
@@ -614,7 +614,7 @@ function checkVerificationVersionClaims(version, verificationReport, errors) {
 function checkProductContract(readme, overview, agents, errors) {
   for (const [relativePath, content] of [
     ['README.md', readme],
-    ['docs/codex/10-project-overview.md', overview]
+    ['docs/10-当前架构.md', overview]
   ]) {
     requireText(content, '当前', relativePath, 'the current implementation summary', errors);
     requirePattern(content, /Win7[^\n]*legacy|legacy[^\n]*Win7/, relativePath, 'the Win7 legacy compatibility summary', errors);
@@ -629,8 +629,8 @@ function checkProductContract(readme, overview, agents, errors) {
 function checkCurrentComponentNames(markdownFiles, contents, errors) {
   const staleNames = /视觉中继|视觉检测[（(](?:Windows|Android)[）)]|视觉告警|\bVision Guard\b/;
   for (const relativePath of markdownFiles) {
-    if (relativePath === 'docs/codex/15-component-naming.md') continue;
-    if (!['README.md', 'AGENTS.md', 'CODEX.md'].includes(relativePath) && !relativePath.startsWith('docs/codex/') && !relativePath.startsWith('docs/design/')) continue;
+    if (relativePath === 'docs/15-命名规范.md') continue;
+    if (!['README.md', 'AGENTS.md', 'CODEX.md'].includes(relativePath) && (!relativePath.startsWith('docs/') || /发行说明v/.test(relativePath))) continue;
     if (staleNames.test(contents.get(relativePath) || '')) {
       errors.push(`[naming] ${relativePath} uses a retired component display name; use the canonical naming document`);
     }
@@ -642,10 +642,10 @@ function checkCancelledPlans(root, markdownFiles, contents, errors) {
   if (fs.existsSync(path.join(root, retiredPath))) {
     errors.push('[cancelled-plan] cancelled roadmap must not be restored');
   }
-  const cancelledTerms = /15-product-roadmap\.md|(?<![\d.])5\.0(?![\d.])|路线图|\bV\d+\s*[·：]|决策\s*\d+|Detector Platform|Reliable Event Network|Device & Fleet Cloud|Linux (?:ARM64 )?Edge Detector|Web Management Console|DeviceOfflineAlert/;
+  const cancelledTerms = /15-product-roadmap\.md|(?<![\d.])5\.0(?![\d.])|\bV\d+\s*[·：]|决策\s*\d+|Detector Platform|Reliable Event Network|Device & Fleet Cloud|Linux (?:ARM64 )?Edge Detector|Web Management Console|DeviceOfflineAlert/;
   for (const relativePath of markdownFiles) {
     // 授权条款与正式发布历史不作为未来工作清单；它们仍受独立的许可与版本检查约束。
-    if (!['README.md', 'AGENTS.md', 'CODEX.md'].includes(relativePath) && !relativePath.startsWith('docs/codex/') && !relativePath.startsWith('docs/design/')) continue;
+    if (!['README.md', 'AGENTS.md', 'CODEX.md'].includes(relativePath) && (!relativePath.startsWith('docs/') || /发行说明v/.test(relativePath))) continue;
     if (cancelledTerms.test(contents.get(relativePath) || '')) {
       errors.push(`[cancelled-plan] ${relativePath} references cancelled version/platform plans`);
     }
@@ -672,11 +672,11 @@ function checkLicenseTexts(texts, errors) {
   requireText(readme, 'badge/license-MIT-', 'README.md', 'the MIT badge', errors);
   requireText(readme, '[MIT License](./LICENSE)', 'README.md', 'the project license link', errors);
   requireText(contributing, '[MIT License](LICENSE)', 'CONTRIBUTING.md', 'the project license link', errors);
-  requireText(overview, 'MIT License', 'docs/codex/10-project-overview.md', 'the MIT license summary', errors);
+  requireText(overview, 'MIT License', 'docs/10-当前架构.md', 'the MIT license summary', errors);
   requireText(agents, '根目录 `LICENSE` 是唯一项目许可证入口', 'AGENTS.md', 'the canonical project license pointer', errors);
   for (const [relativePath, content] of [
     ['README.md', readme], ['CONTRIBUTING.md', contributing],
-    ['docs/codex/10-project-overview.md', overview], ['AGENTS.md', agents]
+    ['docs/10-当前架构.md', overview], ['AGENTS.md', agents]
   ]) {
     requireText(content, '第三方', relativePath, 'the separate third-party license boundary', errors);
   }
@@ -700,14 +700,14 @@ function checkLicenseContract(root, readme, overview, agents, errors) {
 function checkDomainAlignment(root, operations, readme, overview, errors) {
   const match = operations.match(/VisionGuard 正式域名：`(https:\/\/[^`]+)`/);
   if (!match) {
-    errors.push('[domain] docs/codex/60-operations.md does not declare the canonical service domain');
+    errors.push('[domain] docs/60-构建验证与发布.md does not declare the canonical service domain');
     return;
   }
 
   const domain = match[1];
   for (const [relativePath, content] of [
     ['README.md', readme],
-    ['docs/codex/10-project-overview.md', overview],
+    ['docs/10-当前架构.md', overview],
     ['detector/windows-shared/Utils/AccountSession.cs', readUtf8(root, 'detector/windows-shared/Utils/AccountSession.cs', errors, { checkBom: false })],
     ['detector/android/app/build.gradle.kts', readUtf8(root, 'detector/android/app/build.gradle.kts', errors, { checkBom: false })],
     ['android-shared/src/main/java/com/xgwnje/visionguard/account/AccountStore.kt', readUtf8(root, 'android-shared/src/main/java/com/xgwnje/visionguard/account/AccountStore.kt', errors, { checkBom: false })]
@@ -718,9 +718,8 @@ function checkDomainAlignment(root, operations, readme, overview, errors) {
 
 function auditRepository(root = DEFAULT_ROOT) {
   const errors = [];
-  const codexFiles = listMarkdownFiles(root, 'docs/codex');
   const docsFiles = listMarkdownFiles(root, 'docs');
-  const designFiles = listMarkdownFiles(root, 'docs/design');
+  const codexFiles = docsFiles;
   const markdownFiles = [...new Set([
     'README.md',
     'AGENTS.md',
@@ -742,11 +741,11 @@ function auditRepository(root = DEFAULT_ROOT) {
   const readme = contents.get('README.md') || '';
   const agents = contents.get('AGENTS.md') || '';
   const codexGuide = contents.get('CODEX.md') || '';
-  const index = contents.get('docs/codex/00-index.md') || '';
-  const overview = contents.get('docs/codex/10-project-overview.md') || '';
+  const index = contents.get('docs/00-文档索引.md') || '';
+  const overview = contents.get('docs/10-当前架构.md') || '';
 
-  const operations = contents.get('docs/codex/60-operations.md') || '';
-  const verificationReport = contents.get('docs/codex/90-verification-report.md') || '';
+  const operations = contents.get('docs/60-构建验证与发布.md') || '';
+  const verificationReport = contents.get('docs/90-验证记录.md') || '';
 
   if (VERSION_PATTERN.test(version)) {
     checkReadmeVersion(version, readme, errors);
@@ -764,19 +763,17 @@ function auditRepository(root = DEFAULT_ROOT) {
   checkDocumentResponsibilities(readme, index, codexGuide, agents, operations, verificationReport, errors);
   checkEvidencePaths(root, [
 
-    ['docs/codex/90-verification-report.md', verificationReport]
+    ['docs/90-验证记录.md', verificationReport]
   ], errors);
   checkLocalLinks(root, markdownFiles, contents, errors);
   checkDocumentAnchors(markdownFiles, contents, errors);
   checkDeprecatedEntrypoints(root, markdownFiles, contents, errors);
   checkCancelledPlans(root, markdownFiles, contents, errors);
 
-  const designIndex = contents.get('docs/design/README.md') || '';
-  for (const relativePath of designFiles) {
-    const fileName = path.basename(relativePath);
-    if (fileName !== 'README.md') {
-      requireText(designIndex, `](./${fileName})`, 'docs/design/README.md', `navigation for ${fileName}`, errors);
-    }
+  for (const relativePath of docsFiles) {
+    if (!/^docs\/\d+-[^/]*[\u4e00-\u9fff][^/]*\.md$/.test(relativePath)) errors.push(`[layout] ${relativePath} must be flat and numbered with a Chinese name`);
+    const beginning=(contents.get(relativePath) || '').split(/\r?\n/).slice(0,8).join('\n');
+    for (const responsibility of ['负责：','不负责：','更新时机：']) requireText(beginning,responsibility,relativePath,'document scope',errors);
   }
 
   return errors;

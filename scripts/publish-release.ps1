@@ -640,7 +640,8 @@ function Get-Sha256 {
 
 function Assert-GitHubReleaseNotes {
     if ([string]::IsNullOrWhiteSpace($GitHubReleaseNotesPath)) {
-        throw "-GitHubReleaseNotesPath is required when creating or updating a GitHub Release."
+        $GitHubReleaseNotesPath = & node (Join-Path $repoRoot 'scripts/release-notes.js') $Version
+        if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve numbered release notes.' }
     }
 
     $resolvedPath = Resolve-Path -LiteralPath $GitHubReleaseNotesPath -ErrorAction SilentlyContinue
@@ -1251,10 +1252,6 @@ if ($Version -notmatch '^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$') {
 
 if ($DeployServer -and $SkipServerDeploy) {
     throw "Use either -DeployServer or -SkipServerDeploy, not both."
-}
-
-if ($CreateGitHubRelease -and [string]::IsNullOrWhiteSpace($GitHubReleaseNotesPath)) {
-    throw "-GitHubReleaseNotesPath is required with -CreateGitHubRelease."
 }
 
 if ($GitHubOnly) {

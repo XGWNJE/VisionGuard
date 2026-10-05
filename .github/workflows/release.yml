@@ -81,19 +81,20 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
+          NOTES_PATH="$(node scripts/release-notes.js "$VERSION")"
           if gh release view "v$VERSION" >/dev/null 2>&1; then
             test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" --jq '.draft')" = true
             gh release edit "v$VERSION" \
               --draft=true \
               --title "VisionGuard v$VERSION" \
-              --notes-file "docs/releases/v$VERSION.md"
+              --notes-file "$NOTES_PATH"
             gh release upload "v$VERSION" release-assets/* --clobber
           else
             gh release create "v$VERSION" release-assets/* \
               --draft \
               --target "${{ github.sha }}" \
               --title "VisionGuard v$VERSION" \
-              --notes-file "docs/releases/v$VERSION.md"
+              --notes-file "$NOTES_PATH"
           fi
           gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" > uploaded-release.json
           test "$(jq -r '.draft' uploaded-release.json)" = true

@@ -48,7 +48,7 @@ test('agent entrypoint references visionguard-release instead of push-update', (
 test('release-facing documentation stays aligned with VERSION and the canonical publish script', () => {
   const version = read('VERSION').trim();
   const readme = read('README.md');
-  const modelAssets = read('docs/codex/35-model-assets.md');
+  const modelAssets = read('docs/35-模型资源.md');
 
   assert.ok(readme.includes(`badge/version-${version}-`));
   assert.match(modelAssets, /scripts[\\/]publish-release\.ps1/);
