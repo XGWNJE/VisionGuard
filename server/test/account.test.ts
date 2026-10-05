@@ -23,16 +23,23 @@ test.after(() => fs.rmSync(directory, { recursive: true, force: true }));
 
 let fixtureSequence = 0;
 async function fixture(t: any) {
-  const fixtureIp = `192.0.2.${++fixtureSequence}`;
-  const app = express(); app.set('trust proxy', 'loopback'); app.use(express.json()); app.use(accountRouter); app.use(alertsRouter); app.use(screenshotRouter); app.use(streamsRouter);
+  const fixtureIp = `127.0.0.${++fixtureSequence}`;
+  const app = express(); app.use(express.json()); app.use(accountRouter); app.use(alertsRouter); app.use(screenshotRouter); app.use(streamsRouter);
   const server = http.createServer(app); const wss = new WebSocketServer({ server }); wss.on('connection', handleConnection);
   const peers: WebSocket[] = [];
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = `http://127.0.0.1:${(server.address() as any).port}`;
   t.after(async () => { peers.forEach(ws => ws.terminate()); wss.close(); await new Promise<void>(resolve => server.close(() => resolve())); });
   async function request(url: string, method = 'GET', body?: object, token?: string) {
-    const response = await fetch(origin + url, { method, headers: { 'X-Forwarded-For': fixtureIp, ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
-    const text = await response.text(); return { status: response.status, data: (() => { try { return JSON.parse(text); } catch { return text; } })() };
+    return await new Promise<{ status: number; data: any }>((resolve, reject) => {
+      const req = http.request(origin + url, { method, localAddress: fixtureIp,
+        headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) } }, response => {
+        const chunks: Buffer[] = []; response.on('data', chunk => chunks.push(chunk)); response.on('end', () => {
+          const text = Buffer.concat(chunks).toString(); resolve({ status: response.statusCode!, data: (() => { try { return JSON.parse(text); } catch { return text; } })() });
+        });
+      });
+      req.on('error', reject); req.end(body ? JSON.stringify(body) : undefined);
+    });
   }
   async function login(component = 'web-console', account = 'a', extra = {}) {
     const result = await request('/api/account/login', 'POST', { username: `account-${account}`, password: `private-test-password-${account}`, component, ...extra });
