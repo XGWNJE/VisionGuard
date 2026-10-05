@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRequestId, mergeAlerts, parseTimeStandard, websocketURL, type Ack, type Alert, type Device, type Identity, type Notifier, type Stream, type TimeStandard } from './protocol';
 import type { Login } from './account';
+// Keep every operation awaiting its result; bound only completed history.
+const retainAcks = (items: Ack[]) => { let history=0; return items.filter(item => ['pending','forwarded'].includes(item.phase ?? '') || history++ < 100); };
 export function useRelay(login: Login | null) {
   const scope = login ? `${login.account.accountId}:${login.device.deviceId}:${login.token}` : '';
   const [dataScope, setDataScope] = useState('');
@@ -16,6 +18,7 @@ export function useRelay(login: Login | null) {
   const [streams, setStreams] = useState<Stream[]>([]);
   const [expiredToken, setExpiredToken] = useState('');
   const transport = useRef<WebSocket | null>(null);
+  const pending = useRef(new Map<string,{key:string;deadline:number}>());
   const refresh = useRef<() => void>(() => {});
   const suspend = useRef<() => void>(() => {});
   useEffect(() => {
@@ -25,6 +28,8 @@ export function useRelay(login: Login | null) {
     let lastResponse = performance.now(), opened = 0, retry = 1_000, nextAttempt = 0;
     let historyAbort: AbortController | null = null;
     const disconnect = (text: string) => {
+      pending.current.clear();
+      if (!stopped) setAcks(old => old.map(ack => ['pending','forwarded'].includes(ack.phase ?? '') ? {...ack,phase:'uncertain',success:false,reason:'连接中断，执行结果待核实'} : ack));
       authenticated = false; setConnected(false); setStatus(text);
       setDevices([]); setStreams([]); setNotifiers(items => items.map(notifier => ({...notifier,online:false})));
       const old = ws; ws = null; transport.current = null;
@@ -70,7 +75,7 @@ export function useRelay(login: Login | null) {
             case 'stream-list': if (Array.isArray(m.streams)) setStreams(m.streams); break;
             case 'notification-scopes': if (Array.isArray(m.detectors) && Array.isArray(m.notifiers)) { setRegistered(m.detectors); setNotifiers(m.notifiers); } break;
             case 'alert': setAlerts(old => mergeAlerts(old, [m])); break;
-            case 'command-ack': case 'notification-scope-result': case 'time-standard-result': setAcks(old => [m,...old.filter(a => a.requestId !== m.requestId)].slice(0,20)); break;
+            case 'command-ack': case 'notification-scope-result': case 'time-standard-result': if (m.phase==='completed'||m.success===false||m.type!=='command-ack') pending.current.delete(m.requestId); setAcks(old => retainAcks([{...m,phase:m.success===false?'completed':m.phase},...old.filter(a => a.requestId !== m.requestId)])); break;
             case 'notification-receipt': setReceipts(old => ({...old,[m.alertId]: [...new Set([...(old[m.alertId] ?? []),m.notifierId])] })); break;
             case 'screenshot-data': void history(); break;
           }
@@ -82,6 +87,7 @@ export function useRelay(login: Login | null) {
     connect();
     const timer = setInterval(() => {
       const now = performance.now();
+      for (const [id,request] of pending.current) if (now>=request.deadline) { pending.current.delete(id); setAcks(old=>old.map(ack=>ack.requestId===id?{...ack,phase:'uncertain',success:false,reason:'执行回执超时，请核对节点状态'}:ack)); }
       if (authenticated && now - lastResponse > 45_000) disconnect('服务响应超时，等待重试');
       if (ws && !authenticated && now - opened > 12_000) disconnect('认证超时，等待重试');
       if (!ws && now >= nextAttempt && !terminal) connect();
@@ -92,8 +98,11 @@ export function useRelay(login: Login | null) {
   function send(message: Record<string, unknown>): string {
     const requestId = createRequestId();
     if (dataScope !== scope || !connected || transport.current?.readyState !== WebSocket.OPEN) { setStatus('尚未连接，请稍后重试'); return ''; }
-    transport.current.send(JSON.stringify({...message,requestId}));
-    setAcks(old => [{requestId,phase:'pending',success:true,reason:'等待执行回执',command:message.type === 'set-time-standard' ? '统一时间' : undefined,targetDeviceId: String(message.targetDeviceId ?? message.targetNotifierId ?? '')},...old].slice(0,20));
+    const key=JSON.stringify([message.type,message.targetDeviceId,message.targetNotifierId,message.targetSourceId,message.command,message.key]);
+    for (const [id,item] of pending.current) if (item.key===key) return id;
+    try { transport.current.send(JSON.stringify({...message,requestId})); } catch { setStatus('发送失败，请重试'); return ''; }
+    pending.current.set(requestId,{key,deadline:performance.now()+20_000});
+    setAcks(old => retainAcks([{requestId,phase:'pending',success:true,reason:'等待执行回执',command:message.type === 'set-config' ? `set-config:${message.key}` : String(message.command ?? message.type),targetDeviceId: String(message.targetDeviceId ?? message.targetNotifierId ?? ''),targetSourceId:message.targetSourceId as string|undefined},...old]));
     return requestId;
   }
   const current = dataScope === scope;

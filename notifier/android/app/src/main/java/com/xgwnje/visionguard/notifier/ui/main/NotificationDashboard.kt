@@ -83,7 +83,7 @@ fun NotificationDashboard(viewModel: SettingsViewModel, onHistory: () -> Unit, o
         Column(
             Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
                 .navigationBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("接警面板", style = MaterialTheme.typography.headlineMedium)
             Text("接收 VisionGuard 系统报警 · v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

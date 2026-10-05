@@ -12,7 +12,7 @@
                         HorizontalContentAlignment="Stretch" VerticalAlignment="Center"
                         AutomationProperties.Name="修改来源名称" ToolTip="点击或按 Enter 修改来源名称"
                         Click="SourceNameText_OnClick">
-                    <TextBlock Text="{Binding SourceName}" Style="{StaticResource TitleText}" FontSize="20" LineHeight="26" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding SourceName}" Style="{StaticResource TitleText}" FontSize="18" LineHeight="24" TextWrapping="Wrap"/>
                 </Button>
                 <TextBox x:Name="SourceNameEditor"
                          Text="{Binding SourceName, UpdateSourceTrigger=PropertyChanged}"
@@ -48,78 +48,40 @@
                 <Button Content="编辑遮罩区域" Style="{StaticResource DarkButton}" Command="{Binding EditMasksCommand}"/>
             </StackPanel>
 
-            <!-- 2. 识别设置（改动即保存，重新启动此来源后生效） -->
-            <StackPanel Margin="0,0,0,16" IsEnabled="{Binding CanEdit}">
-                <TextBlock Text="识别设置" Style="{StaticResource SectionLabel}" Margin="0,0,0,8"/>
-                <TextBlock Text="模型" Style="{StaticResource CaptionText}"/>
-                <!-- 只列本机已下载的模型：未下载的模型选了也启动不了，不该出现在下拉里。
-                     一个都没下载时下拉禁用，并在下方直接说明去哪里下载（不留空控件让人猜）。 -->
-                <ComboBox ItemsSource="{Binding ModelOptions}" SelectedItem="{Binding ModelKey}"
-                          Style="{StaticResource DarkComboBox}" IsEnabled="{Binding CanPickModel}"
-                          MinHeight="40" Margin="0,4,0,0" ToolTip="{Binding NoModelHint}"/>
-                <TextBlock Text="{Binding NoModelHint}" Foreground="{DynamicResource WarningBrush}" FontSize="12" Margin="0,4,0,12" TextWrapping="Wrap"
-                           Visibility="{Binding HasNoModel, Converter={StaticResource BoolToVis}}"/>
-                <TextBlock Text="检测类别" Style="{StaticResource CaptionText}"/>
-                <Grid Margin="0,4,0,0">
-                    <ToggleButton x:Name="TargetMenuButton" MinHeight="40" IsEnabled="{Binding CanEdit}" FocusVisualStyle="{StaticResource KeyboardFocus}"
-                                  IsEnabledChanged="TargetMenuButton_OnIsEnabledChanged"
-                                  AutomationProperties.Name="检测类别多选菜单"
-                                  IsChecked="{Binding IsOpen, ElementName=TargetMenuPopup, Mode=TwoWay}">
-                        <ToggleButton.Template>
-                            <ControlTemplate TargetType="ToggleButton">
-                                <Border x:Name="Shell" Background="{DynamicResource SurfaceLight}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8">
-                                    <Grid Margin="12,8">
-                                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                        <TextBlock x:Name="TargetSummaryText" Text="{Binding TargetSummary}" Foreground="{DynamicResource TextPrimary}" FontSize="14" LineHeight="20" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                        <icons:LucideIcon Grid.Column="1" Kind="ChevronDown" Width="20" Height="20" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
-                                    </Grid>
-                                </Border>
-                                <ControlTemplate.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Shell" Property="BorderBrush" Value="{DynamicResource PrimaryHover}"/></Trigger>
-                                    <Trigger Property="IsChecked" Value="True"><Setter TargetName="Shell" Property="BorderBrush" Value="{DynamicResource Primary}"/></Trigger>
-                                    <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Shell" Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter TargetName="TargetSummaryText" Property="Foreground" Value="{DynamicResource TextSecondary}"/></Trigger>
-                                </ControlTemplate.Triggers>
-                            </ControlTemplate>
-                        </ToggleButton.Template>
-                    </ToggleButton>
-                    <Popup x:Name="TargetMenuPopup" Placement="Bottom" PlacementTarget="{Binding ElementName=TargetMenuButton}"
-                           StaysOpen="False" AllowsTransparency="True" PopupAnimation="None"
-                           Opened="TargetMenuPopup_OnOpened" Closed="TargetMenuPopup_OnClosed">
-                        <Border x:Name="TargetMenuSurface" Width="{Binding ActualWidth, ElementName=TargetMenuButton}" MaxHeight="310"
-                                KeyboardNavigation.TabNavigation="Cycle" PreviewKeyDown="TargetMenuPopup_OnPreviewKeyDown"
-                                Background="{DynamicResource SurfaceLight}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="8">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                <ItemsControl x:Name="TargetOptionsHost" ItemsSource="{Binding TargetOptions}">
-                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <CheckBox Content="{Binding DisplayName}" IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                                      Style="{StaticResource DarkCheckBox}" Width="170" Padding="8" Margin="4">
-                                                <CheckBox.ContentTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></CheckBox.ContentTemplate>
-                                            </CheckBox>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
-                        </Border>
-                    </Popup>
-                </Grid>
-            </StackPanel>
-
-            <!-- 3. 检测参数（同样改动即保存，重新启动此来源后生效） -->
-            <StackPanel>
-                <TextBlock Text="检测参数" Style="{StaticResource SectionLabel}" Margin="0,0,0,8"/>
-                <Grid>
-                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                    <StackPanel Margin="0,0,4,0"><TextBlock Text="阈值 %" Style="{StaticResource CaptionText}"/><TextBox Text="{Binding ThresholdPercent}" Style="{StaticResource DarkTextBox}" IsEnabled="{Binding CanEdit}" Margin="0,4,0,0"/></StackPanel>
-                    <StackPanel Grid.Column="1" Margin="4,0"><TextBlock Text="频率/秒" Style="{StaticResource CaptionText}"/><TextBox Text="{Binding TargetFps}" Style="{StaticResource DarkTextBox}" IsEnabled="{Binding CanEdit}" Margin="0,4,0,0"/></StackPanel>
-                    <StackPanel Grid.Column="2" Margin="4,0,0,0"><TextBlock Text="冷却秒" Style="{StaticResource CaptionText}"/><TextBox Text="{Binding Cooldown}" Style="{StaticResource DarkTextBox}" IsEnabled="{Binding CanEdit}" Margin="0,4,0,0"/></StackPanel>
-                </Grid>
-            </StackPanel>
-
-            <!-- 参数改动即已保存；只有冷改动参数需要重新启动才生效，这里只说清这一点 -->
-            <TextBlock Text="{Binding PendingApplyText}" Foreground="{DynamicResource WarningBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,12,0,0"
-                       Visibility="{Binding HasPendingApply, Converter={StaticResource BoolToVis}}"/>
+            <TextBlock Text="参数" Style="{StaticResource SectionLabel}" Margin="0,0,0,8"/>
+            <TextBlock Text="{Binding NoModelHint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+            <ItemsControl ItemsSource="{Binding ParameterRows}">
+                <ItemsControl.ItemTemplate><DataTemplate>
+                    <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1" Padding="0,8" PreviewKeyDown="ParameterEditor_OnKeyDown">
+                        <StackPanel>
+                            <Grid MinHeight="36"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding Label}" Style="{StaticResource CaptionText}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                                <TextBlock Grid.Column="1" Text="{Binding ValueText}" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                <Button Grid.Column="2" Content="编辑" Style="{StaticResource GhostButton}" Command="{Binding EditCommand}" Padding="8,4" MinHeight="36"/>
+                            </Grid>
+                            <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}" Margin="0,8,0,0">
+                                <ComboBox ItemsSource="{Binding ModelOptions}" SelectedItem="{Binding Draft}" Style="{StaticResource DarkComboBox}" Visibility="{Binding IsModel, Converter={StaticResource BoolToVis}}"/>
+                                <TextBox Text="{Binding Draft, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}" Visibility="{Binding IsNumeric, Converter={StaticResource BoolToVis}}"/>
+                                <StackPanel Visibility="{Binding IsTargets, Converter={StaticResource BoolToVis}}">
+                                    <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}" AutomationProperties.Name="搜索检测目标" ToolTip="搜索中文或模型标签"/>
+                                    <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
+                                        <ItemsControl ItemsSource="{Binding FilteredTargets}"><ItemsControl.ItemTemplate><DataTemplate>
+                                            <CheckBox Content="{Binding DisplayName}" IsChecked="{Binding IsSelected, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" Margin="0,4"><CheckBox.ContentTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></CheckBox.ContentTemplate></CheckBox>
+                                        </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                                    </ScrollViewer>
+                                </StackPanel>
+                                <TextBlock Text="{Binding Hint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                    <Button Content="保存" Style="{StaticResource PrimaryButton}" Command="{Binding SaveCommand}" Margin="0,0,8,0"/>
+                                    <Button Content="还原" Style="{StaticResource GhostButton}" Command="{Binding RestoreCommand}" Margin="0,0,8,0"/>
+                                    <Button Content="取消" Style="{StaticResource GhostButton}" Command="{Binding CancelCommand}"/>
+                                </StackPanel>
+                            </StackPanel>
+                            <TextBlock Text="{Binding Message}" Style="{StaticResource CaptionText}" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+                </DataTemplate></ItemsControl.ItemTemplate>
+            </ItemsControl>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

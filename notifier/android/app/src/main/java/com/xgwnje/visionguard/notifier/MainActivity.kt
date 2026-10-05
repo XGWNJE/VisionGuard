@@ -47,8 +47,7 @@ class MainActivity : AppCompatActivity() {
             } }
             NotificationTheme(darkTheme = dark) {
                 Column(Modifier.fillMaxSize().statusBarsPadding()) {
-                AppearanceSelector(appearance)
-                ClientUpdateButton(BuildConfig.VERSION_NAME, "android-notifier")
+                ApplicationOptions(appearance, BuildConfig.VERSION_NAME, "android-notifier")
                 Box(Modifier.weight(1f)) {
                 if (session == null) AccountLogin(account, "通知节点", "android-notifier")
                 else key(session!!.scope) {

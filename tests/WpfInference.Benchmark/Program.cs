@@ -631,8 +631,8 @@ if (args.Length >= 2 && args[1].Equals("--model-download", StringComparison.Ordi
 }
 
 // ── 来源参数自动保存 / 采集目标重置契约 ────────────────────────────────────
-// 目的：来源页已移除保存按钮，参数必须「改动即已保存」。
-// 这里驱动真实的 SourceViewModel：改参数 → 等防抖定时器 → 回读隔离 settings 文件；
+// 目的：逐项编辑的草稿不会提前保存；基础属性与采集目标仍按其自动保存契约落盘。
+// 驱动真实 SourceViewModel 与参数行，再回读隔离 settings 文件；
 // 再验证采集目标三件套的重置把窗口/选区/遮罩一起清掉并立即落盘。
 // 需要 VISIONGUARD_SETTINGS_PATH 指向隔离文件，避免动到真实配置。
 if (args.Length >= 2 && args[1].Equals("--source-autosave", StringComparison.OrdinalIgnoreCase))
@@ -714,10 +714,22 @@ if (args.Length >= 2 && args[1].Equals("--source-autosave", StringComparison.Ord
         // 1) 打开时不应有「已保存待生效」的项：磁盘上的值就是已生效值。
         CheckAutoSave("no-pending-on-load", !source.HasPendingApply, source.PendingApplyText);
 
+        var confidenceRow = source.ParameterRows.Single(row => row.Key == "confidence");
+        confidenceRow.EditCommand.Execute(null); confidenceRow.Draft = "70";
+        CheckAutoSave("parameter-draft-isolated", source.ThresholdPercent == 45 && ReadSetting("Source.1.Threshold") == "45", confidenceRow.Draft);
+        confidenceRow.Draft = "96";
+        CheckAutoSave("parameter-range-rejected", !confidenceRow.SaveCommand.CanExecute(null), confidenceRow.Draft);
+        confidenceRow.RestoreCommand.Execute(null);
+        CheckAutoSave("parameter-restore-current", confidenceRow.Draft == "45", confidenceRow.Draft);
+        confidenceRow.Draft = "70"; confidenceRow.SaveCommand.Execute(null);
+        CheckAutoSave("parameter-save-confirmed", source.ThresholdPercent == 70 && ReadSetting("Source.1.Threshold") == "70" && confidenceRow.Message == "已保存", confidenceRow.Message);
+        confidenceRow.EditCommand.Execute(null); confidenceRow.Draft = "80"; confidenceRow.CancelCommand.Execute(null);
+        CheckAutoSave("parameter-cancel-keeps-value", source.ThresholdPercent == 70 && !confidenceRow.IsEditing, confidenceRow.Draft);
+
         // 2) 改阈值：不需要任何保存动作，防抖到点后必须已经在磁盘上。
         source.ThresholdPercent = 61;
         CheckAutoSave("pending-lists-parameter", source.HasPendingApply && source.PendingApplyText.Contains("阈值"), source.PendingApplyText);
-        CheckAutoSave("not-yet-persisted-before-debounce", ReadSetting("Source.1.Threshold") == "45", "disk=" + ReadSetting("Source.1.Threshold"));
+        CheckAutoSave("not-yet-persisted-before-debounce", ReadSetting("Source.1.Threshold") == "70", "disk=" + ReadSetting("Source.1.Threshold"));
 
         var wait = new DispatcherTimer(DispatcherPriority.Normal, dispatcher) { Interval = TimeSpan.FromMilliseconds(1200) };
         wait.Tick += (_, _) =>
@@ -756,8 +768,7 @@ if (args.Length >= 2 && args[1].Equals("--source-autosave", StringComparison.Ord
                     || source.HasAnyTarget, "canExecute=" + source.ResetTargetCommand.CanExecute(null) + " hasTarget=" + source.HasAnyTarget);
                 Stage("after-persist-checks");
                 CheckAutoSave("pending-does-not-track-target", !source.PendingApplyText.Contains("窗口") && !source.PendingApplyText.Contains("遮罩"), source.PendingApplyText);
-                CheckAutoSave("save-button-removed", source.GetType().GetProperty("SaveCommand") == null && source.GetType().GetProperty("CancelCommand") == null,
-                    "SaveCommand/CancelCommand present on SourceViewModel");
+                CheckAutoSave("individual-parameter-rows", source.ParameterRows.Count == 5, "rows=" + source.ParameterRows.Count);
                 Stage("checks-complete");
                 dispatcherDone.Set();
             };

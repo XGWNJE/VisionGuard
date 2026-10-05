@@ -90,7 +90,8 @@ class ClientUpdater(context: Context, private val installed: String, private val
         check(newCode > oldCode) { "安装包版本未更新" }
         val installedSigners = if (Build.VERSION.SDK_INT >= 28) own.signingInfo?.apkContentsSigners else own.signatures
         val nextSigners = if (Build.VERSION.SDK_INT >= 28) archive.signingInfo?.let { if (it.hasMultipleSigners()) it.apkContentsSigners else it.signingCertificateHistory } else archive.signatures
-        check(!installedSigners.isNullOrEmpty() && !nextSigners.isNullOrEmpty() && installedSigners.all { signer -> nextSigners.any { it == signer } }) { "安装包签名与本机不一致" }
+        val multiple = Build.VERSION.SDK_INT >= 28 && (own.signingInfo?.hasMultipleSigners() == true || archive.signingInfo?.hasMultipleSigners() == true)
+        check(!installedSigners.isNullOrEmpty() && !nextSigners.isNullOrEmpty() && installedSigners.all { signer -> nextSigners.any { it == signer } } && (!multiple && Build.VERSION.SDK_INT >= 28 || installedSigners.size == nextSigners.size)) { "安装包签名与本机不一致" }
     }
     @Synchronized fun download() {
         val update = mutable.value.update ?: return

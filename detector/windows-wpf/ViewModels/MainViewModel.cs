@@ -158,7 +158,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 targets: MultiSourceVm.Sources[0].Targets,
                 targetSamplingRate: MultiSourceVm.Sources[0].TargetFps,
                 modelKey: MultiSourceVm.Sources[0].ModelKey,
-                modelOptions: Utils.ModelManager.ModelKeys,
+                modelOptions: Utils.ModelManager.ModelKeys.Where(Utils.ModelManager.IsDownloaded).ToArray(),
                 canSwitchModelWhileMonitoring: false,
                 sources: heartbeatSources);
             sps.SendHeartbeatNow();

@@ -65,6 +65,7 @@ export interface WsHeartbeat {
   targetSamplingRate?: number;
   modelKey?: string;
   modelOptions?: string[];
+  modelLabels?: Record<string, {value: string; label: string}[]>;
   canSwitchModelWhileMonitoring?: boolean;
   hasPendingConfigChanges?: boolean;
   capabilities?: string[];
@@ -160,6 +161,7 @@ export interface DeviceStatus {
   targetSamplingRate: number;
   modelKey: string;
   modelOptions: string[];
+  modelLabels?: Record<string, {value: string; label: string}[]>;
   canSwitchModelWhileMonitoring: boolean;
   hasPendingConfigChanges: boolean;
   clientType: string;
@@ -257,6 +259,7 @@ export interface DetectorClient {
   targetSamplingRate: number;
   modelKey: string;
   modelOptions: string[];
+  modelLabels?: Record<string, {value: string; label: string}[]>;
   canSwitchModelWhileMonitoring: boolean;
   hasPendingConfigChanges: boolean;
   capabilities: string[];
