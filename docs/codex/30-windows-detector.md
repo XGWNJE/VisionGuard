@@ -19,6 +19,8 @@
 
 后台更新检查失败只记录日志，不阻断主窗口启动；手动检查以更新提示显示错误。缺少下载地址或 SHA256 的元数据仍拒绝使用，不启动下载。
 
+控制、远程媒体和后台驻留共用 `MinimalWebSocketClient`。WSS 在 HTTP 升级请求和业务认证之前由系统验证证书信任链、有效期及目标域名；失败、取消或握手超时均关闭 TLS/TCP。保留 TLS 1.2 与 net472 的 Windows 7 兼容，旧系统必须有有效根证书，不能跳过验证。此处不强制在线吊销查询，避免 Win7 吊销服务不可达阻断必要连接。
+
 ## 检测与来源
 
 `Capture → MaskApply → Preprocess → ONNX Inference → Parse → AlertDecision → Push`

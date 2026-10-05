@@ -73,3 +73,8 @@ jobs:
         run: dotnet run --project tests/AccountMedia.Probe/AccountMedia.Probe.csproj -c Release
       - name: Background update failure handling
         run: node --test scripts/launcher-update.test.js
+      - name: Reject invalid TLS before authentication and release timed out connections
+        shell: powershell
+        run: |
+          dotnet build tests/WebSocketTls.Probe -c Release --nologo
+          dotnet tests/WebSocketTls.Probe/bin/Release/net10.0/WebSocketTls.Probe.dll --local-only
