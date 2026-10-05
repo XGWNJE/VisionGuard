@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 import test from 'node:test';
 import WebSocket, { WebSocketServer } from 'ws';
 
@@ -114,6 +115,9 @@ test('sequence/session spoofing closes a publisher and account/device revocation
 });
 
 test('cached frames expire while a consumer waits and cannot be forwarded after an old acknowledgement', async t => {
+  // Exercise delivery expiry first. Periodic publisher-stall cleanup can otherwise
+  // discard this same frame as unavailable before the acknowledgement arrives.
+  t.mock.method(mediaRelay, 'maintain', () => {});
   const f = await fixture(t);
   const session = await accountStore.login({ username: 'media-owner', password: 'private-fixture-password', component: 'android-camera', deviceName: 'expiry-camera' });
   mediaRelay.bind(accountStore.authenticate(owner.session('console').token)!, session.device.deviceId, owner.id('inference'));
@@ -123,9 +127,25 @@ test('cached frames expire while a consumer waits and cannot be forwarded after 
   producer.ws.send(packet(ready, 2)); await producer.take('frame-ack');
   await new Promise(resolve => setTimeout(resolve, 2700));
   consumer.send({ type: 'frame-received', streamId: ready.streamId, sessionId: ready.sessionId, sequence: 1 });
-  await new Promise(resolve => setTimeout(resolve, 30));
+  consumer.send({ type: 'media-heartbeat' }); await consumer.take('media-heartbeat-ack');
   assert.equal(consumer.messages.some(message => message.type === 'frame'), false);
   assert.ok(mediaRelay.streams(owner.accountId).find(item => item.streamId === ready.streamId)!.stats!.stale >= 1);
+
+  // Separately cover maintenance winning the race: the publisher stops, the
+  // cached frame is counted as unavailable, and a late acknowledgement does not revive it.
+  producer.ws.send(packet(ready, 3)); await producer.take('frame-ack'); await consumer.take('frame');
+  producer.ws.send(packet(ready, 4)); await producer.take('frame-ack');
+  t.mock.restoreAll();
+  mediaRelay.maintain(performance.now() + 2700);
+  consumer.send({ type: 'frame-received', streamId: ready.streamId, sessionId: ready.sessionId, sequence: 3 });
+  consumer.send({ type: 'media-heartbeat' }); await consumer.take('media-heartbeat-ack');
+  const stopped = mediaRelay.streams(owner.accountId).find(item => item.streamId === ready.streamId)!;
+  assert.equal(consumer.messages.some(message => message.type === 'frame'), false);
+  assert.equal(stopped.stopReason, 'frame-stalled');
+  assert.equal(stopped.stats!.received, 4);
+  assert.equal(stopped.stats!.stale, 1);
+  assert.equal(stopped.stats!.unavailable, 1);
+  assert.equal(stopped.stats!.dropped, 2);
 });
 
 test('multiple inference nodes require selection, bindings stay stable, and clock skew is not treated as frame freshness', async t => {
