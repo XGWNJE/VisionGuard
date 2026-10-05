@@ -5,6 +5,11 @@
              Background="Transparent">
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel Margin="4,8,8,8">
+            <StackPanel Margin="0,0,0,16">
+                <TextBlock Text="外观" Style="{StaticResource SectionLabel}" Margin="0,0,0,8"/>
+                <ComboBox ItemsSource="{Binding AppearanceOptions}" SelectedIndex="{Binding AppearanceIndex}" Style="{StaticResource DarkComboBox}"/>
+                <TextBlock Text="{Binding AppearanceStatus}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+            </StackPanel>
             <!-- ═══ 推理设备与模型资源（原「运行环境」页） ═══ -->
             <StackPanel DataContext="{Binding Environment}">
                 <StackPanel Margin="0,0,0,16">

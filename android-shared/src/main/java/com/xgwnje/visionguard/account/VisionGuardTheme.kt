@@ -72,7 +72,7 @@ private val AppShapes = Shapes(extraSmall = RoundedCornerShape(4.dp), small = Ro
 
 private val LocalDarkTheme = staticCompositionLocalOf { false }
 
-/** Semantic status pairs; follows the active theme, including the camera's forced dark mode. */
+/** Semantic status pairs follow the selected appearance. */
 object VisionGuardStatusColors {
     val success: Color @Composable get() = MaterialTheme.colorScheme.primary
     val successContainer: Color @Composable get() = MaterialTheme.colorScheme.primaryContainer

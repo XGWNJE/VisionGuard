@@ -68,7 +68,8 @@ class MainActivity : ComponentActivity() {
         val account = AccountStore.get(this)
         setContent {
             val session by account.session.collectAsState()
-            val darkTheme = if (streaming && dimScreen) true else androidx.compose.foundation.isSystemInDarkTheme()
+            val appearance = rememberAppearance()
+            val darkTheme = appearance.dark()
             SideEffect {
                 WindowCompat.getInsetsController(window, window.decorView).apply {
                     isAppearanceLightStatusBars = !darkTheme
@@ -76,6 +77,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
             VisionguardTheme(darkTheme = darkTheme) {
+                Column(Modifier.fillMaxSize().statusBarsPadding()) {
+                AppearanceSelector(appearance)
+                Box(Modifier.weight(1f)) {
                 if (session == null) AccountLogin(account, "相机推流节点", "android-camera")
                 else key(session!!.scope) {
                     val connection = remember { CameraPublisher(account) }
@@ -88,7 +92,7 @@ class MainActivity : ComponentActivity() {
                         onDispose { stopCamera("user"); connection.close(); publisher = null }
                     }
                     val state by connection.state.collectAsState()
-                    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+                    Column(Modifier.fillMaxSize().navigationBarsPadding()) {
                         AccountHeader(account, session!!, beforeLogout = {
                             stopCamera("user"); connection.close(); prefs.edit().clear().commit()
                         })
@@ -101,6 +105,8 @@ class MainActivity : ComponentActivity() {
                             onDim = { dimScreen = it; prefs.edit().putBoolean("dim", it).apply(); applyScreen() },
                             onHidePreview = { hidePreview = it; prefs.edit().putBoolean("hidePreview", it).apply() })
                     }
+                }
+                }
                 }
             }
         }
@@ -214,7 +220,7 @@ private fun CameraHome(state: PublisherState, preview: Bitmap?, streaming: Boole
             if (highResolution && (maxOf(captureSize.first, captureSize.second) < 1280 || minOf(captureSize.first, captureSize.second) < 720))
                 Text("此摄像头已按可用规格回退。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        CameraSetting("省电暗色界面", "推流时使用暗色并降低当前窗口亮度。", dim, true, onDim)
+        CameraSetting("推流时降低亮度", "只调整当前窗口亮度，外观独立选择。", dim, true, onDim)
         CameraSetting("收起画面预览", "推流继续进行，隐藏本机预览。", hidden, true, onHidePreview)
         OutlinedCard(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, border = BorderStroke(1.dp, colors.outlineVariant), colors = CardDefaults.outlinedCardColors(containerColor = colors.surface)) {
             FlowRow(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

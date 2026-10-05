@@ -30,7 +30,7 @@ for (const line of read('docs/design/unified-ui.md').split('\n')) {
   if (colors.every(list => list.length)) spec.set(cells[1], colors);
 }
 const css = read('receiver/web/src/style.css');
-const web = [...css.matchAll(/:root\s*\{([^}]+)\}/g)].map(match =>
+const web = [...css.matchAll(/:root(?:\[data-theme="dark"\])?\s*\{([^}]+)\}/g)].map(match =>
   Object.fromEntries([...match[1].matchAll(/--([\w-]+):\s*#([0-9A-F]{6})\s*;/gi)].map(m => [m[1], m[2].toUpperCase()])));
 const compose = read('android-shared/src/main/java/com/xgwnje/visionguard/account/VisionGuardTheme.kt');
 const android = ['Light', 'Dark'].map(name => {
