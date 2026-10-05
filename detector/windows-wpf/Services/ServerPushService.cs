@@ -466,7 +466,7 @@ namespace VisionGuard.Detector.Windows.Services
                 // maxSources=0 表示服务端未声明上限，此时保持本地已放开的范围，不收窄。
                 if (maxSources > 0) SourceLimitReceived?.Invoke(this, Net472Compat.Clamp(maxSources, 1, 16));
                 s.StartHeartbeat();
-                _media?.Dispose(); _media = new RemoteMediaService(_serverUrl, _apiKey);
+                _media?.Dispose(); _media = new RemoteMediaService(_serverUrl, _apiKey, _deviceId);
                 FlushAlertOutbox();
             }
             else
@@ -742,7 +742,6 @@ namespace VisionGuard.Detector.Windows.Services
                                 : new List<Capture.RemoteStreamInfo>();
                             _parent.Post(() => {
                                 if (_parent._session != this) return;
-                                Capture.RemoteFrameStore.Shared.SetStreams(streams, _parent._deviceId);
                                 _parent.StreamsReceived?.Invoke(_parent, streams);
                             });
                             break;

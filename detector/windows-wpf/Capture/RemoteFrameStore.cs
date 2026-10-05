@@ -46,6 +46,7 @@ namespace VisionGuard.Detector.Windows.Capture
         public const int MaximumFrameAgeMs = 3000;
         public static RemoteFrameStore Shared { get; } = new RemoteFrameStore();
         private readonly object _sync = new object();
+        private object? _owner;
         private readonly Dictionary<string, Entry> _frames = new Dictionary<string, Entry>(StringComparer.Ordinal);
         private readonly Dictionary<string, RemoteStreamInfo> _streams = new Dictionary<string, RemoteStreamInfo>(StringComparer.Ordinal);
         private sealed class Entry
@@ -54,15 +55,17 @@ namespace VisionGuard.Detector.Windows.Capture
             public RemoteFrameHeader Header = null!;
             public long ReceivedTicks;
         }
-        public void SetStreams(IEnumerable<RemoteStreamInfo> values, string targetDeviceId)
+        public void Attach(object owner) { lock (_sync) { Clear(); _owner = owner; } }
+        public void SetStreams(IEnumerable<RemoteStreamInfo> values, string targetDeviceId, object? owner = null)
         {
             lock (_sync)
             {
+                if (!ReferenceEquals(_owner, owner)) return;
                 _streams.Clear();
                 foreach (var stream in values)
                     if (stream.targetDeviceId == targetDeviceId && !string.IsNullOrWhiteSpace(stream.sourceId)) _streams[stream.streamId] = stream;
                 foreach (var key in new List<string>(_frames.Keys))
-                    if (!_streams.TryGetValue(key, out var stream) || !stream.isStreaming) { _frames[key].Frame.Dispose(); _frames.Remove(key); }
+                    if (!_streams.TryGetValue(key, out var stream) || IsExpectedStop(key)) { _frames[key].Frame.Dispose(); _frames.Remove(key); }
             }
         }
         public bool IsBound(string streamId) { lock (_sync) return _streams.ContainsKey(streamId); }
@@ -70,7 +73,7 @@ namespace VisionGuard.Detector.Windows.Capture
         {
             lock (_sync) return _streams.TryGetValue(streamId, out var s) && !s.isStreaming && (s.stopReason == "user" || s.stopReason == "background" || s.stopReason == "locked");
         }
-        public RemoteFrameHeader Accept(byte[] packet)
+        public RemoteFrameHeader Accept(byte[] packet, object? owner = null)
         {
             if (packet == null || packet.Length < 6 || packet.Length > MaximumPayloadBytes + MaximumHeaderBytes + 4) throw new InvalidDataException("媒体帧大小无效。");
             uint headerLength = ((uint)packet[0] << 24) | ((uint)packet[1] << 16) | ((uint)packet[2] << 8) | packet[3];
@@ -82,7 +85,8 @@ namespace VisionGuard.Detector.Windows.Capture
             // The relay stamps receivedAt for diagnostics. Cache expiry below uses this machine's monotonic clock.
             lock (_sync)
             {
-                if (!_streams.TryGetValue(header.streamId, out var stream) || !stream.isStreaming) throw new InvalidDataException("镜头来源尚未授权绑定。");
+                if (!ReferenceEquals(_owner, owner)) throw new IOException("媒体连接已被替换。");
+                if (!_streams.TryGetValue(header.streamId, out var stream)) throw new InvalidDataException("镜头来源尚未授权绑定。");
                 if (_frames.TryGetValue(header.streamId, out var old) && old.Header.sessionId == header.sessionId && header.sequence <= old.Header.sequence) throw new InvalidDataException("媒体帧序号重复或倒退。");
                 using (var bytes = new MemoryStream(packet, offset, packet.Length - offset, false))
                 using (var image = Image.FromStream(bytes, false, true))
@@ -95,6 +99,7 @@ namespace VisionGuard.Detector.Windows.Capture
                     old?.Frame.Dispose();
                     header.LocalReceivedTicks = Stopwatch.GetTimestamp();
                     _frames[header.streamId] = new Entry { Frame = bitmap, Header = header, ReceivedTicks = header.LocalReceivedTicks };
+                    stream.isStreaming = true; stream.stopReason = null;
                 }
             }
             return header;
@@ -118,8 +123,9 @@ namespace VisionGuard.Detector.Windows.Capture
             string session = ""; long sequence = -1;
             return ReadFresh(streamId, ref session, ref sequence, out _);
         }
-        public void ClearFrames() { lock (_sync) { foreach (var e in _frames.Values) e.Frame.Dispose(); _frames.Clear(); } }
-        public void Clear() { lock (_sync) { ClearFrames(); _streams.Clear(); } }
+        public void ClearFrames(object? owner = null) { lock (_sync) { if (!ReferenceEquals(_owner, owner)) return; foreach (var e in _frames.Values) e.Frame.Dispose(); _frames.Clear(); } }
+        public void Detach(object owner) { lock (_sync) { if (!ReferenceEquals(_owner, owner)) return; Clear(); _owner = null; } }
+        public void Clear() { lock (_sync) { ClearFrames(_owner); _streams.Clear(); } }
         public void Dispose() => Clear();
     }
 }

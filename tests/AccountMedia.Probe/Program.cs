@@ -139,6 +139,7 @@ internal static class Program
     {
         using var frames = new RemoteFrameStore();
         var stream = new RemoteStreamInfo { streamId = "probe-stream", targetDeviceId = "node-1", sourceId = "camera-1", isStreaming = true };
+        stream.isStreaming = false;
         frames.SetStreams(new[] { stream }, "node-1"); frames.Accept(Packet(1, Color.Red)); frames.Accept(Packet(2, Color.Blue));
         byte[] shortJpeg = Packet(3, Color.Red); int headerSize = (shortJpeg[0] << 24) | (shortJpeg[1] << 16) | (shortJpeg[2] << 8) | shortJpeg[3];
         bool shortRejected = false; try { frames.Accept(shortJpeg.Take(headerSize + 5).ToArray()); } catch (InvalidDataException) { shortRejected = true; }
@@ -157,6 +158,13 @@ internal static class Program
         bool expected = false; try { frames.Peek("probe-stream").Dispose(); } catch (RemoteFrameUnavailableException ex) { expected = ex.ExpectedStop; }
         Require(expected, "Background stop was interpreted as an abnormal outage");
         frames.SetStreams(new[] { stream }, "different-node"); Require(!frames.IsBound("probe-stream"), "Foreign device binding remained accessible");
+        var oldOwner = new object(); var newOwner = new object();
+        frames.Attach(oldOwner); frames.Attach(newOwner); stream.isStreaming = false; stream.stopReason = "";
+        frames.SetStreams(new[] { stream }, "node-1", newOwner); frames.Accept(Packet(1, Color.Blue), newOwner);
+        frames.ClearFrames(oldOwner); frames.Detach(oldOwner); frames.SetStreams(Array.Empty<RemoteStreamInfo>(), "node-1", oldOwner);
+        using (var image = frames.Peek("probe-stream")) Require(image.GetPixel(20, 20).B > 200, "Old connection cleanup removed new frames");
+        bool oldRejected = false; try { frames.Accept(Packet(2, Color.Red), oldOwner); } catch (IOException) { oldRejected = true; }
+        Require(oldRejected, "Old media callback replaced a new connection frame");
     }
     static void AccountProbe()
     {

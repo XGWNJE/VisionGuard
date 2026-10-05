@@ -75,11 +75,35 @@ test('media relays only to the bound inference; slow consumers receive the newes
   producer.ws.send(packet(ready, 1)); assert.equal((await producer.take('frame-ack')).sequence, 1);
   const first = (await consumer.take('frame')).frame!; assert.equal(first.header.sequence, 1); assert.ok(first.header.receivedAt); assert.deepEqual(first.image, jpeg);
   for (const sequence of [2, 3]) { producer.ws.send(packet(ready, sequence)); await producer.take('frame-ack'); }
+  const stats = mediaRelay.streams(owner.accountId)[0].stats!;
+  assert.equal(stats.received, 3); assert.equal(stats.replaced, 1); assert.equal(stats.dropped, 1); assert.equal(stats.confirmed, 0);
   await new Promise(resolve => setTimeout(resolve, 30)); assert.equal(consumer.messages.some(message => message.type === 'frame'), false); assert.equal(other.messages.some(message => message.type === 'frame'), false);
   consumer.send({ type: 'frame-received', streamId: ready.streamId, sessionId: ready.sessionId, sequence: 1 });
   assert.equal((await consumer.take('frame')).frame.header.sequence, 3);
+  assert.equal(mediaRelay.streams(owner.accountId)[0].stats!.confirmed, 1);
   producer.send({ type: 'stream-stop', reason: 'background' }); await producer.closed;
   assert.equal(mediaRelay.streams(owner.accountId)[0].isStreaming, false); assert.equal(mediaRelay.streams(owner.accountId)[0].stopReason, 'background');
+});
+
+test('duplicate live binding does not issue a new media-ready or reset publisher sequence', async t => {
+  const f = await fixture(t), producer = await f.connect(owner.session('camera').token, 'publish'), ready = await producer.take('media-ready');
+  const consumer = await f.connect(owner.session('inference').token, 'subscribe'); await consumer.take('media-ready');
+  producer.ws.send(packet(ready, 1)); await producer.take('frame-ack'); await consumer.take('frame');
+  mediaRelay.bind(accountStore.authenticate(owner.session('console').token)!, owner.id('camera'), owner.id('inference'));
+  producer.send({ type: 'media-heartbeat' }); await producer.take('media-heartbeat-ack');
+  assert.equal(producer.messages.some(message => message.type === 'media-ready'), false);
+  producer.ws.send(packet(ready, 2)); await producer.take('frame-ack');
+  consumer.send({ type: 'frame-received', streamId: ready.streamId, sessionId: ready.sessionId, sequence: 1 });
+  assert.equal((await consumer.take('frame')).frame.header.sequence, 2);
+});
+
+test('idle media answers its own heartbeat and an old replaced callback cannot stop an active publisher', async t => {
+  const f = await fixture(t), old = await f.connect(owner.session('camera').token, 'publish'); await old.take('media-ready');
+  const replacement = await f.connect(owner.session('camera').token, 'publish'), ready = await replacement.take('media-ready'); await old.closed;
+  replacement.send({ type: 'media-heartbeat' }); await replacement.take('media-heartbeat-ack');
+  replacement.ws.send(packet(ready, 1)); const ack = await replacement.take('frame-ack');
+  assert.equal(ack.accepted, false); assert.equal(ack.dropReason, 'consumer-unavailable'); assert.ok(ack.stats.unavailable >= 1);
+  assert.equal(mediaRelay.streams(owner.accountId)[0].isStreaming, true);
 });
 
 test('sequence/session spoofing closes a publisher and account/device revocation closes media immediately', async t => {
@@ -101,6 +125,7 @@ test('cached frames expire while a consumer waits and cannot be forwarded after 
   consumer.send({ type: 'frame-received', streamId: ready.streamId, sessionId: ready.sessionId, sequence: 1 });
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(consumer.messages.some(message => message.type === 'frame'), false);
+  assert.ok(mediaRelay.streams(owner.accountId).find(item => item.streamId === ready.streamId)!.stats!.stale >= 1);
 });
 
 test('multiple inference nodes require selection, bindings stay stable, and clock skew is not treated as frame freshness', async t => {
@@ -116,5 +141,9 @@ test('multiple inference nodes require selection, bindings stay stable, and cloc
   const consumer = await f.connect(extra.token, 'subscribe'); await consumer.take('media-ready');
   producer.ws.send(packet(ready, 1, { capturedAt: 100_000 })); await producer.take('frame-ack');
   assert.equal((await consumer.take('frame')).frame.header.capturedAt, 100_000);
-  producer.ws.send(packet(ready, 2, { capturedAt: 1 })); assert.equal(await producer.closed, 4002);
+  producer.ws.send(packet(ready, 2, { capturedAt: 10_000_000 })); assert.equal(await producer.closed, 4002);
+  const renewed = await f.connect(camera.token, 'publish'), renewedReady = await renewed.take('media-ready');
+  renewed.ws.send(packet(renewedReady, 1, { capturedAt: 100 })); await renewed.take('frame-ack');
+  assert.equal((await consumer.take('frame')).frame.header.sessionId, renewedReady.sessionId);
+  renewed.ws.send(packet(renewedReady, 2, { capturedAt: 1 })); assert.equal(await renewed.closed, 4002);
 });
