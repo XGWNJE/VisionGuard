@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createRequestId, mergeAlerts, parseTimeStandard, websocketURL, type Ack, type Alert, type Device, type Identity, type Notifier, type Stream, type TimeStandard } from './protocol';
 import type { Login } from './account';
 export function useRelay(login: Login | null) {
-  const scope = login ? `${login.account.accountId}:${login.device.deviceId}` : '';
+  const scope = login ? `${login.account.accountId}:${login.device.deviceId}:${login.token}` : '';
   const [dataScope, setDataScope] = useState('');
   const [status, setStatus] = useState('未连接');
   const [connected, setConnected] = useState(false);

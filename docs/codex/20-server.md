@@ -18,7 +18,7 @@ Windows 登录自动获得同设备 ID 的 `windows-resident` 子会话，角色
 
 无公开注册入口。维护 CLI `scripts/provision-account.js <username>` 仍可在服务停止后使用；密码仅经临时环境变量或标准输入，操作见[运维](60-operations.md)。密码使用随机盐与 scrypt，磁盘会话只保存 token 哈希；有效期为 30 天。默认设备名称与持久化序号遵循[命名规范](15-component-naming.md)。
 
-HTTP 使用 `Authorization: Bearer <token>`；`/ws` 的首条消息为 `{type:'auth',token}`。认证结果包含账号、设备身份、组件、`maxSources` 和账号的 `timeStandard`。客户端自称的身份字段不参与权限判断，同角色同设备的新连接替换旧连接。
+HTTP 使用 `Authorization: Bearer <token>`；`/ws` 的首条消息为 `{type:'auth',token}`。认证结果包含账号、设备身份、组件、`maxSources` 和账号的 `timeStandard`。客户端自称的身份字段不参与权限判断。Web 每次登录获得独立会话，即使复用设备 ID 也可同时在线；同一会话重连只替换自身连接，刷新/退出只撤销自身凭证。硬件节点仍按同角色同设备替换。截图队列、计时器和待执行控制绑定实际连接，旧回调不能操作新连接；管理员初始化提权也撤销原普通会话。
 
 设备名称以服务端登记值为准。`PATCH /api/devices/:deviceId` 更新主节点及驻留名，并向对应现存连接推送 `device-updated`、向控制台刷新设备列表；旧客户端心跳不能覆盖登记名。退出、改密、解绑立即撤销相关控制和媒体连接及待处理项。
 
