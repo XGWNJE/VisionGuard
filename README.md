@@ -91,7 +91,7 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scri
 | 控制台、通知与 Android | [相机推流节点](./docs/40-Android相机节点.md) · [控制台与通知节点](./docs/50-控制台与通知节点.md) |
 | 构建、配置与运行 | [运维](./docs/60-构建验证与发布.md) |
 | 已验证范围与未覆盖项 | [验证报告](./docs/90-验证记录.md) |
-| 界面规范 | [设计索引](./docs/00-文档索引.md) |
+| 界面规范与终端组件 | [设计索引](./docs/00-文档索引.md) · [组件设计](./docs/72-多平台UI组件设计.md) |
 | 0.6.1 发行内容 | [发行说明](./docs/105-发行说明v0.6.1.md) |
 
 本项目采用 [MIT License](./LICENSE)。第三方依赖、模型和素材遵循各自许可证。

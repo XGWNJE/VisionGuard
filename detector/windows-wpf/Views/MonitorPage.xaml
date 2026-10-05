@@ -7,21 +7,22 @@
         <StackPanel Margin="4,8,8,8" DataContext="{Binding SelectedSource}">
             <!-- 当前上下文：名称原位编辑，失焦或回车自动保存 -->
             <Grid Margin="0,0,0,16" MinHeight="40">
-                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <Button x:Name="SourceNameText" Style="{StaticResource GhostButton}" Padding="0" Margin="0,0,8,0"
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Border Background="{DynamicResource SelectedBrush}" CornerRadius="4" Padding="8,4" Margin="0,0,8,0" VerticalAlignment="Center"><TextBlock Text="{Binding SlotNumber}" Foreground="{DynamicResource SelectedTextBrush}" FontWeight="SemiBold"/></Border>
+                <Button Grid.Column="1" x:Name="SourceNameText" Style="{StaticResource GhostButton}" Padding="0" Margin="0,0,8,0"
                         HorizontalContentAlignment="Stretch" VerticalAlignment="Center"
                         AutomationProperties.Name="修改来源名称" ToolTip="点击或按 Enter 修改来源名称"
                         Click="SourceNameText_OnClick">
-                    <TextBlock Text="{Binding SourceName}" Style="{StaticResource TitleText}" FontSize="18" LineHeight="24" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding SourceName}" Style="{StaticResource TitleText}" FontSize="16" LineHeight="24" TextWrapping="Wrap"/>
                 </Button>
-                <TextBox x:Name="SourceNameEditor"
+                <TextBox Grid.Column="1" x:Name="SourceNameEditor"
                          Text="{Binding SourceName, UpdateSourceTrigger=PropertyChanged}"
                          Style="{StaticResource DarkTextBox}"
                          Visibility="Collapsed"
                          VerticalAlignment="Center"
                          LostKeyboardFocus="SourceNameEditor_OnLostKeyboardFocus"
                          KeyDown="SourceNameEditor_OnKeyDown"/>
-                <Border Grid.Column="1" Style="{StaticResource StatusPill}" VerticalAlignment="Center" MaxWidth="136">
+                <Border Grid.Column="2" Style="{StaticResource StatusPill}" VerticalAlignment="Center" MaxWidth="136">
                     <TextBlock Text="{Binding StatusText}" Style="{StaticResource SourceStatusText}" TextWrapping="Wrap" ToolTip="{Binding StatusText}"/>
                 </Border>
             </Grid>

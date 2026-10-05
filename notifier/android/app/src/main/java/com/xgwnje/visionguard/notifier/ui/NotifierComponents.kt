@@ -45,7 +45,7 @@ internal fun NotifierPageHeader(title: String, onBack: () -> Unit, actions: @Com
 @Composable
 internal fun NotifierStatus(label: String, container: Color, content: Color) {
     Surface(color = container, contentColor = content, shape = MaterialTheme.shapes.small) {
-        Text(label, Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = MaterialTheme.typography.labelLarge)
+        Text(label, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.bodySmall)
     }
 }
 

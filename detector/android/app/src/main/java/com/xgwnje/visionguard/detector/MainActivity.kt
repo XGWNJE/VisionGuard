@@ -179,58 +179,81 @@ private fun CameraHome(state: PublisherState, preview: Bitmap?, streaming: Boole
         streaming -> VisionGuardStatusColors.onSuccessContainer
         else -> colors.onSurface
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("相机推流节点", style = MaterialTheme.typography.titleLarge)
-        Text(state.status, color = statusColor, style = MaterialTheme.typography.titleSmall)
-        Text("保持应用在前台；离开应用或锁屏后停止推流。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedCard(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, colors = CardDefaults.outlinedCardColors(containerColor = colors.surface), border = BorderStroke(1.dp, colors.outlineVariant)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) { Text("目标视觉节点", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium); TextButton(onRefresh, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("刷新") } }
-                when {
-                    !state.connected -> Text("连接统一服务后获取目标视觉节点。", color = colors.onSurfaceVariant)
-                    state.targetsLoading -> Text("正在加载视觉节点…", color = colors.onSurfaceVariant)
-                    state.targetsLoadFailed -> Text("暂时无法加载视觉节点，请点击刷新重试。", color = colors.error)
-                    state.targets.isEmpty() -> Text("当前账号下没有视觉节点，请先在视觉节点登录同一账号。", color = colors.onSurfaceVariant)
+    var choosingTarget by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("相机推流节点", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+            Text(state.status, color = statusColor, style = MaterialTheme.typography.bodySmall)
+        }
+        Text("保持应用在前台；离开应用或锁屏后停止推流。", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        VisionGuardColumns(primary = {
+            if (!hidden) OutlinedCard(Modifier.fillMaxWidth().aspectRatio(4f / 3f), shape = MaterialTheme.shapes.medium, colors = CardDefaults.outlinedCardColors(containerColor = colors.surfaceVariant), border = BorderStroke(1.dp, colors.outlineVariant)) {
+                if (preview != null) Image(preview.asImageBitmap(), "实时摄像头画面", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(if (streaming) "等待实时画面" else "开始后显示实时画面", Modifier.padding(16.dp), color = colors.onSurfaceVariant) }
+            }
+            if (streaming) Button(onStop, Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small,
+                colors = VisionGuardControlColors.button(containerColor = colors.error, contentColor = colors.onError)) { Text("停止推流") }
+            else {
+                Button(onStart, Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = state.connected && state.stream?.targetDeviceId != null, colors = VisionGuardControlColors.button(), shape = MaterialTheme.shapes.small) { Text("开始推流") }
+                if (!state.connected || state.stream?.targetDeviceId == null) Text(if (!state.connected) "连接统一服务后可以开始。" else "先选择目标视觉节点，再开始推流。", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            }
+        }, secondary = {
+            OutlinedCard(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, colors = CardDefaults.outlinedCardColors(containerColor = colors.surface), border = BorderStroke(1.dp, colors.outlineVariant)) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) { Text("目标视觉节点", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium); TextButton(onRefresh, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("刷新") } }
+                    when {
+                        !state.connected -> Text("连接统一服务后获取目标视觉节点。", color = colors.onSurfaceVariant)
+                        state.targetsLoading -> Text("正在加载视觉节点…", color = colors.onSurfaceVariant)
+                        state.targetsLoadFailed -> Text("暂时无法加载视觉节点，请点击刷新重试。", color = colors.error)
+                        state.targets.isEmpty() -> Text("当前账号下没有视觉节点，请先在视觉节点登录同一账号。", color = colors.onSurfaceVariant)
+                    }
+                    if (streaming) Text("停止推流后可更换目标节点。", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                    val selectedTarget = state.targets.find { it.deviceId == state.stream?.targetDeviceId }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(selectedTarget?.deviceName ?: "尚未选择", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        TextButton({ choosingTarget = true }, enabled = !streaming && state.connected && state.targets.isNotEmpty(), modifier = Modifier.heightIn(min = 48.dp)) { Text("选择") }
+                    }
+                    state.stream?.sourceName?.takeIf { it.isNotBlank() }?.let { Text("推理来源：$it") }
                 }
-                if (streaming) Text("停止推流后可更换目标节点。", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            }
+            CameraSetting(if (highResolution) "最高 720P · 5 帧/秒" else "最高 640×480 · 5 帧/秒", "推流时保持画面规格；停止后可调整。", highResolution, !streaming, onResolution)
+            if (captureSize != null && sentSize != null) {
+                Text("实际采集 ${captureSize.first}×${captureSize.second} · 发送 ${sentSize.first}×${sentSize.second}", style = MaterialTheme.typography.bodySmall)
+                if (highResolution && (maxOf(captureSize.first, captureSize.second) < 1280 || minOf(captureSize.first, captureSize.second) < 720))
+                    Text("此摄像头已按可用规格回退。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            CameraSetting("推流时降低亮度", "只调整当前窗口亮度，外观独立选择。", dim, true, onDim)
+            CameraSetting("收起画面预览", "推流继续进行，隐藏本机预览。", hidden, true, onHidePreview)
+            OutlinedCard(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, border = BorderStroke(1.dp, colors.outlineVariant), colors = CardDefaults.outlinedCardColors(containerColor = colors.surface)) {
+                FlowRow(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("本机入队 ${state.sentFrames}", style = MaterialTheme.typography.labelLarge)
+                    Text("服务收帧 ${state.acknowledgedFrames}", style = MaterialTheme.typography.labelLarge)
+                    Text("本机丢弃 ${state.droppedFrames} · 服务丢弃 ${state.relayDroppedFrames}", style = MaterialTheme.typography.labelLarge)
+                }
+            }
+            Text("主动未采样 ${state.sampledOutFrames} 帧；服务收帧不代表 Windows 已接收。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        })
+    }
+    if (choosingTarget) AlertDialog(
+        onDismissRequest = { choosingTarget = false },
+        shape = MaterialTheme.shapes.large,
+        containerColor = colors.surface,
+        title = { Text("选择目标视觉节点", style = MaterialTheme.typography.titleMedium) },
+        text = { Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 state.targets.forEach { target ->
                     val selected = state.stream?.targetDeviceId == target.deviceId
-                    OutlinedButton({ onBind(target.deviceId) }, enabled = !streaming, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small,
+                    OutlinedButton({ onBind(target.deviceId); choosingTarget = false }, enabled = !streaming, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small,
                         colors = VisionGuardControlColors.outlinedButton(containerColor = if (selected) colors.primaryContainer else colors.surface, contentColor = VisionGuardStatusColors.onSuccessContainer),
                         border = BorderStroke(1.dp, if (selected) colors.primary else colors.outlineVariant)) {
                         Text((if (state.stream?.targetDeviceId == target.deviceId) "已关联 · " else "选择 · ") + target.deviceName)
                     }
                 }
-                state.stream?.sourceName?.takeIf { it.isNotBlank() }?.let { Text("推理来源：$it") }
-            }
-        }
-        if (!hidden) OutlinedCard(Modifier.fillMaxWidth().aspectRatio(4f / 3f), shape = MaterialTheme.shapes.medium, colors = CardDefaults.outlinedCardColors(containerColor = colors.surfaceVariant), border = BorderStroke(1.dp, colors.outlineVariant)) {
-            if (preview != null) Image(preview.asImageBitmap(), "实时摄像头画面", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-            else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(if (streaming) "等待实时画面" else "开始后显示实时画面", Modifier.padding(16.dp), color = colors.onSurfaceVariant) }
-        }
-        if (streaming) Button(onStop, Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small,
-            colors = VisionGuardControlColors.button(containerColor = colors.error, contentColor = colors.onError)) { Text("停止推流") }
-        else {
-            Button(onStart, Modifier.fillMaxWidth().heightIn(min = 48.dp), enabled = state.connected && state.stream?.targetDeviceId != null, colors = VisionGuardControlColors.button(), shape = MaterialTheme.shapes.small) { Text("开始推流") }
-            if (!state.connected || state.stream?.targetDeviceId == null) Text(if (!state.connected) "连接统一服务后可以开始。" else "先选择目标视觉节点，再开始推流。", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-        }
-        CameraSetting(if (highResolution) "最高 720P · 5 帧/秒" else "最高 640×480 · 5 帧/秒", "推流时保持画面规格；停止后可调整。", highResolution, !streaming, onResolution)
-        if (captureSize != null && sentSize != null) {
-            Text("实际采集 ${captureSize.first}×${captureSize.second} · 发送 ${sentSize.first}×${sentSize.second}", style = MaterialTheme.typography.bodySmall)
-            if (highResolution && (maxOf(captureSize.first, captureSize.second) < 1280 || minOf(captureSize.first, captureSize.second) < 720))
-                Text("此摄像头已按可用规格回退。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        CameraSetting("推流时降低亮度", "只调整当前窗口亮度，外观独立选择。", dim, true, onDim)
-        CameraSetting("收起画面预览", "推流继续进行，隐藏本机预览。", hidden, true, onHidePreview)
-        OutlinedCard(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, border = BorderStroke(1.dp, colors.outlineVariant), colors = CardDefaults.outlinedCardColors(containerColor = colors.surface)) {
-            FlowRow(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("本机入队 ${state.sentFrames}", style = MaterialTheme.typography.labelLarge)
-                Text("服务收帧 ${state.acknowledgedFrames}", style = MaterialTheme.typography.labelLarge)
-                Text("本机丢弃 ${state.droppedFrames} · 服务丢弃 ${state.relayDroppedFrames}", style = MaterialTheme.typography.labelLarge)
-            }
-        }
-        Text("主动未采样 ${state.sampledOutFrames} 帧；服务收帧不代表 Windows 已接收。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
+
+            if (state.targets.isEmpty()) Text("当前账号下没有视觉节点，请刷新重试。", color = colors.onSurfaceVariant)
+        } },
+        confirmButton = { TextButton({ choosingTarget = false }, Modifier.heightIn(min = 48.dp)) { Text("关闭") } }
+    )
+
 }
 
 @Composable

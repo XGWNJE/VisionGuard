@@ -30,18 +30,21 @@
                 <ColumnDefinition x:Name="InspectorColumn" Width="{Binding MultiSourceVm.InspectorWidth, Mode=TwoWay}" MinWidth="320"/>
             </Grid.ColumnDefinitions>
 
-            <Grid Grid.Column="0" x:Name="CardsHost" Margin="8">
+            <Grid Grid.Column="0" x:Name="CardsHost" Margin="12">
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
+
+                <DockPanel Margin="4,0,4,12"><TextBlock Text="视觉节点 / 实时预览" FontSize="16" LineHeight="24" FontWeight="SemiBold"/><TextBlock Text="{Binding MultiSourceVm.PreviewSelectionText}" Style="{StaticResource CaptionText}" HorizontalAlignment="Right" VerticalAlignment="Center"/></DockPanel>
 
                 <!--
                     实时预览：只排布进入预览的来源（最多 CardLayoutPlanner.MaximumVisibleCards 个）。
                     行列与卡片尺寸由 CardGridPanel 按自身可用的实际像素求解，不再有分页与翻页；
                     没进预览的来源在下面的「全局来源」里勾选。
                 -->
-                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" CanContentScroll="False"
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" CanContentScroll="False"
                               Visibility="{Binding MultiSourceVm.IsPreviewView, Converter={StaticResource BoolToVis}}">
                 <ItemsControl ItemsSource="{Binding MultiSourceVm.PreviewSources}">
                     <ItemsControl.ItemsPanel>
@@ -148,7 +151,7 @@
                     卡片尺寸由 GlobalSourcePanel 按可用空间自适应（铺满容器），来源上限 16，
                     窗口最小尺寸已保证任何允许的窗口比例下都排得下。
                 -->
-                <Grid Grid.Row="0" Visibility="{Binding MultiSourceVm.IsGlobalView, Converter={StaticResource BoolToVis}}">
+                <Grid Grid.Row="1" Visibility="{Binding MultiSourceVm.IsGlobalView, Converter={StaticResource BoolToVis}}">
                     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                     <TextBlock Grid.Row="0" Margin="4,0,4,8" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}"
                                Text="勾选要展示的来源（最多 4 个）；未勾选的来源照常采集、推理与报警，只是不显示实时画面"/>
@@ -210,7 +213,7 @@
                 </Grid>
 
                 <!-- 工具条：全局来源切换、勾选被拒的提示、预览位占用情况。 -->
-                <Grid Grid.Row="1">
+                <Grid Grid.Row="2">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <Button Grid.Column="0" Content="{Binding MultiSourceVm.GlobalViewToggleText}" Style="{StaticResource GhostButton}"
                             Command="{Binding MultiSourceVm.ToggleGlobalViewCommand}" Padding="12,4" MinHeight="40" MinWidth="96"
