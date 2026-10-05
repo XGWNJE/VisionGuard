@@ -86,12 +86,10 @@ fun NotificationDashboard(viewModel: SettingsViewModel, onHistory: () -> Unit, o
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("接警面板", style = MaterialTheme.typography.headlineMedium)
-            Text("接收 VisionGuard 系统报警 · v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             NotifierPanel {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("接收报警", style = MaterialTheme.typography.titleMedium)
-                        Text(connection.name, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(
                         checked = enabled,
@@ -128,9 +126,15 @@ fun NotificationDashboard(viewModel: SettingsViewModel, onHistory: () -> Unit, o
                     ) { Text("前往系统设置") }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Field("服务地址", connection.endpoint.ifBlank { "尚未配置" })
                 Field("接收范围", if (enabled) node.scope else "由控制台分配")
-                Field("告警时间标准", alarmTimeStandardLabel(timeZone))
+                var connectionDetails by remember { mutableStateOf(false) }
+                TextButton({ connectionDetails = !connectionDetails }, Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) {
+                    Text(if (connectionDetails) "收起连接详情" else "连接详情")
+                }
+                if (connectionDetails) {
+                    Field("服务地址", connection.endpoint.ifBlank { "尚未配置" })
+                    Field("告警时间标准", alarmTimeStandardLabel(timeZone))
+                }
                 if (pending) OutlinedButton(
                     onClick = {
                         runCatching { context.stopService(Intent(context, NotificationNodeService::class.java)); NotificationNodeService.start(context) }

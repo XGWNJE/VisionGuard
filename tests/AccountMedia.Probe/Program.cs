@@ -25,6 +25,39 @@ internal static class Program
     {
         try
         {
+            if (args.Length == 3 && args[0] == "--camera-observe")
+            {
+                AccountSession.ConfigureIsolatedEnvironment(args[1]); AccountSession.Load();
+                Require(AccountSession.IsIsolated && new Uri(AccountSession.ServiceUrl).IsLoopback, "Real camera probe requires an isolated local service");
+                var session = AccountSession.Current ?? throw new Exception("Prepare an isolated Windows session first");
+                Directory.CreateDirectory(args[2]);
+                using var transport = new ServerPushService();
+                IReadOnlyList<RemoteStreamInfo> streams = Array.Empty<RemoteStreamInfo>(); var gate = new object();
+                transport.StreamsReceived += (_, values) => { lock (gate) streams = values; };
+                transport.UpdateHeartbeatParams(false, true, 5, .5f, "person", 3, "yolo26n_320", new[] { "yolo26n_320" });
+                transport.Configure(AccountSession.ServiceUrl, session.token, session.device.deviceId, session.device.deviceName);
+                var sequences = new Dictionary<string, (string session, long sequence)>(); int received = 0;
+                var watch = Stopwatch.StartNew();
+                while (watch.Elapsed < TimeSpan.FromSeconds(180))
+                {
+                    RemoteStreamInfo[] current; lock (gate) current = streams.ToArray();
+                    foreach (var stream in current)
+                    {
+                        sequences.TryGetValue(stream.streamId, out var last); string id = last.session ?? ""; long sequence = last.sequence;
+                        Bitmap frame;
+                        try { frame = RemoteFrameStore.Shared.ReadFresh(stream.streamId, ref id, ref sequence, out var header); }
+                        catch (RemoteFrameUnavailableException) { continue; }
+                        using var releaseFrame = frame;
+                        sequences[stream.streamId] = (id, sequence); received++;
+                        frame.Save(Path.Combine(args[2], received == 1 ? "first-camera.jpg" : "latest-camera.jpg"), ImageFormat.Jpeg);
+                        if (received == 1) Console.WriteLine($"CAMERA first frame {frame.Width}x{frame.Height} sequence={sequence}");
+                        if (received == 30) Console.WriteLine("CAMERA received 30 fresh frames; continuing idle/restart observation.");
+                    }
+                    Thread.Sleep(50);
+                }
+                Require(received >= 30, $"Camera deadline: received {received} fresh frames");
+                Console.WriteLine($"PASS real camera: {received} fresh decoded frames through the production Windows control/media services; no object recognition asserted."); return 0;
+            }
             if (args.Length == 2 && args[0] == "--settings-environment")
             {
                 SettingsEnvironmentChild(args[1]);

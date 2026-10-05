@@ -52,6 +52,31 @@ internal class ProbeProgram {
             }
             string archive = Path.Combine(directory, "escape.zip"); using (var zip = ZipFile.Open(archive, ZipArchiveMode.Create)) using (var writer = new StreamWriter(zip.CreateEntry("../escape.txt").Open())) writer.Write("escape");
             bool escaped = false; try { program.GetMethod("SafeExtract", BindingFlags.NonPublic | BindingFlags.Static).Invoke(null, new object[] { archive, Path.Combine(directory, "unzip") }); } catch (TargetInvocationException e) { escaped = e.InnerException is InvalidDataException; } Require(escaped, "ZIP traversal accepted");
+            var copy = program.GetMethod("CopyDirectory", BindingFlags.NonPublic | BindingFlags.Static);
+            var install = program.GetMethod("InstallDirectory", BindingFlags.NonPublic | BindingFlags.Static);
+            string package = Path.GetFullPath("detector/windows-package/bin/Release");
+            string target = Path.Combine(directory, "installed"), stage = Path.Combine(directory, "stage");
+            copy.Invoke(null,new object[]{package,target});copy.Invoke(null,new object[]{package,stage});
+            File.WriteAllText(Path.Combine(target,"acceptance-version"),"old"); File.WriteAllText(Path.Combine(stage,"acceptance-version"),"new");
+            bool prepared=false, rolledBack=false, restarted=false;
+            try { install.Invoke(null,new object[]{stage,target,new Action(()=>prepared=true),new Action<string>(root=>{Require(File.ReadAllText(Path.Combine(root,"acceptance-version"))=="new","New directory not activated");throw new IOException("fixture startup failed");}),new Action(()=>rolledBack=true),new Action<string>(root=>{restarted=File.ReadAllText(Path.Combine(root,"acceptance-version"))=="old";})});throw new Exception("Failed startup did not throw"); }
+            catch(TargetInvocationException e){Require(e.InnerException is IOException,"Unexpected rollback error");}
+            Require(prepared&&rolledBack&&restarted&&File.ReadAllText(Path.Combine(target,"acceptance-version"))=="old","Rollback did not preserve old files");
+            Func<bool> noPartial = () => !Directory.GetDirectories(directory).Any(path => Path.GetFileName(path).StartsWith("installed.", StringComparison.OrdinalIgnoreCase));
+            Require(noPartial(),"Rollback left partial directories");
+            install.Invoke(null,new object[]{stage,target,new Action(()=>{}),new Action<string>(root=>Require(File.ReadAllText(Path.Combine(root,"acceptance-version"))=="new","Success did not activate stage")),new Action(()=>throw new Exception("Unexpected rollback")),new Action<string>(_=>{})});
+            Require(noPartial(),"Success left backup or partial directories");
+            string broken=Path.Combine(directory,"broken");Directory.CreateDirectory(broken);prepared=false;
+            try { install.Invoke(null,new object[]{broken,target,new Action(()=>prepared=true),new Action<string>(_=>{}),new Action(()=>{}),new Action<string>(_=>{})});throw new Exception("Broken package accepted"); } catch(TargetInvocationException e){Require(e.InnerException is InvalidDataException&&!prepared,"Preparation failure stopped old program");}
+            Require(File.ReadAllText(Path.Combine(target,"acceptance-version"))=="new"&&noPartial(),"Preparation failure changed old installation");
+            var acquire=program.GetMethod("AcquireUpdate",BindingFlags.NonPublic|BindingFlags.Static);
+            using(var held=new Mutex(false,"Local\\VisionGuard.Test.Update."+Guid.NewGuid().ToString("N"))) {
+                var ready=new ManualResetEventSlim(); var release=new ManualResetEventSlim();
+                var owner=new Thread(()=>{held.WaitOne();ready.Set();release.Wait();held.ReleaseMutex();});owner.Start();ready.Wait();
+                Require(!(bool)acquire.Invoke(null,new object[]{held,0}),"Concurrent updater acquired an owned mutex");release.Set();owner.Join();
+                Require((bool)acquire.Invoke(null,new object[]{held,0}),"Update lock did not recover");held.ReleaseMutex();
+            }
+            Console.WriteLine("PASS actual filesystem preparation, directory switch, startup-failure rollback, cleanup and update mutex contention; process callbacks simulated.");
             Console.WriteLine("PASS: stable chronology, partial releases, version lineage, damaged metadata, real download size/hash/cancel and ZIP traversal."); return 0;
         } catch (Exception e) { Console.Error.WriteLine(e); return 1; }
         finally { Directory.Delete(directory, true); }

@@ -61,6 +61,7 @@ namespace VisionGuard.Detector.Windows.Launcher
             if (!File.Exists(runtimeExe))
                 throw new FileNotFoundException("统一安装包缺少 " + profile + " 运行时，请重新完整解压安装包。", runtimeExe);
 
+            if (!string.IsNullOrEmpty(postUpdateMarker)) forwardedArgs = forwardedArgs.Concat(new[] { "--post-update-marker", postUpdateMarker }).ToArray();
             var process = Process.Start(new ProcessStartInfo
             {
                 FileName = runtimeExe,
@@ -71,13 +72,6 @@ namespace VisionGuard.Detector.Windows.Launcher
             if (process == null) throw new InvalidOperationException("检测端进程未启动。");
 
             WriteLog("launch", "profile=" + profile + " pid=" + process.Id + " os=" + Environment.OSVersion.Version);
-            if (!string.IsNullOrEmpty(postUpdateMarker))
-            {
-                if (process.WaitForExit(3000))
-                    throw new InvalidOperationException("新版本检测端启动后立即退出，退出码 " + process.ExitCode + "。更新将回滚。");
-                Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(postUpdateMarker)));
-                File.WriteAllText(postUpdateMarker, DateTime.UtcNow.ToString("O"));
-            }
             return 0;
         }
 
@@ -255,6 +249,7 @@ namespace VisionGuard.Detector.Windows.Launcher
             int launcherPid = int.Parse(args[4]);
             int ownerPid = int.Parse(args[5]);
             if (!Directory.Exists(staged) || !Directory.Exists(target) || string.Equals(staged, target, StringComparison.OrdinalIgnoreCase) || GitHubReleasePolicy.StableVersion(version) == null) throw new InvalidDataException("更新目录或版本无效。");
+            if (target.StartsWith(staged.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase) || staged.StartsWith(target + "\\", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("暂存与安装目录不能互相包含。");
             using (var mutex = new Mutex(false, UpdateMutexFor(target))) {
                 if (!AcquireUpdate(mutex, 30000)) return 1;
                 try { return ApplyUpdateCore(staged, target, version, launcherPid, ownerPid); }
@@ -266,70 +261,73 @@ namespace VisionGuard.Detector.Windows.Launcher
         {
             ValidatePackage(staged);
             if (System.Version.Parse(FileVersionInfo.GetVersionInfo(Path.Combine(staged, "VisionGuard.Detector.Windows.exe")).FileVersion) != System.Version.Parse(version + ".0")) throw new InvalidDataException("暂存程序版本与发行不一致。");
-            WaitForExit(launcherPid, 20000);
-            WaitForExit(ownerPid, 20000);
-            SignalShutdown(DetectorShutdownEvent);
-            SignalShutdown(ResidentShutdownEvent);
-            Thread.Sleep(1000);
+            try
+            {
+                InstallDirectory(staged, target, () => {
+                    WaitForExit(launcherPid, 20000); WaitForExit(ownerPid, 20000);
+                    SignalShutdown(DetectorShutdownEvent); SignalShutdown(ResidentShutdownEvent); Thread.Sleep(1000);
+                }, root => {
+                    string marker = Path.Combine(AccountSession.IsIsolated ? AccountSession.Root : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionGuard"), "updates", "started-" + version + "-" + Guid.NewGuid().ToString("N") + ".ok");
+                    try {
+                        var launched = Process.Start(new ProcessStartInfo { FileName = Path.Combine(root, "VisionGuard.Detector.Windows.exe"), Arguments = "--post-update-marker " + Quote(marker), WorkingDirectory = root, UseShellExecute = true });
+                        if (launched == null || !WaitForFile(marker, 20000)) throw new InvalidOperationException("新版本未能完成主窗口启动确认。");
+                    } finally { if (File.Exists(marker)) File.Delete(marker); }
+                }, () => {
+                    SignalShutdown(DetectorShutdownEvent); SignalShutdown(ResidentShutdownEvent); Thread.Sleep(1500);
+                }, root => Process.Start(new ProcessStartInfo { FileName = Path.Combine(root, "VisionGuard.Detector.Windows.exe"), WorkingDirectory = root, UseShellExecute = true }));
+                WriteLog("update-complete", "version=" + version + " target=" + target);
+                return 0;
+            }
+            catch (AggregateException) { throw; }
+            catch (Exception ex) {
+                WriteLog("update-rollback", ex.ToString());
+                ThemedDialog.Show("更新失败，旧版本已保留或恢复：\n" + ex.Message, "视觉节点更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return 1;
+            }
+        }
 
+        private static void InstallDirectory(string staged, string target, Action beforeReplace, Action<string> startAndConfirm, Action beforeRollback, Action<string> restartOld)
+        {
             string parent = Path.GetDirectoryName(target);
             if (string.IsNullOrEmpty(parent)) throw new InvalidOperationException("安装目录没有可用的父目录，无法安全更新。");
             string name = Path.GetFileName(target);
             string incoming = Path.Combine(parent, name + ".incoming-" + Guid.NewGuid().ToString("N"));
             string backup = Path.Combine(parent, name + ".backup-" + DateTime.Now.ToString("yyyyMMddHHmmss") + "-" + Guid.NewGuid().ToString("N"));
-            CopyDirectory(staged, incoming);
-            ValidatePackage(incoming);
-
-            bool oldMoved = false;
+            bool oldMoved = false, replacePrepared = false;
             try
             {
+                CopyDirectory(staged, incoming);
+                ValidatePackage(incoming);
+                beforeReplace();
+                replacePrepared = true;
                 MoveDirectoryWithRetry(target, backup);
                 oldMoved = true;
                 MoveDirectoryWithRetry(incoming, target);
 
-                string marker = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "VisionGuard", "updates", "started-" + version + "-" + Guid.NewGuid().ToString("N") + ".ok");
-                var launched = Process.Start(new ProcessStartInfo
-                {
-                    FileName = Path.Combine(target, "VisionGuard.Detector.Windows.exe"),
-                    Arguments = "--post-update-marker " + Quote(marker),
-                    WorkingDirectory = target,
-                    UseShellExecute = true,
-                });
-                if (launched == null || !WaitForFile(marker, 20000))
-                    throw new InvalidOperationException("新版本未能完成启动确认。");
+                startAndConfirm(target);
 
                 TryDeleteDirectory(backup);
-                WriteLog("update-complete", "version=" + version + " target=" + target);
-                return 0;
             }
             catch (Exception ex)
             {
-                WriteLog("update-rollback", ex.ToString());
-                SignalShutdown(DetectorShutdownEvent);
-                SignalShutdown(ResidentShutdownEvent);
-                Thread.Sleep(1500);
                 try
                 {
                     if (oldMoved)
                     {
+                        beforeRollback();
                         string failed = target + ".failed-" + Guid.NewGuid().ToString("N");
                         if (Directory.Exists(target)) MoveDirectoryWithRetry(target, failed);
                         MoveDirectoryWithRetry(backup, target);
                         TryDeleteDirectory(failed);
-                        Process.Start(new ProcessStartInfo
-                        {
-                            FileName = Path.Combine(target, "VisionGuard.Detector.Windows.exe"), WorkingDirectory = target, UseShellExecute = true
-                        });
+                        restartOld(target);
                     }
+                    else if (replacePrepared) restartOld(target);
                 }
                 catch (Exception rollbackError)
                 {
-                    throw new AggregateException("更新失败且自动回滚失败。旧目录：" + backup, ex, rollbackError);
+                    throw new AggregateException("更新失败且自动回滚失败。旧目录：" + (oldMoved ? backup : target), ex, rollbackError);
                 }
-                ThemedDialog.Show("更新失败，已经恢复旧版本：\n" + ex.Message, "视觉节点更新", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return 1;
+                throw;
             }
             finally
             {

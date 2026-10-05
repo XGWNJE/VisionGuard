@@ -20,4 +20,4 @@ dotnet run --project detector\windows-wpf-smoke\VisionGuard.WpfSmoke.csproj -c R
 
 `visionguard-e2e` 脚本中的 `Start-WpfFixtureWindows` 用 WinForms 创建可见图片窗口，`WpfPersonDetection` 模式调用本工具并在结束后释放窗口。它提供静态图片推理与隔离证据，不能满足项目规则要求的动态视频窗口 smoke，也不能替代真实 WPF 主程序验收。
 
-运行入口及限制见[运维文档](../../docs/codex/60-operations.md)，验收证据见[验证报告](../../docs/codex/90-verification-report.md)。
+运行入口及限制见[运维文档](../../docs/60-构建验证与发布.md)，验收证据见[验证报告](../../docs/90-验证记录.md)。

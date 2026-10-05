@@ -112,7 +112,8 @@ test('release synchronization still updates released targets and preserves held-
     syncFixture(root, '0.5.2');
     const after = JSON.parse(fs.readFileSync(releasesPath, 'utf8'));
     assert.deepEqual(after['android-detector'], before['android-detector']);
-    for (const key of ['wpf', 'android-receiver']) {
+    assert.deepEqual(after['android-receiver'], before['android-receiver']);
+    for (const key of ['wpf', 'android-notifier']) {
       assert.equal(after[key].version, '0.5.2');
       assert.equal(after[key].url, `/releases/${releaseFileName(key, '0.5.2')}`);
     }

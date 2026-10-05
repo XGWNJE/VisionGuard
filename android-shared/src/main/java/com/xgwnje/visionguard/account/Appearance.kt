@@ -30,10 +30,10 @@ class AppearancePreference(context: Context) {
 @Composable fun AppearancePreference.dark() = mode.dark(isSystemInDarkTheme())
 @Composable fun AppearanceSelector(preference: AppearancePreference) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Appearance.entries.forEach { value ->
                 FilterChip(selected = preference.mode == value, onClick = { preference.select(value) },
-                    label = { Text(value.title) }, modifier = Modifier.heightIn(min = 48.dp))
+                    label = { Text(value.title, maxLines = 1) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp))
             }
         }
         if (preference.error.isNotEmpty()) Text(preference.error, color = MaterialTheme.colorScheme.error)

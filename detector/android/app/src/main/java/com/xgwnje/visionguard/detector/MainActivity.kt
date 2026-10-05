@@ -224,12 +224,12 @@ private fun CameraHome(state: PublisherState, preview: Bitmap?, streaming: Boole
         CameraSetting("收起画面预览", "推流继续进行，隐藏本机预览。", hidden, true, onHidePreview)
         OutlinedCard(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, border = BorderStroke(1.dp, colors.outlineVariant), colors = CardDefaults.outlinedCardColors(containerColor = colors.surface)) {
             FlowRow(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("画面发送 ${state.sentFrames}", style = MaterialTheme.typography.labelLarge)
-                Text("服务确认 ${state.acknowledgedFrames}", style = MaterialTheme.typography.labelLarge)
+                Text("本机入队 ${state.sentFrames}", style = MaterialTheme.typography.labelLarge)
+                Text("服务收帧 ${state.acknowledgedFrames}", style = MaterialTheme.typography.labelLarge)
                 Text("本机丢弃 ${state.droppedFrames} · 服务丢弃 ${state.relayDroppedFrames}", style = MaterialTheme.typography.labelLarge)
             }
         }
-        Text("发送数表示进入本机发送队列，服务收件不代表 Windows 已接收。主动未采样 ${state.sampledOutFrames} 帧。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("主动未采样 ${state.sampledOutFrames} 帧；服务收帧不代表 Windows 已接收。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

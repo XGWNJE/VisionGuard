@@ -58,6 +58,20 @@ namespace VisionGuard.Detector.Windows
             // 能真正在创建窗口之前退出，也让启动顺序集中在这一处。
             var mainWindow = new Views.MainWindow();
             MainWindow = mainWindow;
+            int markerIndex = Array.IndexOf(e.Args, "--post-update-marker");
+            if (markerIndex >= 0 && markerIndex + 1 < e.Args.Length)
+            {
+                string marker = System.IO.Path.GetFullPath(e.Args[markerIndex + 1]);
+                string markerRoot = System.IO.Path.Combine(Utils.AccountSession.IsIsolated ? Utils.AccountSession.Root : System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionGuard"), "updates") + System.IO.Path.DirectorySeparatorChar;
+                if (!marker.StartsWith(markerRoot, StringComparison.OrdinalIgnoreCase) || !marker.EndsWith(".ok", StringComparison.OrdinalIgnoreCase)) throw new System.IO.InvalidDataException("启动确认路径无效。");
+                EventHandler? confirmStartup = null;
+                confirmStartup = (_, _) => {
+                    mainWindow.ContentRendered -= confirmStartup;
+                    System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(marker)!);
+                    System.IO.File.WriteAllText(marker, DateTime.UtcNow.ToString("O"));
+                };
+                mainWindow.ContentRendered += confirmStartup;
+            }
             mainWindow.Show();
 
             _residentBridge = new Services.ResidentBridge(Runtime.ResidentLauncher.ApplicationId, () => Dispatcher.BeginInvoke(new Action(Shutdown)));

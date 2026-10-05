@@ -61,7 +61,7 @@ class ClientUpdater(context: Context, private val installed: String, private val
                 }
                 val update = StableReleasePolicy.select(releases, installed, client)
                 mutable.value = UpdateState(update = update, message = if (update == null) "当前已是最新版本" else "发现稳定版 ${update.version}")
-            } catch (e: Exception) { mutable.value = UpdateState(message = if (cancelled) "已取消检查" else e.message ?: "检查失败，请重试") }
+            } catch (e: Exception) { mutable.value = UpdateState(message = if (cancelled) "已取消检查" else failureMessage(e, "检查失败，请重试")) }
             finally { call = null }
         }
         }
@@ -72,6 +72,15 @@ class ClientUpdater(context: Context, private val installed: String, private val
         return own.execute()
     }
     private fun file(update: ClientUpdate) = File(directory, update.asset.name)
+    private fun failureMessage(error: Exception, fallback: String): String {
+        android.util.Log.w("ClientUpdater", fallback, error)
+        return when (error) {
+            is java.net.UnknownHostException -> "无法连接 GitHub，请检查网络后重试"
+            is java.net.SocketTimeoutException -> "连接超时，请重试"
+            is javax.net.ssl.SSLException -> "安全连接失败，请检查系统时间和网络"
+            else -> error.message?.takeIf { message -> message.any { it in '\u4e00'..'\u9fff' } } ?: fallback
+        }
+    }
     private fun verify(file: File, update: ClientUpdate) {
         check(file.length() == update.asset.size) { "安装包大小不匹配" }
         val hash = MessageDigest.getInstance("SHA-256")
@@ -101,7 +110,7 @@ class ClientUpdater(context: Context, private val installed: String, private val
             directory.listFiles()?.filter { it.name.endsWith(".part") }?.forEach { it.delete() }
             val target = file(update); val partial = File(directory, target.name + ".part")
             try {
-                if (target.exists()) { runCatching { verify(target, update) }.getOrElse { target.delete() } }
+                if (target.exists()) { runCatching { verify(target, update) }.getOrElse { check(target.delete()) { "无法移除损坏的暂存安装包，请重试" } } }
                 if (!target.exists()) {
                     execute(Request.Builder().url(update.asset.url).build()).use { response ->
                         check(response.isSuccessful) { "下载失败（HTTP ${response.code}）" }
@@ -114,7 +123,7 @@ class ClientUpdater(context: Context, private val installed: String, private val
                     verify(partial, update); check(partial.renameTo(target)) { "无法保存暂存安装包" }
                 }
                 mutable.value = mutable.value.copy(busy = false, downloading = false, ready = true, message = "校验通过，可交给系统安装器")
-            } catch (e: Exception) { partial.delete(); target.delete(); mutable.value = mutable.value.copy(busy = false, downloading = false, ready = false, message = if (cancelled) "下载已取消" else e.message ?: "下载失败，请重试") }
+            } catch (e: Exception) { partial.delete(); target.delete(); mutable.value = mutable.value.copy(busy = false, downloading = false, ready = false, message = if (cancelled) "下载已取消" else failureMessage(e, "下载失败，请检查网络和存储空间后重试")) }
             finally { call = null }
         }
         }
@@ -132,7 +141,7 @@ class ClientUpdater(context: Context, private val installed: String, private val
             val uri = FileProvider.getUriForFile(context, context.packageName + ".updates", file(update))
             context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION))
             mutable.value = mutable.value.copy(message = "已交给系统安装器；安装结果以系统为准")
-        } catch (e: Exception) { mutable.value = mutable.value.copy(message = e.message ?: "安装器未响应，可重试") }
+        } catch (e: Exception) { mutable.value = mutable.value.copy(message = failureMessage(e, "安装器未响应，可重试")) }
     }
     fun close() { cancel(); job?.cancel(); scope.cancel(); http.connectionPool.evictAll(); http.dispatcher.executorService.shutdown() }
 }
