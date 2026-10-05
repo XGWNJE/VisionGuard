@@ -65,25 +65,36 @@ namespace VisionGuard.Detector.Windows.Net
         /// </summary>
         public async Task ConnectAsyncInternal(CancellationToken ct)
         {
+            if (_state != System.Net.WebSockets.WebSocketState.None)
+                throw new InvalidOperationException("WebSocket client cannot be reused.");
+            if (_uri.Scheme != "ws" && _uri.Scheme != "wss")
+                throw new ArgumentException("Only ws and wss endpoints are supported.");
+            ct.ThrowIfCancellationRequested();
+            _state = System.Net.WebSockets.WebSocketState.Connecting;
+            using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct))
+            using (timeout.Token.Register(Abort))
+            {
+            timeout.CancelAfter(_connectTimeoutMs);
+            try
+            {
             string host = _uri.Host;
             int port = _uri.Port > 0 ? _uri.Port : (_uri.Scheme == "wss" ? 443 : 80);
             bool secure = string.Equals(_uri.Scheme, "wss", StringComparison.OrdinalIgnoreCase);
 
             _tcp = new TcpClient { NoDelay = true };
-            var connectTask = _tcp.ConnectAsync(host, port);
-            if (!connectTask.Wait(_connectTimeoutMs)) throw new TimeoutException("TCP 连接超时: " + host + ":" + port);
-            connectTask.GetAwaiter().GetResult();
+            await _tcp.ConnectAsync(host, port).ConfigureAwait(false);
+            timeout.Token.ThrowIfCancellationRequested();
 
-            Stream stream = _tcp.GetStream();
+            _stream = _tcp.GetStream();
             if (secure)
             {
-                var ssl = new SslStream(stream, false, (sender, cert, chain, errors) => true);
-                // 显式 TLS 1.2：Win7 的 SCHANNEL 默认不含 1.2，服务端只接受 1.2 及以上。
-                ssl.AuthenticateAsClient(host, null, SslProtocols.Tls12, false);
-                stream = ssl;
+                // 系统验证完整证书链、有效期和目标域名；不提供绕过验证的回调。
+                // TLS 1.2 保留 Windows 7 SCHANNEL 的必要兼容。
+                var ssl = new SslStream(_stream, false);
+                _stream = ssl; // 握手失败或取消时也必须释放 TLS 和底层 TCP。
+                await ssl.AuthenticateAsClientAsync(host, null, SslProtocols.Tls12, false).ConfigureAwait(false);
+                timeout.Token.ThrowIfCancellationRequested();
             }
-            _stream = stream;
-            _state = System.Net.WebSockets.WebSocketState.Connecting;
 
             string key = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
             var head = new StringBuilder();
@@ -98,15 +109,15 @@ namespace VisionGuard.Detector.Windows.Net
             head.Append("\r\n");
 
             var requestBytes = Encoding.ASCII.GetBytes(head.ToString());
-            var writeTask = _stream.WriteAsync(requestBytes, 0, requestBytes.Length, ct);
-            if (!writeTask.Wait(_connectTimeoutMs)) throw new TimeoutException("握手请求写入超时");
-            await _stream.FlushAsync(ct).ConfigureAwait(false);
+            await _stream.WriteAsync(requestBytes, 0, requestBytes.Length, timeout.Token).ConfigureAwait(false);
+            await _stream.FlushAsync(timeout.Token).ConfigureAwait(false);
 
-            string responseHead = ReadHttpHead();
+            string responseHead = await ReadHttpHeadAsync(timeout.Token).ConfigureAwait(false);
             if (string.IsNullOrEmpty(responseHead)) throw new IOException("服务端未返回握手响应（连接被关闭）");
 
             string statusLine = responseHead.Split(new[] { "\r\n" }, StringSplitOptions.None)[0];
-            if (statusLine.IndexOf("101", StringComparison.Ordinal) < 0)
+            if (!statusLine.StartsWith("HTTP/1.1 101 ", StringComparison.Ordinal)
+                || !string.Equals(ExtractHeader(responseHead, "Upgrade"), "websocket", StringComparison.OrdinalIgnoreCase))
             {
                 HandshakeSummary = statusLine;
                 throw new IOException("WebSocket 握手被拒绝: " + statusLine);
@@ -119,24 +130,34 @@ namespace VisionGuard.Detector.Windows.Net
                 throw new IOException("Sec-WebSocket-Accept 校验失败: got=" + accept + " expected=" + expected);
 
             HandshakeSummary = statusLine + " | accept 校验通过";
+            timeout.Token.ThrowIfCancellationRequested();
             _state = System.Net.WebSockets.WebSocketState.Open;
+            timeout.CancelAfter(Timeout.Infinite);
+            }
+            catch
+            {
+                Abort();
+                if (ct.IsCancellationRequested) throw new OperationCanceledException(ct);
+                if (timeout.IsCancellationRequested) throw new TimeoutException("WebSocket 连接或握手超时");
+                throw;
+            }
+            }
         }
 
-        private string ReadHttpHead()
+        private async Task<string> ReadHttpHeadAsync(CancellationToken ct)
         {
             var builder = new StringBuilder();
             var single = new byte[1];
-            var watch = System.Diagnostics.Stopwatch.StartNew();
-            while (watch.ElapsedMilliseconds < _connectTimeoutMs)
+            while (builder.Length < 16 * 1024)
             {
-                int read = _stream.Read(single, 0, 1);
+                int read = await _stream.ReadAsync(single, 0, 1, ct).ConfigureAwait(false);
                 if (read <= 0) break;
                 builder.Append((char)single[0]);
                 int length = builder.Length;
                 if (length >= 4 && builder[length - 4] == '\r' && builder[length - 3] == '\n'
-                    && builder[length - 2] == '\r' && builder[length - 1] == '\n') break;
+                    && builder[length - 2] == '\r' && builder[length - 1] == '\n') return builder.ToString();
             }
-            return builder.ToString();
+            throw new IOException("WebSocket 响应头不完整或过大");
         }
 
         private static string ExtractHeader(string head, string name)
@@ -349,8 +370,8 @@ namespace VisionGuard.Detector.Windows.Net
         public override void Abort()
         {
             _state = System.Net.WebSockets.WebSocketState.Aborted;
-            try { if (_stream != null) _stream.Dispose(); } catch { }
             try { if (_tcp != null) _tcp.Close(); } catch { }
+            try { if (_stream != null) _stream.Dispose(); } catch { }
         }
 
         public override void Dispose() => Abort();
