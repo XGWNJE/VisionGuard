@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -12,9 +13,19 @@ namespace VisionGuard.Detector.Windows.Themes
     {
         internal static bool IsDark { get; private set; }
         internal static event EventHandler? Changed;
+        private static readonly string PreferencePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionGuard", "appearance.txt");
+        internal static string Mode { get; private set; } = "system";
+        internal static bool SetMode(string mode)
+        {
+            if (mode != "system" && mode != "light" && mode != "dark") return false;
+            try { Directory.CreateDirectory(Path.GetDirectoryName(PreferencePath)!); File.WriteAllText(PreferencePath, mode); }
+            catch { return false; }
+            Mode = mode; Apply(); return true;
+        }
 
         internal static void Start()
         {
+            try { string mode = File.ReadAllText(PreferencePath).Trim(); if (mode == "light" || mode == "dark") Mode = mode; } catch { }
             Apply();
             SystemEvents.UserPreferenceChanged += OnPreferenceChanged;
         }
@@ -32,7 +43,7 @@ namespace VisionGuard.Detector.Windows.Themes
         {
             var app = Application.Current;
             if (app == null || app.Dispatcher.HasShutdownStarted) return;
-            IsDark = ReadDarkPreference();
+            IsDark = Mode == "dark" || Mode == "system" && ReadDarkPreference();
             var palette = IsDark
                 ? new Dictionary<string, string>
                 {

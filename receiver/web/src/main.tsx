@@ -5,10 +5,12 @@ import { eventLabel, formatTime, mergeDevices, timeStandardLabel, typeLabel, web
 import { useRelay } from './useRelay';
 import { accountRequest, AccountRequestError, parseLogin, rotateLogin, type Login } from './account';
 import { AccountManagement } from './AccountManagement';
+import { AppearanceSelector, useAppearance } from './appearance';
 import './style.css';
 
 type Page = '节点' | '事件' | '通知范围' | '设置' | '账号管理';
 function App() {
+  const appearance = useAppearance();
   const [login, setLogin] = useState<Login | null>(null);
   const loginRef = useRef<Login | null>(null);
   const refreshFlight = useRef<Promise<Login | null> | null>(null);
@@ -51,12 +53,12 @@ function App() {
   const visibleNodes = nodes.filter(n => (!typeFilter || n.nodeType === typeFilter) && `${n.deviceName} ${n.deviceId}`.toLowerCase().includes(search.trim().toLowerCase()));
   const node = visibleNodes.find(d => d.deviceId === selected) ?? visibleNodes[0];
   const visibleEvent = event && (relay.alerts.find(a => a.alertId === event.alertId) ?? event);
-  if (!login) return <LoginScreen error={loginError} onLogin={value => { updateLogin(value); setLoginError(''); setPage('节点'); setEvent(null); }} />;
+  if (!login) return <><div className="login-appearance"><AppearanceSelector preference={appearance}/></div><LoginScreen error={loginError} onLogin={value => { updateLogin(value); setLoginError(''); setPage('节点'); setEvent(null); }} /></>;
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><img src="/console/icon.png" width="40" height="40" alt=""/><span>控制台</span></div>
       <nav aria-label="主导航">{([['节点',Monitor],['事件',Activity],['通知范围',Bell],['设置',Settings],['账号管理',Users]] as const).filter(([label])=>label!=='账号管理'||login.account.isAdmin).map(([label,Icon]) => <button key={label} aria-current={page === label ? 'page' : undefined} className={page === label ? 'nav-item active' : 'nav-item'} onClick={() => { setPage(label); setMobileDetail(false); }}><Icon size={20}/><span>{label}</span></button>)}</nav>
-      <div className="sidebar-footer"><span className={'dot '+(relay.connected ? 'online' : '')}/>{relay.status}<span className="subtle">跟随系统外观</span></div>
+      <div className="sidebar-footer"><span className={'dot '+(relay.connected ? 'online' : '')}/>{relay.status}<span className="subtle">{appearance.mode === "system" ? "跟随系统" : appearance.mode === "dark" ? "深色外观" : "浅色外观"}</span></div>
     </aside>
     <main>
       <header className="page-header"><div><h1>{page}</h1><p>{({节点:'检测节点与通知节点',事件:'实时事件与最近历史',通知范围:'为每个通知节点分配接收范围',设置:'当前会话与连接信息',账号管理:'账号启用、密码与管理员权限'} as Record<Page,string>)[page]}</p></div><div className="toolbar"><span className="connection" role="status"><span className={'dot '+(relay.connected ? 'online' : '')}/>{relay.status}</span><button className="icon-button" aria-label="刷新" onClick={relay.refresh} disabled={!relay.connected}><RefreshCw size={20}/></button></div></header>
@@ -76,7 +78,7 @@ function App() {
       </div></>}
       {page === '事件' && <section className="panel"><div className="section-title"><h2>最近事件</h2><span className="subtle">{timeStandardLabel(timeZone)} · 最多 100 条</span></div>{relay.alerts.length === 0 ? <Empty text="暂无事件"/> : <div className="event-table">{relay.alerts.map(a => <button className="event-row" key={a.alertId} onClick={() => setEvent(a)}><span className="event-kind">{eventLabel(a.eventKind)}</span><span><strong>{a.deviceName || a.deviceId}{a.sourceName && ` · ${a.sourceName}`}</strong><small>{a.summary || '查看检测详情'}</small></span><span className="subtle">{formatTime(a.timestamp,timeZone)}<small>{(relay.receipts[a.alertId] ?? []).length > 0 ? `${relay.receipts[a.alertId].length} 个通知节点已收件` : '查看详情'}</small></span></button>)}</div>}</section>}
       {page === '通知范围' && <div className="scope-list">{relay.notifiers.length === 0 ? <section className="panel"><Empty text="尚无已登记的通知节点"/></section> : relay.notifiers.map(notifier => <ScopeEditor key={notifier.deviceId} notifier={notifier} nodes={nodes.filter(n => n.role === 'detector')} connected={relay.connected} acks={relay.acks} send={relay.send}/>)}</div>}
-      {page === '设置' && <><TimeStandardSettings standard={relay.timeStandard} connected={relay.connected} acks={relay.acks} send={relay.send}/><AccountSettings login={login} onDeviceNameChanged={name=>{if(loginRef.current?.token===login.token)updateLogin({...login,device:{...login.device,deviceName:name}});}} onLogout={() => { void logout(); }} onPasswordChanged={() => { if (loginRef.current?.token === login.token) clearSession('密码已修改，请重新登录'); }}/></>}
+      {page === '设置' && <><AppearanceSelector preference={appearance}/><TimeStandardSettings standard={relay.timeStandard} connected={relay.connected} acks={relay.acks} send={relay.send}/><AccountSettings login={login} onDeviceNameChanged={name=>{if(loginRef.current?.token===login.token)updateLogin({...login,device:{...login.device,deviceName:name}});}} onLogout={() => { void logout(); }} onPasswordChanged={() => { if (loginRef.current?.token === login.token) clearSession('密码已修改，请重新登录'); }}/></>}
       {page === '账号管理' && login.account.isAdmin && <AccountManagement login={login}/>}
     </main>
     {visibleEvent && <EventDialog key={visibleEvent.alertId} alert={visibleEvent} timeZone={timeZone} login={login} receipts={relay.receipts[visibleEvent.alertId] ?? []} onClose={() => setEvent(null)}/>}

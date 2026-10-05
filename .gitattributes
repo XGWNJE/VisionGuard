@@ -1,0 +1,7 @@
+# Keep pinned upstream hashes stable on Windows checkouts.
+assets/vendor/lucide/** -text
+android-shared/src/main/java/com/xgwnje/visionguard/icons/LucideIcons.kt text eol=lf
+android-shared/src/main/res/drawable/ic_lucide_*.xml text eol=lf
+detector/windows-wpf/Icons/LucideGeometry.g.cs text eol=lf
+android-shared/src/main/assets/third-party/lucide-license.txt text eol=lf
+receiver/web/public/third-party/lucide-license.txt text eol=lf

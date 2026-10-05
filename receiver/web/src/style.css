@@ -23,8 +23,7 @@
   color: var(--text);
   background: var(--page);
 }
-@media (prefers-color-scheme: dark) {
-  :root {
+  :root[data-theme="dark"] {
     color-scheme: dark;
     --page: #121212;
     --panel: #1B1B1B;
@@ -41,8 +40,10 @@
     --error-surface: #442326;
     --warning: #F4CC79;
     --warning-surface: #3B3020;
-  }
 }
+.appearance-selector { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+.appearance-selector select { width: 160px; }
+.login-appearance { position: absolute; top: 16px; right: 24px; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 0; font-size: 16px; line-height: 24px; }
 button, input, select { font: inherit; }

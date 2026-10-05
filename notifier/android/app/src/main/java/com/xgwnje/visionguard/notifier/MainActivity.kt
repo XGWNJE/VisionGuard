@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.background
@@ -11,6 +12,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.app.ActivityCompat
+import androidx.core.view.WindowCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -32,12 +34,21 @@ class MainActivity : AppCompatActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 33 && !PermissionUtils.canPostNotifications(this))
             ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), PermissionUtils.REQUEST_CODE_POST_NOTIFICATIONS)
         val account = AccountStore.get(this)
         setContent {
             val session by account.session.collectAsState()
-            NotificationTheme {
+            val appearance = rememberAppearance()
+            val dark = appearance.dark()
+            SideEffect { WindowCompat.getInsetsController(window, window.decorView).apply {
+                isAppearanceLightStatusBars = !dark; isAppearanceLightNavigationBars = !dark
+            } }
+            NotificationTheme(darkTheme = dark) {
+                Column(Modifier.fillMaxSize().statusBarsPadding()) {
+                AppearanceSelector(appearance)
+                Box(Modifier.weight(1f)) {
                 if (session == null) AccountLogin(account, "通知节点", "android-notifier")
                 else key(session!!.scope) {
                     val model = remember { SettingsViewModel(application) }
@@ -54,7 +65,7 @@ class MainActivity : AppCompatActivity() {
                             syncAlarm()
                         }
                     }
-                    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).statusBarsPadding()) {
+                    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
                         AccountHeader(account, session!!, beforeLogout = { stopAccount() })
                         val nav = rememberNavController()
                         NavHost(navController = nav, startDestination = "node", modifier = Modifier.weight(1f)) {
@@ -71,6 +82,8 @@ class MainActivity : AppCompatActivity() {
                             syncAlarm()
                         }, matchedKeyword = item.keyword, sourceApp = item.sourceApp, snippet = item.snippet, eventTimeMillis = item.firstTriggeredAt, confirmationError = confirmationError)
                     }
+                }
+                }
                 }
             }
             LaunchedEffect(session?.scope) { if (session == null) { stopService(Intent(this@MainActivity, NotificationNodeService::class.java)); stopService(Intent(this@MainActivity, AlarmPlaybackService::class.java)) } }
