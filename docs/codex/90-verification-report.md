@@ -11,6 +11,7 @@
 | 通知中断确认 | 服务 58 项通过（含实际 WS 探测标识回传）；通知 JVM 11 项、lintDebug、Release Kotlin 及 AndroidTest APK 编译通过。回归覆盖静默探测/新尝试失败、锁屏式计时延迟、旧时间戳、排队失败回调和恢复；新增持久化去重设备测试已编译、尚未运行。证据 `.local/notifier-recovery-*.log`；不作为真机锁屏、厂商后台保活或声音证明，最终签名包与组合设备验收待整合阶段。 |
 | 相机链路 | 服务 60 项、相机 JVM 11 项及 Release Kotlin 检查通过；实际 WS 回归重复绑定、空闲心跳、替换连接、最新帧覆盖/过期和时钟跳变。`AccountMedia.Probe` 验证首帧无需控制通道先激活、帧缓存与旧连接隔离；证据 `.local/camera-pipeline-*.log`。签名全量构建和实际摄像头到 Windows 画面待整合；无可识别对象时不要求真实人员触发报警。 |
 | 三种主题 | Web 构建、19 项回归及 472 项主题契约通过；Windows 五项 Release 目标通过，相机／通知 Release Kotlin 与 JVM 检查通过。官方 Lucide 文件哈希保持不变，新增 Git 换行约束修复 Windows 检出后的机械资源核验。实际页面、系统切换、手动持久化与高对比度目检待整合；Win7 实机未覆盖。证据 `.local/theme-*.log`。 |
+| 客户端更新 | `LauncherUpdate.Probe` 验证稳定发行时间边界、分端、损坏元数据、真实 HTTP 下载大小／SHA256／取消与 ZIP 越界；实际 GitHub 查询成功且当前无更新。启动器后台 6 项、发布／编码 17 项通过，生产发布函数的隔离 mock 验证草稿→上传→摘要校验→公开顺序及失败留稿。相机／通知新增各 5 项共享版本策略 JVM 回归，Release Kotlin、lintDebug 通过。最终签名包、Android 安装交接与 Windows 目录替换／回滚场景待整合验证；本次未实际发布。证据 `.local/update-*.log`。 |
 
 本文是当前源码的证据台账。不把源码存在、构建、连接或收件作为完整报警链和可听声音的证明。自动化、模拟器、真机与生产结果分别判断。
 

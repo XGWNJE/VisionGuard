@@ -24,10 +24,13 @@ test('background launcher checks reject incomplete metadata without blocking sta
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => server.close());
+  const asset={name:'VisionGuard-WPF-v0.7.0.zip',browser_download_url:'https://github.com/XGWNJE/VisionGuard/releases/download/v0.7.0/VisionGuard-WPF-v0.7.0.zip',size:123,digest:'sha256:'+'a'.repeat(64),state:'uploaded'};
+  const release=assets=>[{tag_name:'v0.7.0',published_at:'2026-10-05T00:00:00Z',draft:false,prerelease:false,assets}];
   const cases = [
-    { name: 'no newer version', body: { hasUpdate: false }, code: 0 },
-    { name: 'missing SHA256', body: { hasUpdate: true, latestVersion: '9.0.0', downloadUrl: '/unused.zip' }, code: 1, reason: 'SHA256' },
-    { name: 'missing download URL', body: { hasUpdate: true, latestVersion: '9.0.0' }, code: 1, reason: 'InvalidDataException' },
+    { name: 'no newer version', body: [], code: 0 },
+    { name: 'valid newer version stays noninteractive', body: release([asset]), code: 0 },
+    { name: 'missing SHA256', body: release([{...asset,digest:''}]), code: 1, reason: 'InvalidDataException' },
+    { name: 'missing download URL', body: release([{...asset,browser_download_url:''}]), code: 1, reason: 'InvalidDataException' },
     { name: 'server failure', status: 500, body: { error: 'fixture failure' }, code: 1, reason: '500' },
   ];
   for (const entry of cases) {
@@ -45,7 +48,7 @@ test('background launcher checks reject incomplete metadata without blocking sta
         logDirectory,
       }));
       const child = spawn(launcher, ['--isolated-environment', configuration, '--check-update'], {
-        windowsHide: true, stdio: 'ignore',
+        windowsHide: true, stdio: 'ignore', env:{...process.env,VISIONGUARD_TEST_RELEASES_URL:`http://127.0.0.1:${server.address().port}/releases`},
       });
       const code = await new Promise((resolve, reject) => {
         const timer = setTimeout(() => {
@@ -56,8 +59,8 @@ test('background launcher checks reject incomplete metadata without blocking sta
         child.once('exit', code => { clearTimeout(timer); resolve(code); });
       });
       assert.equal(code, entry.code);
-      assert.ok(requests.at(-1).startsWith('/api/update?platform=wpf&version='));
-      assert.ok(requests.every(url => url.startsWith('/api/update?')));
+      assert.ok(requests.at(-1).startsWith('/releases?per_page=100&page='));
+      assert.ok(requests.every(url => url.startsWith('/releases?')));
       if (entry.reason) {
         const log = fs.readFileSync(path.join(logDirectory, 'launcher.log'), 'utf8');
         assert.match(log, /update-check-failed/);

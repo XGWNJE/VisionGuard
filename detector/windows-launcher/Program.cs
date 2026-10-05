@@ -20,6 +20,10 @@ namespace VisionGuard.Detector.Windows.Launcher
         private static string DetectorShutdownEvent { get { return @"Local\VisionGuard." + AccountSession.ApplicationId + ".Shutdown"; } }
         private static string ResidentShutdownEvent { get { return AccountSession.ResidentShutdownName; } }
         private static readonly string InstallRoot = AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\');
+        private static string UpdateMutexFor(string root) {
+            using (var sha = SHA256.Create()) return @"Local\VisionGuard.Update." + BitConverter.ToString(sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(root).TrimEnd('\\').ToUpperInvariant()))).Replace("-", "").Substring(0, 24);
+        }
+        private static bool AcquireUpdate(Mutex mutex, int timeout) { try { return mutex.WaitOne(timeout); } catch (AbandonedMutexException) { return true; } }
 
         [STAThread]
         private static int Main(string[] args)
@@ -101,9 +105,10 @@ namespace VisionGuard.Detector.Windows.Launcher
         {
             int ownerPid;
             int.TryParse(GetOption(args, "--owner-pid"), out ownerPid);
-            using (var mutex = new Mutex(false, @"Local\VisionGuard.Launcher.UpdateCheck", out bool created))
+            using (var mutex = new Mutex(false, UpdateMutexFor(InstallRoot)))
             {
-                if (!created) return 0;
+                if (!AcquireUpdate(mutex, 0)) return 0;
+                try {
                 UpdateInfo info = QueryUpdate();
 
                 if (!info.HasUpdate)
@@ -115,6 +120,8 @@ namespace VisionGuard.Detector.Windows.Launcher
                     throw new InvalidDataException("服务器返回的更新版本或下载地址为空。旧版本未改动。");
                 if (string.IsNullOrWhiteSpace(info.Sha256) || info.Sha256.Length != 64)
                     throw new InvalidDataException("服务器没有提供更新包 SHA256，已拒绝不完整的更新元数据。");
+
+                if (!interactive) { WriteLog("update-available", "version=" + info.LatestVersion); return 0; }
 
                 var answer = ThemedDialog.Show(
                     "发现新版本 " + info.LatestVersion + "（当前 " + Version + "）。\n\n" +
@@ -128,17 +135,15 @@ namespace VisionGuard.Detector.Windows.Launcher
                 Directory.CreateDirectory(updateRoot);
                 string zipPath = Path.Combine(updateRoot, "package.zip");
                 string stagePath = Path.Combine(updateRoot, "staged");
-                DownloadAndVerify(info, zipPath);
-                SafeExtract(zipPath, stagePath);
-                ValidatePackage(stagePath);
+                try {
+                    if (!ThemedDialog.Download((cancel, progress) => DownloadAndVerify(info, zipPath, cancel, progress), info.Size)) { TryDeleteDirectory(updateRoot); return 0; }
+                    SafeExtract(zipPath, stagePath); ValidatePackage(stagePath);
+                } catch { TryDeleteDirectory(updateRoot); throw; }
 
                 string updaterExe = Path.Combine(updateRoot, "VisionGuard.Updater.exe");
                 File.Copy(Path.Combine(InstallRoot, "VisionGuard.Detector.Windows.exe"), updaterExe, true);
                 string config = Path.Combine(InstallRoot, "VisionGuard.Detector.Windows.exe.config");
                 if (File.Exists(config)) File.Copy(config, updaterExe + ".config", true);
-
-                SignalShutdown(DetectorShutdownEvent);
-                SignalShutdown(ResidentShutdownEvent);
 
                 var updater = Process.Start(new ProcessStartInfo
                 {
@@ -154,6 +159,7 @@ namespace VisionGuard.Detector.Windows.Launcher
                 if (updater == null) throw new InvalidOperationException("无法启动更新器。");
                 WriteLog("update-staged", "version=" + info.LatestVersion + " updaterPid=" + updater.Id);
                 return 0;
+                } finally { mutex.ReleaseMutex(); }
             }
         }
 
@@ -162,33 +168,41 @@ namespace VisionGuard.Detector.Windows.Launcher
             using (var client = new HttpClient())
             {
                 client.Timeout = TimeSpan.FromSeconds(20);
-                var session = AccountSession.EnsureFresh();
-                if (session != null) client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.token);
-                string json = client.GetStringAsync(
-                    ServerBase + "/api/update?platform=wpf&version=" + Uri.EscapeDataString(Version)).GetAwaiter().GetResult();
-                var data = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(json);
-                return new UpdateInfo
-                {
-                    HasUpdate = ReadBool(data, "hasUpdate"),
-                    LatestVersion = ReadString(data, "latestVersion"),
-                    DownloadUrl = ReadString(data, "downloadUrl"),
-                    Size = ReadLong(data, "size"),
-                    Sha256 = ReadString(data, "sha256").ToUpperInvariant(),
-                };
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("VisionGuard/" + Version);
+                client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+                string fixture = Environment.GetEnvironmentVariable("VISIONGUARD_TEST_RELEASES_URL"); Uri fixtureUri;
+                string endpoint = "https://api.github.com/repos/" + GitHubReleasePolicy.Repository + "/releases";
+                if (AccountSession.IsIsolated && !string.IsNullOrEmpty(fixture) && Uri.TryCreate(fixture, UriKind.Absolute, out fixtureUri) && fixtureUri.IsLoopback && fixtureUri.Scheme == "http") endpoint = fixture;
+                var releases = new List<Dictionary<string, object>>();
+                for (int page = 1; page <= 10; page++) {
+                    string json = client.GetStringAsync(endpoint + "?per_page=100&page=" + page).GetAwaiter().GetResult();
+                    var rows = new JavaScriptSerializer { MaxJsonLength = 8 * 1024 * 1024 }.Deserialize<List<Dictionary<string, object>>>(json);
+                    releases.AddRange(rows); if (rows.Count < 100) break;
+                    if (page == 10) throw new InvalidDataException("发行列表过长，无法完整判断版本。");
+                }
+                var asset = GitHubReleasePolicy.Select(releases, Version);
+                return asset == null ? new UpdateInfo() : new UpdateInfo { HasUpdate = true, LatestVersion = asset.Version, DownloadUrl = asset.Url, Size = asset.Size, Sha256 = asset.Sha256 };
             }
         }
 
-        private static void DownloadAndVerify(UpdateInfo info, string destination)
+        private static void DownloadAndVerify(UpdateInfo info, string destination, CancellationToken cancel, Action<long> progress)
         {
             string url = info.DownloadUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)
                 ? info.DownloadUrl : ServerBase + info.DownloadUrl;
             using (var client = new HttpClient())
-            using (var response = client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult())
+            using (var response = client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancel).GetAwaiter().GetResult())
+            using (cancel.Register(() => response.Dispose()))
             {
                 response.EnsureSuccessStatusCode();
                 using (var input = response.Content.ReadAsStreamAsync().GetAwaiter().GetResult())
                 using (var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                    input.CopyTo(output);
+                { byte[] buffer = new byte[65536]; long total = 0; int read;
+                    while ((read = input.ReadAsync(buffer, 0, buffer.Length, cancel).GetAwaiter().GetResult()) > 0) {
+                        cancel.ThrowIfCancellationRequested(); total += read;
+                        if (total > info.Size) throw new InvalidDataException("更新包超过声明大小。");
+                        output.Write(buffer, 0, read); progress(total);
+                    }
+                }
             }
             var file = new FileInfo(destination);
             if (info.Size > 0 && file.Length != info.Size)
@@ -206,6 +220,7 @@ namespace VisionGuard.Detector.Windows.Launcher
             string root = Path.GetFullPath(destination).TrimEnd('\\') + "\\";
             using (var archive = ZipFile.OpenRead(zipPath))
             {
+                if (archive.Entries.Count > 20000 || archive.Entries.Sum(entry => entry.Length) > 1024L * 1024 * 1024) throw new InvalidDataException("解压后的更新包超过上限。");
                 foreach (var entry in archive.Entries)
                 {
                     string output = Path.GetFullPath(Path.Combine(destination, entry.FullName.Replace('/', '\\')));
@@ -239,11 +254,18 @@ namespace VisionGuard.Detector.Windows.Launcher
             string version = args[3];
             int launcherPid = int.Parse(args[4]);
             int ownerPid = int.Parse(args[5]);
-            return ApplyUpdateCore(staged, target, version, launcherPid, ownerPid);
+            if (!Directory.Exists(staged) || !Directory.Exists(target) || string.Equals(staged, target, StringComparison.OrdinalIgnoreCase) || GitHubReleasePolicy.StableVersion(version) == null) throw new InvalidDataException("更新目录或版本无效。");
+            using (var mutex = new Mutex(false, UpdateMutexFor(target))) {
+                if (!AcquireUpdate(mutex, 30000)) return 1;
+                try { return ApplyUpdateCore(staged, target, version, launcherPid, ownerPid); }
+                finally { mutex.ReleaseMutex(); }
+            }
         }
 
         private static int ApplyUpdateCore(string staged, string target, string version, int launcherPid, int ownerPid)
         {
+            ValidatePackage(staged);
+            if (System.Version.Parse(FileVersionInfo.GetVersionInfo(Path.Combine(staged, "VisionGuard.Detector.Windows.exe")).FileVersion) != System.Version.Parse(version + ".0")) throw new InvalidDataException("暂存程序版本与发行不一致。");
             WaitForExit(launcherPid, 20000);
             WaitForExit(ownerPid, 20000);
             SignalShutdown(DetectorShutdownEvent);
@@ -254,7 +276,7 @@ namespace VisionGuard.Detector.Windows.Launcher
             if (string.IsNullOrEmpty(parent)) throw new InvalidOperationException("安装目录没有可用的父目录，无法安全更新。");
             string name = Path.GetFileName(target);
             string incoming = Path.Combine(parent, name + ".incoming-" + Guid.NewGuid().ToString("N"));
-            string backup = Path.Combine(parent, name + ".backup-" + DateTime.Now.ToString("yyyyMMddHHmmss"));
+            string backup = Path.Combine(parent, name + ".backup-" + DateTime.Now.ToString("yyyyMMddHHmmss") + "-" + Guid.NewGuid().ToString("N"));
             CopyDirectory(staged, incoming);
             ValidatePackage(incoming);
 

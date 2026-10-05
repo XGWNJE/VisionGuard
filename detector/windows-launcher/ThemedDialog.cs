@@ -1,4 +1,7 @@
 using System;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
@@ -9,6 +12,28 @@ namespace VisionGuard.Detector.Windows.Launcher
 {
     internal static class ThemedDialog
     {
+        internal static bool Download(Action<CancellationToken, Action<long>> action, long size)
+        {
+            var palette = Palette.Read(); Exception failure = null; bool complete = false, cancelled = false;
+            using (var cancel = new CancellationTokenSource())
+            using (var dialog = new Form { Text = "下载视觉节点更新", StartPosition = FormStartPosition.CenterScreen, ClientSize = new Size(480, 160), BackColor = palette.Page, ForeColor = palette.Text, Font = new Font("Microsoft YaHei UI", 10.5f), FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false }) {
+                var status = new Label { Text = "正在下载并校验…", AutoSize = true, Location = new Point(24, 24) };
+                var bar = new ProgressBar { Location = new Point(24, 58), Size = new Size(432, 12) };
+                var button = new ThemeButton(palette, false) { Text = "取消下载", Location = new Point(320, 96), Size = new Size(136, 40) };
+                dialog.Controls.AddRange(new Control[] { status, bar, button });
+                button.Click += (s, e) => { cancel.Cancel(); button.Enabled = false; status.Text = "正在取消…"; };
+                dialog.FormClosing += (s, e) => { if (!complete) { e.Cancel = true; cancel.Cancel(); } };
+                dialog.Shown += async (s, e) => {
+                    try { await Task.Run(() => action(cancel.Token, bytes => { if (!cancel.IsCancellationRequested && !dialog.IsDisposed) dialog.BeginInvoke(new Action(() => { bar.Value = (int)Math.Min(100, bytes * 100 / size); status.Text = "已下载 " + (bytes / 1048576d).ToString("F1") + " / " + (size / 1048576d).ToString("F1") + " MiB"; })); })); }
+                    catch (OperationCanceledException) { cancelled = true; }
+                    catch (Exception ex) { if (cancel.IsCancellationRequested) cancelled = true; else failure = ex; }
+                    complete = true; dialog.Close();
+                };
+                dialog.ShowDialog();
+            }
+            if (failure != null) throw failure;
+            return !cancelled;
+        }
         internal static DialogResult Show(string message, string title, MessageBoxButtons buttons, MessageBoxIcon icon)
         {
             Application.EnableVisualStyles();
@@ -123,6 +148,8 @@ namespace VisionGuard.Detector.Windows.Launcher
             {
                 bool dark = false;
                 try { using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")) dark = key != null && Equals(key.GetValue("AppsUseLightTheme"), 0); }
+                catch { }
+                try { var mode = File.ReadAllText(System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionGuard", "appearance.txt")).Trim(); if (mode == "light") dark = false; else if (mode == "dark") dark = true; }
                 catch { }
                 var palette = dark
                     ? new Palette { Dark = true, Page = Hex("#121212"), Surface = Hex("#282828"), Text = Hex("#F2F2F2"), Secondary = Hex("#B3B3B3"), Border = Hex("#3D3D3D"), Primary = Hex("#4FBCC1"), Hover = Hex("#67CBD0"), Pressed = Hex("#40A6AC"), OnPrimary = Hex("#062E30"), Selected = Hex("#303030"), Error = Hex("#FF9696"), Warning = Hex("#F4CC79") }
