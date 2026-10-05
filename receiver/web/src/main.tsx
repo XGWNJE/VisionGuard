@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity, Bell, Camera, ChevronLeft, CircleHelp, LogOut, Monitor, Radio, RefreshCw, Search, Settings, ShieldCheck, Users } from 'lucide-react';
+import { Activity, Bell, Camera, CircleHelp, LogOut, Monitor, Radio, RefreshCw, Search, Settings, ShieldCheck, Users } from 'lucide-react';
 import { eventLabel, formatTime, mergeDevices, timeStandardLabel, typeLabel, websocketURL, type Ack, type AlarmTimeZone, type Alert, type Device, type Notifier, type Scope, type Source, type Stream, type Target, type TimeStandard } from './protocol';
 import { useRelay } from './useRelay';
 import { accountRequest, AccountRequestError, parseLogin, rotateLogin, type Login } from './account';
@@ -19,11 +19,10 @@ function App() {
   const relay = useRelay(login);
   const [page, setPage] = useState<Page>('节点');
   const [selected, setSelected] = useState('');
-  const [mobileDetail, setMobileDetail] = useState(false);
   const [event, setEvent] = useState<Alert | null>(null);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
-  function clearSession(error = '') { updateLogin(null); setLoginError(error); setEvent(null); setSelected(''); setSearch(''); setTypeFilter(''); setMobileDetail(false); setPage('节点'); }
+  function clearSession(error = '') { updateLogin(null); setLoginError(error); setEvent(null); setSelected(''); setSearch(''); setTypeFilter(''); setPage('节点'); }
   useEffect(() => { if (relay.authExpired && loginRef.current?.token === login?.token) clearSession('登录已失效，请重新登录'); }, [relay.authExpired, login?.token]);
   useEffect(() => {
     if (!login) return;
@@ -48,7 +47,7 @@ function App() {
     if (!loginRef.current && results.some(result => result.status === 'rejected' && !(result.reason instanceof AccountRequestError && result.reason.status === 401))) setLoginError('已退出本地会话，服务暂不可达');
   }
   const timeZone = relay.timeStandard?.timeZone ?? 'Asia/Shanghai';
-  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [page, mobileDetail, selected]);
+  useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [page, selected]);
   const nodes = useMemo(() => mergeDevices(relay.devices, [...relay.registered, ...relay.notifiers]), [relay.devices, relay.registered, relay.notifiers]);
   const visibleNodes = nodes.filter(n => (!typeFilter || n.nodeType === typeFilter) && `${n.deviceName} ${n.deviceId}`.toLowerCase().includes(search.trim().toLowerCase()));
   const node = visibleNodes.find(d => d.deviceId === selected) ?? visibleNodes[0];
@@ -57,19 +56,19 @@ function App() {
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><img src="/console/icon.png" width="40" height="40" alt=""/><span>控制台</span></div>
-      <nav aria-label="主导航">{([['节点',Monitor],['事件',Activity],['通知范围',Bell],['设置',Settings],['账号管理',Users]] as const).filter(([label])=>label!=='账号管理'||login.account.isAdmin).map(([label,Icon]) => <button key={label} aria-current={page === label ? 'page' : undefined} className={page === label ? 'nav-item active' : 'nav-item'} onClick={() => { setPage(label); setMobileDetail(false); }}><Icon size={20}/><span>{label}</span></button>)}</nav>
+      <nav aria-label="主导航">{([['节点',Monitor],['事件',Activity],['通知范围',Bell],['设置',Settings],['账号管理',Users]] as const).filter(([label])=>label!=='账号管理'||login.account.isAdmin).map(([label,Icon]) => <button key={label} aria-current={page === label ? 'page' : undefined} className={page === label ? 'nav-item active' : 'nav-item'} onClick={() => { setPage(label); }}><Icon size={20}/><span>{label}</span></button>)}</nav>
       <div className="sidebar-footer"><span className={'dot '+(relay.connected ? 'online' : '')}/>{relay.status}<span className="subtle">{appearance.mode === "system" ? "跟随系统" : appearance.mode === "dark" ? "深色外观" : "浅色外观"}</span></div>
     </aside>
     <main>
       <header className="page-header"><div><h1>{page}</h1><p>{({节点:'检测节点与通知节点',事件:'实时事件与最近历史',通知范围:'为每个通知节点分配接收范围',设置:'当前会话与连接信息',账号管理:'账号启用、密码与管理员权限'} as Record<Page,string>)[page]}</p></div><div className="toolbar"><span className="connection" role="status"><span className={'dot '+(relay.connected ? 'online' : '')}/>{relay.status}</span><button className="icon-button" aria-label="刷新" onClick={relay.refresh} disabled={!relay.connected}><RefreshCw size={20}/></button></div></header>
-      {page === '节点' && <><section className="panel node-filters"><label className="search-field"><Search size={20}/><input aria-label="搜索节点名称" placeholder="搜索节点名称" value={search} onChange={e => setSearch(e.target.value)}/></label><select aria-label="节点类型" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}><option value="">全部类型</option><option value="visual">视觉节点</option><option value="sensor">传感器节点</option><option value="notification">通知节点</option></select></section><div className={'master-detail '+(mobileDetail ? 'show-detail' : '')}>
+      {page === '节点' && <><section className="panel node-filters"><label className="search-field"><Search size={20}/><input aria-label="搜索节点名称" placeholder="搜索节点名称" value={search} onChange={e => setSearch(e.target.value)}/></label><select aria-label="节点类型" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}><option value="">全部类型</option><option value="visual">视觉节点</option><option value="sensor">传感器节点</option><option value="notification">通知节点</option></select></section><div className="master-detail">
         <section className="panel node-list"><div className="section-title"><h2>全部节点</h2><span className="subtle">{visibleNodes.length} 个</span></div>
           {visibleNodes.length === 0 && <Empty text={nodes.length ? '没有匹配的节点' : '尚无已登记节点'} />}
-          {visibleNodes.map(device => <button key={device.deviceId} aria-pressed={node?.deviceId === device.deviceId} className={'node-row '+(node?.deviceId === device.deviceId ? 'selected' : '')} onClick={() => { setSelected(device.deviceId); setMobileDetail(true); }}>
+          {visibleNodes.map(device => <button key={device.deviceId} aria-pressed={node?.deviceId === device.deviceId} className={'node-row '+(node?.deviceId === device.deviceId ? 'selected' : '')} onClick={() => { setSelected(device.deviceId); }}>
             <NodeIcon node={device}/><div><strong>{device.deviceName}</strong><span>{typeLabel(device.nodeType)} · {device.platform}</span><small>{device.deviceId}</small></div><span className={'dot '+(device.online ? 'online' : '')} aria-label={device.online ? '在线' : '离线'}/>
           </button>)}
         </section>
-        <div className="detail-column"><button className="mobile-back" onClick={() => setMobileDetail(false)}><ChevronLeft size={20}/>返回节点</button>
+        <div className="detail-column">
           {node ? <><NodeDetail key={node.deviceId} node={node} stream={relay.streams.find(s=>s.publisherDeviceId===node.deviceId)} timeZone={timeZone} connected={relay.connected} send={relay.send} /><DeviceSettings key={`manage-${node.deviceId}`} node={node} nodes={nodes} streams={relay.streams} login={login} onChanged={relay.refresh}/></> : <section className="panel"><Empty text="登录同一账号的节点将在这里显示"/></section>}
           <section className="panel"><div className="section-title"><h2>操作回执</h2><span className="subtle">以执行端结果为准</span></div>
             {relay.acks.length === 0 ? <Empty text="暂无操作"/> : relay.acks.slice(0,5).map(ack => <div className="receipt-row" key={ack.requestId}><span>{ack.targetDeviceId || '通知范围'}<small>{ack.command}</small></span><span className={!ack.success ? 'error' : 'subtle'}>{!ack.success ? '失败' : ack.phase === 'forwarded' ? '已转发' : ack.phase === 'pending' ? '等待执行' : '已完成'}<small>{ack.reason}</small></span></div>)}
