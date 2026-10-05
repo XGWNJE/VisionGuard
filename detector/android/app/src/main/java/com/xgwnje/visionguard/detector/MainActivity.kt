@@ -78,8 +78,7 @@ class MainActivity : ComponentActivity() {
             }
             VisionguardTheme(darkTheme = darkTheme) {
                 Column(Modifier.fillMaxSize().statusBarsPadding()) {
-                AppearanceSelector(appearance)
-                ClientUpdateButton(BuildConfig.VERSION_NAME, "android-camera")
+                ApplicationOptions(appearance, BuildConfig.VERSION_NAME, "android-camera")
                 Box(Modifier.weight(1f)) {
                 if (session == null) AccountLogin(account, "相机推流节点", "android-camera")
                 else key(session!!.scope) {

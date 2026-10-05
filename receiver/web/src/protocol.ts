@@ -1,12 +1,12 @@
 export type Identity = { deviceId: string; nodeType: string; platform: string; role: string; component?: string; deviceName?: string };
 export type Stream = { streamId: string; publisherDeviceId: string; publisherName: string; targetDeviceId?: string; sourceId?: string; sourceName: string; isStreaming: boolean; lastFrameAt?: string; stopReason?: string };
 export type Source = { sourceId: string; sourceName: string; isMonitoring: boolean; isReady: boolean; cooldown: number; confidence: number; targetSamplingRate: number; targets: string; modelKey: string; actualFps?: number; error?: string };
-export type Device = Identity & { deviceName: string; online: boolean; isMonitoring: boolean; isReady: boolean; lastSeen?: string; capabilities: string[]; cooldown?: number; confidence?: number; targetSamplingRate?: number; targets?: string; modelKey?: string; modelOptions?: string[]; sources: Source[]; components?: Record<string,string>; canSwitchModelWhileMonitoring?: boolean; sourceLimitExceeded?: boolean; maxSources?: number };
+export type Device = Identity & { deviceName: string; online: boolean; isMonitoring: boolean; isReady: boolean; lastSeen?: string; capabilities: string[]; cooldown?: number; confidence?: number; targetSamplingRate?: number; targets?: string; modelKey?: string; modelOptions?: string[]; modelLabels?: Record<string,{value:string;label:string}[]>; sources: Source[]; components?: Record<string,string>; canSwitchModelWhileMonitoring?: boolean; sourceLimitExceeded?: boolean; maxSources?: number };
 export type Alert = { alertId: string; deviceId: string; deviceName: string; sourceId?: string; sourceName?: string; timestamp: string; eventKind: string; summary: string; hasScreenshot?: boolean; screenshotUrl?: string; detections?: { label: string; confidence: number }[] };
 export type Target = { deviceId: string; sourceId?: string };
 export type Scope = { mode: 'all' | 'selected'; targets: Target[] };
 export type Notifier = Identity & { deviceName: string; online: boolean; scope: Scope };
-export type Ack = { requestId: string; phase?: string; success: boolean; reason?: string; command?: string; targetDeviceId?: string };
+export type Ack = { requestId: string; phase?: string; success: boolean; reason?: string; command?: string; targetDeviceId?: string; targetSourceId?: string };
 export type AlarmTimeZone = 'Asia/Shanghai' | 'UTC';
 export type TimeStandard = { timeZone: AlarmTimeZone; serverTime: string };
 export function parseTimeStandard(value: unknown): TimeStandard | null {

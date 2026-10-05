@@ -13,7 +13,7 @@ const login={token:'a'.repeat(32),expiresAt:'2026-12-01T00:00:00Z',channel:'test
 // Execute the production transport hook with controlled effect commits and socket/HTTP timing.
 // No DOM or clock sleeps are needed to reproduce a response arriving after a new account renders.
 function harness(fetcher){
-  const slots=[],effects=new Map(),pending=[],sockets=[];let cursor=0;
+  const slots=[],effects=new Map(),pending=[],sockets=[];let cursor=0, now=0, timer;
   const react={
     useState(initial){const i=cursor++;if(!Object.hasOwn(slots,i))slots[i]=initial;return[slots[i],next=>{slots[i]=typeof next==='function'?next(slots[i]):next;}];},
     useRef(initial){const i=cursor++;if(!Object.hasOwn(slots,i))slots[i]={current:initial};return slots[i];},
@@ -30,11 +30,11 @@ function harness(fetcher){
     revoked(){this.readyState=3;this.onclose?.({code:4001});}
   }
   const module={exports:{}};
-  const context=vm.createContext({module,exports:module.exports,require:name=>name==='react'?react:protocol,performance,location:{origin:'http://127.0.0.1:3100'},WebSocket:Socket,fetch:fetcher,AbortController,setInterval:()=>1,clearInterval:()=>{}});
+  const context=vm.createContext({module,exports:module.exports,require:name=>name==='react'?react:protocol,performance:{now:()=>now},location:{origin:'http://127.0.0.1:3100'},WebSocket:Socket,fetch:fetcher,AbortController,setInterval:fn=>{timer=fn;return 1;},clearInterval:()=>{timer=null;}});
   new vm.Script(compiled).runInContext(context);
   const commit=()=>{while(pending.length)pending.shift()();};
   return{
-    sockets,commit,
+    sockets,commit, advance(ms){now+=ms;timer?.();},
     render(session=login,commitEffects=true){cursor=0;const value=module.exports.useRelay(session);if(commitEffects)commit();return value;},
     stop(){for(const effect of effects.values())effect.cleanup?.();},
   };
@@ -101,4 +101,19 @@ test('a new session on the same device cannot expose data from the previous toke
   h.commit();
   first.receive({type:'alert',alertId:'late-event',timestamp:'2026-10-05T00:00:00Z',deviceId:'one'});
   assert.equal(h.render(next).alerts.length,0);
+});
+test('operations deduplicate until execution or timeout and preserve uncertain results',async t=>{
+ const h=harness(()=>Promise.resolve(new Response(JSON.stringify({alerts:[]}))));t.after(()=>h.stop());h.render();const socket=h.sockets[0];socket.open();socket.receive({type:'auth-result',success:true});
+ const m={type:'set-config',targetDeviceId:'node',targetSourceId:'source',key:'confidence',value:'.5'};
+ const id=h.render().send(m);assert.equal(h.render().send(m),id);assert.equal(socket.sent.filter(m=>m.type==='set-config').length,1);
+ socket.receive({type:'command-ack',requestId:id,success:true,phase:'forwarded'});assert.equal(h.render().acks[0].phase,'forwarded');assert.equal(h.render().send(m),id);
+ h.advance(21000);assert.equal(h.render().acks[0].phase,'uncertain');const next=h.render().send(m);assert.notEqual(next,id);
+ socket.receive({type:'command-ack',requestId:id,success:true,phase:'completed'});assert.equal(h.render().acks.find(a=>a.requestId===id).phase,'completed');assert.equal(h.render().send(m),next);
+ socket.close();assert.equal(h.render().acks.find(a=>a.requestId===next).phase,'uncertain');
+});
+test('pending operations survive long completed history and failed forwarding unlocks retry',async t=>{
+ const h=harness(()=>Promise.resolve(new Response(JSON.stringify({alerts:[]}))));t.after(()=>h.stop());h.render();const socket=h.sockets[0];socket.open();socket.receive({type:'auth-result',success:true});
+ const m={type:'command',targetDeviceId:'node',command:'pause'},id=h.render().send(m);
+ for(let i=0;i<110;i++)socket.receive({type:'command-ack',requestId:`history-${i}`,phase:'completed',success:true});
+ assert.ok(h.render().acks.some(a=>a.requestId===id));socket.receive({type:'command-ack',requestId:id,phase:'forwarded',success:false});assert.equal(h.render().acks[0].phase,'completed');assert.notEqual(h.render().send(m),id);
 });

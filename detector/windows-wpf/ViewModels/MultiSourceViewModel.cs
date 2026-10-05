@@ -432,16 +432,11 @@ namespace VisionGuard.Detector.Windows.ViewModels
             try
             {
                 if (IsRunning(slot)) throw new InvalidOperationException("请先停止该来源再修改配置。");
-                switch (key)
-                {
-                    case "cooldown" when int.TryParse(value, out var cooldown) && cooldown is >= 1 and <= 300: slot.Cooldown = cooldown; break;
-                    case "confidence" when float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var confidence) && confidence is >= 0.1f and <= 0.95f: slot.ThresholdPercent = (int)Math.Round(confidence * 100); break;
-                    case "targetSamplingRate" when int.TryParse(value, out var fps) && fps is >= 1 and <= 5: slot.TargetFps = fps; break;
-                    case "targets": slot.Targets = value; break;
-                    case "modelKey" when ModelManager.ModelKeys.Contains(value): slot.ModelKey = value; break;
-                    default: throw new ArgumentException("配置值无效或不支持。");
+                if (key == "confidence") {
+                    if (!double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var confidence) || confidence < .1 || confidence > .95 || Math.Abs(confidence * 100 - Math.Round(confidence * 100)) > .000001) throw new ArgumentException("置信度须为 10–95%，步长 1%。");
+                    value = ((int)Math.Round(confidence * 100)).ToString();
                 }
-                slot.ApplyAndPersist();
+                slot.CommitParameter(key, value);
                 _server.SendCommandAck(command, true, requestId: requestId, targetSourceId: ackSourceId);
                 return true;
             }
@@ -812,8 +807,6 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 for (int i = 0; i < keys.Length; i++)
                     if (ModelManager.IsDownloaded(keys[i])) available.Add(keys[i]);
 
-                // 选了未下载的模型时收敛到本机已有的第一个；一个都没有时保持原值并置灰（由 CanPickModel 表达）。
-                if (available.Count > 0 && !available.Contains(_modelKey)) _modelKey = available[0];
                 return available.ToArray();
             }
         }
@@ -825,7 +818,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public bool HasNoModel => !CanPickModel;
 
         /// <summary>模型下拉为空时的提示原因。</summary>
-        public string NoModelHint => CanPickModel ? "" : "本机还没有模型：请到「全局设定 → 模型资源」下载后再选";
+        public string NoModelHint => !ModelManager.IsSupported(ModelKey) ? "当前模型未知，请选择已下载模型。" : !ModelManager.IsDownloaded(ModelKey) ? "当前模型不可用，请在全局设置下载或重新选择。" : "";
 
         /// <summary>可用模型集合或选中项发生变化后，通知界面重新求值模型相关绑定。</summary>
         internal void RaiseModelOptionsChanged()
@@ -844,6 +837,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         }
 
         public ObservableCollection<DetectionItem> Detections { get; } = new();
+        public ObservableCollection<SourceParameterViewModel> ParameterRows { get; } = new();
         public ObservableCollection<DetectionClassOption> TargetOptions { get; } = new();
         public List<RectangleF> MaskRegions { get; private set; } = new();
         public string SourceName { get => _sourceName; set { if (SetProperty(ref _sourceName, value)) MarkDirty(); } }
@@ -908,7 +902,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public bool HasPendingApply => _pendingApply.Count > 0;
 
         public bool CanEdit => !IsMonitoring;
-        public bool CanStart => !IsMonitoring && IsReady;
+        public bool CanStart => !IsMonitoring && IsReady && ModelManager.IsSupported(ModelKey) && ModelManager.IsDownloaded(ModelKey);
         public bool IsReady => IsRemoteStream ? !string.IsNullOrWhiteSpace(_remoteStreamId) && RemoteFrameStore.Shared.IsBound(_remoteStreamId) : _captureMode == CaptureMode.WindowHandle
             ? _targetWindow != null && CaptureSizeConstraints.IsValid(_targetWindow.Bounds)
             : CaptureSizeConstraints.IsValid(_screenRegion);
@@ -1000,6 +994,8 @@ namespace VisionGuard.Detector.Windows.ViewModels
             // 预览位是否还能再勾由宿主判断：满了要给提示，所以命令本身始终可执行。
             TogglePreviewCommand = new RelayCommand(() => _owner.TogglePreviewSelection(this));
             StatusText = IsReady ? "就绪" : (!string.IsNullOrWhiteSpace(_targetWindowTitle) ? (string.IsNullOrWhiteSpace(_windowResolutionError) ? "窗口未找到" : _windowResolutionError) : "未配置");
+            foreach (var field in new[] { ("modelKey", "推理模型"), ("targets", "检测目标"), ("confidence", "置信度（%）"), ("targetSamplingRate", "采样频率（FPS）"), ("cooldown", "报警冷却（秒）") })
+                ParameterRows.Add(new SourceParameterViewModel(this, field.Item1, field.Item2));
         }
 
         internal void RaiseSourceActionStates()
@@ -1025,8 +1021,6 @@ namespace VisionGuard.Detector.Windows.ViewModels
             // 早期的默认名是“信号 N”，统一改成“来源 N”；用户自己起过的名字不动。
             if (_sourceName != null && _sourceName.Trim() == $"信号 {_index}") _sourceName = $"来源 {_index}";
             _modelKey = SettingsStore.GetString(Prefix + "ModelKey", ModelManager.DefaultModelKey);
-            // 旧配置里的模型键可能属于另一档位（例如 Win7 上残留的 yolo26*），回落到本档位默认值。
-            if (!ModelManager.IsSupported(_modelKey)) _modelKey = ModelManager.DefaultModelKey;
             _targets = NormalizeTargets(SettingsStore.GetString(Prefix + "Targets", "person"));
             _thresholdPercent = Net472Compat.Clamp(SettingsStore.GetInt(Prefix + "Threshold", 45), 10, 95);
             _targetFps = Net472Compat.Clamp(SettingsStore.GetInt(Prefix + "Fps", 3), 1, 5);
@@ -1215,6 +1209,31 @@ namespace VisionGuard.Detector.Windows.ViewModels
             if (IsMonitoring) throw new InvalidOperationException("请先停止该来源再修改配置。");
             SourceName = string.IsNullOrWhiteSpace(SourceName) ? DisplayIndex : SourceName.Trim();
             PersistCurrent(); SettingsStore.Save(); _saved = CaptureState(); RefreshPendingApply(); _owner.Reconfigure(this);
+        }
+
+        internal void CommitParameter(string key, string value)
+        {
+            if (!CanEdit) throw new InvalidOperationException("请先暂停当前来源。");
+            string previous = key switch { "modelKey" => ModelKey, "targets" => Targets, "confidence" => ThresholdPercent.ToString(), "cooldown" => Cooldown.ToString(), "targetSamplingRate" => TargetFps.ToString(), _ => throw new ArgumentException("配置项无效") };
+            var saved = _saved;
+            void Assign(string next) {
+                switch (key) {
+                    case "modelKey": ModelKey = next; break;
+                    case "targets": Targets = next; break;
+                    case "confidence": ThresholdPercent = int.Parse(next); break;
+                    case "cooldown": Cooldown = int.Parse(next); break;
+                    case "targetSamplingRate": TargetFps = int.Parse(next); break;
+                }
+            }
+            if (key == "modelKey" && (!ModelManager.IsSupported(value) || !ModelManager.IsDownloaded(value))) throw new ArgumentException("模型不可用，请先下载。");
+            if (key == "targets" && (!ModelManager.IsSupported(ModelKey) || value.Length > 4096 || value.Split(',').Any(label => !CocoClassMap.EnglishNames.Contains(label)))) throw new ArgumentException("至少选择一个当前模型中的目标。");
+            if (key != "targets" && key != "modelKey" && (!int.TryParse(value, out var number) || number < (key == "confidence" ? 10 : 1) || number > (key == "confidence" ? 95 : key == "cooldown" ? 300 : 5))) throw new ArgumentException("参数范围无效。");
+            try { Assign(value); _autoSaveTimer.Stop(); ApplyAndPersist(); }
+            catch {
+                Assign(previous); _autoSaveTimer.Stop(); _saved = saved; PersistCurrent(); RefreshPendingApply();
+                try { SettingsStore.Save(); _owner.Reconfigure(this); } catch (Exception error) { LogManager.StaticWarn("[Parameter] 还原失败：" + error.Message); }
+                throw;
+            }
         }
 
         internal void CommitSourceNameEdit()

@@ -103,7 +103,7 @@ for (const file of ['detector/android/app/src/main/java/com/xgwnje/visionguard/d
 }
 checks++;
 if (/window\.(?:confirm|alert)\(/.test(read('receiver/web/src/main.tsx'))) errors.push('Web app dialog bypasses theme');
-for (const [selector, token] of [['.button', 'on-accent'], ['.button.danger', 'on-error'], ['.nav-item.active', 'on-selected'], ['.status-tag.good', 'on-selected'], ['.mobile-back', 'on-selected'], ['.event-kind', 'error']]) {
+for (const [selector, token] of [['.button', 'on-accent'], ['.button.danger', 'on-error'], ['.nav-item.active', 'on-selected'], ['.status-tag.good', 'on-selected'], ['.event-kind', 'error']]) {
   checks++;
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const rule = css.match(new RegExp(`${escaped}\\s*\\{([^}]+)\\}`))?.[1] ?? '';

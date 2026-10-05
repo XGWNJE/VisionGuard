@@ -66,7 +66,7 @@ fun AlarmDialog(
             ) {
                 Column(
                     Modifier.verticalScroll(rememberScrollState()).padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     NotifierStatus("节点报警", MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer)
                     Text(matchedKeyword ?: "未知报警", style = MaterialTheme.typography.headlineMedium)

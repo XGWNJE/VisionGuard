@@ -1,16 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Activity, Bell, Camera, CircleHelp, LogOut, Monitor, Radio, RefreshCw, Search, Settings, ShieldCheck, Users } from 'lucide-react';
-import { eventLabel, formatTime, mergeDevices, timeStandardLabel, typeLabel, websocketURL, type Ack, type AlarmTimeZone, type Alert, type Device, type Notifier, type Scope, type Source, type Stream, type Target, type TimeStandard } from './protocol';
+import { eventLabel, formatTime, mergeDevices, timeStandardLabel, typeLabel, websocketURL, type Ack, type AlarmTimeZone, type Alert, type Device, type Notifier, type Scope, type Stream, type Target, type TimeStandard } from './protocol';
 import { useRelay } from './useRelay';
 import { accountRequest, AccountRequestError, parseLogin, rotateLogin, type Login } from './account';
 import { AccountManagement } from './AccountManagement';
 import { AppearanceSelector, useAppearance } from './appearance';
+import { Parameters, type ParameterDrafts } from './Parameters';
 import './style.css';
 
 type Page = '节点' | '事件' | '通知范围' | '设置' | '账号管理';
 function App() {
   const appearance = useAppearance();
+  const parameterDrafts = useRef<ParameterDrafts>(new Map());
   const [login, setLogin] = useState<Login | null>(null);
   const loginRef = useRef<Login | null>(null);
   const refreshFlight = useRef<Promise<Login | null> | null>(null);
@@ -22,7 +24,7 @@ function App() {
   const [event, setEvent] = useState<Alert | null>(null);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
-  function clearSession(error = '') { updateLogin(null); setLoginError(error); setEvent(null); setSelected(''); setSearch(''); setTypeFilter(''); setPage('节点'); }
+  function clearSession(error = '') { parameterDrafts.current.clear(); updateLogin(null); setLoginError(error); setEvent(null); setSelected(''); setSearch(''); setTypeFilter(''); setPage('节点'); }
   useEffect(() => { if (relay.authExpired && loginRef.current?.token === login?.token) clearSession('登录已失效，请重新登录'); }, [relay.authExpired, login?.token]);
   useEffect(() => {
     if (!login) return;
@@ -69,9 +71,9 @@ function App() {
           </button>)}
         </section>
         <div className="detail-column">
-          {node ? <><NodeDetail key={node.deviceId} node={node} stream={relay.streams.find(s=>s.publisherDeviceId===node.deviceId)} timeZone={timeZone} connected={relay.connected} send={relay.send} /><DeviceSettings key={`manage-${node.deviceId}`} node={node} nodes={nodes} streams={relay.streams} login={login} onChanged={relay.refresh}/></> : <section className="panel"><Empty text="登录同一账号的节点将在这里显示"/></section>}
+          {node ? <><NodeDetail key={node.deviceId} node={node} drafts={parameterDrafts.current} acks={relay.acks} stream={relay.streams.find(s=>s.publisherDeviceId===node.deviceId)} timeZone={timeZone} connected={relay.connected} send={relay.send} /><DeviceSettings key={`manage-${node.deviceId}`} node={node} nodes={nodes} streams={relay.streams} login={login} onChanged={relay.refresh}/></> : <section className="panel"><Empty text="登录同一账号的节点将在这里显示"/></section>}
           <section className="panel"><div className="section-title"><h2>操作回执</h2><span className="subtle">以执行端结果为准</span></div>
-            {relay.acks.length === 0 ? <Empty text="暂无操作"/> : relay.acks.slice(0,5).map(ack => <div className="receipt-row" key={ack.requestId}><span>{ack.targetDeviceId || '通知范围'}<small>{ack.command}</small></span><span className={!ack.success ? 'error' : 'subtle'}>{!ack.success ? '失败' : ack.phase === 'forwarded' ? '已转发' : ack.phase === 'pending' ? '等待执行' : '已完成'}<small>{ack.reason}</small></span></div>)}
+            {relay.acks.length === 0 ? <Empty text="暂无操作"/> : relay.acks.slice(0,5).map(ack => <div className="receipt-row" key={ack.requestId}><span>{ack.targetDeviceId || '通知范围'}<small>{ack.command}</small></span><span className={!ack.success && ack.phase !== 'uncertain' ? 'error' : 'subtle'}>{ack.phase === 'uncertain' ? '结果待核实' : !ack.success ? '失败' : ack.phase === 'forwarded' ? '已转发' : ack.phase === 'pending' ? '等待执行' : '已完成'}<small>{ack.reason}</small></span></div>)}
           </section>
         </div>
       </div></>}
@@ -130,7 +132,7 @@ function DeviceSettings({node,nodes,streams,login,onChanged}:{node:Device;nodes:
   return <section className="panel" aria-busy={busy}><h2>设备管理</h2><form className="device-form" onSubmit={e=>{e.preventDefault();void mutate(`/api/devices/${encodeURIComponent(node.deviceId)}`,{deviceName:name.trim()},'PATCH');}}><label>设备名称<input required maxLength={64} value={name} onChange={e=>setName(e.target.value)} disabled={busy}/></label><button className="button secondary" disabled={busy||!name.trim()}>保存名称</button></form>{camera&&<form className="device-form" onSubmit={e=>{e.preventDefault();void mutate('/api/streams/bind',{publisherDeviceId:node.deviceId,targetDeviceId:target});}}><label>推理节点<select value={target} onChange={e=>setTarget(e.target.value)} disabled={busy}><option value="">选择推理节点</option>{targets.map(t=><option key={t.deviceId} value={t.deviceId}>{t.deviceName}{t.online?'':'（离线）'}</option>)}</select></label><button className="button" disabled={busy||!target}>关联来源</button><p className="subtle">{stream?.isStreaming?'正在推流':stream?.targetDeviceId?'已关联，等待推流':'只有一个推理节点时自动关联'}</p></form>}<button className="text-button danger" disabled={busy} onClick={()=>setConfirmUnbind(true)}>解绑设备</button>{confirmUnbind&&<ConfirmDialog title="解绑设备" description={`解绑“${node.deviceName}”后，该设备需要重新登录。事件记录会保留。`} confirmText="解绑" onClose={()=>setConfirmUnbind(false)} onConfirm={()=>{setConfirmUnbind(false);void mutate(`/api/devices/${encodeURIComponent(node.deviceId)}`,undefined,'DELETE');}}/>}{busy&&<p className="subtle" role="status">正在处理…</p>}{message&&<p role="status">{message}</p>}{error&&<p className="error" role="alert">{error}</p>}</section>;
 }
 function NodeIcon({node}:{node:Device}) { const Icon = node.nodeType === 'visual' ? Camera : node.nodeType === 'notification' ? Bell : Radio; return <span className="node-icon"><Icon size={24}/></span>; }
-function NodeDetail({node,stream,connected,send,timeZone}:{node:Device;stream?:Stream;connected:boolean;send:(m:Record<string,unknown>)=>string;timeZone:AlarmTimeZone}) {
+function NodeDetail({node,stream,connected,send,timeZone,acks,drafts}:{node:Device;stream?:Stream;connected:boolean;send:(m:Record<string,unknown>)=>string;timeZone:AlarmTimeZone;acks:Ack[];drafts:ParameterDrafts}) {
   const [sourceId,setSourceId] = useState('');
   const source = node.sources.find(s => s.sourceId === sourceId);
   const can = (value:string) => node.capabilities.includes(value);
@@ -145,27 +147,9 @@ function NodeDetail({node,stream,connected,send,timeZone}:{node:Device;stream?:S
     </div>{!node.online && <p className="subtle">离线时保留登记身份；当前参数将在重新连接后显示。</p>}
     {!can('monitor-control') && node.online && node.component!=='android-camera' && <p className="subtle">此节点未提供检测启停能力。</p>}
   </section>
-  {node.nodeType === 'visual' && node.component!=='android-camera' && <section className="panel">{node.sourceLimitExceeded && <p className="error">来源数量超过服务端上限（最多 {node.maxSources ?? '未报告'} 路），当前列表为上一次成功上报的快照。</p>}<div className="section-title"><h2>检测来源</h2><button className="text-button" onClick={() => setSourceId('')} disabled={!sourceId}>节点整体</button></div>{node.sources.length === 0 ? <Empty text="暂无已连接来源"/> : <div className="source-table-wrap"><table className="source-table"><thead><tr><th>名称</th><th>状态</th><th>帧率（FPS）</th><th>操作</th></tr></thead><tbody>{node.sources.map(s => <tr className={sourceId === s.sourceId ? 'selected' : ''} key={s.sourceId}><td><strong>{s.sourceName || s.sourceId}</strong><small>{s.sourceId}</small></td><td className="source-state"><span className={'dot '+(!node.online ? '' : s.error ? 'error' : !s.isReady ? 'warning' : s.isMonitoring ? 'online' : '')}/>{!node.online ? '离线' : s.error ? '异常' : !s.isReady ? '未就绪' : s.isMonitoring ? '检测中' : '已暂停'}{s.error && <small className="error">{s.error}</small>}</td><td>{!node.online || s.actualFps === undefined ? '—' : s.actualFps.toFixed(1)}</td><td><div className="source-actions">{can('source-control') && can('monitor-control') && <button className="text-button" disabled={!ready} aria-label={`${s.isMonitoring ? '暂停' : '开始'} ${s.sourceName}`} onClick={() => send({type:'command',targetDeviceId:node.deviceId,targetSourceId:s.sourceId,command:s.isMonitoring ? 'pause' : 'resume'})}>{s.isMonitoring ? '暂停' : '开始'}</button>}{can('config-control') && can('source-control') && <button className="text-button" aria-label={`参数 ${s.sourceName}`} onClick={() => setSourceId(s.sourceId)} disabled={!ready || s.isMonitoring}><Settings size={16}/>参数</button>}</div></td></tr>)}</tbody></table></div>}</section>}
-  {can('config-control') && <Parameters key={`${node.deviceId}/${source?.sourceId ?? ''}`} node={node} source={source} disabled={!ready || (!!source && (!can('source-control') || source.isMonitoring)) || (!source && node.nodeType === 'visual' && node.isMonitoring)} send={send}/>}
+  {node.nodeType === 'visual' && node.component!=='android-camera' && <section className="panel">{node.sourceLimitExceeded && <p className="error">来源数量超过服务端上限（最多 {node.maxSources ?? '未报告'} 路），当前列表为上一次成功上报的快照。</p>}<div className="section-title"><h2>检测来源</h2><button className="text-button" onClick={() => setSourceId('')} disabled={!sourceId}>节点整体</button></div>{node.sources.length === 0 ? <Empty text="暂无已连接来源"/> : <div className="source-table-wrap"><table className="source-table"><thead><tr><th>名称</th><th>状态</th><th>帧率（FPS）</th><th>操作</th></tr></thead><tbody>{node.sources.map(s => <tr className={sourceId === s.sourceId ? 'selected' : ''} key={s.sourceId}><td><strong>{s.sourceName || s.sourceId}</strong><small>{s.sourceId}</small></td><td className="source-state"><span className={'dot '+(!node.online ? '' : s.error ? 'error' : !s.isReady ? 'warning' : s.isMonitoring ? 'online' : '')}/>{!node.online ? '离线' : s.error ? '异常' : !s.isReady ? '未就绪' : s.isMonitoring ? '检测中' : '已暂停'}{s.error && <small className="error">{s.error}</small>}</td><td>{!node.online || s.actualFps === undefined ? '—' : s.actualFps.toFixed(1)}</td><td><div className="source-actions">{can('source-control') && can('monitor-control') && <button className="text-button" disabled={!ready} aria-label={`${s.isMonitoring ? '暂停' : '开始'} ${s.sourceName}`} onClick={() => send({type:'command',targetDeviceId:node.deviceId,targetSourceId:s.sourceId,command:s.isMonitoring ? 'pause' : 'resume'})}>{s.isMonitoring ? '暂停' : '开始'}</button>}{can('config-control') && can('source-control') && <button className="text-button" aria-label={`参数 ${s.sourceName}`} onClick={() => setSourceId(s.sourceId)} disabled={s.isMonitoring}><Settings size={16}/>参数</button>}</div></td></tr>)}</tbody></table></div>}</section>}
+  {can('config-control') && <Parameters key={`${node.deviceId}/${source?.sourceId ?? ''}`} node={node} source={source} acks={acks} drafts={drafts} disabled={!ready || (!!source && (!can('source-control') || source.isMonitoring)) || (!source && node.nodeType === 'visual' && node.isMonitoring)} send={send}/>}
   </>;
-}
-function Parameters({node,source,disabled,send}:{node:Device;source?:Source;disabled:boolean;send:(m:Record<string,unknown>)=>string}) {
-  const config = source ?? node;
-  const idPrefix = React.useId();
-  const [draft,setDraft] = useState<Record<string,string>>({});
-  const fields = node.nodeType === 'sensor' ? [['confidence','置信度阈值'],['cooldown','报警冷却（秒）']] : [['modelKey','推理模型'],['confidence','置信度阈值'],['cooldown','报警冷却（秒）'],['targetSamplingRate','采样频率（FPS）'],['targets','检测目标']];
-  return <section className="panel"><div className="section-title"><h2>{source ? `${source.sourceName || source.sourceId} · 当前配置` : '当前配置'}</h2></div>
-    <p className="subtle">{(source?.isMonitoring || (!source && node.nodeType === 'visual' && node.isMonitoring)) ? '请先暂停要修改的来源，再修改参数。' : '当前值来自检测节点，保存后等待执行回执。'}</p>
-    <div className="parameter-grid">{fields.map(([key,label]) => {
-      const value = config[key as keyof typeof config];
-      const keyDisabled = disabled || (key === 'modelKey' && config.isMonitoring && !node.canSwitchModelWhileMonitoring);
-      const shown = draft[key] ?? (value === undefined ? '' : String(value));
-      const inputId = `${idPrefix}-${key}`, currentId = `${inputId}-current`;
-      return <form key={key} className="parameter-field" onSubmit={e => { e.preventDefault(); send({type:'set-config',targetDeviceId:node.deviceId,...(source ? {targetSourceId:source.sourceId} : {}),key,value:shown}); }}><div className="parameter-row"><label htmlFor={inputId}>{label}</label><span id={currentId} className="current-value">当前：{value === undefined ? '未报告' : String(value)}</span>
-        <div className="input-action">{key === 'modelKey' && node.modelOptions?.length ? <select id={inputId} aria-describedby={currentId} value={shown} onChange={e => setDraft({...draft,[key]:e.target.value})} disabled={keyDisabled}>{node.modelOptions.map(m => <option key={m} value={m}>{m}</option>)}</select> : <input id={inputId} aria-describedby={currentId} value={shown} disabled={keyDisabled} required type={['targets','modelKey'].includes(key) ? 'text' : 'number'} min={key === 'confidence' ? .01 : 1} max={key === 'confidence' ? 1 : key === 'targetSamplingRate' ? 5 : 300} step={key === 'confidence' ? .01 : 1} maxLength={256} onChange={e => setDraft({...draft,[key]:e.target.value})}/>}
-          <button className="button secondary" type="submit" disabled={keyDisabled || !shown}>保存</button></div></div></form>;
-    })}</div>
-  </section>;
 }
 function ScopeEditor({notifier,nodes,connected,acks,send}:{notifier:Notifier;nodes:Device[];connected:boolean;acks:Ack[];send:(m:Record<string,unknown>)=>string}) {
   const [scope,setScope] = useState<Scope>(notifier.scope);

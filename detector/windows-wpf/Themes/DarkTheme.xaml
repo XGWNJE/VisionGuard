@@ -32,8 +32,8 @@
         <Style.Triggers>
             <Trigger Property="FontSize" Value="12"><Setter Property="LineHeight" Value="18"/></Trigger>
             <Trigger Property="FontSize" Value="16"><Setter Property="LineHeight" Value="24"/></Trigger>
-            <Trigger Property="FontSize" Value="20"><Setter Property="LineHeight" Value="26"/></Trigger>
-            <Trigger Property="FontSize" Value="28"><Setter Property="LineHeight" Value="34"/></Trigger>
+            <Trigger Property="FontSize" Value="18"><Setter Property="LineHeight" Value="24"/></Trigger>
+            <Trigger Property="FontSize" Value="24"><Setter Property="LineHeight" Value="30"/></Trigger>
         </Style.Triggers>
     </Style>
     <!-- ════════════════════════════════════════════════════════════ -->
@@ -75,7 +75,7 @@
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="16,8"/>
-        <Setter Property="MinHeight" Value="40"/>
+        <Setter Property="MinHeight" Value="36"/>
         <Setter Property="FontSize" Value="14"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Cursor" Value="Hand"/>
@@ -126,7 +126,7 @@
         <Setter Property="Width" Value="40"/>
         <Setter Property="Height" Value="40"/>
         <Setter Property="MinWidth" Value="40"/>
-        <Setter Property="MinHeight" Value="40"/>
+        <Setter Property="MinHeight" Value="36"/>
         <Setter Property="Padding" Value="0"/>
         <Setter Property="Margin" Value="1,0,0,0"/>
     </Style>
@@ -168,7 +168,7 @@
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="12,8"/>
-        <Setter Property="MinHeight" Value="40"/>
+        <Setter Property="MinHeight" Value="36"/>
         <Setter Property="FontSize" Value="14"/>
         <Setter Property="CaretBrush" Value="{DynamicResource TextPrimary}"/>
         <Setter Property="SelectionBrush" Value="{DynamicResource Primary}"/>
@@ -272,15 +272,15 @@
     </Style>
     <Style TargetType="TextBlock" x:Key="HeroText">
         <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
-        <Setter Property="FontSize" Value="28"/>
-        <Setter Property="LineHeight" Value="34"/>
+        <Setter Property="FontSize" Value="24"/>
+        <Setter Property="LineHeight" Value="30"/>
         <Setter Property="LineStackingStrategy" Value="BlockLineHeight"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
     <Style TargetType="TextBlock" x:Key="SectionLabel">
         <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
-        <Setter Property="FontSize" Value="20"/>
-        <Setter Property="LineHeight" Value="26"/>
+        <Setter Property="FontSize" Value="18"/>
+        <Setter Property="LineHeight" Value="24"/>
         <Setter Property="LineStackingStrategy" Value="BlockLineHeight"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
@@ -369,7 +369,7 @@
         <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
         <Setter Property="Padding" Value="12,8"/>
-        <Setter Property="MinHeight" Value="40"/>
+        <Setter Property="MinHeight" Value="36"/>
         <Setter Property="FontSize" Value="14"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="Template">
@@ -424,7 +424,7 @@
                 <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
                 <Setter Property="Background" Value="Transparent"/>
                 <Setter Property="Padding" Value="8"/>
-                <Setter Property="MinHeight" Value="40"/>
+                <Setter Property="MinHeight" Value="36"/>
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="ComboBoxItem">
@@ -464,7 +464,7 @@
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Padding" Value="12,8"/>
-        <Setter Property="MinHeight" Value="40"/>
+        <Setter Property="MinHeight" Value="36"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Template">
             <Setter.Value>
@@ -526,7 +526,7 @@
     <Style TargetType="PasswordBox">
         <Setter Property="Background" Value="{DynamicResource SurfaceLight}"/><Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="Padding" Value="12,8"/><Setter Property="MinHeight" Value="40"/><Setter Property="FontSize" Value="14"/>
+        <Setter Property="Padding" Value="12,8"/><Setter Property="MinHeight" Value="36"/><Setter Property="FontSize" Value="14"/>
         <Setter Property="CaretBrush" Value="{DynamicResource TextPrimary}"/><Setter Property="SelectionBrush" Value="{DynamicResource Primary}"/>
         <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}"/>
         <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="PasswordBox">

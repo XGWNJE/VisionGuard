@@ -9,7 +9,6 @@ namespace VisionGuard.Detector.Windows.Views
     public partial class MonitorPage : UserControl
     {
         private string _nameBeforeEdit = string.Empty;
-        private bool _restoreTargetMenuFocus;
 
         public MonitorPage()
         {
@@ -64,31 +63,11 @@ namespace VisionGuard.Detector.Windows.Views
             if (restoreFocus) SourceNameText.Focus();
         }
 
-        private void TargetMenuPopup_OnOpened(object sender, System.EventArgs e)
+        private void ParameterEditor_OnKeyDown(object sender, KeyEventArgs e)
         {
-            Dispatcher.BeginInvoke(() =>
-            {
-                if (TargetMenuPopup.IsOpen) TargetOptionsHost.MoveFocus(new TraversalRequest(FocusNavigationDirection.First));
-            }, DispatcherPriority.Input);
-        }
-
-        private void TargetMenuPopup_OnPreviewKeyDown(object sender, KeyEventArgs e)
-        {
-            if (e.Key != Key.Escape) return;
-            _restoreTargetMenuFocus = true;
-            TargetMenuPopup.IsOpen = false;
-            e.Handled = true;
-        }
-
-        private void TargetMenuPopup_OnClosed(object sender, System.EventArgs e)
-        {
-            if (_restoreTargetMenuFocus && TargetMenuButton.IsEnabled) TargetMenuButton.Focus();
-            _restoreTargetMenuFocus = false;
-        }
-
-        private void TargetMenuButton_OnIsEnabledChanged(object sender, DependencyPropertyChangedEventArgs e)
-        {
-            if (TargetMenuPopup != null && !TargetMenuButton.IsEnabled) TargetMenuPopup.IsOpen = false;
+            if ((sender as FrameworkElement)?.DataContext is not SourceParameterViewModel parameter) return;
+            if (e.Key == Key.Escape) { parameter.CancelCommand.Execute(null); e.Handled = true; }
+            else if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control && parameter.SaveCommand.CanExecute(null)) { parameter.SaveCommand.Execute(null); e.Handled = true; }
         }
     }
 }

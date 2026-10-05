@@ -17,7 +17,7 @@ import { NotificationScopeStore, parseNotificationScope, scopeAccepts } from './
 import { TimeStandardStore, validAlarmTimeZone } from './TimeStandardStore';
 import { authenticateNode, clientType, allowedCapabilities, validateEvent, registeredNodes, REALTIME_TTL_MS, DETECTION_STALL_MS, type NodeIdentity, type NodeRole } from './NodeProtocol';
 import { addAlert, getAlertById, markAlertScreenshot, type AddAlertResult } from '../services/AlertStore';
-import { isValidSetConfigKey, validateSetConfigValue } from '../services/ControlProtocol';
+import { isValidSetConfigKey, validateSetConfigValue, MAX_TARGETS_LENGTH } from '../services/ControlProtocol';
 import { getSafeScreenshotPath, isSafeAlertId, validateAlertMeta, validateImageMagic } from '../utils/security';
 import type {
   WsAuthMessage, WsHeartbeat, WsHeartbeatAndroid, WsCommand, WsSetConfig,
@@ -114,7 +114,6 @@ function scheduleDetectorRemoval(
 
 // ── 输入校验 ────────────────────────────────────────────────
 
-const MAX_TARGETS_LENGTH = 500;
 const MAX_MODEL_OPTIONS = 16;
 const MAX_COMPONENTS = 8;
 const DETECTOR_COMMANDS = new Set(['pause', 'resume', 'stop-alarm']);
@@ -138,7 +137,7 @@ function sanitizeHeartbeatConfidence(v: any): number | undefined {
 function sanitizeHeartbeatTargets(v: any): string | undefined {
   if (v === undefined || v === null) return undefined;
   const s = String(v);
-  return s.length > MAX_TARGETS_LENGTH ? s.slice(0, MAX_TARGETS_LENGTH) : s;
+  return s.length > MAX_TARGETS_LENGTH ? undefined : s;
 }
 
 function sanitizeHeartbeatSamplingRate(v: any): number | undefined {
@@ -174,6 +173,19 @@ function sanitizeComponents(value: unknown): Record<string, string> | undefined 
   return result;
 }
 
+function sanitizeModelLabels(value: unknown, options: string[]): Record<string, {value: string; label: string}[]> {
+  const result: Record<string, {value: string; label: string}[]> = {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return result;
+  for (const key of options) {
+    const rows = (value as Record<string, unknown>)[key];
+    if (!Array.isArray(rows) || rows.length < 1 || rows.length > 256) continue;
+    const labels = rows.filter(row => row && typeof row.value === 'string' && row.value.length > 0 && row.value.length <= 64 && !/[,\r\n\x00]/.test(row.value)
+      && typeof row.label === 'string' && row.label.length > 0 && row.label.length <= 64).map(row => ({value: row.value, label: row.label}));
+    if (labels.length === rows.length && new Set(labels.map(item => item.value)).size === labels.length) result[key] = labels;
+  }
+  return result;
+}
+
 function sanitizeSources(value: unknown): SourceStatus[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const ids = new Set<string>();
@@ -197,8 +209,7 @@ function sanitizeSources(value: unknown): SourceStatus[] | undefined {
       ? Math.max(1, Math.min(300, item.cooldown)) : undefined;
     const confidence = typeof item.confidence === 'number' && isFinite(item.confidence)
       ? Math.max(0.1, Math.min(0.95, item.confidence)) : undefined;
-    const targets = typeof item.targets === 'string'
-      ? item.targets.trim().slice(0, 256) : undefined;
+    const targets = sanitizeHeartbeatTargets(item.targets);
     const targetSamplingRate = typeof item.targetSamplingRate === 'number' && Number.isInteger(item.targetSamplingRate)
       ? Math.max(1, Math.min(5, item.targetSamplingRate)) : undefined;
     sources.push({
@@ -772,6 +783,7 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   if (msg.targetSamplingRate !== undefined) client.targetSamplingRate = sanitizeHeartbeatSamplingRate(msg.targetSamplingRate) ?? client.targetSamplingRate;
   if (msg.modelKey !== undefined) client.modelKey = sanitizeModelKey(msg.modelKey) ?? client.modelKey;
   if (msg.modelOptions !== undefined) client.modelOptions = sanitizeModelOptions(msg.modelOptions) ?? client.modelOptions;
+  if (msg.modelLabels !== undefined || msg.modelOptions !== undefined) client.modelLabels = sanitizeModelLabels(msg.modelLabels ?? client.modelLabels, client.modelOptions);
   if (msg.canSwitchModelWhileMonitoring !== undefined) client.canSwitchModelWhileMonitoring = !!msg.canSwitchModelWhileMonitoring;
   if (msg.hasPendingConfigChanges !== undefined) client.hasPendingConfigChanges = !!msg.hasPendingConfigChanges;
   if (msg.capabilities !== undefined) client.capabilities = allowedCapabilities(client.identity, msg.capabilities) ?? client.capabilities;
@@ -944,7 +956,9 @@ function handleSetConfig(senderWs: WebSocket, msg: WsSetConfig): void {
       command: `set-config:${msg.key}`, success: false, reason: '目标不支持该配置' }); return;
   }
 
-  const validation = validateSetConfigValue(msg.key, msg.value, target.modelOptions);
+  const model = msg.targetSourceId ? target.sources.find(item => item.sourceId === msg.targetSourceId)?.modelKey : target.modelKey;
+  const labels = target.modelLabels?.[model ?? '']?.map(item => item.value);
+  const validation = validateSetConfigValue(msg.key, msg.value, target.modelOptions, target.identity.component === 'windows-inference', labels);
   if (!validation.ok) {
     sendJson(senderWs, { type: 'command-ack', requestId: msg.requestId, phase: 'completed', targetDeviceId: msg.targetDeviceId, command: `set-config:${msg.key}`, success: false, reason: validation.reason }, 'set-config-ack->sender');
     return;
@@ -1078,6 +1092,7 @@ function buildDeviceList(): DeviceStatus[] {
         targetSamplingRate: c.targetSamplingRate,
         modelKey: c.modelKey,
         modelOptions: c.modelOptions,
+        modelLabels: c.modelLabels,
         canSwitchModelWhileMonitoring: c.canSwitchModelWhileMonitoring,
         hasPendingConfigChanges: c.hasPendingConfigChanges,
         clientType: c.clientType,

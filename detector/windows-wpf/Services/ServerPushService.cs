@@ -287,6 +287,7 @@ namespace VisionGuard.Detector.Windows.Services
                 ["targetSamplingRate"] = targetSamplingRate,
                 ["modelKey"] = modelKey,
                 ["modelOptions"] = modelOptions,
+                ["modelLabels"] = modelOptions.Where(ModelManager.IsSupported).ToDictionary(key => key, key => Data.CocoClassMap.EnglishNames.Select(name => new { value = name, label = Data.CocoClassMap.EnZh[name] }).ToArray()),
                 ["canSwitchModelWhileMonitoring"] = canSwitchModelWhileMonitoring,
                 ["capabilities"] = Runtime.DetectorCapabilities.Build(),
                 ["components"] = new Dictionary<string, object> { ["detectorApp"] = "running" },
