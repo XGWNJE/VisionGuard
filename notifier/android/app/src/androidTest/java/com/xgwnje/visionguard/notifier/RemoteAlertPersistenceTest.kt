@@ -14,8 +14,8 @@ class RemoteAlertPersistenceTest {
     }
     private lateinit var prefs: SharedPreferencesHelper
     @Before fun setup() {
-        context.getSharedPreferences("vg_notifier_prefs", 0).edit().clear().commit()
         prefs = SharedPreferencesHelper(context)
+        prefs.clearAccountData()
         prefs.saveRingtoneValue(RingtoneLibrary.SILENT_VALUE)
     }
     @Test fun repeatReceiptAfterConfirmationAndRecreationDoesNotReplay() {
@@ -41,5 +41,16 @@ class RemoteAlertPersistenceTest {
         assertFalse(prefs.acceptRemoteAlert("future", "检测", "节点", "text", 40_000, 60_000, 2_000))
         assertFalse(prefs.acceptRemoteAlert("long", "检测", "节点", "text", 1_000, 31_001, 2_000))
         assertTrue(prefs.getAlertQueue().isEmpty())
+    }
+    @Test fun oneOutageSurvivesServiceRecreationAndLongOfflineUntilConfirmedRecovery() {
+        assertTrue(prefs.acceptRemoteAlert("outage-one", "服务中断", "统一服务", "confirmed", 1_000, 31_000, 2_000, serviceOutage = true))
+        assertTrue(prefs.finishActiveAlert("outage-one", AlertEndType.MANUAL).success)
+        val reopened = SharedPreferencesHelper(context)
+        assertEquals("outage-one", reopened.serviceOutageId())
+        assertTrue(reopened.acceptRemoteAlert("outage-two", "服务中断", "统一服务", "confirmed", 100_000, 130_000, 101_000, serviceOutage = true))
+        assertTrue(reopened.getAlertQueue().isEmpty())
+        assertTrue(reopened.markServiceRecovered())
+        assertTrue(reopened.acceptRemoteAlert("outage-three", "服务中断", "统一服务", "confirmed", 200_000, 230_000, 201_000, serviceOutage = true))
+        assertEquals("outage-three", reopened.getActiveAlert()?.id)
     }
 }

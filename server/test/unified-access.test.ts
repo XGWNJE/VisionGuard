@@ -92,6 +92,8 @@ test('secondary visual event persists, retries only until deadline, and only its
   const { peer: detector, auth } = await f.connect(identities[1]); assert.equal(auth.success, true);
   const { peer: console } = await f.connect(identities[2]);
   const { peer: notifier } = await f.connect(identities[3]);
+  notifier.send({ type: 'heartbeat-notifier', probeId: 'fresh-verification-probe' });
+  assert.equal((await notifier.take(msg => msg.type === 'heartbeat-ack')).probeId, 'fresh-verification-probe');
   const event = sensorEvent();
   detector.send({ ...event, deviceId: 'spoofed' });
   const accepted = await detector.take(msg => msg.type === 'alert-ack');
