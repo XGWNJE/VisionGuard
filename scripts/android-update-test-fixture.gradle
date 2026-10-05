@@ -1,0 +1,25 @@
+// Test-only Debug versions/packages; never alter VERSION or use this initializer for Release.
+def requested = gradle.startParameter.taskNames.collect { it.tokenize(':').last().toLowerCase() }
+if (requested.any { it.contains('release') || it.contains('publish') || it in ['build', 'assemble', 'bundle'] }) {
+    throw new GradleException('The update fixture initializer only supports explicit Debug/test tasks.')
+}
+allprojects {
+    afterEvaluate { p ->
+        if (!p.plugins.hasPlugin('com.android.application')) return
+        def repository = rootDir.parentFile.parentFile
+        def fixture = new File(repository, '.local/updater-device-fixture')
+        def old = p.findProperty('visionguardUpdateFixtureOld')?.toString() == 'true'
+        p.layout.buildDirectory.set(new File(fixture, (old ? 'old/' : 'current/') + p.name))
+        p.android.buildTypes.debug.applicationIdSuffix = '.acceptance'
+        if (old) {
+            def parts = new File(repository, 'VERSION').text.trim().split('\\.').collect { it.toInteger() }
+            def code = parts[0] * 1000 + parts[1] * 100 + parts[2] - 1
+            if (code < 0) throw new GradleException('No earlier test version exists for VERSION.')
+            p.android.defaultConfig.versionCode = code
+            def previous = parts[2] > 0 ? [parts[0], parts[1], parts[2] - 1] :
+                (parts[1] > 0 ? [parts[0], parts[1] - 1, 99] : [parts[0] - 1, 9, 99])
+            p.android.defaultConfig.versionName = previous.join('.')
+            p.android.sourceSets.androidTest.assets.srcDir(new File(fixture, 'assets'))
+        }
+    }
+}

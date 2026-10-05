@@ -2,11 +2,15 @@ package com.xgwnje.visionguard.account
 
 import android.content.Context
 import android.content.Intent
+import android.app.Activity
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,11 +23,14 @@ import org.json.JSONArray
 import java.io.File
 import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
+import java.lang.ref.WeakReference
 import java.util.concurrent.TimeUnit
 
 data class UpdateState(val busy: Boolean = false, val downloading: Boolean = false, val bytes: Long = 0, val update: ClientUpdate? = null, val ready: Boolean = false, val message: String = "")
 class ClientUpdater(context: Context, private val installed: String, private val client: String) {
     companion object { private val operations = Mutex() }
+    private val activity = generateSequence(context) { (it as? ContextWrapper)?.baseContext }
+        .filterIsInstance<Activity>().firstOrNull()?.let { WeakReference(it) }
     private val context = context.applicationContext
     private val directory = File(this.context.cacheDir, "client-updates").apply { mkdirs() }
     private val http = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
@@ -32,9 +39,10 @@ class ClientUpdater(context: Context, private val installed: String, private val
     val state = mutable.asStateFlow()
     @Volatile private var call: Call? = null
     @Volatile private var cancelled = false
+    @Volatile private var closed = false
     private var job: Job? = null
     @Synchronized fun check() {
-        if (mutable.value.busy) return
+        if (closed || mutable.value.busy) return
         mutable.value = mutable.value.copy(busy = true, message = "正在检查 GitHub 稳定版…")
         cancelled = false
         job = scope.launch { operations.withLock {
@@ -60,7 +68,7 @@ class ClientUpdater(context: Context, private val installed: String, private val
                     check(page < 10) { "发行列表过长，无法完整判断版本" }
                 }
                 val update = StableReleasePolicy.select(releases, installed, client)
-                mutable.value = UpdateState(update = update, message = if (update == null) "当前已是最新版本" else "发现稳定版 ${update.version}")
+                complete(UpdateState(update = update, message = if (update == null) "当前已是最新版本" else "发现稳定版 ${update.version}"))
             } catch (e: Exception) { mutable.value = UpdateState(message = if (cancelled) "已取消检查" else failureMessage(e, "检查失败，请重试")) }
             finally { call = null }
         }
@@ -72,6 +80,10 @@ class ClientUpdater(context: Context, private val installed: String, private val
         return own.execute()
     }
     private fun file(update: ClientUpdate) = File(directory, update.asset.name)
+    @Synchronized private fun complete(value: UpdateState) {
+        check(!cancelled && !closed) { "已取消" }
+        mutable.value = value
+    }
     private fun failureMessage(error: Exception, fallback: String): String {
         android.util.Log.w("ClientUpdater", fallback, error)
         return when (error) {
@@ -104,7 +116,7 @@ class ClientUpdater(context: Context, private val installed: String, private val
     }
     @Synchronized fun download() {
         val update = mutable.value.update ?: return
-        if (mutable.value.busy) return
+        if (closed || mutable.value.busy) return
         cancelled = false; mutable.value = mutable.value.copy(busy = true, downloading = true, bytes = 0, ready = false, message = "正在下载并校验…")
         job = scope.launch { operations.withLock {
             directory.listFiles()?.filter { it.name.endsWith(".part") }?.forEach { it.delete() }
@@ -122,26 +134,47 @@ class ClientUpdater(context: Context, private val installed: String, private val
                     }
                     verify(partial, update); check(partial.renameTo(target)) { "无法保存暂存安装包" }
                 }
-                mutable.value = mutable.value.copy(busy = false, downloading = false, ready = true, message = "校验通过，可交给系统安装器")
+                complete(mutable.value.copy(busy = false, downloading = false, ready = true, message = "校验通过，可交给系统安装器"))
             } catch (e: Exception) { partial.delete(); target.delete(); mutable.value = mutable.value.copy(busy = false, downloading = false, ready = false, message = if (cancelled) "下载已取消" else failureMessage(e, "下载失败，请检查网络和存储空间后重试")) }
             finally { call = null }
         }
         }
     }
-    fun cancel() { cancelled = true; call?.cancel() }
-    fun install() {
+    @Synchronized fun cancel() { if (mutable.value.busy) { cancelled = true; call?.cancel() } }
+    @Synchronized fun install() {
         val update = mutable.value.update ?: return
-        if (!mutable.value.ready || mutable.value.busy) return
-        try {
-            cancelled = false; verify(file(update), update)
-            if (Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()) {
-                context.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                mutable.value = mutable.value.copy(message = "允许安装后返回，再点安装"); return
+        if (closed || !mutable.value.ready || mutable.value.busy) return
+        cancelled = false; mutable.value = mutable.value.copy(busy = true, message = "正在准备安装…")
+        job = scope.launch { operations.withLock {
+            var verified = false
+            try {
+                verify(file(update), update); verified = true
+                withContext(Dispatchers.Main) {
+                    synchronized(this@ClientUpdater) {
+                        check(!cancelled) { "已取消" }
+                        val owner = activity?.get() as? LifecycleOwner
+                        check(owner?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true) { "请返回应用后再点安装" }
+                        val permission = Build.VERSION.SDK_INT >= 26 && !context.packageManager.canRequestPackageInstalls()
+                        val intent = if (permission) Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
+                            else Intent(Intent.ACTION_VIEW).setDataAndType(FileProvider.getUriForFile(context, context.packageName + ".updates", file(update)), "application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        complete(mutable.value.copy(busy = false, message = if (permission) "请在系统设置允许安装后返回，再点安装" else "已请求打开系统安装器；请以系统界面为准"))
+                    }
+                }
+            } catch (e: Exception) {
+                mutable.value = mutable.value.copy(busy = false, ready = verified, message = if (cancelled) "安装准备已取消" else failureMessage(e, "安装器未响应，可重试"))
             }
-            val uri = FileProvider.getUriForFile(context, context.packageName + ".updates", file(update))
-            context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION))
-            mutable.value = mutable.value.copy(message = "已交给系统安装器；安装结果以系统为准")
-        } catch (e: Exception) { mutable.value = mutable.value.copy(message = failureMessage(e, "安装器未响应，可重试")) }
+        } }
     }
-    fun close() { cancel(); job?.cancel(); scope.cancel(); http.connectionPool.evictAll(); http.dispatcher.executorService.shutdown() }
+    @Synchronized fun close() {
+        if (closed) return
+        closed = true; cancel(); job?.cancel(); scope.cancel()
+        // A pooled TLS socket may write close_notify. Disposal runs on the UI thread,
+        // so release network resources on IO even after cancelling the operation scope.
+        scope.launch(NonCancellable + Dispatchers.IO) {
+            try { http.connectionPool.evictAll() }
+            catch (e: Exception) { android.util.Log.w("ClientUpdater", "Network cleanup failed", e) }
+            finally { http.dispatcher.executorService.shutdown() }
+        }
+    }
 }
