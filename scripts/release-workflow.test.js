@@ -319,6 +319,11 @@ test('both release entrypoints keep assets private until uploaded size and diges
   assert.ok(script.indexOf('Assert-GitHubUploadedAssets -Artifacts') < script.indexOf("'--draft=false'"));
   assert.match(script,/\$assets\[0\]\.digest -ne \$digest/);
   assert.match(script,/already public.*Refuse to replace/);
+  assert.match(script, /'databaseId', '--jq', '\.databaseId'/);
+  assert.match(script, /releases\/\$releaseId/);
+  assert.doesNotMatch(script, /releases\/tags\//);
+  assert.match(workflow, /releases\/\$release_id/);
+  assert.doesNotMatch(workflow, /releases\/tags\//);
   assert.ok(workflow.indexOf('--draft \\') < workflow.indexOf('uploaded-release.json'));
   assert.ok(workflow.indexOf('.[0].digest == $digest') < workflow.indexOf('--draft=false'));
 });

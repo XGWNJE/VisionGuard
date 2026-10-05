@@ -83,7 +83,8 @@ jobs:
           set -euo pipefail
           NOTES_PATH="$(node scripts/release-notes.js "$VERSION")"
           if gh release view "v$VERSION" >/dev/null 2>&1; then
-            test "$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" --jq '.draft')" = true
+            release_id="$(gh release view "v$VERSION" --json databaseId --jq '.databaseId')"
+            test "$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" --jq '.draft')" = true
             gh release edit "v$VERSION" \
               --draft=true \
               --title "VisionGuard v$VERSION" \
@@ -96,7 +97,8 @@ jobs:
               --title "VisionGuard v$VERSION" \
               --notes-file "$NOTES_PATH"
           fi
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" > uploaded-release.json
+          release_id="$(gh release view "v$VERSION" --json databaseId --jq '.databaseId')"
+          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" > uploaded-release.json
           test "$(jq -r '.draft' uploaded-release.json)" = true
           for file in release-assets/*; do
             name="$(basename "$file")"

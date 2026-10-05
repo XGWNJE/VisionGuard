@@ -1211,7 +1211,7 @@ function Invoke-GitHubSteps {
             )
         }
         else {
-            $existing = (Invoke-NativeCapture -FilePath 'gh' -Arguments @('api', "repos/$GitHubRepository/releases/tags/$tagName")) | ConvertFrom-Json
+            $existing = Get-GitHubReleaseByTag -TagName $tagName
             if (-not $existing.draft) { throw "Release $tagName is already public. Refuse to replace published assets; create a new version." }
             Invoke-Native -FilePath 'gh' -Arguments @(
                 'release', 'edit', $tagName,
@@ -1231,9 +1231,20 @@ function Invoke-GitHubSteps {
     }
 }
 
+function Get-GitHubReleaseByTag {
+    param([string]$TagName)
+    # The REST tag endpoint only returns published releases. Resolve drafts through
+    # gh's authenticated lookup, then read the complete release (including digests) by ID.
+    $releaseId = Invoke-NativeCapture -FilePath 'gh' -Arguments @('release', 'view', $TagName, '--repo', $GitHubRepository, '--json', 'databaseId', '--jq', '.databaseId')
+    if ($releaseId -notmatch '^[1-9]\d*$') { throw "Invalid GitHub release ID for $TagName." }
+    $release = (Invoke-NativeCapture -FilePath 'gh' -Arguments @('api', "repos/$GitHubRepository/releases/$releaseId")) | ConvertFrom-Json
+    if ($release.tag_name -ne $TagName) { throw "GitHub release tag mismatch for $TagName." }
+    return $release
+}
+
 function Assert-GitHubUploadedAssets {
     param([object[]]$Artifacts, [string]$TagName)
-    $release = (Invoke-NativeCapture -FilePath 'gh' -Arguments @('api', "repos/$GitHubRepository/releases/tags/$TagName")) | ConvertFrom-Json
+    $release = Get-GitHubReleaseByTag -TagName $TagName
     if (-not $release.draft) { throw 'Upload verification requires a draft release.' }
     $expectedNames = @($Artifacts | ForEach-Object { [IO.Path]::GetFileName($_.Path) })
     foreach ($extra in @($release.assets | Where-Object { $expectedNames -notcontains $_.name })) { throw "Unexpected draft asset: $($extra.name)" }
