@@ -23,6 +23,8 @@ data class PublisherState(val connected: Boolean = false, val status: String = "
 
 class CameraPublisher(private val account: AccountStore,
     private val controlState: () -> Map<String, String> = { emptyMap() },
+    private val remoteSettings: () -> JSONObject = { JSONObject() },
+    private val onSetConfig: (String, String) -> String = { _, _ -> error("不支持的相机配置") },
     private val onStreamCommand: (String, (Boolean, String) -> Unit) -> Unit = { _, done -> done(false, "请打开相机应用") }) {
     private val mutableState = MutableStateFlow(PublisherState())
     val state = mutableState.asStateFlow()
@@ -68,7 +70,8 @@ class CameraPublisher(private val account: AccountStore,
                     control?.send(JSONObject().put("type", "heartbeat").put("deviceId", current?.deviceId)
                         .put("deviceName", current?.deviceName).put("isMonitoring", false).put("isReady", true)
                         .put("cooldown", 5).put("confidence", 0.45).put("targets", "").put("targetSamplingRate", 5)
-                        .put("modelKey", "").put("modelOptions", JSONArray()).put("capabilities", JSONArray(listOf("video-publish", "stream-control", "request-correlation")))
+                        .put("modelKey", "").put("modelOptions", JSONArray()).put("capabilities", JSONArray(listOf("video-publish", "stream-control", "camera-config", "request-correlation")))
+                        .put("remoteSettings", remoteSettings())
                         .put("canSwitchModelWhileMonitoring", false).put("hasPendingConfigChanges", false)
                         .put("components", JSONObject(controlState()).put("cameraApp", if (controlState()["cameraApp"] == "foreground") "foreground" else "background")).put("sources", JSONArray()).toString())
                     if (wanted && media == null && current != null && now >= nextRetryAt) connectMedia(current)
@@ -116,6 +119,16 @@ class CameraPublisher(private val account: AccountStore,
                                     .put("requestId", body.optString("requestId")).put("targetDeviceId", value.deviceId)
                                     .put("command", command).put("phase", "completed").put("success", success).put("reason", reason.take(256)).toString())
                             }
+                        }
+                        "set-config" -> if (authenticated) {
+                            val result = runCatching {
+                                require(body.optString("targetDeviceId") == value.deviceId && !body.has("targetSourceId")) { "配置目标不符" }
+                                onSetConfig(body.getString("key"), body.getString("value"))
+                            }
+                            ws.send(JSONObject().put("type", "command-ack").put("requestId", body.optString("requestId"))
+                                .put("targetDeviceId", value.deviceId).put("command", "set-config:" + body.optString("key"))
+                                .put("phase", "completed").put("success", result.isSuccess)
+                                .put("reason", (result.getOrNull() ?: result.exceptionOrNull()?.message ?: "保存失败").take(256)).toString())
                         }
                         "device-updated" -> body.optJSONObject("device")?.let { device -> scope.launch { account.updateDevice(device) } }
                         "kicked" -> account.clear()

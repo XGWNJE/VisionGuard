@@ -45,6 +45,7 @@ class SharedPreferencesHelper(context: Context) {
     fun clearAccountData() = synchronized(alertQueueLock) { check(prefs.edit().clear().commit()) }
     companion object {
         private val alertQueueLock = Any()
+        private val ringtoneLibraryLock = Any()
         private const val KEY_RINGTONE_URI = "ringtone_uri"
         private const val KEY_ALERT_QUEUE = "alert_queue"
         private const val ALERT_QUEUE_VERSION = 1
@@ -60,8 +61,8 @@ class SharedPreferencesHelper(context: Context) {
         internal fun normalizeLoopCount(count: Int): Int = if (count == 0) DEFAULT_LOOP_COUNT else count.coerceIn(MIN_LOOP_COUNT, MAX_LOOP_COUNT)
     }
 
-    fun saveRingtoneValue(value: String?) {
-        prefs.edit().putString(KEY_RINGTONE_URI, value).apply()
+    fun saveRingtoneValue(value: String?): Unit = synchronized(alertQueueLock) {
+        check(prefs.edit().putString(KEY_RINGTONE_URI, value).commit()) { "保存铃声失败" }
         Log.i("SharedPreferencesHelper", "默认铃声已保存: $value")
     }
 
@@ -74,6 +75,11 @@ class SharedPreferencesHelper(context: Context) {
     }
 
     fun getActiveAlert(): AlertQueueItem? = getAlertQueue().firstOrNull()
+
+    fun withUnusedRingtone(value: String, action: () -> Unit) = synchronized(alertQueueLock) {
+        require(getRingtoneValue() != value && readAlertQueueLocked().none { it.ringtoneUri == value }) { "音频正在被默认策略或报警队列使用" }
+        action()
+    }
 
     fun serviceOutageId(): String? = synchronized(alertQueueLock) { prefs.getString(KEY_SERVICE_OUTAGE, null) }
     fun markServiceRecovered(): Boolean = synchronized(alertQueueLock) { !prefs.contains(KEY_SERVICE_OUTAGE) || commitCritical(prefs.edit().remove(KEY_SERVICE_OUTAGE), KEY_SERVICE_OUTAGE) }
@@ -195,7 +201,7 @@ class SharedPreferencesHelper(context: Context) {
 
     fun saveDefaultLoopCount(count: Int) {
         val normalized = normalizeLoopCount(count)
-        prefs.edit().putInt(KEY_DEFAULT_LOOP_COUNT, normalized).apply()
+        check(prefs.edit().putInt(KEY_DEFAULT_LOOP_COUNT, normalized).commit()) { "保存播放次数失败" }
         Log.i("SharedPreferencesHelper", "默认循环次数已保存: $normalized")
     }
 
@@ -283,18 +289,19 @@ class SharedPreferencesHelper(context: Context) {
         return readJsonStringMap(KEY_RINGTONE_LIBRARY)
     }
 
-    fun putRingtoneLibraryEntry(fileName: String, displayName: String) {
+    fun putRingtoneLibraryEntry(fileName: String, displayName: String): Unit = synchronized(ringtoneLibraryLock) {
         val name = com.xgwnje.visionguard.account.DisplayNamePolicy.normalize(displayName)
         val map = getRingtoneLibraryMap().toMutableMap()
+        require(map.containsKey(fileName) || map.size < com.xgwnje.visionguard.account.RemoteConfigPolicy.MAX_AUDIO_ENTRIES) { "音频库最多 100 项" }
         map[fileName] = name
-        prefs.edit().putString(KEY_RINGTONE_LIBRARY, JSONObject(map as Map<*, *>).toString()).apply()
+        check(prefs.edit().putString(KEY_RINGTONE_LIBRARY, JSONObject(map as Map<*, *>).toString()).commit()) { "保存音频库失败" }
         Log.i("SharedPreferencesHelper", "铃声库条目已保存: $fileName -> $displayName")
     }
 
-    fun removeRingtoneLibraryEntry(fileName: String) {
+    fun removeRingtoneLibraryEntry(fileName: String): Unit = synchronized(ringtoneLibraryLock) {
         val map = getRingtoneLibraryMap().toMutableMap()
         if (map.remove(fileName) != null) {
-            prefs.edit().putString(KEY_RINGTONE_LIBRARY, JSONObject(map as Map<*, *>).toString()).apply()
+            check(prefs.edit().putString(KEY_RINGTONE_LIBRARY, JSONObject(map as Map<*, *>).toString()).commit()) { "保存音频库失败" }
             Log.i("SharedPreferencesHelper", "铃声库条目已移除: $fileName")
         }
     }

@@ -116,6 +116,7 @@ object RingtoneLibrary {
      * displayName 取源文件名（去扩展名），fileName 冲突时自动追加序号。
      */
     fun importFromUri(context: Context, uri: Uri): Pair<String, String>? {
+        if (SharedPreferencesHelper(context).getRingtoneLibraryMap().size >= com.xgwnje.visionguard.account.RemoteConfigPolicy.MAX_AUDIO_ENTRIES) return null
         val resolver = context.contentResolver
         val rawName = queryDisplayName(context, uri) ?: "imported_audio"
         val dotIndex = rawName.lastIndexOf('.')
@@ -177,6 +178,7 @@ object RingtoneLibrary {
      * 返回 true 表示已开始。
      */
     fun startRecording(context: Context): Boolean {
+        if (SharedPreferencesHelper(context).getRingtoneLibraryMap().size >= com.xgwnje.visionguard.account.RemoteConfigPolicy.MAX_AUDIO_ENTRIES) return false
         if (recorder != null) {
             Log.w(TAG, "已在录音中，忽略重复开始")
             return false

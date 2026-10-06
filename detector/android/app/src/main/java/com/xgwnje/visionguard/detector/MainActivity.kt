@@ -90,14 +90,25 @@ class MainActivity : ComponentActivity() {
                 Box(Modifier.weight(1f)) {
                 if (session == null) AccountLogin(account, "相机推流节点", "android-camera")
                 else key(session!!.scope) {
+                    val prefs = remember { getSharedPreferences("camera-options-" + AccountStore.cacheKey(this@MainActivity), MODE_PRIVATE) }
+                    fun saveCameraOption(key: String, raw: String): String {
+                        com.xgwnje.visionguard.account.RemoteConfigPolicy.cameraValue(key, raw, streaming)
+                        val preference = when (key) { "cameraResolution" -> "720p"; "cameraDimScreen" -> "dim"; else -> "hidePreview" }
+                        val enabled = if (key == "cameraResolution") raw == "720p" else raw == "true"
+                        check(prefs.edit().putBoolean(preference, enabled).commit()) { "保存相机配置失败" }
+                        when (key) { "cameraResolution" -> highResolution = enabled; "cameraDimScreen" -> { dimScreen = enabled; applyScreen() }; else -> hidePreview = enabled }
+                        return "配置已保存"
+                    }
                     val connection = remember { CameraPublisher(account,
+                        remoteSettings = { org.json.JSONObject().put("cameraResolution", if (highResolution) "720p" else "480p")
+                            .put("cameraDimScreen", dimScreen).put("cameraHidePreview", hidePreview) },
+                        onSetConfig = ::saveCameraOption,
                         controlState = { mapOf("cameraApp" to if (policy.foreground) "foreground" else "background",
                             "cameraPermission" to if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) "granted" else "required") },
                         onStreamCommand = { command, done ->
                             if (command == "stop-stream") { stopCamera("user"); done(true, "已停止推流") }
                             else startCamera(done)
                         }) }
-                    val prefs = remember { getSharedPreferences("camera-options-" + AccountStore.cacheKey(this@MainActivity), MODE_PRIVATE) }
                     DisposableEffect(connection) {
                         publisher = connection
                         highResolution = prefs.getBoolean("720p", false)
@@ -115,9 +126,9 @@ class MainActivity : ComponentActivity() {
                                 if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startCamera()
                                 else { policy.requestPermission(); permission.launch(Manifest.permission.CAMERA) }
                             }, onStop = { stopCamera("user") }, onBind = connection::bind, onRefresh = connection::refreshTargets,
-                            onResolution = { highResolution = it; prefs.edit().putBoolean("720p", it).apply() },
-                            onDim = { dimScreen = it; prefs.edit().putBoolean("dim", it).apply(); applyScreen() },
-                            onHidePreview = { hidePreview = it; prefs.edit().putBoolean("hidePreview", it).apply() })
+                            onResolution = { saveCameraOption("cameraResolution", if (it) "720p" else "480p") },
+                            onDim = { saveCameraOption("cameraDimScreen", it.toString()) },
+                            onHidePreview = { saveCameraOption("cameraHidePreview", it.toString()) })
                     }
                 }
                 }

@@ -46,6 +46,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val recordingVersion: State<Int> = _recordingVersion
     private val historyListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key == "alert_history") _alertHistoryVersion.value++
+        if (key == "ringtone_uri") updateSelectedRingtoneName()
+        if (key == "default_loop_count") _defaultLoopCount.value = sharedPreferencesHelper.getDefaultLoopCount()
+        if (key == "ringtone_library") { loadRingtoneLibrary(); updateSelectedRingtoneName() }
     }
     private val previewListener: () -> Unit = { _previewVersion.value++ }
     init {

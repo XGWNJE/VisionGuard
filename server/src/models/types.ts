@@ -54,6 +54,7 @@ export interface WsAuthMessage {
 
 /** 检测端 → 服务器：心跳 (每 3 秒) */
 export interface WsHeartbeat {
+  remoteSettings?: import('../services/RemoteSettings').RemoteSettings;
   type: 'heartbeat';
   deviceId: string;
   deviceName?: string;
@@ -145,6 +146,7 @@ export interface WsScreenshotDataPush {
 }
 
 export interface DeviceStatus {
+  remoteSettings?: import('../services/RemoteSettings').RemoteSettings;
   component: import('../services/AccountStore').Component;
   role: import('../services/NodeProtocol').NodeRole;
   nodeType: import('../services/NodeProtocol').NodeType;
@@ -245,6 +247,7 @@ export interface WsCommandAck {
 import type WebSocket from 'ws';
 
 export interface DetectorClient {
+  remoteSettings?: import('../services/RemoteSettings').RemoteSettings;
   identity: import('../services/NodeProtocol').NodeIdentity;
   ws: WebSocket;
   deviceId: string;
@@ -272,6 +275,7 @@ export interface DetectorClient {
 }
 
 export interface ReceiverClient {
+  remoteSettings?: import('../services/RemoteSettings').RemoteSettings;
   ws: WebSocket;
   deviceId: string;
   lastSeen: Date;

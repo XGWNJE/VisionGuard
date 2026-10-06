@@ -17,6 +17,46 @@ const fixtures = new AccountFixture([{"name": "foreign-channel-receiver", "compo
 const { associateScreenshotPayload, handleConnection } = require('../src/services/ConnectionManager') as typeof import('../src/services/ConnectionManager');
 const { accountStore } = require('../src/services/AccountStore') as typeof import('../src/services/AccountStore');
 
+test('camera and sound configuration routes inside account, validates live state and requires matching device completion', async t => {
+  const owner = new AccountFixture([{name:'remote-camera',component:'android-camera'},{name:'remote-sound',component:'android-notifier'},
+    {name:'remote-web',component:'web-console'}], 'remote-config-owner');
+  const foreign = new AccountFixture([{name:'remote-foreign',component:'web-console'}], 'remote-config-foreign');
+  await Promise.all([owner.ready,foreign.ready]);
+  const wss = new WebSocketServer({host:'127.0.0.1',port:0}); wss.on('connection',handleConnection);
+  await new Promise<void>(resolve=>wss.once('listening',resolve)); const port=(wss.address() as {port:number}).port;
+  const peers:WebSocket[]=[];t.after(()=>{peers.forEach(ws=>ws.terminate());wss.close();});
+  async function peer(name:string,fixture=owner) {const ws=await connect(port);peers.push(ws);const reply=waitForMessage(ws,m=>m.type==='auth-result');ws.send(JSON.stringify(fixture.auth(name)));await reply;return ws;}
+  const web=await peer('remote-web'), camera=await peer('remote-camera'), notifier=await peer('remote-sound'), other=await peer('remote-foreign',foreign);
+  const cameraState={cameraResolution:'480p',cameraDimScreen:false,cameraHidePreview:false};
+  const soundState={soundLoopCount:10,soundSelection:'system-default',audioPreview:'',audioEntries:[{id:'system-default',name:'默认',mutable:false}]};
+  async function heartbeat(ws:WebSocket,message:object) {const reply=waitForMessage(ws,m=>m.type==='heartbeat-ack');ws.send(JSON.stringify(message));await reply;}
+  async function rejected(key:string,value:string,target='remote-camera',sender=web,extra:Record<string,unknown>={}) {
+    const requestId=typeof extra.requestId==='string'?extra.requestId:crypto.randomUUID(),reply=waitForMessage(sender,m=>m.type==='command-ack'&&m.requestId===requestId);
+    sender.send(JSON.stringify({type:'set-config',requestId,targetDeviceId:owner.id(target),key,value,...extra}));assert.equal((await reply).success,false);
+  }
+  await rejected('cameraResolution','720p');
+  await heartbeat(camera,{type:'heartbeat',isMonitoring:true,isReady:true,sources:[],capabilities:['camera-config'],remoteSettings:cameraState});
+  await heartbeat(notifier,{type:'heartbeat-notifier',capabilities:['sound-config','audio-library'],remoteSettings:soundState});
+  await rejected('cameraResolution','720p');await rejected('cameraHidePreview','1');
+  await rejected('soundLoopCount','11','remote-sound');await rejected('soundLoopCount','3','remote-camera');
+  await rejected('soundLoopCount','3','remote-sound',other);await rejected('cameraHidePreview','true','remote-camera',other);
+  await rejected('cameraDimScreen','true','remote-camera',web,{targetSourceId:'fake'});
+  await heartbeat(camera,{type:'heartbeat',isMonitoring:false,isReady:true,sources:[],capabilities:['camera-config'],remoteSettings:cameraState});
+  for(const [node,target,key,value] of [[camera,'remote-camera','cameraResolution','720p'],[notifier,'remote-sound','soundLoopCount','3']] as const) {
+    const requestId=crypto.randomUUID(),relay=waitForMessage(node,m=>m.type==='set-config'&&m.requestId===requestId), forwarded=waitForMessage(web,m=>m.type==='command-ack'&&m.requestId===requestId);
+    web.send(JSON.stringify({type:'set-config',requestId,targetDeviceId:owner.id(target),key,value}));
+    assert.equal((await relay).value,value);assert.equal((await forwarded).phase,'forwarded');
+    const completion=waitForMessage(web,m=>m.type==='command-ack'&&m.requestId===requestId&&m.phase==='completed');
+    node.send(JSON.stringify({type:'command-ack',requestId,targetDeviceId:owner.id(target),command:`set-config:${key}`,phase:'completed',success:true,reason:'持久保存完成'}));
+    assert.equal((await completion).success,true);
+    await rejected(key,value,target,web,{requestId});
+  }
+  const list=waitForMessage(web,m=>m.type==='device-list');web.send(JSON.stringify({type:'get-devices'}));const devices=(await list).devices;
+  assert.deepEqual(devices.find((d:any)=>d.deviceId===owner.id('remote-camera')).remoteSettings,cameraState);
+  assert.equal(devices.find((d:any)=>d.deviceId===owner.id('remote-sound')).remoteSettings.soundLoopCount,10);
+  // Completion is a real execution receipt; the next heartbeat provides current readback.
+});
+
 test('camera and notifier controls require declared capabilities, route only inside account and correlate actual completion', async t => {
   const owner = new AccountFixture([{name:'camera-command',component:'android-camera'}, {name:'notifier-command',component:'android-notifier'},
     {name:'console-command',component:'web-console'}], 'control-capability-owner');

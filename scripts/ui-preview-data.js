@@ -48,6 +48,11 @@ async function api(route, session, body, method) {
 class Peer {
   constructor(session, spec) {
     this.session=session; this.spec=spec; this.messages=[];
+    if(spec?.component==='android-camera')spec.remoteSettings={cameraResolution:'480p',cameraDimScreen:false,cameraHidePreview:false};
+    if(spec?.component==='android-notifier')spec.remoteSettings={soundLoopCount:10,soundSelection:'system-default',audioPreview:'',audioEntries:[
+      {id:'system-default',name:'系统默认闹钟',mutable:false},{id:'silent',name:'静音',mutable:false},
+      {id:'preset:vg_notifier_preset_target_spot',name:'【模拟】监控发现目标',mutable:false},
+      {id:'library:'+'a'.repeat(64),name:('【模拟】合法名称上限'.repeat(8)).slice(0,64),mutable:true}]};
     this.ws=new WebSocket('ws://127.0.0.1:4318/ws');
     this.ws.on('message', raw => {
       const msg=JSON.parse(raw.toString()); this.messages.push(msg); if(this.messages.length>150)this.messages.shift();
@@ -73,14 +78,26 @@ class Peer {
   }
   heartbeat() {
     if(!this.spec) return this.send({type:'heartbeat-console'});
-    if(this.spec.component==='android-notifier')return this.send({type:'heartbeat-notifier'});
+    if(this.spec.component==='android-notifier')return this.send({type:'heartbeat-notifier',capabilities:['alarm-control','sound-config','audio-library','request-correlation'],remoteSettings:this.spec.remoteSettings});
     const sources=this.spec.sources||[];
-    this.send({type:'heartbeat',deviceId:this.session.device.deviceId,isMonitoring:sources.some(s=>s.isMonitoring),isReady:true,cooldown:20,confidence:0.65,targets:'person',targetSamplingRate:5,modelKey:'yolo26n_320',modelOptions:['yolo26n_320','yolo26s_320'],modelLabels:{yolo26n_320:[{value:'person',label:'人员'},{value:'car',label:'车辆'}],yolo26s_320:[{value:'person',label:'人员'},{value:'car',label:'车辆'}]},canSwitchModelWhileMonitoring:true,capabilities:this.spec.component==='android-camera'?['video-publish','request-correlation']:['monitor-control','config-control','source-control','screenshot-on-demand','request-correlation','directml','video-subscribe','visual-inference'],components:{detectorApp:'running'},sources:sources.map(s=>({...s,monitoringExpected:s.isMonitoring,lastProgressAt:new Date().toISOString()}))});
+    this.send({type:'heartbeat',deviceId:this.session.device.deviceId,isMonitoring:sources.some(s=>s.isMonitoring),isReady:true,cooldown:20,confidence:0.65,targets:'person',targetSamplingRate:5,modelKey:'yolo26n_320',modelOptions:['yolo26n_320','yolo26s_320'],modelLabels:{yolo26n_320:[{value:'person',label:'人员'},{value:'car',label:'车辆'}],yolo26s_320:[{value:'person',label:'人员'},{value:'car',label:'车辆'}]},canSwitchModelWhileMonitoring:true,capabilities:this.spec.component==='android-camera'?['video-publish','camera-config','request-correlation']:['monitor-control','config-control','source-control','screenshot-on-demand','request-correlation','directml','video-subscribe','visual-inference'],remoteSettings:this.spec.remoteSettings,components:{detectorApp:'running'},sources:sources.map(s=>({...s,monitoringExpected:s.isMonitoring,lastProgressAt:new Date().toISOString()}))});
   }
   control(msg) {
-    const selected=msg.targetSourceId?this.spec.sources.filter(s=>s.sourceId===msg.targetSourceId):this.spec.sources;
+    const selected=msg.targetSourceId?(this.spec.sources||[]).filter(s=>s.sourceId===msg.targetSourceId):(this.spec.sources||[]);
     let success=true;
-    if(msg.type==='command' && ['pause','resume'].includes(msg.command))for(const s of selected){s.isMonitoring=msg.command==='resume';s.isReady=true;delete s.error;s.actualFps=s.isMonitoring?4.8:0;}
+    // These values exist only for local UI previews; they do not exercise a business chain.
+    const remote=this.spec.remoteSettings;
+    if(msg.type==='set-config' && remote) {
+      if(msg.key==='soundLoopCount')remote.soundLoopCount=Number(msg.value);
+      else if(msg.key==='soundSelection')remote.soundSelection=msg.value;
+      else if(msg.key==='audioPreview')remote.audioPreview=msg.value;
+      else if(msg.key==='audioStopPreview')remote.audioPreview='';
+      else if(msg.key==='audioRename'){const v=JSON.parse(msg.value);const e=remote.audioEntries.find(e=>e.id===v.id);if(e)e.name=v.name;}
+      else if(msg.key==='audioDelete')remote.audioEntries=remote.audioEntries.filter(e=>e.id!==msg.value);
+      else if(msg.key==='audioImport'){const v=JSON.parse(msg.value);remote.audioEntries.push({id:'library:'+crypto.randomBytes(32).toString('hex'),name:v.name,mutable:true});remote.audioLibraryFull=remote.audioEntries.filter(e=>e.mutable).length>=100;}
+      else remote[msg.key]=msg.key==='cameraResolution'?msg.value:msg.value==='true';
+    }
+    else if(msg.type==='command' && ['pause','resume'].includes(msg.command))for(const s of selected){s.isMonitoring=msg.command==='resume';s.isReady=true;delete s.error;s.actualFps=s.isMonitoring?4.8:0;}
     else if(msg.type==='set-config')for(const s of selected){const key=msg.key==='samplingRate'?'targetSamplingRate':msg.key;s[key]=['cooldown','confidence','targetSamplingRate'].includes(key)?Number(msg.value):msg.value;}
     else if(msg.command!=='stop-alarm')success=false;
     this.heartbeat();

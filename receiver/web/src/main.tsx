@@ -7,6 +7,7 @@ import { accountRequest, AccountRequestError, browserDeviceIdentity, browserDevi
 import { AccountManagement } from './AccountManagement';
 import { AppearanceSelector, useAppearance } from './appearance';
 import { Parameters, type ParameterDrafts } from './Parameters';
+import { RemoteSettings } from './RemoteSettings';
 import './style.css';
 
 function checkNamePaste(e: React.ClipboardEvent<HTMLInputElement>, onError: (message: string) => void) {
@@ -176,6 +177,7 @@ function NodeDetail({node,stream,connected,send,timeZone,acks,drafts,children}:{
     {!can('monitor-control') && node.online && node.nodeType==='visual' && node.component!=='android-camera' && <p className="subtle">此节点未提供检测启停能力。</p>}
   </section>
   {children}
+  <RemoteSettings key={node.deviceId} node={node} connected={connected} acks={acks} send={send}/>
   {node.nodeType === 'visual' && node.component!=='android-camera' && <section className="panel source-panel">{node.sourceLimitExceeded && <p className="error">来源数量超过服务端上限（最多 {node.maxSources ?? '未报告'} 路），当前列表为上一次成功上报的快照。</p>}<div className="section-title"><h2>检测来源</h2><button className="text-button" onClick={() => setSourceId('')} disabled={!sourceId}>节点整体</button></div>{node.sources.length === 0 ? <Empty text="暂无已连接来源"/> : <div className="source-table-wrap"><table className="source-table"><thead><tr><th>名称</th><th>状态</th><th>帧率（FPS）</th><th>操作</th></tr></thead><tbody>{node.sources.map(s => <tr className={sourceId === s.sourceId ? 'selected' : ''} key={s.sourceId}><td><strong>{s.sourceName || s.sourceId}</strong><small>{s.sourceId}</small></td><td className="source-state"><span className={'dot '+(!node.online ? '' : s.error ? 'error' : !s.isReady ? 'warning' : s.isMonitoring ? 'online' : '')}/>{!node.online ? '离线' : s.error ? '异常' : !s.isReady ? '未就绪' : s.isMonitoring ? '检测中' : '已暂停'}{s.error && <details className="source-error"><summary>查看原因</summary><p className="error">{s.error}</p></details>}</td><td>{!node.online || s.actualFps === undefined ? '—' : s.actualFps.toFixed(1)}</td><td><div className="source-actions">{can('source-control') && can('monitor-control') && <button className="text-button" disabled={!ready} aria-label={`${s.isMonitoring ? '暂停' : '开始'} ${s.sourceName}`} onClick={() => issueCommand(s.isMonitoring ? 'pause' : 'resume',s.sourceId)}>{s.isMonitoring ? '暂停' : '开始'}</button>}{can('config-control') && can('source-control') && <button className="text-button" aria-label={`参数 ${s.sourceName}`} onClick={() => setSourceId(s.sourceId)} disabled={s.isMonitoring}><Settings size={16}/>参数</button>}</div></td></tr>)}</tbody></table></div>}</section>}
   {can('config-control') && <Parameters key={`${node.deviceId}/${source?.sourceId ?? ''}`} node={node} source={source} acks={acks} drafts={drafts} disabled={!ready || (!!source && (!can('source-control') || source.isMonitoring)) || (!source && node.nodeType === 'visual' && node.isMonitoring)} send={send}/>}
   </>;

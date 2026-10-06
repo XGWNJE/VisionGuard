@@ -46,6 +46,8 @@ class NotificationNodeService : Service() {
     private val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(0, TimeUnit.SECONDS).build()
     private lateinit var settings: NotificationNodeSettings
     private lateinit var alarms: SharedPreferencesHelper
+    private lateinit var remoteSound: RemoteSoundControl
+    private val remoteConfigMutex = kotlinx.coroutines.sync.Mutex()
     private var socket: WebSocket? = null
     private var generation = 0
     private var authenticated = false
@@ -74,7 +76,8 @@ class NotificationNodeService : Service() {
             }
             if (!terminal && socket == null && now >= nextAttempt) connect()
             if (authenticated && socket?.send(JSONObject().put("type", "heartbeat-notifier").put("deviceId", settings.read().deviceId)
-                    .put("capabilities", org.json.JSONArray(listOf("alarm-control", "request-correlation")))
+                    .put("capabilities", org.json.JSONArray(listOf("alarm-control", "sound-config", "audio-library", "request-correlation")))
+                    .put("remoteSettings", remoteSound.snapshot())
                     .apply { probeId?.let { put("probeId", it) } }.toString()) != true) transportFailed("心跳发送失败")
             handler.postDelayed(this, 3_000)
         }
@@ -85,6 +88,7 @@ class NotificationNodeService : Service() {
         settings = NotificationNodeSettings(this)
         mutableState.value = NodeState(timeZone = settings.timeZone)
         alarms = SharedPreferencesHelper(this)
+        remoteSound = RemoteSoundControl(this, alarms)
         outageId = alarms.serviceOutageId(); outageAccepted = outageId != null
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("notification-node", "通知节点连接", NotificationManager.IMPORTANCE_LOW))
@@ -148,6 +152,24 @@ class NotificationNodeService : Service() {
         }
         if (type == "kicked" || type == "session-revoked") { terminal = true; reconnect("登录已失效，请重新登录"); account.clear(); return }
         if (!authenticated) return
+        if (type == "set-config") {
+            val own = generation
+            serviceScope.launch {
+                val key = message.optString("key")
+                remoteConfigMutex.lock()
+                val result = try { runCatching {
+                    require(own == generation && socket === ws && authenticated) { "连接已变更，操作取消" }
+                    require(message.optString("targetDeviceId") == settings.read().deviceId && !message.has("targetSourceId")) { "配置目标不符" }
+                    if (key == "audioImport") withContext(Dispatchers.IO) { remoteSound.apply(key, message.getString("value")) }
+                    else remoteSound.apply(key, message.getString("value"))
+                } } finally { remoteConfigMutex.unlock() }
+                if (own == generation && socket === ws && authenticated) ws.send(JSONObject().put("type", "command-ack")
+                    .put("requestId", message.optString("requestId")).put("targetDeviceId", settings.read().deviceId)
+                    .put("command", "set-config:" + key).put("phase", "completed").put("success", result.isSuccess)
+                    .put("reason", (result.getOrNull() ?: result.exceptionOrNull()?.message ?: "保存失败").take(256)).toString())
+            }
+            return
+        }
         if (type == "command" && authenticated && message.optString("command") == "stop-alarm") {
             val active = alarms.getActiveAlert()
             val success = active == null || alarms.finishActiveAlert(active.id, com.xgwnje.visionguard.notifier.AlertEndType.MANUAL).success
@@ -190,6 +212,7 @@ class NotificationNodeService : Service() {
         mutableState.value = mutableState.value.copy(timeZone = timeZone)
     }
     private fun wakePlayback() {
+        com.xgwnje.visionguard.notifier.RingtoneLibrary.stopPreview()
         runCatching { ContextCompat.startForegroundService(this, Intent(this, AlarmPlaybackService::class.java)) }
             .onFailure { mutableState.value = mutableState.value.copy(status = "报警已保存，请打开 VisionGuard 恢复播放") }
     }

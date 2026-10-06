@@ -18,6 +18,7 @@ import { TimeStandardStore, validAlarmTimeZone } from './TimeStandardStore';
 import { authenticateNode, clientType, allowedCapabilities, validateEvent, registeredNodes, REALTIME_TTL_MS, DETECTION_STALL_MS, type NodeIdentity, type NodeRole } from './NodeProtocol';
 import { addAlert, getAlertById, markAlertScreenshot, type AddAlertResult } from '../services/AlertStore';
 import { isValidSetConfigKey, validateSetConfigValue, MAX_TARGETS_LENGTH } from '../services/ControlProtocol';
+import { remoteConfigRole, sanitizeRemoteSettings, validateRemoteConfig } from './RemoteSettings';
 import { getSafeScreenshotPath, isSafeAlertId, validateAlertMeta, validateImageMagic } from '../utils/security';
 import type {
   WsAuthMessage, WsHeartbeat, WsHeartbeatAndroid, WsCommand, WsSetConfig,
@@ -252,7 +253,7 @@ function registerPendingControlRequest(
   }, COMMAND_TIMEOUT_MS);
   timer.unref();
   const targetWs = (RESIDENT_COMMANDS.has(command) ? residentWindowsClients.get(targetDeviceId)
-    : command === 'stop-alarm' && notifierClients.has(targetDeviceId) ? notifierClients.get(targetDeviceId) : findDetector(targetDeviceId))!.ws;
+    : notifierClients.has(targetDeviceId) ? notifierClients.get(targetDeviceId) : findDetector(targetDeviceId))!.ws;
   pendingControlRequests.set(requestId, { senderWs, targetWs, targetDeviceId, command, targetSourceId, timer });
   return true;
 }
@@ -480,8 +481,10 @@ function handleConnection(ws: WebSocket): void {
           const client = notifierClients.get(authenticatedDeviceId);
           if (client?.ws === ws) { client.lastSeen = new Date();
             const capabilities = allowedCapabilities(client.identity!, msg.capabilities);
-            const changed = JSON.stringify(client.capabilities ?? []) !== JSON.stringify(capabilities);
+            const settings = sanitizeRemoteSettings(msg.remoteSettings, client.identity!.component);
+            const changed = JSON.stringify(client.capabilities ?? []) !== JSON.stringify(capabilities) || JSON.stringify(client.remoteSettings) !== JSON.stringify(settings);
             client.capabilities = capabilities;
+            client.remoteSettings = settings;
             if (changed) broadcastDeviceList();
             sendJson(ws, { type: 'heartbeat-ack', serverTime: new Date().toISOString(),
             ...(typeof msg.probeId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(msg.probeId) ? { probeId: msg.probeId } : {}) }); }
@@ -785,7 +788,7 @@ function handleHeartbeat(msg: WsHeartbeat): void {
     JSON.stringify(client.capabilities) !== JSON.stringify(msg.capabilities ?? client.capabilities) ||
     JSON.stringify(client.components) !== JSON.stringify(msg.components ?? client.components) ||
     JSON.stringify(client.sources) !== JSON.stringify(msg.sources ?? client.sources) ||
-    sourceLimitChanged;
+    JSON.stringify(client.remoteSettings) !== JSON.stringify(sanitizeRemoteSettings(msg.remoteSettings, client.identity.component)) || sourceLimitChanged;
 
   client.isMonitoring = msg.isMonitoring;
   client.isReady = msg.isReady ?? false;
@@ -800,6 +803,7 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   if (msg.hasPendingConfigChanges !== undefined) client.hasPendingConfigChanges = !!msg.hasPendingConfigChanges;
   if (msg.capabilities !== undefined) client.capabilities = allowedCapabilities(client.identity, msg.capabilities) ?? client.capabilities;
   if (msg.components !== undefined) client.components = sanitizeComponents(msg.components) ?? client.components;
+  client.remoteSettings = sanitizeRemoteSettings(msg.remoteSettings, client.identity.component);
   if (typeof msg.monitoringExpected === 'boolean') client.monitoringExpected = msg.monitoringExpected;
   if (validProgress(msg.lastProgressAt)) client.lastProgressAt = msg.lastProgressAt;
   if (sanitizedSources !== undefined) {
@@ -952,6 +956,7 @@ function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
 }
 
 function handleSetConfig(senderWs: WebSocket, msg: WsSetConfig): void {
+  if (remoteConfigRole(msg.key)) { handleRemoteConfig(senderWs, msg); return; }
   if (!isValidRequestId(msg.requestId)) {
     sendJson(senderWs, {
       type: 'command-ack', requestId: msg.requestId, phase: 'completed', targetDeviceId: msg.targetDeviceId,
@@ -1012,6 +1017,22 @@ function handleSetConfig(senderWs: WebSocket, msg: WsSetConfig): void {
   const relay: WsSetConfigRelay = { type: 'set-config', requestId: msg.requestId, key: msg.key, value: sanitizedValue, targetDeviceId: msg.targetDeviceId, targetSourceId: msg.targetSourceId };
   sendJson(target.ws, relay, `set-config->${msg.targetDeviceId}`);
   sendJson(senderWs, { type: 'command-ack', requestId: msg.requestId, phase: 'forwarded', targetDeviceId: msg.targetDeviceId, targetSourceId: msg.targetSourceId, command, success: true, reason: '已转发' }, 'set-config-ack->sender');
+}
+
+function handleRemoteConfig(senderWs: WebSocket, msg: WsSetConfig): void {
+  const command = `set-config:${msg.key}`;
+  const reject = (reason: string) => sendJson(senderWs, {type:'command-ack',requestId:msg.requestId,phase:'completed',targetDeviceId:msg.targetDeviceId,command,success:false,reason});
+  if (!isValidRequestId(msg.requestId) || msg.targetSourceId !== undefined) { reject('无效的请求或来源'); return; }
+  const role = remoteConfigRole(msg.key)!;
+  const target = role === 'android-notifier' ? notifierClients.get(msg.targetDeviceId) : findDetector(msg.targetDeviceId);
+  if (!target || target.ws.readyState !== WebSocket.OPEN || target.identity?.component !== role) { reject('目标离线或类型不符'); return; }
+  const capability = role === 'android-camera' ? 'camera-config' : msg.key.startsWith('audio') ? 'audio-library' : 'sound-config';
+  if (!target.capabilities?.includes(capability)) { reject('节点不支持该配置'); return; }
+  const validation = validateRemoteConfig(msg.key, msg.value, target.remoteSettings, role === 'android-camera' && (target as DetectorClient).isMonitoring);
+  if (!validation.ok) { reject(validation.reason); return; }
+  if (!registerPendingControlRequest(msg.requestId!, senderWs, msg.targetDeviceId, command)) { reject('requestId 重复'); return; }
+  sendJson(target.ws, {...msg, value:validation.value});
+  sendJson(senderWs, {type:'command-ack',requestId:msg.requestId,phase:'forwarded',targetDeviceId:msg.targetDeviceId,command,success:true,reason:'已转发，等待节点保存'});
 }
 
 function handleRequestScreenshot(senderWs: WebSocket, msg: any): void {
@@ -1125,6 +1146,7 @@ function buildDeviceList(): DeviceStatus[] {
         components: residentWindowsClients.has(c.deviceId)
           ? { ...residentWindowsClients.get(c.deviceId)!.components, ...c.components, resident: 'running' } : c.components,
         sources: c.sources,
+        remoteSettings: c.remoteSettings,
         maxSources: config.maxSourcesPerDetector,
         sourceLimitExceeded: c.sourceLimitExceeded,
       });
@@ -1152,7 +1174,7 @@ function buildDeviceList(): DeviceStatus[] {
       isMonitoring: false, isReady: true, lastSeen: client.lastSeen.toISOString(), cooldown: 5, confidence: 0.45,
       targets: '', targetSamplingRate: 3, modelKey: '', modelOptions: [], canSwitchModelWhileMonitoring: false,
       hasPendingConfigChanges: false, clientType: 'notification', capabilities: ['notification-receipt', 'connection-watchdog', ...(client.capabilities ?? [])],
-      components: {}, sources: [], maxSources: 0, sourceLimitExceeded: false });
+      components: {}, remoteSettings: client.remoteSettings, sources: [], maxSources: 0, sourceLimitExceeded: false });
   }
   return devices;
 }

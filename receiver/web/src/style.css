@@ -259,3 +259,9 @@ button:active:not(:disabled) { filter: brightness(.88); }
 .latest-event p, .latest-event small { overflow-wrap: anywhere; }
 .latest-event .event-image { margin-top: 8px; }
 .lifecycle-actions summary { min-height: 48px; }
+.remote-settings fieldset { min-width: 0; margin-top: 16px; }
+.remote-settings label, .remote-settings form { min-width: 0; }
+.remote-settings .parameter-field span { min-width: 0; overflow-wrap: anywhere; }
+.remote-settings .parameter-field label small { display: block; }
+.remote-settings .actions select { min-width: 0; flex: 1; }
+.remote-audio-list { max-height: 320px; overflow-y: auto; }
