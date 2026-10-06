@@ -22,6 +22,7 @@ data class PublisherState(val connected: Boolean = false, val status: String = "
     val relayDroppedFrames: Long = 0, val sampledOutFrames: Long = 0)
 
 class CameraPublisher(private val account: AccountStore,
+    private val cacheMaintenance: suspend (Boolean, () -> Boolean) -> JSONObject = { _, _ -> error("缓存维护未配置") },
     private val controlState: () -> Map<String, String> = { emptyMap() },
     private val remoteSettings: () -> JSONObject = { JSONObject() },
     private val onSetConfig: (String, String) -> String = { _, _ -> error("不支持的相机配置") },
@@ -70,7 +71,7 @@ class CameraPublisher(private val account: AccountStore,
                     control?.send(JSONObject().put("type", "heartbeat").put("deviceId", current?.deviceId)
                         .put("deviceName", current?.deviceName).put("isMonitoring", false).put("isReady", true)
                         .put("cooldown", 5).put("confidence", 0.45).put("targets", "").put("targetSamplingRate", 5)
-                        .put("modelKey", "").put("modelOptions", JSONArray()).put("capabilities", JSONArray(listOf("video-publish", "stream-control", "camera-config", "request-correlation")))
+                        .put("modelKey", "").put("modelOptions", JSONArray()).put("capabilities", JSONArray(listOf("video-publish", "stream-control", "camera-config", "request-correlation", "cache-maintenance")))
                         .put("remoteSettings", remoteSettings())
                         .put("canSwitchModelWhileMonitoring", false).put("hasPendingConfigChanges", false)
                         .put("components", JSONObject(controlState()).put("cameraApp", if (controlState()["cameraApp"] == "foreground") "foreground" else "background")).put("sources", JSONArray()).toString())
@@ -114,6 +115,15 @@ class CameraPublisher(private val account: AccountStore,
                         "stream-list" -> updateStreams(body.optJSONArray("streams") ?: JSONArray())
                         "command" -> {
                             val command = body.optString("command")
+                            if (authenticated && command in setOf("cache-inspect", "cache-clean")) scope.launch {
+                                val result = runCatching { withContext(Dispatchers.IO) {
+                                    require(own == controlGeneration && !closed && control === ws && account.session.value?.token == value.token && body.optString("targetDeviceId") == value.deviceId && !body.has("targetSourceId")) { "连接或目标已变更" }
+                                    cacheMaintenance(command == "cache-clean") { own == controlGeneration && !closed && control === ws && authenticated && account.session.value?.token == value.token }
+                                } }
+                                if (own == controlGeneration && !closed && control === ws) ws.send(JSONObject().put("type", "command-ack").put("requestId", body.optString("requestId"))
+                                    .put("targetDeviceId", value.deviceId).put("command", command).put("phase", "completed").put("success", result.isSuccess)
+                                    .put("cache", result.getOrNull()).put("reason", if (result.isSuccess) "缓存盘点完成" else "缓存操作失败，请重新盘点").toString())
+                            }
                             if (authenticated && command in setOf("start-stream", "stop-stream")) onStreamCommand(command) { success, reason ->
                                 if (own == controlGeneration && !closed && control === ws) ws.send(JSONObject().put("type", "command-ack")
                                     .put("requestId", body.optString("requestId")).put("targetDeviceId", value.deviceId)

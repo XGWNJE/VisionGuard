@@ -1,3 +1,4 @@
+import { parseCacheReport } from './CacheMaintenance';
 // ┌─────────────────────────────────────────────────────────┐
 // │ ConnectionManager.ts  current                          │
 // │ 角色：WebSocket 连接管理 (按 role 独立 Map 跟踪)          │
@@ -813,8 +814,8 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   if (msg.sources !== undefined) client.sourceLimitExceeded = sourceOverLimit;
 
   const count = (_heartbeatCounter.get(msg.deviceId) ?? 0) + 1;
-  _heartbeatCounter.set(msg.deviceId, count % 60 === 0 ? 0 : count);
-  if (count === 1 || count % 60 === 0) {
+  _heartbeatCounter.set(msg.deviceId, count);
+  if (count === 1 || (process.env.VISIONGUARD_MEDIA_DIAGNOSTICS === '1' && count % 60 === 0)) {
     const silentSec = Math.round((Date.now() - client.lastSeen.getTime()) / 1000);
     const roleLabel = client.identity.component === 'android-camera' ? '相机推流节点（Android）' : client.identity.nodeType === 'sensor' ? '传感器节点' : '视觉节点（Windows）';
     console.log(`[ws][${new Date().toISOString()}] ${roleLabel} 心跳: ${client.deviceName} (${msg.deviceId}) monitoring=${msg.isMonitoring} 静默${silentSec}s`);
@@ -879,11 +880,12 @@ function handleSessionInfo(msg: WsSessionInfo, authenticatedDeviceId: string): v
 // ════════════════════════════════════════════════════════════
 
 function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
+  const cacheCommand = msg.command === 'cache-inspect' || msg.command === 'cache-clean';
   const residentCommand = RESIDENT_COMMANDS.has(msg.command);
   const detectorCommand = DETECTOR_COMMANDS.has(msg.command);
   const streamCommand = msg.command === 'start-stream' || msg.command === 'stop-stream';
-  const notifierCommand = msg.command === 'stop-alarm' && notifierClients.has(msg.targetDeviceId);
-  if (!residentCommand && !detectorCommand && !streamCommand) {
+  const notifierCommand = (msg.command === 'stop-alarm' || cacheCommand) && notifierClients.has(msg.targetDeviceId);
+  if (!residentCommand && !detectorCommand && !streamCommand && !cacheCommand) {
     sendJson(senderWs, {
       type: 'command-ack', requestId: msg.requestId, phase: 'completed',
       targetDeviceId: msg.targetDeviceId, targetSourceId: msg.targetSourceId,
@@ -915,7 +917,10 @@ function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
     return;
   }
 
-  if (notifierCommand && !(target as ReceiverClient).capabilities?.includes('alarm-control')) {
+  if (cacheCommand && (msg.targetSourceId !== undefined || !(target as DetectorClient | ReceiverClient).capabilities?.includes('cache-maintenance'))) {
+    ack.reason = '目标不支持缓存维护或指定了来源'; sendJson(senderWs, ack); return;
+  }
+  if (!cacheCommand && notifierCommand && !(target as ReceiverClient).capabilities?.includes('alarm-control')) {
     ack.reason = '通知节点未提供报警控制'; sendJson(senderWs, ack); return;
   }
   if (streamCommand && ((target as DetectorClient).identity.component !== 'android-camera' || !(target as DetectorClient).capabilities.includes('stream-control'))) {
@@ -1081,7 +1086,10 @@ function handleRequestScreenshot(senderWs: WebSocket, msg: any): void {
 }
 
 function handleCommandAck(ack: WsCommandAck, detectorDeviceId: string, ws: WebSocket): void {
-  const enriched = { ...ack, targetDeviceId: detectorDeviceId };
+  const cacheCommand = ack.command === 'cache-inspect' || ack.command === 'cache-clean';
+  const cache = cacheCommand ? parseCacheReport(ack.cache) : undefined;
+  const enriched = { ...ack, cache, targetDeviceId: detectorDeviceId,
+    ...(cacheCommand && ack.success && !cache ? {success:false,reason:'节点返回的缓存结果无效，请重新盘点'} : {}) };
   if (ack.requestId) {
     const pending = pendingControlRequests.get(ack.requestId);
     if (!pending || pending.targetWs !== ws || pending.targetDeviceId !== detectorDeviceId || pending.command !== ack.command || pending.targetSourceId !== ack.targetSourceId || ack.phase !== 'completed' || typeof ack.success !== 'boolean') {

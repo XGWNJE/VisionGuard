@@ -49,9 +49,9 @@ export function validateEvent(value: any, identity: NodeIdentity, now = Date.now
 }
 
 export function allowedCapabilities(identity: NodeIdentity, values: unknown): string[] {
-  const common = ['monitor-control', 'config-control', 'request-correlation'];
-  const allowed = identity.component === 'android-camera' ? ['video-publish', 'stream-control', 'camera-config', 'request-correlation']
-    : identity.role === 'notifier' ? ['alarm-control', 'sound-config', 'audio-library', 'request-correlation']
+  const common = ['monitor-control', 'config-control', 'request-correlation', 'cache-maintenance'];
+  const allowed = identity.component === 'android-camera' ? ['video-publish', 'stream-control', 'camera-config', 'request-correlation', 'cache-maintenance']
+    : identity.role === 'notifier' ? ['alarm-control', 'sound-config', 'audio-library', 'request-correlation', 'cache-maintenance']
     : identity.nodeType === 'visual' ? [...common, 'screenshot-on-demand', 'source-control', 'directml', 'video-subscribe', 'visual-inference']
     : identity.nodeType === 'sensor' ? common : [];
   return Array.isArray(values) ? [...new Set(values.filter((v): v is string => typeof v === 'string' && allowed.includes(v)))] : [];

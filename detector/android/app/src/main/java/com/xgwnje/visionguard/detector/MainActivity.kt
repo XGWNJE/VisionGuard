@@ -100,6 +100,7 @@ class MainActivity : ComponentActivity() {
                         return "配置已保存"
                     }
                     val connection = remember { CameraPublisher(account,
+                        cacheMaintenance = { clean, active -> com.xgwnje.visionguard.account.TemporaryCache.maintain(this@MainActivity, clean, active) },
                         remoteSettings = { org.json.JSONObject().put("cameraResolution", if (highResolution) "720p" else "480p")
                             .put("cameraDimScreen", dimScreen).put("cameraHidePreview", hidePreview) },
                         onSetConfig = ::saveCameraOption,

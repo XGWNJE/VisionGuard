@@ -20,6 +20,7 @@ import alertsQueryRouter from './routes/alerts';
 import { handleConnection } from './services/ConnectionManager';
 import { cleanupExpiredAlerts } from './services/AlertStore';
 import screenshotRouter from './routes/screenshot';
+import cacheRouter from './routes/cache';
 import updateRouter from './routes/update';
 import accountRouter from './routes/account';
 import { createApiLimiter } from './middleware/rateLimit';
@@ -56,6 +57,7 @@ app.get('/health', healthLimiter, (_req, res) => {
 app.use(alertRouter);
 app.use(alertsQueryRouter);
 app.use(screenshotRouter);
+app.use(cacheRouter);
 app.use(updateRouter);
 app.use(accountRouter);
 app.use(streamsRouter);

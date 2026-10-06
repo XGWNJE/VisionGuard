@@ -385,9 +385,21 @@ namespace VisionGuard.Resident.Windows
             {
                 string directory = AccountSession.LogRoot;
                 Directory.CreateDirectory(directory);
-                lock (LogLock) File.AppendAllText(Path.Combine(directory, "resident.log"), DateTimeOffset.Now.ToString("O") + " " + message + Environment.NewLine);
+                lock (LogLock)
+                {
+                    var path = Path.Combine(directory, "resident.log");
+                    if (File.Exists(path) && new FileInfo(path).Length >= 1024 * 1024) File.Move(path, RotateLog(path));
+                    File.AppendAllText(path, DateTimeOffset.Now.ToString("O") + " " + message + Environment.NewLine);
+                }
             }
             catch { }
+        }
+
+        private static string RotateLog(string path)
+        {
+            var previous = path + ".previous";
+            if (File.Exists(previous)) File.Delete(previous);
+            return previous;
         }
 
         private sealed class CommandResult

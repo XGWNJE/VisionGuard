@@ -47,6 +47,7 @@ namespace VisionGuard.Detector.Windows.Services
         private const int MAX_CACHE_COUNT = 5000;
         private const long MAX_CACHE_AGE_MS = 7L * 24 * 60 * 60 * 1000; // 7 天
 
+        private static readonly object CacheLock = new object();
         private bool _disposed;
 
         // ── 评估入口 ─────────────────────────────────────────────────
@@ -121,10 +122,11 @@ namespace VisionGuard.Detector.Windows.Services
 
                 string filename = alertId + ".png";
                 string path     = Path.Combine(dir, filename);
-                bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
-
-                // 保存后执行缓存约束清理
-                CleanupCache(dir);
+                lock (CacheLock)
+                {
+                    bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+                    CleanupCache(dir, true);
+                }
             }
             catch { }
         }
@@ -146,63 +148,47 @@ namespace VisionGuard.Detector.Windows.Services
         /// <summary>
         /// 清理截图缓存：满足 1GB / 7天 / 5000张 约束（LRU）。
         /// </summary>
-        private static void CleanupCache(string dir)
+        public static object MaintainCache(bool clean)
         {
-            try
+            lock (CacheLock) return CleanupCache(AlertDirectory, clean);
+        }
+
+        private static bool SafeDirectory(string directory)
+        {
+            for (var current = new DirectoryInfo(directory); current != null; current = current.Parent)
+                if (!current.Exists || (current.Attributes & FileAttributes.ReparsePoint) != 0) return false;
+            return true;
+        }
+
+        private static object CleanupCache(string dir, bool clean)
+        {
+            long count = 0, bytes = 0, candidates = 0, candidateBytes = 0, removed = 0, removedBytes = 0, failed = 0;
+            if (Directory.Exists(dir) && SafeDirectory(dir))
             {
-                if (!Directory.Exists(dir)) return;
-
-                var files = new DirectoryInfo(dir)
-                    .GetFiles("*.png")
-                    .Where(f => f.Length > 0)
-                    .ToList();
-
-                if (files.Count == 0) return;
-
-                var now = DateTime.Now;
-                long totalSize = files.Sum(f => f.Length);
-                int removed = 0;
-
-                // 1. 按时间清理：删除超过 7 天的文件
-                var expired = files.Where(f => (now - f.LastWriteTime).TotalMilliseconds > MAX_CACHE_AGE_MS).ToList();
-                foreach (var f in expired)
+                var files = new DirectoryInfo(dir).GetFiles("*.png")
+                    .Where(f => (f.Attributes & FileAttributes.ReparsePoint) == 0 && System.Text.RegularExpressions.Regex.IsMatch(f.Name, @"^[A-Za-z0-9_-]{8,128}\.png$"))
+                    .OrderBy(f => f.LastWriteTimeUtc).ToList();
+                count = files.Count; bytes = files.Sum(f => f.Length);
+                long retainedBytes = bytes, retainedCount = count;
+                foreach (var file in files)
                 {
-                    try { f.Delete(); removed++; } catch { }
-                }
-                if (removed > 0)
-                {
-                    files = files.Except(expired.Where(f => !f.Exists)).ToList();
-                    totalSize = files.Sum(f => f.Length);
-                }
-
-                // 2. 按条数清理：超出 5000 条时删除最旧的
-                if (files.Count > MAX_CACHE_COUNT)
-                {
-                    var toDelete = files.OrderBy(f => f.LastWriteTime).Take(files.Count - MAX_CACHE_COUNT);
-                    foreach (var f in toDelete)
-                    {
-                        try { f.Delete(); removed++; totalSize -= f.Length; } catch { }
-                    }
-                    files = files.Except(toDelete.Where(f => !f.Exists)).ToList();
-                }
-
-                // 3. 按大小清理：超出 1GB 时删除最旧的
-                if (totalSize > MAX_CACHE_SIZE_BYTES)
-                {
-                    var sorted = files.OrderBy(f => f.LastWriteTime).ToList();
-                    foreach (var f in sorted)
-                    {
-                        if (totalSize <= MAX_CACHE_SIZE_BYTES) break;
-                        try { f.Delete(); removed++; totalSize -= f.Length; } catch { }
-                    }
-                }
-
-                if (removed > 0)
-                {
-                    LogManager.StaticInfo($"[AlertService] 截图缓存清理完成: 删除 {removed} 个文件");
+                    var length = file.Length;
+                    if ((DateTime.UtcNow - file.LastWriteTimeUtc).TotalMilliseconds <= MAX_CACHE_AGE_MS && retainedCount <= MAX_CACHE_COUNT && retainedBytes <= MAX_CACHE_SIZE_BYTES) continue;
+                    candidates++; candidateBytes += length;
+                    if (!clean) { retainedBytes -= length; retainedCount--; continue; }
+                    try { file.Delete(); removed++; removedBytes += length; retainedBytes -= length; retainedCount--; }
+                    catch { failed++; }
                 }
             }
-            catch { /* 清理失败不阻塞报警流程 */ }
+            if (Directory.Exists(dir) && !SafeDirectory(dir)) failed++;
+            return new Dictionary<string, object>
+            {
+                ["categories"] = new object[] { new Dictionary<string, object> {
+                    ["id"] = "screenshots", ["label"] = "截图缓存（7 天 / 1 GB / 5000 张）",
+                    ["files"] = count, ["bytes"] = bytes, ["cleanableFiles"] = candidates, ["cleanableBytes"] = candidateBytes } },
+                ["removedFiles"] = removed, ["removedBytes"] = removedBytes,
+                ["releasedBytes"] = null, ["failedFiles"] = failed // File bytes are known; reclaimed filesystem blocks are not.
+            };
         }
 
         public void Dispose()

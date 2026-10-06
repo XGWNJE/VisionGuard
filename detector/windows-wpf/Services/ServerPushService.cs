@@ -258,7 +258,7 @@ namespace VisionGuard.Detector.Windows.Services
             catch { /* Diagnostics must not interrupt acknowledgement/retry processing. */ }
         }
 
-        public void SendCommandAck(string command, bool success, string reason = "", string requestId = "", string targetSourceId = "")
+        public void SendCommandAck(string command, bool success, string reason = "", string requestId = "", string targetSourceId = "", object cache = null)
         {
             var message = new Dictionary<string, object>
             {
@@ -267,6 +267,7 @@ namespace VisionGuard.Detector.Windows.Services
                 ["success"] = success,
                 ["reason"] = reason ?? "",
             };
+            if (cache != null) message["cache"] = cache;
             message["phase"] = "completed";
             if (!string.IsNullOrWhiteSpace(requestId)) message["requestId"] = requestId;
             if (!string.IsNullOrWhiteSpace(targetSourceId)) message["targetSourceId"] = targetSourceId;
@@ -794,7 +795,15 @@ namespace VisionGuard.Detector.Windows.Services
                             string cmd = SimpleJson.GetString(d, "command");
                             string requestId = SimpleJson.GetString(d, "requestId", "");
                             string targetSourceId = SimpleJson.GetString(d, "targetSourceId", "");
-                            if (!string.IsNullOrEmpty(cmd))
+                            if (cmd == "cache-inspect" || cmd == "cache-clean")
+                            {
+                                var target = SimpleJson.GetString(d, "targetDeviceId");
+                                _parent.Post(() => {
+                                    if (_parent._session != this || target != _parent._deviceId) return;
+                                    _parent.CommandReceived?.Invoke(_parent, new RemoteCommandEventArgs(cmd, requestId, targetSourceId));
+                                });
+                            }
+                            else if (!string.IsNullOrEmpty(cmd))
                                 try { _parent.CommandReceived?.Invoke(_parent, new RemoteCommandEventArgs(cmd, requestId, targetSourceId)); } catch { }
                             break;
                         }

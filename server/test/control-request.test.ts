@@ -17,6 +17,31 @@ const fixtures = new AccountFixture([{"name": "foreign-channel-receiver", "compo
 const { associateScreenshotPayload, handleConnection } = require('../src/services/ConnectionManager') as typeof import('../src/services/ConnectionManager');
 const { accountStore } = require('../src/services/AccountStore') as typeof import('../src/services/AccountStore');
 
+test('cache maintenance requires account and capability; accepts only matching bounded node receipts', async t => {
+  const owner = new AccountFixture([{name:'cache-camera',component:'android-camera'},{name:'cache-notifier',component:'android-notifier'},{name:'cache-web',component:'web-console'}], 'cache-route-owner');
+  const foreign = new AccountFixture([{name:'cache-foreign',component:'web-console'}], 'cache-route-foreign');
+  await Promise.all([owner.ready,foreign.ready]);
+  const wss=new WebSocketServer({host:'127.0.0.1',port:0});wss.on('connection',handleConnection);await new Promise<void>(r=>wss.once('listening',r));
+  const peers:WebSocket[]=[];t.after(()=>{peers.forEach(ws=>ws.terminate());wss.close();});
+  const peer=async(name:string,fixture=owner)=>{const ws=await connect((wss.address() as any).port);peers.push(ws);const reply=waitForMessage(ws,m=>m.type==='auth-result');ws.send(JSON.stringify(fixture.auth(name)));await reply;return ws;};
+  const console=await peer('cache-web'),notifier=await peer('cache-notifier'),camera=await peer('cache-camera'),other=await peer('cache-foreign',foreign);
+  const reject=async(ws:WebSocket,target:string,extra={})=>{const requestId=crypto.randomUUID(),reply=waitForMessage(ws,m=>m.type==='command-ack'&&m.requestId===requestId);ws.send(JSON.stringify({type:'command',command:'cache-clean',requestId,targetDeviceId:owner.id(target),...extra}));assert.equal((await reply).success,false);};
+  await reject(console,'cache-notifier');await reject(other,'cache-notifier');
+  const heartbeat=waitForMessage(notifier,m=>m.type==='heartbeat-ack');notifier.send(JSON.stringify({type:'heartbeat-notifier',capabilities:['cache-maintenance']}));await heartbeat;
+  await reject(console,'cache-notifier',{targetSourceId:'source'});
+  const requestId=crypto.randomUUID(),forward=waitForMessage(notifier,m=>m.type==='command'&&m.requestId===requestId);
+  console.send(JSON.stringify({type:'command',command:'cache-inspect',requestId,targetDeviceId:owner.id('cache-notifier')}));await forward;
+  const report={categories:[{id:'updates',label:'安装包暂存',files:2,bytes:20,cleanableFiles:1,cleanableBytes:10}],removedFiles:0,removedBytes:0,releasedBytes:null,failedFiles:0};
+  camera.send(JSON.stringify({type:'command-ack',requestId,command:'cache-inspect',phase:'completed',success:true,cache:report}));
+  const completion=waitForMessage(console,m=>m.type==='command-ack'&&m.requestId===requestId&&m.phase==='completed');
+  notifier.send(JSON.stringify({type:'command-ack',requestId,command:'cache-inspect',phase:'completed',success:true,cache:report}));
+  assert.deepEqual((await completion).cache,report);
+  const badId=crypto.randomUUID(),badForward=waitForMessage(notifier,m=>m.type==='command'&&m.requestId===badId);
+  console.send(JSON.stringify({type:'command',command:'cache-inspect',requestId:badId,targetDeviceId:owner.id('cache-notifier')}));await badForward;
+  const bad=waitForMessage(console,m=>m.type==='command-ack'&&m.requestId===badId&&m.phase==='completed');
+  notifier.send(JSON.stringify({type:'command-ack',requestId:badId,command:'cache-inspect',phase:'completed',success:true,cache:{...report,removedFiles:-1}}));assert.equal((await bad).success,false);
+});
+
 test('camera and sound configuration routes inside account, validates live state and requires matching device completion', async t => {
   const owner = new AccountFixture([{name:'remote-camera',component:'android-camera'},{name:'remote-sound',component:'android-notifier'},
     {name:'remote-web',component:'web-console'}], 'remote-config-owner');

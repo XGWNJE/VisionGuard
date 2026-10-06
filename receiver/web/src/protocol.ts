@@ -6,7 +6,7 @@ export type Alert = { alertId: string; deviceId: string; deviceName: string; sou
 export type Target = { deviceId: string; sourceId?: string };
 export type Scope = { mode: 'all' | 'selected'; targets: Target[] };
 export type Notifier = Identity & { deviceName: string; online: boolean; scope: Scope };
-export type Ack = { requestId: string; phase?: string; success: boolean; reason?: string; command?: string; targetDeviceId?: string; targetSourceId?: string };
+export type Ack = { cache?: import('./CacheMaintenance').CacheReport; requestId: string; phase?: string; success: boolean; reason?: string; command?: string; targetDeviceId?: string; targetSourceId?: string };
 export type AlarmTimeZone = 'Asia/Shanghai' | 'UTC';
 export type TimeStandard = { timeZone: AlarmTimeZone; serverTime: string };
 export function parseTimeStandard(value: unknown): TimeStandard | null {

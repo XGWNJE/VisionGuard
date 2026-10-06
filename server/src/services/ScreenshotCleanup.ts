@@ -1,53 +1,21 @@
 import fs from 'fs';
 import path from 'path';
 import { config } from '../config';
+import { maintainAccountCache, maintainLegacyCache, safeDirectory } from './CacheMaintenance';
 
 let cleanupTimer: ReturnType<typeof setInterval> | null = null;
-
-/**
- * 清理过期截图文件（基于截图 TTL 配置）
- */
 export function cleanupScreenshots(): void {
-  const root = path.join(config.dataDir, 'accounts');
-  if (!fs.existsSync(root)) return;
-
-  const ttlMs = config.screenshotTtlHours * 3600 * 1000;
-  const now = Date.now();
   let removed = 0;
-
   try {
-    for (const account of fs.readdirSync(root, { withFileTypes: true })) {
-      if (!account.isDirectory() || !/^[A-Za-z0-9_-]{1,128}$/.test(account.name)) continue;
-      const dir = path.join(root, account.name, 'screenshots');
-      if (!fs.existsSync(dir)) continue;
-      for (const file of fs.readdirSync(dir)) {
-      const ext = path.extname(file).toLowerCase();
-      if (ext !== '.png' && ext !== '.jpg' && ext !== '.jpeg') continue;
-      const filePath = path.join(dir, file);
-      try {
-        const stat = fs.statSync(filePath);
-        if (stat.isFile() && now - stat.mtime.getTime() > ttlMs) {
-          fs.unlinkSync(filePath);
-          removed++;
-        }
-      } catch {
-        // 单个文件删除失败不阻塞整体流程
-      }
-      }
+    const root = path.join(config.dataDir, 'accounts');
+    if (safeDirectory(root)) for (const account of fs.readdirSync(root, {withFileTypes:true})) {
+      if (account.isDirectory() && /^[A-Za-z0-9_-]{1,128}$/.test(account.name)) removed += maintainAccountCache(account.name, true).removedFiles;
     }
-    if (removed > 0) {
-      console.log(`[cleanup] 已清理 ${removed} 个过期截图 (TTL=${config.screenshotTtlHours}h)`);
-    }
-  } catch (err) {
-    console.error('[cleanup] 截图清理异常:', err);
-  }
+    removed += maintainLegacyCache(true).removedFiles;
+    if (removed) console.log(`[cleanup] removed ${removed} expired unreferenced screenshots`);
+  } catch { console.error('[cleanup] Screenshot maintenance failed'); }
 }
-
-/**
- * 启动定期清理定时器
- */
 export function startCleanupTimer(): void {
   if (cleanupTimer) return;
   cleanupTimer = setInterval(cleanupScreenshots, config.cleanupIntervalMs);
-  console.log(`[cleanup] 截图清理定时器已启动: 每 ${config.cleanupIntervalMs / 1000}s, TTL=${config.screenshotTtlHours}h`);
 }

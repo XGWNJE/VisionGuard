@@ -50,9 +50,20 @@ namespace VisionGuard.Detector.Windows.ViewModels
             // ── 远控命令路由 ──────────────────────────────────────────
             _serverPushService.CommandReceived += (s, cmd) =>
             {
+                var commandAccountScope = AccountSession.ScopeKey;
                 System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
                 {
-                    if (cmd.Command == "stop-alarm")
+                    if (cmd.Command == "cache-inspect" || cmd.Command == "cache-clean")
+                    {
+                        if (commandAccountScope != AccountSession.ScopeKey) return;
+                        if (!string.IsNullOrEmpty(cmd.TargetSourceId)) _serverPushService.SendCommandAck(cmd.Command, false, "缓存操作不接受来源", cmd.RequestId);
+                        else
+                        {
+                            try { _serverPushService.SendCommandAck(cmd.Command, true, "缓存盘点完成", cmd.RequestId, cache: AlertService.MaintainCache(cmd.Command == "cache-clean")); }
+                            catch { _serverPushService.SendCommandAck(cmd.Command, false, "缓存操作失败，请重新盘点", cmd.RequestId); }
+                        }
+                    }
+                    else if (cmd.Command == "stop-alarm")
                         _serverPushService.SendCommandAck(cmd.Command, false, "当前无报警", cmd.RequestId, cmd.TargetSourceId);
                     else
                         MultiSourceVm.HandleCommand(cmd.TargetSourceId, cmd.Command, cmd.RequestId);

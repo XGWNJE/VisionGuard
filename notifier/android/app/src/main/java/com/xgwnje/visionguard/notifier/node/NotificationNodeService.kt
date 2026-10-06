@@ -76,7 +76,7 @@ class NotificationNodeService : Service() {
             }
             if (!terminal && socket == null && now >= nextAttempt) connect()
             if (authenticated && socket?.send(JSONObject().put("type", "heartbeat-notifier").put("deviceId", settings.read().deviceId)
-                    .put("capabilities", org.json.JSONArray(listOf("alarm-control", "sound-config", "audio-library", "request-correlation")))
+                    .put("capabilities", org.json.JSONArray(listOf("alarm-control", "sound-config", "audio-library", "request-correlation", "cache-maintenance")))
                     .put("remoteSettings", remoteSound.snapshot())
                     .apply { probeId?.let { put("probeId", it) } }.toString()) != true) transportFailed("心跳发送失败")
             handler.postDelayed(this, 3_000)
@@ -152,6 +152,21 @@ class NotificationNodeService : Service() {
         }
         if (type == "kicked" || type == "session-revoked") { terminal = true; reconnect("登录已失效，请重新登录"); account.clear(); return }
         if (!authenticated) return
+        if (type == "command" && message.optString("command") in setOf("cache-inspect", "cache-clean")) {
+            val own = generation
+            serviceScope.launch {
+                val result = runCatching {
+                    withContext(Dispatchers.IO) {
+                        require(own == generation && socket === ws && authenticated && message.optString("targetDeviceId") == settings.read().deviceId && !message.has("targetSourceId")) { "连接或目标已变更" }
+                        com.xgwnje.visionguard.account.TemporaryCache.maintain(this@NotificationNodeService, message.optString("command") == "cache-clean") { own == generation && socket === ws && authenticated }
+                    }
+                }
+                if (own == generation && socket === ws && authenticated) ws.send(JSONObject().put("type", "command-ack").put("requestId", message.optString("requestId"))
+                    .put("targetDeviceId", settings.read().deviceId).put("command", message.optString("command")).put("phase", "completed").put("success", result.isSuccess)
+                    .put("cache", result.getOrNull()).put("reason", if (result.isSuccess) "缓存盘点完成" else "缓存操作失败，请重新盘点").toString())
+            }
+            return
+        }
         if (type == "set-config") {
             val own = generation
             serviceScope.launch {

@@ -17,6 +17,7 @@ namespace VisionGuard.Detector.Windows.Runtime
                 "monitor-control",
                 "config-control",
                 "request-correlation",
+                "cache-maintenance",
                 "screenshot-on-demand",
                 "source-control",
                 "video-subscribe",

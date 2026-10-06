@@ -28,11 +28,16 @@ import java.util.concurrent.TimeUnit
 
 data class UpdateState(val busy: Boolean = false, val downloading: Boolean = false, val bytes: Long = 0, val update: ClientUpdate? = null, val ready: Boolean = false, val message: String = "")
 class ClientUpdater(context: Context, private val installed: String, private val client: String) {
-    companion object { private val operations = Mutex() }
+    companion object {
+        private val operations = Mutex()
+        private val protectedFiles = java.util.concurrent.ConcurrentHashMap<ClientUpdater, File>()
+        suspend fun <T> withCacheLock(block: () -> T): T = operations.withLock { block() }
+        fun isProtected(file: File) = protectedFiles.values.any { it.absoluteFile == file.absoluteFile }
+    }
     private val activity = generateSequence(context) { (it as? ContextWrapper)?.baseContext }
         .filterIsInstance<Activity>().firstOrNull()?.let { WeakReference(it) }
     private val context = context.applicationContext
-    private val directory = File(this.context.cacheDir, "client-updates").apply { mkdirs() }
+    private val directory = File(this.context.cacheDir.canonicalFile, "client-updates").apply { mkdirs() }
     private val http = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutable = MutableStateFlow(UpdateState())
@@ -82,6 +87,7 @@ class ClientUpdater(context: Context, private val installed: String, private val
     private fun file(update: ClientUpdate) = File(directory, update.asset.name)
     @Synchronized private fun complete(value: UpdateState) {
         check(!cancelled && !closed) { "已取消" }
+        if (value.update != null) protectedFiles[this] = file(value.update) else protectedFiles.remove(this)
         mutable.value = value
     }
     private fun failureMessage(error: Exception, fallback: String): String {
@@ -119,9 +125,16 @@ class ClientUpdater(context: Context, private val installed: String, private val
         if (closed || mutable.value.busy) return
         cancelled = false; mutable.value = mutable.value.copy(busy = true, downloading = true, bytes = 0, ready = false, message = "正在下载并校验…")
         job = scope.launch { operations.withLock {
-            directory.listFiles()?.filter { it.name.endsWith(".part") }?.forEach { it.delete() }
             val target = file(update); val partial = File(directory, target.name + ".part")
+            val hadTarget = target.exists()
             try {
+                check(directory.isDirectory && directory.canonicalFile == directory.absoluteFile) { "安装包暂存目录异常，请检查本机存储" }
+                directory.listFiles()?.filter { TemporaryCachePolicy.knownUpdate(it.name) && it.name.endsWith(".part") }?.forEach { it.delete() }
+                // Bound the download cache without deleting files held by another updater/installer.
+                val old = directory.listFiles().orEmpty().filter { it.isFile && it.canonicalFile == it.absoluteFile && TemporaryCachePolicy.expiredUpdate(it.name, it.lastModified(), System.currentTimeMillis(), isProtected(it)) }
+                old.forEach { it.delete() }
+                val retainedBytes = directory.listFiles().orEmpty().sumOf { it.length() } - (if (target.exists()) target.length() else 0)
+                check(update.asset.size <= 256L * 1024 * 1024 && retainedBytes + update.asset.size <= 256L * 1024 * 1024) { "安装包暂存已达 256 MB 上限，请清理过期缓存后重试" }
                 if (target.exists()) { runCatching { verify(target, update) }.getOrElse { check(target.delete()) { "无法移除损坏的暂存安装包，请重试" } } }
                 if (!target.exists()) {
                     execute(Request.Builder().url(update.asset.url).build()).use { response ->
@@ -135,7 +148,7 @@ class ClientUpdater(context: Context, private val installed: String, private val
                     verify(partial, update); check(partial.renameTo(target)) { "无法保存暂存安装包" }
                 }
                 complete(mutable.value.copy(busy = false, downloading = false, ready = true, message = "校验通过，可交给系统安装器"))
-            } catch (e: Exception) { partial.delete(); target.delete(); mutable.value = mutable.value.copy(busy = false, downloading = false, ready = false, message = if (cancelled) "下载已取消" else failureMessage(e, "下载失败，请检查网络和存储空间后重试")) }
+            } catch (e: Exception) { partial.delete(); if (!hadTarget) target.delete(); mutable.value = mutable.value.copy(busy = false, downloading = false, ready = false, message = if (cancelled) "下载已取消" else failureMessage(e, "下载失败，请检查网络和存储空间后重试")) }
             finally { call = null }
         }
         }
@@ -149,6 +162,7 @@ class ClientUpdater(context: Context, private val installed: String, private val
             var verified = false
             try {
                 verify(file(update), update); verified = true
+                file(update).setLastModified(System.currentTimeMillis()) // Keep the installer URI available for at least seven days.
                 withContext(Dispatchers.Main) {
                     synchronized(this@ClientUpdater) {
                         check(!cancelled) { "已取消" }
@@ -168,7 +182,7 @@ class ClientUpdater(context: Context, private val installed: String, private val
     }
     @Synchronized fun close() {
         if (closed) return
-        closed = true; cancel(); job?.cancel(); scope.cancel()
+        closed = true; cancel(); job?.cancel(); scope.cancel(); protectedFiles.remove(this)
         // A pooled TLS socket may write close_notify. Disposal runs on the UI thread,
         // so release network resources on IO even after cancelling the operation scope.
         scope.launch(NonCancellable + Dispatchers.IO) {

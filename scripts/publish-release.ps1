@@ -938,6 +938,59 @@ finally:
     }
 }
 
+function Invoke-ServerBackup {
+    param([ValidateSet('prepare', 'finalize')][string]$Action)
+    $env:VG_BACKUP_ACTION = $Action
+    $env:VG_SERVER_ENV_PATH = $ServerEnvPath
+    $env:VG_REMOTE_ROOT = $RemoteRoot
+    $env:VG_BACKUP_HELPER = Join-Path $repoRoot 'scripts/server-resource-maintenance.py'
+    $python = @'
+import os, shlex, uuid
+import paramiko
+values = {}
+with open(os.environ["VG_SERVER_ENV_PATH"], encoding="utf8") as stream:
+    for line in stream:
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip().strip('"').strip("'")
+def pick(*keys, default=None):
+    return next((values[key] for key in keys if values.get(key)), default)
+client = paramiko.SSHClient()
+client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+client.connect(hostname=pick("VPS_IP", "SSH_HOST", "VPS_HOST"), port=int(pick("SSH_PORT", "VPS_PORT", default="22")), username=pick("SSH_USER", "VPS_USER", default="root"), password=pick("SSH_PASSWORD", "VPS_PASSWORD"), key_filename=pick("SSH_KEY", "SSH_KEY_PATH"), timeout=30)
+remote = "/tmp/visionguard-backup-helper-" + uuid.uuid4().hex + ".py"
+q = shlex.quote
+try:
+    with client.open_sftp() as sftp:
+        sftp.put(os.environ["VG_BACKUP_HELPER"], remote)
+        sftp.chmod(remote, 0o700)
+    args = "python3 " + q(remote) + " " + q(os.environ["VG_BACKUP_ACTION"]) + " " + q(os.environ["VG_REMOTE_ROOT"])
+    if os.environ["VG_BACKUP_ACTION"] == "prepare":
+        args += " --config /etc/systemd/system/visionguard.service --config /etc/systemd/system/visionguard.service.d --config /etc/visionguard --config /etc/nginx/conf.d/novix-visionguard-9443.conf"
+        command = "set -e; systemctl is-active --quiet visionguard; systemctl stop visionguard; trap 'systemctl start visionguard' EXIT; " + args
+    else:
+        command = "set -e; systemctl is-active --quiet visionguard; " + args
+    stdin, stdout, stderr = client.exec_command(command, timeout=300)
+    out = stdout.read().decode("utf8", "replace")
+    err = stderr.read().decode("utf8", "replace")
+    status = stdout.channel.recv_exit_status()
+    if status != 0:
+        raise SystemExit("Rollback backup failed; previous and pending snapshots preserved: " + err)
+    print("rollback " + os.environ["VG_BACKUP_ACTION"] + " " + out.strip())
+finally:
+    client.exec_command("rm -f " + q(remote))[1].channel.recv_exit_status()
+    client.close()
+'@
+    try {
+        $python | python -
+        if ($LASTEXITCODE -ne 0) { throw "Rollback backup $Action failed. No older backup may be removed." }
+    }
+    finally {
+        Remove-Item Env:\VG_BACKUP_ACTION, Env:\VG_SERVER_ENV_PATH, Env:\VG_REMOTE_ROOT, Env:\VG_BACKUP_HELPER -ErrorAction SilentlyContinue
+    }
+}
+
 function Deploy-ServerCode {
     $serverDist = Join-Path $repoRoot 'server\dist\index.js'
     if (-not (Test-Path -LiteralPath $serverDist)) {
@@ -1388,6 +1441,11 @@ if ($artifacts.Count -gt 0) {
     Save-ReleasesJson -Metadata $metadata
 }
 
+if ($UploadVps -or $serverDeployPlanned) {
+    Write-Step "Prepare complete rollback backup"
+    Invoke-ServerBackup -Action prepare
+}
+
 if ($UploadVps -and $artifacts.Count -gt 0) {
     Write-Step "Upload release assets"
     $uploads = New-Object System.Collections.Generic.List[object]
@@ -1428,6 +1486,11 @@ if ($UploadVps -and $artifacts.Count -gt 0) {
 if ($UploadVps -or $serverDeployPlanned) {
     Write-Step "Verify public WebSocket entrypoints"
     Verify-OnlineWebSockets
+}
+
+if ($UploadVps -or $serverDeployPlanned) {
+    Write-Step "Commit verified rollback backup and reclaim older artifacts"
+    Invoke-ServerBackup -Action finalize
 }
 
 Invoke-GitHubSteps -Artifacts $artifacts.ToArray()

@@ -28,7 +28,6 @@ object NotificationLogger {
 
     private val lock = Any()
     private val timeFormat = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US)
-    private val exportNameFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
     private val exportHeaderTimeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
 
     private var logFile: File? = null
@@ -103,7 +102,7 @@ object NotificationLogger {
      * 导出诊断日志到 cacheDir，返回拼接好的文件（诊断头 + old + 当前日志）。
      * 由调用方通过 FileProvider 分享。
      */
-    fun export(context: Context): File {
+    fun export(context: Context): File = synchronized(com.xgwnje.visionguard.account.TemporaryCache.exportLock) {
         val appContext = context.applicationContext
         val prefs = SharedPreferencesHelper(appContext)
         val powerManager = appContext.getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -121,7 +120,7 @@ object NotificationLogger {
             append("==========================\n\n")
         }
 
-        val exportFile = File(appContext.cacheDir, "vg_notifier_log_${exportNameFormat.format(Date())}.txt")
+        val exportFile = com.xgwnje.visionguard.account.TemporaryCache.reserveExport(appContext)
         synchronized(lock) {
             ensureInit(appContext)
             val dir = File(appContext.filesDir, LOG_DIR)
@@ -136,6 +135,7 @@ object NotificationLogger {
                 exportFile.appendText(it.readText())
             }
         }
-        return exportFile
+        check(exportFile.length() <= 3L * 1024 * 1024) { exportFile.delete(); "诊断导出超过 3 MB 上限" }
+        exportFile
     }
 }

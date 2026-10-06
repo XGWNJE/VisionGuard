@@ -78,13 +78,20 @@ class Peer {
   }
   heartbeat() {
     if(!this.spec) return this.send({type:'heartbeat-console'});
-    if(this.spec.component==='android-notifier')return this.send({type:'heartbeat-notifier',capabilities:['alarm-control','sound-config','audio-library','request-correlation'],remoteSettings:this.spec.remoteSettings});
+    if(this.spec.component==='android-notifier')return this.send({type:'heartbeat-notifier',capabilities:['alarm-control','sound-config','audio-library','request-correlation','cache-maintenance'],remoteSettings:this.spec.remoteSettings});
     const sources=this.spec.sources||[];
-    this.send({type:'heartbeat',deviceId:this.session.device.deviceId,isMonitoring:sources.some(s=>s.isMonitoring),isReady:true,cooldown:20,confidence:0.65,targets:'person',targetSamplingRate:5,modelKey:'yolo26n_320',modelOptions:['yolo26n_320','yolo26s_320'],modelLabels:{yolo26n_320:[{value:'person',label:'人员'},{value:'car',label:'车辆'}],yolo26s_320:[{value:'person',label:'人员'},{value:'car',label:'车辆'}]},canSwitchModelWhileMonitoring:true,capabilities:this.spec.component==='android-camera'?['video-publish','camera-config','request-correlation']:['monitor-control','config-control','source-control','screenshot-on-demand','request-correlation','directml','video-subscribe','visual-inference'],remoteSettings:this.spec.remoteSettings,components:{detectorApp:'running'},sources:sources.map(s=>({...s,monitoringExpected:s.isMonitoring,lastProgressAt:new Date().toISOString()}))});
+    this.send({type:'heartbeat',deviceId:this.session.device.deviceId,isMonitoring:sources.some(s=>s.isMonitoring),isReady:true,cooldown:20,confidence:0.65,targets:'person',targetSamplingRate:5,modelKey:'yolo26n_320',modelOptions:['yolo26n_320','yolo26s_320'],modelLabels:{yolo26n_320:[{value:'person',label:'人员'},{value:'car',label:'车辆'}],yolo26s_320:[{value:'person',label:'人员'},{value:'car',label:'车辆'}]},canSwitchModelWhileMonitoring:true,capabilities:this.spec.component==='android-camera'?['video-publish','camera-config','request-correlation','cache-maintenance']:['monitor-control','config-control','source-control','screenshot-on-demand','request-correlation','directml','video-subscribe','visual-inference','cache-maintenance'],remoteSettings:this.spec.remoteSettings,components:{detectorApp:'running'},sources:sources.map(s=>({...s,monitoringExpected:s.isMonitoring,lastProgressAt:new Date().toISOString()}))});
   }
   control(msg) {
     const selected=msg.targetSourceId?(this.spec.sources||[]).filter(s=>s.sourceId===msg.targetSourceId):(this.spec.sources||[]);
     let success=true;
+    if(msg.type==='command' && ['cache-inspect','cache-clean'].includes(msg.command)) {
+      const empty=currentScene==='empty',limits=currentScene==='limits';
+      const category={id:'temporary',label:limits?('【模拟】合法分类名称长度上限'.repeat(8)).slice(0,64):'【模拟】临时缓存',files:empty?0:limits?5000:8,bytes:empty?0:limits?1073741824:8192,cleanableFiles:empty?0:2,cleanableBytes:empty?0:2048};
+      const clean=msg.command==='cache-clean',failed=clean&&!empty&&this.spec.key==='warehouse'?1:0;
+      const cache={categories:[category],removedFiles:clean?category.cleanableFiles-failed:0,removedBytes:clean?category.cleanableBytes-failed*1024:0,releasedBytes:null,failedFiles:failed};
+      this.send({type:'command-ack',requestId:msg.requestId,phase:'completed',targetDeviceId:this.session.device.deviceId,command:msg.command,success:true,reason:'【模拟】缓存显示样例',cache});return;
+    }
     // These values exist only for local UI previews; they do not exercise a business chain.
     const remote=this.spec.remoteSettings;
     if(msg.type==='set-config' && remote) {
@@ -113,6 +120,13 @@ async function main() {
   const health=await api('/health');assert.equal(health.channel,'console-preview');
   const consoleSession=await login('web-console','controller');
   const consolePeer=await new Peer(consoleSession).ready();
+  // Isolated server UI data only. No real node files or business chain are exercised.
+  const cacheDir=path.join(root,'.local/e2e-server/console-preview/accounts',consoleSession.account.accountId,'screenshots');
+  fs.mkdirSync(cacheDir,{recursive:true});
+  for(const name of ['ui-cache-expired-123.png','ui-cache-fresh-123.png']) {
+    const file=path.join(cacheDir,name);fs.writeFileSync(file,Buffer.from('iVBORw0KGgo=','base64'));
+    if(name.includes('expired')){const old=new Date(Date.now()-80*3600000);fs.utimesSync(file,old,old);}
+  }
   const administrator=JSON.parse(fs.readFileSync(path.join(root,'.local/e2e-server/console-preview/initial-administrator.json'),'utf8'));
   const adminSession=await api('/api/account/login',null,{username:administrator.username,password:administrator.password,component:'web-console',deviceIdentity:require('node:crypto').createHash('sha256').update('ui-preview-admin').digest('hex'),deviceModel:'模拟浏览器',...(previous.devices.admin?{deviceId:previous.devices.admin}:{})});
   manifest.devices.admin=adminSession.device.deviceId;

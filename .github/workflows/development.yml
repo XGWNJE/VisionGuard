@@ -33,6 +33,8 @@ jobs:
         run: npm --prefix receiver/web test
       - name: Build service and console
         run: npm --prefix server run build
+      - name: Rollback backup failure and retention checks
+        run: python3 scripts/test_server_resources.py
       - name: Naming, documentation and scripts
         run: |
           node scripts/check-docs.js
