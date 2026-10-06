@@ -33,7 +33,7 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scri
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scripts\build-all.ps1 -Target WindowsResident
 ```
 
-The script currently accepts `All`, `Server`, `Windows`, `WPF`, `WindowsResident`, `Android`, `AndroidDetector`, `AndroidReceiver`, and `AndroidNotifier`. `Android` includes all three Android projects.
+The script currently accepts `All`, `Server`, `Windows`, `WPF`, `WindowsResident`, `Android`, `AndroidDetector`, and `AndroidNotifier`. `Android` includes the camera and notification Android projects.
 
 ## Expected Artifacts
 
@@ -43,7 +43,6 @@ The script currently accepts `All`, `Server`, `Windows`, `WPF`, `WindowsResident
 - Internal legacy runtime: `detector/windows-package/bin/Release/runtimes/legacy/VisionGuard.Detector.Windows.exe`
 - 视觉节点内部驻留程序： `detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe`
 - 相机推流节点： `detector/android/app/build/outputs/apk/release/app-release.apk`
-- 控制台： `receiver/android/app/build/outputs/apk/release/app-release.apk`
 - 通知节点： `notifier/android/app/build/outputs/apk/release/app-release.apk`
 
 Report the command, per-target result, artifact paths, important warnings, and any skipped target. State explicitly that no version, release, deployment, commit, or push action occurred unless the user requested it.

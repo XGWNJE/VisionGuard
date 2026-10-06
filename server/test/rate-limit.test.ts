@@ -5,6 +5,7 @@ import path from 'node:path';
 import http from 'node:http';
 import express from 'express';
 import test from 'node:test';
+import { registration } from './helpers/accounts';
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-rate-limit-'));
 process.env.VISIONGUARD_DATA_DIR = directory;
@@ -30,7 +31,7 @@ async function fixture(t: any) {
   });
   const login = async (component: string) => {
     const response = await request('/api/account/login', undefined,
-      { username: 'rate-owner', password: 'private-rate-test-password', component });
+      { username: 'rate-owner', password: 'private-rate-test-password', component, ...registration(component) });
     assert.equal(response.status, 200); return await response.json() as Tokens;
   };
   return { request, login };

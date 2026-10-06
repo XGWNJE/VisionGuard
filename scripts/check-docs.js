@@ -11,7 +11,6 @@ const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 const COMPONENTS = [
   { label: '视觉节点', platform: 'Windows', relativePath: 'detector/windows-wpf', source: 'detector/windows-wpf/App.xaml.cs' },
   { label: '相机推流节点', platform: 'Android', relativePath: 'detector/android', source: 'detector/android/app/build.gradle.kts' },
-  { label: '控制台', platform: 'Android', relativePath: 'receiver/android', source: 'receiver/android/app/build.gradle.kts' },
   { label: '控制台', platform: 'Web', relativePath: 'receiver/web', source: 'receiver/web/src/main.tsx' },
   { label: '通知节点', platform: 'Android', relativePath: 'notifier/android', source: 'notifier/android/app/build.gradle.kts' },
   { label: '统一服务', platform: '服务端', relativePath: 'server', source: 'server/src/index.ts' }
@@ -20,8 +19,8 @@ const COMPONENTS = [
 const WS_ROLES = ['detector', 'console', 'notifier', 'lifecycle'];
 
 const RETAINED_SKILLS = [
-  { name: 'visionguard-build', script: '.agents/skills/visionguard-build/scripts/build-all.ps1', modes: ['All', 'Server', 'Windows', 'WPF', 'WindowsResident', 'Android', 'AndroidDetector', 'AndroidReceiver', 'AndroidNotifier'] },
-  { name: 'visionguard-e2e', script: '.agents/skills/visionguard-e2e/scripts/e2e-smoke.ps1', modes: ['Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WpfPersonDetection', 'WpfParserContract', 'ResidentLaunch', 'ModelDownload', 'SourceAutoSave', 'CardLayoutPlan', 'PerformanceWatchdog'] },
+  { name: 'visionguard-build', script: '.agents/skills/visionguard-build/scripts/build-all.ps1', modes: ['All', 'Server', 'Windows', 'WPF', 'WindowsResident', 'Android', 'AndroidDetector', 'AndroidNotifier'] },
+  { name: 'visionguard-e2e', script: '.agents/skills/visionguard-e2e/scripts/e2e-smoke.ps1', modes: ['Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'WpfPersonDetection', 'WpfParserContract', 'ResidentLaunch', 'ModelDownload', 'SourceAutoSave', 'CardLayoutPlan', 'PerformanceWatchdog'] },
   { name: 'visionguard-release', script: 'scripts/publish-release.ps1', modes: ['-PreflightOnly', '-SkipServerDeploy', '-UploadVps'] }
 ];
 
@@ -105,9 +104,6 @@ function checkVersionSources(root, version, errors) {
     ['detector/android/app/build.gradle.kts', `versionName = "${version}"`],
     ['detector/android/app/build.gradle.kts', `versionCode = ${versionCode}`],
     ['detector/android/app/src/main/java/com/xgwnje/visionguard/detector/AppConstants.kt', `VERSION = "${version}"`],
-    ['receiver/android/app/build.gradle.kts', `versionName = "${version}"`],
-    ['receiver/android/app/build.gradle.kts', `versionCode = ${versionCode}`],
-    ['receiver/android/app/src/main/java/com/xgwnje/visionguard/receiver/AppConstants.kt', `VERSION = "${version}"`],
     ['server/src/index.ts', `统一服务 v${version} 已启动`]
   ];
   for (const project of [
@@ -338,7 +334,6 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
     ['视觉节点（Windows）', 'windows-inference', 'detector', 'visual', 'windows'],
     ['视觉节点（驻留子进程）', 'windows-resident', 'lifecycle', 'resident', 'windows'],
     ['相机推流节点（Android）', 'android-camera', 'detector', 'visual', 'android'],
-    ['控制台（Android）', 'android-console', 'console', 'console', 'android'],
     ['控制台（Web）', 'web-console', 'console', 'console', 'web'],
     ['通知节点（Android）', 'android-notifier', 'notifier', 'notification', 'android']
   ];
@@ -351,7 +346,6 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
     ['视觉节点（Windows）', ['Windows', 'WPF'], ['wpf'], 'detector/windows-package/bin/Release/VisionGuard.Detector.Windows.exe'],
     ['视觉节点（驻留子进程）', ['WindowsResident'], ['wpf'], 'detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe'],
     ['相机推流节点（Android）', ['AndroidDetector'], ['android-detector'], 'detector/android/app/build/outputs/apk/release/app-release.apk'],
-    ['控制台（Android）', ['AndroidReceiver'], ['android-receiver'], 'receiver/android/app/build/outputs/apk/release/app-release.apk'],
     ['控制台（Web）', ['Server'], [], 'server/dist/console/index.html'],
     ['通知节点（Android）', ['AndroidNotifier'], ['android-notifier'], 'notifier/android/app/build/outputs/apk/release/app-release.apk'],
     ['统一服务（服务端）', ['Server'], [], 'server/dist/index.js']
@@ -414,7 +408,6 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
 
   for (const [directory, role, name, engineering, rowName] of [
     ['detector', 'detector', '相机推流节点', 'VisionGuard.Detector.Android', '相机推流节点（Android）'],
-    ['receiver', 'receiver', '控制台', 'VisionGuard.Receiver.Android', '控制台（Android）'],
     ['notifier', 'notifier', '通知节点', 'VisionGuard.Notifier.Android', '通知节点（Android）']
   ]) {
     const base = directory + '/android';

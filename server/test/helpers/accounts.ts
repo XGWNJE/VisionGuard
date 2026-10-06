@@ -1,4 +1,9 @@
 import type { Component, AccountSession } from '../../src/services/AccountStore';
+import crypto from 'node:crypto';
+
+export function registration(seed: string = crypto.randomUUID()) {
+  return { deviceIdentity: crypto.createHash('sha256').update(seed).digest('hex'), deviceModel: 'Test Model' };
+}
 
 /** Test names map to server-issued IDs; production peers always receive token-only auth. */
 export class AccountFixture {
@@ -13,7 +18,7 @@ export class AccountFixture {
       for (const item of names) {
         if (this.sessions.has(item.name)) continue;
         const component = item.component === 'windows-resident' ? 'windows-inference' : item.component;
-        const session = await accountStore.login({ username, password, component, deviceCode: 'fixture' });
+        const session = await accountStore.login({ username, password, component, ...registration(item.name) });
         accountStore.rename(session.account.accountId, session.device.deviceId, item.name);
         session.device.deviceName = item.name;
         if (session.resident) session.resident.device.deviceName = item.name;

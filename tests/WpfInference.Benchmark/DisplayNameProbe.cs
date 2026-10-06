@@ -22,10 +22,11 @@ internal static class DisplayNameProbe
                 try { new MonitorSource("front",name,"",new MonitorConfig()); } catch(ArgumentException) { rejected=true; }
                 if (!rejected) throw new Exception("Source creation accepted an invalid name");
             }
-            string code=DisplayNamePolicy.DeviceCode(new string('A',63)+"/\n");
-            if (code.Length>40 || code.IndexOf('/')>=0 || code.IndexOf('\n')>=0) throw new Exception("Automatic device code is invalid");
             if(DisplayNamePolicy.Normalize("  门厅  ")!="门厅")throw new Exception("Whitespace normalization failed");
-            Console.WriteLine("PASS Windows device/source UTF-16 boundaries, invalid-source rejection and bounded automatic device codes");
+            foreach(string placeholder in new[] { "Default string", "SYSTEM PRODUCT NAME", "To be filled by O.E.M.", "\n " })
+                if(DisplayNamePolicy.DeviceModel(placeholder)!="Windows电脑")throw new Exception("BIOS placeholder was used as a model");
+            if(DisplayNamePolicy.DeviceModel(new string('A',47)+"😀").Length!=47 || DisplayNamePolicy.DeviceModel(" MI\n6X ")!="MI 6X")throw new Exception("Model boundary failed");
+            Console.WriteLine("PASS Windows device/source UTF-16 boundaries and invalid-source rejection");
             return 0;
         }
         catch(Exception error){Console.Error.WriteLine(error.Message);return 1;}

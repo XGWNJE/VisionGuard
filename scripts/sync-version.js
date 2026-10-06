@@ -67,25 +67,6 @@ function main() {
     `VERSION = "${newVersion}"`
   );
 
-  // 6. 控制台 build.gradle.kts
-  replaceInFile(
-    path.join(ROOT, 'receiver', 'android', 'app', 'build.gradle.kts'),
-    /versionName = "[\d.]+"/,
-    `versionName = "${newVersion}"`
-  );
-  replaceInFile(
-    path.join(ROOT, 'receiver', 'android', 'app', 'build.gradle.kts'),
-    /versionCode = \d+/,
-    `versionCode = ${versionCode}`
-  );
-
-  // 7. 控制台 AppConstants.kt (VERSION)
-  replaceInFile(
-    path.join(ROOT, 'receiver', 'android', 'app', 'src', 'main', 'java', 'com', 'xgwnje', 'visionguard', 'receiver', 'AppConstants.kt'),
-    /VERSION = "[\d.]+"/,
-    `VERSION = "${newVersion}"`
-  );
-
   // Server 与 Web 的工程及锁文件版本。
   for (const directory of ['server', 'receiver/web']) {
     for (const fileName of ['package.json', 'package-lock.json']) {

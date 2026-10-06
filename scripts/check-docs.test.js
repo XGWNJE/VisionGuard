@@ -137,7 +137,7 @@ test('the resident process cannot reappear as a standalone product', () => {
   const readme = read('README.md').replace('## 当前组件', '## 当前组件\n\n| 视觉驻留 | Windows | 驻留 | `detector/windows-resident/` |');
   const naming = read('docs/15-命名规范.md').replace('## 规范名称', '## 规范名称\n\n| 视觉驻留 | VisionGuard Resident | 视觉驻留 / Resident | Windows |');
   checkComponentContract(root, readme, read('docs/10-当前架构.md'), read('docs/60-构建验证与发布.md'), errors, naming);
-  assert.ok(errors.some(message => message.includes('current component table has 7 data rows; expected 6')));
+  assert.ok(errors.some(message => message.includes('current component table has 6 data rows; expected 5')));
   assert.ok(errors.some(message => message.includes('canonical Chinese names')));
 });
 
@@ -153,11 +153,11 @@ test('a package assigned to the wrong Android application is rejected', () => {
   const read = p => fs.readFileSync(path.join(root, p), 'utf8');
   const errors = [];
   const naming = read('docs/15-命名规范.md')
-    .replace('`com.xgwnje.visionguard.detector`', '`com.xgwnje.visionguard.receiver`')
-    .replace('| `VisionGuard.Receiver.Android` | `com.xgwnje.visionguard.receiver` |', '| `VisionGuard.Receiver.Android` | `com.xgwnje.visionguard.detector` |');
+    .replace('`com.xgwnje.visionguard.detector`', '`com.xgwnje.visionguard.notifier`')
+    .replace('| `VisionGuard.Notifier.Android` | `com.xgwnje.visionguard.notifier` |', '| `VisionGuard.Notifier.Android` | `com.xgwnje.visionguard.detector` |');
   checkComponentContract(root, read('README.md'), read('docs/10-当前架构.md'), read('docs/60-构建验证与发布.md'), errors, naming);
   assert.ok(errors.some(message => message.includes('Android package mapped to 相机推流节点')));
-  assert.ok(errors.some(message => message.includes('Android package mapped to 控制台')));
+  assert.ok(errors.some(message => message.includes('Android package mapped to 通知节点')));
 });
 
 test('camera and inference identities cannot be exchanged despite a shared node type', () => {

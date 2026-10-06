@@ -18,7 +18,6 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\script
 
 # Install, launch, and capture evidence from an Android app. Debug is the default runtime build.
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode AndroidDetectorSmoke -Device Auto
-powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode AndroidReceiverSmoke -Device Auto
 
 # The script opens the configured number of independent visible fixture windows and requires at least one person detection per source through a real WindowHandle capture; four remains the default regression baseline.
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-e2e\scripts\e2e-smoke.ps1 -Mode WpfPersonDetection

@@ -77,7 +77,7 @@ internal static class Program
             if (args.Length >= 3 && args[0] == "--login")
             {
                 string password = Environment.GetEnvironmentVariable("VISIONGUARD_LOGIN_PASSWORD") ?? throw new Exception("VISIONGUARD_LOGIN_PASSWORD is required.");
-                var session = AccountSession.Login(args[1], args[2], password, args.Length > 3 ? args[3] : "Windows acceptance node");
+                var session = AccountSession.Login(args[1], args[2], password);
                 Console.WriteLine(JsonSerializer.Serialize(new { ok = true, session.account.accountId, session.device.deviceId, scope = AccountSession.ScopeKey, service = AccountSession.ServiceUrl, appId = AccountSession.ApplicationId }));
                 return 0;
             }
@@ -238,7 +238,7 @@ internal static class Program
                 byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(snapshot)); request.Response.ContentType = "application/json"; request.Response.OutputStream.Write(bytes, 0, bytes.Length); request.Response.Close();
             }
         });
-        AccountSession.Load(); AccountSession.Login(url, "first", "local-fixture-password", "probe"); string firstScope = AccountSession.ScopeKey;
+        AccountSession.Load(); AccountSession.Login(url, "first", "local-fixture-password"); string firstScope = AccountSession.ScopeKey;
         byte[] saved = File.ReadAllBytes(Directory.GetFiles(directory, "session-*.bin").Single()); Require(!Encoding.UTF8.GetString(saved).Contains("probe-token"), "Session credential stored in plaintext");
         var refreshing = Task.Run(() => AccountSession.EnsureFresh());
         Require(refreshEntered.WaitOne(5000), "Refresh request did not start");
@@ -271,7 +271,7 @@ internal static class Program
         using var firstAlerts = new AlertService("first-source", "first source"); bool leakedAlert = false; firstAlerts.AlertTriggered += (_, _) => leakedAlert = true;
         string pathA = Path.Combine(directory, firstScope, "outbox.json"); var outboxA = new AlertOutbox(pathA);
         outboxA.Enqueue("first-event", JsonSerializer.Serialize(new { expiresAt = DateTimeOffset.UtcNow.AddSeconds(30).ToString("o") }));
-        AccountSession.Login(url, "second", "local-fixture-password", "probe"); string secondScope = AccountSession.ScopeKey;
+        AccountSession.Login(url, "second", "local-fixture-password"); string secondScope = AccountSession.ScopeKey;
         Require(firstScope != secondScope, "Accounts share a local scope"); var outboxB = new AlertOutbox(Path.Combine(directory, secondScope, "outbox.json")); Require(outboxB.Snapshot().Count == 0, "Old account outbox was exposed");
         using (var frame = new Bitmap(320, 180)) firstAlerts.Evaluate(new List<VisionGuard.Detector.Windows.Models.Detection> { new VisionGuard.Detector.Windows.Models.Detection { Label = "person", Confidence = .95f, BoundingBox = new RectangleF(10, 10, 30, 30) } }, new VisionGuard.Detector.Windows.Models.MonitorConfig(), new Dictionary<string, long> { ["captureMs"] = 1, ["preprocessMs"] = 1, ["inferMs"] = 1, ["parseMs"] = 1 }, frame);
         Require(!leakedAlert, "Old inference emitted an alert under the new account");
@@ -354,11 +354,11 @@ internal static class Program
                 byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(response)); request.Response.ContentType = "application/json"; request.Response.OutputStream.Write(bytes, 0, bytes.Length); request.Response.Close();
             }
         });
-        AccountSession.Load(); AccountSession.Login(url, " FIRST ", "synthetic-memory-password", "Initial name"); string scope = AccountSession.ScopeKey;
+        AccountSession.Load(); AccountSession.Login(url, " FIRST ", "synthetic-memory-password"); string scope = AccountSession.ScopeKey;
         AccountSession.Logout(); Require(Directory.GetFiles(directory, "session-*.bin").Length == 0 && Directory.GetFiles(directory, "devices-*.json").Length == 1, "Logout retained credentials or erased non-secret registration memory");
-        var retained = AccountSession.Login(url, "FiRsT", "synthetic-memory-password", "Stale local name"); Require(retained.device.deviceName == "Console renamed" && scope == AccountSession.ScopeKey, "Relogin lost the binding/settings scope or renamed the device");
-        AccountSession.Logout(); var replacement = AccountSession.Login(url, " FIRST ", "synthetic-memory-password", "Local node"); Require(replacement.device.deviceId == "node-reregistered" && scope != AccountSession.ScopeKey, "Unbound device was not reregistered once");
-        AccountSession.Logout(); AccountSession.Login(url, "OTHER", "synthetic-memory-password", "Other"); AccountSession.Logout(); fixture.GetAwaiter().GetResult(); listener.Stop();
+        var retained = AccountSession.Login(url, "FiRsT", "synthetic-memory-password"); Require(retained.device.deviceName == "Console renamed" && scope == AccountSession.ScopeKey, "Relogin lost the binding/settings scope or renamed the device");
+        AccountSession.Logout(); var replacement = AccountSession.Login(url, " FIRST ", "synthetic-memory-password"); Require(replacement.device.deviceId == "node-reregistered" && scope != AccountSession.ScopeKey, "Unbound device was not reregistered once");
+        AccountSession.Logout(); AccountSession.Login(url, "OTHER", "synthetic-memory-password"); AccountSession.Logout(); fixture.GetAwaiter().GetResult(); listener.Stop();
         string memory = File.ReadAllText(Directory.GetFiles(directory, "devices-*.json").Single());
         Require(memory.Contains("node-reregistered") && memory.Contains("node-other") && !memory.Contains("node-original") && !memory.Contains("token") && !memory.Contains("password"), "Registration memory retained a revoked ID or credentials");
         Directory.Delete(directory, true);
@@ -399,7 +399,7 @@ internal static class Program
         });
         try
         {
-            AccountSession.Load(); AccountSession.Login(url, "throttle", "synthetic-throttle-password", "Throttle probe");
+            AccountSession.Load(); AccountSession.Login(url, "throttle", "synthetic-throttle-password");
             void SetField(string name, DateTime value) => typeof(AccountSession).GetField(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, value);
             SetField("_lastValidated", DateTime.MinValue);
             var original = AccountSession.Current!.token;
@@ -450,7 +450,7 @@ internal static class Program
                 account = new AccountIdentity { accountId = "registration-owner", username = "registration" }, device = new AccountDevice { deviceId = "registration-node", component = "windows-inference" }, resident = new ResidentAccount { token = "registration-resident" } };
             byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(snapshot)); request.Response.OutputStream.Write(bytes, 0, bytes.Length); request.Response.Close();
         });
-        AccountSession.Load(); var account = AccountSession.Login(loginUrl, "registration", "synthetic-registration-password", "Registration probe"); login.GetAwaiter().GetResult(); loginServer.Stop();
+        AccountSession.Load(); var account = AccountSession.Login(loginUrl, "registration", "synthetic-registration-password"); login.GetAwaiter().GetResult(); loginServer.Stop();
         string scopeDirectory = Path.GetDirectoryName(AlertService.GetSnapshotPath("unused"))!;
         scopeDirectory = Path.GetDirectoryName(scopeDirectory)!;
         Require(!Directory.Exists(scopeDirectory), "Registration probe must use a fresh isolated account scope");
@@ -543,12 +543,12 @@ internal static class Program
         Process? child = null;
         try
         {
-            AccountSession.Load(); AccountSession.Login(url, "race", "synthetic-race-password", "Race node");
+            AccountSession.Load(); AccountSession.Login(url, "race", "synthetic-race-password");
             var start = new ProcessStartInfo(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "AccountMedia.Probe.exe"), "--delayed-refresh") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
             start.EnvironmentVariables["VISIONGUARD_ACCOUNT_DIR"] = directory; start.EnvironmentVariables["VISIONGUARD_SERVER_URL"] = url;
             child = Process.Start(start) ?? throw new Exception("Resident-like probe child did not start");
             Require(refreshEntered.Wait(10000), "Child never reached delayed HTTP refresh");
-            var parent = Task.Run(() => { AccountSession.Logout(); AccountSession.Login(url, "race", "synthetic-race-password", "Race node"); });
+            var parent = Task.Run(() => { AccountSession.Logout(); AccountSession.Login(url, "race", "synthetic-race-password"); });
             Require(!parent.Wait(200), "Parent bypassed the cross-process writer lock during delayed resident refresh");
             releaseRefresh.Set(); Require(parent.Wait(15000), "Parent logout/relogin did not finish after refresh"); parent.GetAwaiter().GetResult();
             Require(child.WaitForExit(10000) && child.ExitCode == 0, "Resident-like child refresh failed");

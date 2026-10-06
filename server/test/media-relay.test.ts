@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import test from 'node:test';
+import { registration } from './helpers/accounts';
 import WebSocket, { WebSocketServer } from 'ws';
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-media-test-'));
@@ -126,7 +127,7 @@ test('cached frames expire while a consumer waits and cannot be forwarded after 
   // discard this same frame as unavailable before the acknowledgement arrives.
   t.mock.method(mediaRelay, 'maintain', () => {});
   const f = await fixture(t);
-  const session = await accountStore.login({ username: 'media-owner', password: 'private-fixture-password', component: 'android-camera', deviceName: 'expiry-camera' });
+  const session = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'android-camera', deviceName: 'expiry-camera' });
   mediaRelay.bind(accountStore.authenticate(owner.session('console').token)!, session.device.deviceId, owner.id('inference'));
   const producer = await f.connect(session.token, 'publish'), ready = await producer.take('media-ready');
   const consumer = await f.connect(owner.session('inference').token, 'subscribe'); await consumer.take('media-ready');
@@ -162,7 +163,7 @@ test('cached frames expire while a consumer waits and cannot be forwarded after 
 
 test('large packets hit the byte bound before the frame bound, and no receipt stalls the consumer', async t => {
   const f = await fixture(t);
-  const camera = await accountStore.login({ username: 'media-owner', password: 'private-fixture-password', component: 'android-camera', deviceName: 'byte-bound-camera' });
+  const camera = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'android-camera', deviceName: 'byte-bound-camera' });
   mediaRelay.bind(accountStore.authenticate(owner.session('console').token)!, camera.device.deviceId, owner.id('inference'));
   const producer = await f.connect(camera.token, 'publish'), ready = await producer.take('media-ready');
   const consumer = await f.connect(owner.session('inference').token, 'subscribe'); await consumer.take('media-ready');
@@ -185,7 +186,7 @@ test('large packets hit the byte bound before the frame bound, and no receipt st
 
 test('sampling follows each bound source and idle sources drop to one FPS without resetting sessions', async t => {
   const f = await fixture(t);
-  const camera = await accountStore.login({ username: 'media-owner', password: 'private-fixture-password', component: 'android-camera', deviceName: 'rate-camera' });
+  const camera = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'android-camera', deviceName: 'rate-camera' });
   const stream = mediaRelay.bind(accountStore.authenticate(owner.session('console').token)!, camera.device.deviceId, owner.id('inference'));
   const producer = await f.connect(camera.token, 'publish'), ready = await producer.take('media-ready');
   for (const rate of [3, 1, 5]) {
@@ -200,9 +201,9 @@ test('sampling follows each bound source and idle sources drop to one FPS withou
 
 test('multiple inference nodes require selection, bindings stay stable, and clock skew is not treated as frame freshness', async t => {
   const f = await fixture(t);
-  const camera = await accountStore.login({ username: 'media-owner', password: 'private-fixture-password', component: 'android-camera', deviceName: 'second-camera' });
-  const extra = await accountStore.login({ username: 'media-owner', password: 'private-fixture-password', component: 'windows-inference', deviceName: 'second-inference' });
-  const third = await accountStore.login({ username: 'media-owner', password: 'private-fixture-password', component: 'android-camera', deviceName: 'third-camera' });
+  const camera = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'android-camera', deviceName: 'second-camera' });
+  const extra = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'windows-inference', deviceName: 'second-inference' });
+  const third = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'android-camera', deviceName: 'third-camera' });
   assert.equal(mediaRelay.streams(owner.accountId).find(stream => stream.publisherDeviceId === third.device.deviceId)!.targetDeviceId, undefined);
   const session = accountStore.authenticate(owner.session('console').token)!;
   const binding = mediaRelay.bind(session, camera.device.deviceId, extra.device.deviceId);

@@ -21,7 +21,9 @@ data class PublisherState(val connected: Boolean = false, val status: String = "
     val sentFrames: Long = 0, val acknowledgedFrames: Long = 0, val droppedFrames: Long = 0,
     val relayDroppedFrames: Long = 0, val sampledOutFrames: Long = 0)
 
-class CameraPublisher(private val account: AccountStore) {
+class CameraPublisher(private val account: AccountStore,
+    private val controlState: () -> Map<String, String> = { emptyMap() },
+    private val onStreamCommand: (String, (Boolean, String) -> Unit) -> Unit = { _, done -> done(false, "请打开相机应用") }) {
     private val mutableState = MutableStateFlow(PublisherState())
     val state = mutableState.asStateFlow()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -66,9 +68,9 @@ class CameraPublisher(private val account: AccountStore) {
                     control?.send(JSONObject().put("type", "heartbeat").put("deviceId", current?.deviceId)
                         .put("deviceName", current?.deviceName).put("isMonitoring", false).put("isReady", true)
                         .put("cooldown", 5).put("confidence", 0.45).put("targets", "").put("targetSamplingRate", 5)
-                        .put("modelKey", "").put("modelOptions", JSONArray()).put("capabilities", JSONArray(listOf("video-publish")))
+                        .put("modelKey", "").put("modelOptions", JSONArray()).put("capabilities", JSONArray(listOf("video-publish", "stream-control", "request-correlation")))
                         .put("canSwitchModelWhileMonitoring", false).put("hasPendingConfigChanges", false)
-                        .put("components", JSONObject().put("cameraApp", "running")).put("sources", JSONArray()).toString())
+                        .put("components", JSONObject(controlState()).put("cameraApp", if (controlState()["cameraApp"] == "foreground") "foreground" else "background")).put("sources", JSONArray()).toString())
                     if (wanted && media == null && current != null && now >= nextRetryAt) connectMedia(current)
                 }
                 if (credit.stalled(now)) { dropMedia(); nextRetryAt = now + 1000; update { it.copy(status = "画面发送超时，正在重连") } }
@@ -107,6 +109,14 @@ class CameraPublisher(private val account: AccountStore) {
                             refreshTargets()
                         }
                         "stream-list" -> updateStreams(body.optJSONArray("streams") ?: JSONArray())
+                        "command" -> {
+                            val command = body.optString("command")
+                            if (authenticated && command in setOf("start-stream", "stop-stream")) onStreamCommand(command) { success, reason ->
+                                if (own == controlGeneration && !closed && control === ws) ws.send(JSONObject().put("type", "command-ack")
+                                    .put("requestId", body.optString("requestId")).put("targetDeviceId", value.deviceId)
+                                    .put("command", command).put("phase", "completed").put("success", success).put("reason", reason.take(256)).toString())
+                            }
+                        }
                         "device-updated" -> body.optJSONObject("device")?.let { device -> scope.launch { account.updateDevice(device) } }
                         "kicked" -> account.clear()
                     }

@@ -9,6 +9,33 @@ export type Login = {
 };
 
 export const MAX_DISPLAY_NAME_LENGTH = 64;
+/** Browsers expose a profile/origin identity, not a physical hardware identity. Never fingerprint by model or user agent. */
+export async function browserDeviceIdentity(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open('visionguard-device-identity', 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('identity');
+    open.onerror = () => reject(new Error('无法保存浏览器设备身份，请允许站点存储'));
+    open.onsuccess = () => {
+      const db = open.result;
+      // A read/write transaction serializes first login across tabs, including private-LAN HTTP contexts.
+      const transaction = db.transaction('identity', 'readwrite');
+      const store = transaction.objectStore('identity'), request = store.get('device');
+      let identity = '';
+      request.onsuccess = () => {
+        identity = typeof request.result === 'string' && /^[a-f0-9]{64}$/.test(request.result) ? request.result
+          : Array.from(crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2,'0')).join('');
+        store.put(identity, 'device');
+      };
+      transaction.oncomplete = () => { db.close(); resolve(identity); };
+      transaction.onerror = transaction.onabort = () => { db.close(); reject(new Error('无法保存浏览器设备身份，请允许站点存储')); };
+    };
+  });
+}
+export function browserDeviceModel(): string {
+  const model = navigator.platform || '浏览器';
+  const bounded = model.replace(/[\x00-\x1f\x7f]/g, ' ').trim().slice(0,48);
+  return bounded.replace(/[\ud800-\udbff]$/, '') || '浏览器';
+}
 export function normalizeDisplayName(value: unknown): string {
   if (typeof value !== 'string') throw new Error('请输入有效名称');
   const name = value.trim();

@@ -74,6 +74,7 @@ class NotificationNodeService : Service() {
             }
             if (!terminal && socket == null && now >= nextAttempt) connect()
             if (authenticated && socket?.send(JSONObject().put("type", "heartbeat-notifier").put("deviceId", settings.read().deviceId)
+                    .put("capabilities", org.json.JSONArray(listOf("alarm-control", "request-correlation")))
                     .apply { probeId?.let { put("probeId", it) } }.toString()) != true) transportFailed("心跳发送失败")
             handler.postDelayed(this, 3_000)
         }
@@ -147,6 +148,14 @@ class NotificationNodeService : Service() {
         }
         if (type == "kicked" || type == "session-revoked") { terminal = true; reconnect("登录已失效，请重新登录"); account.clear(); return }
         if (!authenticated) return
+        if (type == "command" && authenticated && message.optString("command") == "stop-alarm") {
+            val active = alarms.getActiveAlert()
+            val success = active == null || alarms.finishActiveAlert(active.id, com.xgwnje.visionguard.notifier.AlertEndType.MANUAL).success
+            ws.send(JSONObject().put("type", "command-ack").put("requestId", message.optString("requestId"))
+                .put("targetDeviceId", settings.read().deviceId).put("command", "stop-alarm").put("phase", "completed").put("success", success)
+                .put("reason", if (!success) "保存报警确认失败" else if (active == null) "当前无报警" else "当前报警已确认；如有排队报警，将继续播放").toString())
+            return
+        }
         if (type !in setOf("auth-result", "heartbeat-ack", "device-updated", "notification-scope", "time-standard", "alert", "stream-list")) return
         if (type == "device-updated") message.optJSONObject("device")?.let { device -> serviceScope.launch { account.updateDevice(device) } }
         if (type == "auth-result" || type == "heartbeat-ack" && (!recovery.probing || message.optString("probeId") == probeId)) {

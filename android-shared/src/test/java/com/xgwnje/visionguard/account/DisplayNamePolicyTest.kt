@@ -15,13 +15,10 @@ class DisplayNamePolicyTest {
         }
         assertEquals("门厅", DisplayNamePolicy.normalize("  门厅  "))
     }
-    @Test fun automaticNamesAndCodesAreBoundedAndNeverSplitAnEmoji() {
+    @Test fun automaticNamesAreBoundedAndNeverSplitAnEmoji() {
         val name = DisplayNamePolicy.generated("A".repeat(63) + "😀")
         assertEquals(63, name.length)
         assertNull(DisplayNamePolicy.error(name))
         assertEquals("导入铃声", DisplayNamePolicy.generated("\n ", "导入铃声"))
-        val code = DisplayNamePolicy.deviceCode("phone/\n" + "a".repeat(80))
-        assertTrue(code.length <= 40)
-        assertTrue(code.matches(Regex("[\\p{L}\\p{N}._ -]{1,40}")))
     }
 }

@@ -96,7 +96,7 @@ for (const [i, theme] of ['light', 'dark'].entries()) {
   }
   checkContrast(`Android ${theme} inversePrimary/inverseSurface`, material.inversePrimary, material.inverseSurface);
 }
-for (const file of ['detector/android/app/src/main/java/com/xgwnje/visionguard/detector/ui/theme/Theme.kt', 'receiver/android/app/src/main/java/com/xgwnje/visionguard/receiver/ui/theme/Theme.kt', 'notifier/android/app/src/main/java/com/xgwnje/visionguard/notifier/ui/theme/Theme.kt']) {
+for (const file of ['detector/android/app/src/main/java/com/xgwnje/visionguard/detector/ui/theme/Theme.kt', 'notifier/android/app/src/main/java/com/xgwnje/visionguard/notifier/ui/theme/Theme.kt']) {
   checks++;
   const source = read(file);
   if (!source.includes('VisionGuardTheme(') || /dynamic(?:Light|Dark)ColorScheme|(?:light|dark)ColorScheme\(/.test(source)) errors.push(`${file}: bypasses shared theme`);

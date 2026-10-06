@@ -32,7 +32,7 @@ def main():
     public=ROOT/"receiver/web/public"; public.mkdir(parents=True,exist_ok=True)
     icon.resize((192,192),Image.Resampling.LANCZOS).save(public/"icon.png")
     icon.save(public/"favicon.ico",sizes=ICO_SIZES)
-    for component in ("detector","receiver","notifier"):
+    for component in ("detector","notifier"):
         base=ROOT/component/"android/app/src/main/res"
         for density,size in DENSITIES.items():
             directory=base/f"mipmap-{density}"; directory.mkdir(parents=True,exist_ok=True)

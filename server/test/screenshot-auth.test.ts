@@ -5,6 +5,7 @@ import path from 'node:path';
 import http from 'node:http';
 import express from 'express';
 import test from 'node:test';
+import { registration } from './helpers/accounts';
 
 test('registered consoles can read screenshots; detectors, notifiers and anonymous clients cannot', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-screenshot-auth-'));
@@ -12,7 +13,7 @@ test('registered consoles can read screenshots; detectors, notifiers and anonymo
   const { accountStore, accountDirectory } = require('../src/services/AccountStore') as typeof import('../src/services/AccountStore');
   const { addAlert } = require('../src/services/AlertStore') as typeof import('../src/services/AlertStore');
   const account = accountStore.createAccount('picture-owner', 'private-picture-password');
-  const sessions = await Promise.all(['web-console', 'windows-inference', 'android-notifier'].map(component => accountStore.login({ username: account.username, password: 'private-picture-password', component })));
+  const sessions = await Promise.all(['web-console', 'windows-inference', 'android-notifier'].map(component => accountStore.login({ ...registration(), username: account.username, password: 'private-picture-password', component })));
   const router = require('../src/routes/screenshot').default;
   const alertId = 'picture-event-1234';
   const file = path.join(accountDirectory(account.accountId), 'screenshots', `${alertId}.png`);

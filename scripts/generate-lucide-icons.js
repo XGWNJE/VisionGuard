@@ -51,7 +51,7 @@ const icons = manifest.icons.map(icon => {
 });
 const webPackage = JSON.parse(fs.readFileSync(path.join(root, 'receiver/web/package.json'), 'utf8'));
 if (webPackage.dependencies['lucide-react'] !== manifest.version) throw new Error('Lucide versions differ across platforms');
-for (const directory of ['android-shared/src/main/java', ...['detector', 'receiver', 'notifier'].map(app => `${app}/android/app/src/main/java`)]) {
+for (const directory of ['android-shared/src/main/java', ...['detector', 'notifier'].map(app => `${app}/android/app/src/main/java`)]) {
   for (const file of fs.readdirSync(path.join(root, directory), { recursive: true }).filter(name => name.endsWith('.kt'))) {
     const source = fs.readFileSync(path.join(root, directory, file), 'utf8');
     if (/import androidx\.compose\.material\.icons\b|setSmallIcon\(R\.mipmap\./.test(source)) throw new Error(`Mixed functional icon family: ${directory}/${file}`);

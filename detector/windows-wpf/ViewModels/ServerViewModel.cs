@@ -150,7 +150,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 try
                 {
                     AccountChanging?.Invoke(this, EventArgs.Empty);
-                    await Task.Run(() => AccountSession.Login(ServiceAddress, Username, Password, Environment.MachineName));
+                    await Task.Run(() => AccountSession.Login(ServiceAddress, Username, Password));
                     Password = ""; AccountChanged?.Invoke(this, EventArgs.Empty); LoginMessage = "登录成功";
                 }
                 catch (Exception ex) { SetLoginError(ex.Message); }

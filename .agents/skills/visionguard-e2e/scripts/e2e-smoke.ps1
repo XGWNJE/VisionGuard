@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet('Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'AndroidReceiverSmoke', 'WpfPersonDetection', 'WpfParserContract', 'ResidentLaunch', 'ModelDownload', 'SourceAutoSave', 'CardLayoutPlan', 'PerformanceWatchdog')]
+    [ValidateSet('Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'WpfPersonDetection', 'WpfParserContract', 'ResidentLaunch', 'ModelDownload', 'SourceAutoSave', 'CardLayoutPlan', 'PerformanceWatchdog')]
     [string]$Mode = 'Discover',
 
     [ValidateSet('Auto', 'Physical', 'Emulator', 'None')]
@@ -899,13 +899,6 @@ try {
                 -ProjectDirectory 'detector\android' `
                 -PackageName 'com.xgwnje.visionguard.detector' `
                 -RuntimePermissions @('android.permission.CAMERA', 'android.permission.POST_NOTIFICATIONS')
-        }
-        'AndroidReceiverSmoke' {
-            Run-AndroidAppSmoke `
-                -Name 'android-receiver' `
-                -ProjectDirectory 'receiver\android' `
-                -PackageName 'com.xgwnje.visionguard.receiver' `
-                -RuntimePermissions @('android.permission.POST_NOTIFICATIONS')
         }
         'WpfPersonDetection' { Run-WpfPersonDetection }
         'WpfParserContract' { Run-WpfParserContract }

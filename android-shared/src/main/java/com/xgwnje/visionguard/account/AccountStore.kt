@@ -79,7 +79,7 @@ private fun Modifier.accountAutofill(type: AutofillType, onFill: (String) -> Uni
 }
 
 /** Passwords only exist in the login request; saved bearer sessions are encrypted by Android Keystore. */
-class AccountStore private constructor(private val prefs: android.content.SharedPreferences, val allowsTestEndpoint: Boolean) {
+class AccountStore private constructor(private val prefs: android.content.SharedPreferences, val allowsTestEndpoint: Boolean, private val stableIdentity: () -> String) {
     private val http = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build()
     private val lock = Mutex()
     private val mutableSession = MutableStateFlow(readSaved())
@@ -129,7 +129,9 @@ class AccountStore private constructor(private val prefs: android.content.Shared
             require(user.isNotBlank() && password.isNotBlank()) { "请输入账号和密码" }
             val idKey = deviceKey(base, user, component)
             val existingId = prefs.getString(idKey, null)
-            val body = JSONObject().put("username", user).put("password", password).put("component", component).put("deviceCode", DisplayNamePolicy.deviceCode(android.os.Build.DEVICE))
+            val identity = stableIdentity()
+            val body = JSONObject().put("username", user).put("password", password).put("component", component)
+                .put("deviceIdentity", identity).put("deviceModel", DeviceIdentityPolicy.model(android.os.Build.MODEL))
             if (existingId != null) body.put("deviceId", existingId)
             val response = try { call(base, "/api/account/login", "POST", body) }
                 catch (e: AccountHttpException) {
@@ -213,7 +215,10 @@ class AccountStore private constructor(private val prefs: android.content.Shared
             .take(12).joinToString("") { "%02x".format(it) }
         private const val KEY_ALIAS = "visionguard-account-session-v1"
         @Volatile private var instance: AccountStore? = null
-        fun get(context: Context): AccountStore = instance ?: synchronized(this) { instance ?: AccountStore(context.applicationContext.getSharedPreferences("account_session", Context.MODE_PRIVATE), context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0).also { instance = it } }
+        fun get(context: Context): AccountStore = instance ?: synchronized(this) { instance ?: AccountStore(context.applicationContext.getSharedPreferences("account_session", Context.MODE_PRIVATE), context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            val app = context.applicationContext
+            DeviceIdentityPolicy.identity(android.provider.Settings.Secure.getString(app.contentResolver, android.provider.Settings.Secure.ANDROID_ID), app.packageName)
+        }.also { instance = it } }
         fun normalizeEndpoint(value: String): String {
             val base = value.trim().trimEnd('/')
             val uri = URI(base)
@@ -279,7 +284,6 @@ fun AccountHeader(store: AccountStore, session: AccountSession, actions: @Compos
     var menuOpen by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     var deviceName by remember(session.deviceName) { mutableStateOf(session.deviceName) }
-    var managingAccounts by remember { mutableStateOf(false) }
     LaunchedEffect(menuOpen, session.token) {
         if (menuOpen) runCatching { store.refreshIdentity() }
     }
@@ -301,7 +305,6 @@ fun AccountHeader(store: AccountStore, session: AccountSession, actions: @Compos
                 Text(session.username, style = MaterialTheme.typography.titleSmall)
                 Text(session.deviceName, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                if (session.isAdmin && session.component == "android-console") TextButton({ menuOpen = false; managingAccounts = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton()) { Text("账号管理") }
                 TextButton({ menuOpen = false; error = null; renaming = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text("本机名称") }
                 TextButton({ menuOpen = false; oldPassword = ""; newPassword = ""; error = null; editing = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text("修改密码") }
                 TextButton({ menuOpen = false; scope.launchAccount { beforeLogout(); store.logout() } }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text("退出") }
@@ -309,7 +312,6 @@ fun AccountHeader(store: AccountStore, session: AccountSession, actions: @Compos
         },
         confirmButton = { TextButton({ menuOpen = false }, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text("关闭") } }
     )
-    if (managingAccounts) AccountManagement(store, session, onClose = { managingAccounts = false })
     if (renaming) AlertDialog(
         onDismissRequest = { if (!busy) renaming = false }, shape = MaterialTheme.shapes.large,
         containerColor = MaterialTheme.colorScheme.surface,

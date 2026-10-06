@@ -6,6 +6,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import express from 'express';
 import test from 'node:test';
+import { registration } from './helpers/accounts';
 import WebSocket, { WebSocketServer } from 'ws';
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-account-test-'));
@@ -32,6 +33,7 @@ async function fixture(t: any) {
   t.after(async () => { peers.forEach(ws => ws.terminate()); wss.close(); await new Promise<void>(resolve => server.close(() => resolve())); });
   async function request(url: string, method = 'GET', body?: object, token?: string) {
     return await new Promise<{ status: number; data: any }>((resolve, reject) => {
+      if (url === '/api/account/login' && body) body = { ...registration(fixtureIp + '|' + (body as any).component), ...body };
       const req = http.request(origin + url, { method, localAddress: fixtureIp,
         headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) } }, response => {
         const chunks: Buffer[] = []; response.on('data', chunk => chunks.push(chunk)); response.on('end', () => {
@@ -73,7 +75,7 @@ test('passwords and opaque credentials persist as hashes; malformed and duplicat
 test('expired sessions fail after restart and a failed revoke never changes the effective credentials', async t => {
   const file = path.join(directory, 'expiry', 'accounts.json'), store = new AccountStore(file);
   store.createAccount('expiry-owner', 'private-expiry-password');
-  const login = await store.login({ username: 'expiry-owner', password: 'private-expiry-password', component: 'web-console' });
+  const login = await store.login({ ...registration(), username: 'expiry-owner', password: 'private-expiry-password', component: 'web-console' });
   const session = store.authenticate(login.token)!;
   const rename = fs.renameSync;
   try { fs.renameSync = (() => { throw new Error('Disk unavailable'); }) as typeof fs.renameSync; assert.throws(() => store.logout(session)); }

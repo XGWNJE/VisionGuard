@@ -65,7 +65,7 @@ async function main() {
   }
   try {
     for (const [label, username, isolation] of [['observed', settings.username, false], ['isolation', settings.isolationUsername, true]]) {
-      const session = await json('/api/account/login', undefined, { ...credentials(settings, username, isolation), component: 'web-console', deviceName: 'Chain observer' });
+      const session = await json('/api/account/login', undefined, { ...credentials(settings, username, isolation), component: 'web-console', deviceIdentity: require('node:crypto').createHash('sha256').update('chain-observer').digest('hex'), deviceModel: '链路观察器' });
       if (!session.token || session.device?.component !== 'web-console' || session.account?.username !== username.toLowerCase()) fail('Unexpected observer account identity');
       sessions.push(session); report.accounts[label] = { username: session.account.username, loginStatus: 200 };
     }

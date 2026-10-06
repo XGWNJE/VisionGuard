@@ -17,7 +17,7 @@ test('resolveReleaseKey 把 Windows 平台别名统一到 wpf', () => {
 
 test('resolveReleaseKey 解析 Android 平台', () => {
   assert.equal(resolveReleaseKey('android-detector'), 'android-detector');
-  assert.equal(resolveReleaseKey('android'), 'android-receiver');
+  assert.equal(resolveReleaseKey('android'), 'android');
   assert.equal(resolveReleaseKey('android-receiver'), 'android-receiver');
   assert.equal(resolveReleaseKey('android-notifier'), 'android-notifier');
 });

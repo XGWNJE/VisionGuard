@@ -2,7 +2,7 @@
     [Parameter(Mandatory = $true)]
     [string]$Version,
 
-    [ValidateSet('All','Windows','Android','Server','WPF','AndroidDetector','AndroidReceiver','AndroidNotifier')]
+    [ValidateSet('All','Windows','Android','Server','WPF','AndroidDetector','AndroidNotifier')]
     [string]$Target = 'All',
 
     [switch]$UploadVps,
@@ -110,8 +110,6 @@ function Test-NativeSuccess {
 
 function Test-TargetEnabled {
     param([string[]]$Names)
-    # The legacy console is an explicit maintenance target, outside default releases.
-    if ($Names.Count -eq 2 -and $Names -contains 'Android' -and $Names -contains 'AndroidReceiver') { return $Target -eq 'AndroidReceiver' }
     return ($Target -eq 'All' -or $Names -contains $Target)
 }
 
@@ -323,7 +321,7 @@ function Invoke-ReleasePreflight {
         Test-PythonParamiko
     }
 
-    if (Test-TargetEnabled @('Android', 'AndroidDetector', 'AndroidReceiver', 'AndroidNotifier')) {
+    if (Test-TargetEnabled @('Android', 'AndroidDetector', 'AndroidNotifier')) {
         Set-AndroidJavaHome
         [void](Get-AndroidTool -Name 'apksigner')
         [void](Get-AndroidTool -Name 'zipalign')
@@ -332,11 +330,6 @@ function Invoke-ReleasePreflight {
     if (Test-TargetEnabled @('Android', 'AndroidDetector')) {
         [void](Get-KeystoreConfig -ProjectRoot (Join-Path $repoRoot 'detector\android'))
         Write-Host "preflight: Android detector signing config resolved"
-    }
-
-    if (Test-TargetEnabled @('Android', 'AndroidReceiver')) {
-        [void](Get-KeystoreConfig -ProjectRoot (Join-Path $repoRoot 'receiver\android'))
-        Write-Host "preflight: Android receiver signing config resolved"
     }
 
     if (Test-TargetEnabled @('Android', 'AndroidNotifier')) {
@@ -703,13 +696,11 @@ function Get-GitHubOnlyArtifacts {
     $definitions = @(
         [pscustomobject]@{ Platform = 'wpf'; Targets = @('Windows', 'WPF'); FileName = "VisionGuard-WPF-v$Version.zip"; Kind = 'zip' },
         [pscustomobject]@{ Platform = 'android-detector'; Targets = @('Android', 'AndroidDetector'); FileName = "VisionGuard-Detector-v$Version.apk"; Kind = 'apk' },
-        [pscustomobject]@{ Platform = 'android-receiver'; Targets = @('Android', 'AndroidReceiver'); FileName = "VisionGuard-Receiver-v$Version.apk"; Kind = 'apk' },
         [pscustomobject]@{ Platform = 'android-notifier'; Targets = @('Android', 'AndroidNotifier'); FileName = "VisionGuard-Notifier-v$Version.apk"; Kind = 'apk' }
     )
 
     $artifacts = New-Object System.Collections.Generic.List[object]
     foreach ($definition in $definitions) {
-        if ($definition.Platform -eq 'android-receiver' -and $Target -ne 'AndroidReceiver') { continue }
         if (-not (Test-TargetEnabled $definition.Targets)) {
             continue
         }
@@ -1380,17 +1371,6 @@ if (Test-TargetEnabled @('Android', 'AndroidDetector')) {
         $artifacts.Add([pscustomobject]@{ Platform = 'android-detector'; Path = $dest; FileName = $fileName }) | Out-Null
         $platforms.Add('android-detector') | Out-Null
     }
-}
-
-if (Test-TargetEnabled @('Android', 'AndroidReceiver')) {
-    $fileName = "VisionGuard-Receiver-v$Version.apk"
-    $apkPath = Get-SignedAndroidApk -ProjectRoot (Join-Path $repoRoot 'receiver\android') -Name 'Android receiver'
-    $dest = Join-Path $releaseDir $fileName
-    Copy-Item -LiteralPath $apkPath -Destination $dest -Force
-    Verify-AndroidApk -ApkPath $dest
-    Add-ReleaseEntry -Metadata $metadata -Key 'android-receiver' -FileName $fileName -FilePath $dest
-    $artifacts.Add([pscustomobject]@{ Platform = 'android-receiver'; Path = $dest; FileName = $fileName }) | Out-Null
-    $platforms.Add('android-receiver') | Out-Null
 }
 
 if (Test-TargetEnabled @('Android', 'AndroidNotifier')) {

@@ -14,7 +14,7 @@ function credentials() {
 async function login(service, component, name) {
   const account = credentials();
   const response = await fetch(service.replace(/^ws/, 'http').replace(/\/$/, '') + '/api/account/login', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...account, component, deviceName: name }), signal: AbortSignal.timeout(15000),
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...account, component, deviceIdentity: require('node:crypto').createHash('sha256').update('isolated-probe|' + name).digest('hex'), deviceModel: '测试设备' }), signal: AbortSignal.timeout(15000),
   });
   if (!response.ok) throw new Error(`Isolated account login failed (${response.status}).`);
   const session = await response.json();

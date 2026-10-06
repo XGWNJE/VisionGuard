@@ -51,7 +51,8 @@ export function validateEvent(value: any, identity: NodeIdentity, now = Date.now
 // Configuration remains the existing small set. New hardware-specific settings belong to its implementation stage.
 export function allowedCapabilities(identity: NodeIdentity, values: unknown): string[] {
   const common = ['monitor-control', 'config-control', 'request-correlation'];
-  const allowed = identity.component === 'android-camera' ? ['video-publish', 'request-correlation']
+  const allowed = identity.component === 'android-camera' ? ['video-publish', 'stream-control', 'request-correlation']
+    : identity.role === 'notifier' ? ['alarm-control', 'request-correlation']
     : identity.nodeType === 'visual' ? [...common, 'screenshot-on-demand', 'source-control', 'directml', 'video-subscribe', 'visual-inference']
     : identity.nodeType === 'sensor' ? common : [];
   return Array.isArray(values) ? [...new Set(values.filter((v): v is string => typeof v === 'string' && allowed.includes(v)))] : [];

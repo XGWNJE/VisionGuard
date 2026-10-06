@@ -5,6 +5,7 @@ import path from 'node:path';
 import http from 'node:http';
 import express from 'express';
 import test from 'node:test';
+import { registration } from './helpers/accounts';
 import WebSocket, { WebSocketServer } from 'ws';
 
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vg-administration-'));
@@ -17,11 +18,11 @@ test.after(() => fs.rmSync(directory, { recursive: true, force: true }));
 test('administrator bootstrap preserves the existing password and is idempotent', async () => {
   const file = path.join(directory, 'existing', 'accounts.json'), store = new AccountStore(file);
   const original = store.createAccount('xgwnje', 'existing-private-password');
-  const ordinarySession = await store.login({ username: 'xgwnje', password: 'existing-private-password', component: 'web-console' });
+  const ordinarySession = await store.login({ ...registration(), username: 'xgwnje', password: 'existing-private-password', component: 'web-console' });
   store.ensureAdministrator('xgwnje'); store.ensureAdministrator('xgwnje');
   assert.equal(store.authenticate(ordinarySession.token), undefined);
   assert.deepEqual(store.accounts(), [{ ...original, isAdmin: true, enabled: true }]);
-  const login = await store.login({ username: 'xgwnje', password: 'existing-private-password', component: 'web-console' });
+  const login = await store.login({ ...registration(), username: 'xgwnje', password: 'existing-private-password', component: 'web-console' });
   assert.equal(login.account.isAdmin, true);
   assert.equal(fs.existsSync(path.join(path.dirname(file), 'initial-administrator.json')), false);
 });
@@ -32,7 +33,7 @@ test('fresh service generates private initial credentials once and never resets 
   const secretFile = path.join(path.dirname(file), 'initial-administrator.json');
   const credentials = JSON.parse(fs.readFileSync(secretFile, 'utf8'));
   assert.equal(credentials.username, 'xgwnje'); assert.ok(credentials.password.length >= 32);
-  assert.equal((await store.login({ ...credentials, component: 'android-console' })).account.isAdmin, true);
+  await assert.rejects(store.login({ ...registration(), ...credentials, component: 'android-console' }), (error: any) => error.status === 400);
   const before = fs.readFileSync(secretFile, 'utf8');
   new AccountStore(file).ensureAdministrator('xgwnje');
   assert.equal(fs.readFileSync(secretFile, 'utf8'), before);
@@ -50,6 +51,7 @@ test('HTTP account administration enforces console privileges and revokes sessio
   const origin = `http://127.0.0.1:${(server.address() as any).port}`;
   t.after(async () => { peers.forEach(peer => peer.terminate()); wss.close(); await new Promise<void>(resolve => server.close(() => resolve())); });
   async function request(url: string, method = 'GET', body?: object, token?: string) {
+    if (url === '/api/account/login' && body) body = { ...registration('admin-fixture|' + (body as any).component), ...body };
     const response = await fetch(origin + url, { method, headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
     return { status: response.status, data: await response.json() as any, cache: response.headers.get('cache-control') };
   }
@@ -66,8 +68,7 @@ test('HTTP account administration enforces console privileges and revokes sessio
     assert.equal((await request('/api/admin/accounts', 'POST', { username: 'forbidden-user', password: 'private-created-password' }, token)).status, 403);
     assert.equal((await request('/api/admin/accounts/' + owner.accountId, 'PATCH', { isAdmin: false }, token)).status, 403);
   }
-  const androidConsole = await login('admin-owner', 'private-owner-password', 'android-console');
-  assert.equal((await request('/api/admin/accounts', 'GET', undefined, androidConsole.token)).status, 200);
+  assert.equal((await request('/api/account/login', 'POST', { username:'admin-owner', password:'private-owner-password', component:'android-console' })).status, 400);
   const list = await request('/api/admin/accounts', 'GET', undefined, admin.token);
   assert.equal(list.cache, 'no-store');
   for (const account of list.data.accounts) assert.deepEqual(Object.keys(account).sort(), ['accountId', 'enabled', 'isAdmin', 'username']);

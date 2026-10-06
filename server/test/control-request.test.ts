@@ -17,6 +17,46 @@ const fixtures = new AccountFixture([{"name": "foreign-channel-receiver", "compo
 const { associateScreenshotPayload, handleConnection } = require('../src/services/ConnectionManager') as typeof import('../src/services/ConnectionManager');
 const { accountStore } = require('../src/services/AccountStore') as typeof import('../src/services/AccountStore');
 
+test('camera and notifier controls require declared capabilities, route only inside account and correlate actual completion', async t => {
+  const owner = new AccountFixture([{name:'camera-command',component:'android-camera'}, {name:'notifier-command',component:'android-notifier'},
+    {name:'console-command',component:'web-console'}], 'control-capability-owner');
+  const foreign = new AccountFixture([{name:'foreign-console-command',component:'web-console'}], 'control-capability-other');
+  await Promise.all([owner.ready,foreign.ready]);
+  const wss = new WebSocketServer({host:'127.0.0.1',port:0}); wss.on('connection',handleConnection);
+  await new Promise<void>(resolve=>wss.once('listening',resolve));
+  const port = (wss.address() as {port:number}).port;
+  const peers:WebSocket[]=[]; t.after(()=>{peers.forEach(ws=>ws.terminate());wss.close();});
+  async function peer(name:string, fixture=owner) {
+    const ws=await connect(port); peers.push(ws);
+    const auth=waitForMessage(ws,m=>m.type==='auth-result'); ws.send(JSON.stringify(fixture.auth(name))); await auth; return ws;
+  }
+  const console=await peer('console-command'), camera=await peer('camera-command'), notifier=await peer('notifier-command'), other=await peer('foreign-console-command',foreign);
+  async function reject(ws:WebSocket,command:string,target:string) {
+    const requestId=crypto.randomUUID(), reply=waitForMessage(ws,m=>m.type==='command-ack'&&m.requestId===requestId);
+    ws.send(JSON.stringify({type:'command',requestId,command,targetDeviceId:owner.id(target)}));
+    assert.equal((await reply).success,false);
+  }
+  await reject(console,'start-stream','camera-command'); await reject(console,'stop-alarm','notifier-command');
+  for(const [ws,message] of [[camera,{type:'heartbeat',isMonitoring:false,isReady:true,components:{cameraApp:'foreground',cameraPermission:'granted',invalid:'foreground'},capabilities:['video-publish','stream-control','request-correlation'],sources:[]}],
+    [notifier,{type:'heartbeat-notifier',capabilities:['alarm-control','request-correlation','monitor-control']}]] as const) {
+    const response=waitForMessage(ws,m=>m.type==='heartbeat-ack'); ws.send(JSON.stringify(message));assert.notEqual((await response).accepted,false);
+  }
+  const list=waitForMessage(console,m=>m.type==='device-list'); console.send(JSON.stringify({type:'get-devices'}));
+  assert.deepEqual((await list).devices.find((d:any)=>d.deviceId===owner.id('camera-command')).components,{cameraApp:'foreground',cameraPermission:'granted'});
+  await reject(other,'stop-stream','camera-command');await reject(other,'stop-alarm','notifier-command');await reject(console,'start-stream','notifier-command');
+  for(const [command,name,node] of [['start-stream','camera-command',camera],['stop-stream','camera-command',camera],['stop-alarm','notifier-command',notifier]] as const) {
+    const requestId=crypto.randomUUID(), forwarded=waitForMessage(console,m=>m.type==='command-ack'&&m.requestId===requestId),
+      relay=waitForMessage(node,m=>m.type==='command'&&m.requestId===requestId);
+    console.send(JSON.stringify({type:'command',requestId,command,targetDeviceId:owner.id(name)}));
+    const routed = await forwarded;
+    assert.equal(routed.success,true, `${command}: ${routed.reason}`);
+    await relay;
+    const completed=waitForMessage(console,m=>m.type==='command-ack'&&m.requestId===requestId&&m.phase==='completed');
+    node.send(JSON.stringify({type:'command-ack',requestId,command,phase:'completed',success:true,reason:'Node executed'}));
+    assert.equal((await completed).reason,'Node executed');
+  }
+});
+
 test('associates screenshot identity from the authoritative alert record', () => {
   const alert = {
     alertId: 'alert-12345678', deviceId: 'detector-1', deviceName: 'Detector',

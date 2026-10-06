@@ -75,3 +75,5 @@
 - 采集、预处理与解析：`Capture/`、`Inference/`。
 - 档位与共享设置：`Runtime/NativeLibrarySelector.cs`、`detector/windows-shared/`。
 - 驻留：`detector/windows-resident/Program.cs`。
+
+设备稳定身份取系统安装标识与当前 Windows 用户，驻留共用主设备 ID；正式登录更换配置路径不创建新节点，隔离验收目录使用独立身份。默认名称及边界见[命名规范](15-命名规范.md)，服务登记规则见[统一服务](20-统一服务.md)。

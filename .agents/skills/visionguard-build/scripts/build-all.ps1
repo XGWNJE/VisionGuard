@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet("All", "Server", "Windows", "WPF", "WindowsResident", "Android", "AndroidDetector", "AndroidReceiver", "AndroidNotifier")]
+    [ValidateSet("All", "Server", "Windows", "WPF", "WindowsResident", "Android", "AndroidDetector", "AndroidNotifier")]
     [string]$Target = "All"
 )
 
@@ -149,18 +149,6 @@ try {
             }
     }
 
-    if (Should-Run @("Android", "AndroidReceiver")) {
-        Set-CommandJavaHome
-        Invoke-Step `
-            -Name "Android Receiver" `
-            -CommandText "receiver\android\gradlew.bat assembleRelease" `
-            -Artifact "receiver/android/app/build/outputs/apk/release/app-release.apk" `
-            -Script {
-                Push-Location "receiver\android"
-                try { .\gradlew.bat assembleRelease }
-                finally { Pop-Location }
-            }
-    }
     if (Should-Run @("Android", "AndroidNotifier")) {
         Set-CommandJavaHome
         Invoke-Step `

@@ -1,9 +1,8 @@
 package com.xgwnje.visionguard.account
 
-/** Matches the server's UTF-16 name and device-code limits. */
+/** Matches the server's UTF-16 display-name limit. */
 object DisplayNamePolicy {
     const val MAX_LENGTH = 64
-    const val DEVICE_CODE_LENGTH = 40
     const val HINT = "名称须为 1–64 个字符，不能包含换行或控制字符"
 
     fun error(value: String): String? = when {
@@ -28,7 +27,4 @@ object DisplayNamePolicy {
     fun generated(value: String, fallback: String = "未命名"): String =
         prefix(value.map { if (it.code < 32) ' ' else it }.joinToString("").trim(), MAX_LENGTH).ifEmpty { fallback }
 
-    fun deviceCode(value: String): String = prefix(value.map {
-        if (it.isLetterOrDigit() || it in "._ -") it else '_'
-    }.joinToString("").trim(), DEVICE_CODE_LENGTH).ifEmpty { "android" }
 }

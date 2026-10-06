@@ -5,13 +5,12 @@ import fs from 'fs';
 const router = Router();
 
 /**
- * 平台别名映射。Windows 统一查询 `wpf`，Android 控制台查询 `android`。
+ * 平台别名映射。Windows 统一查询 `wpf`；Android 相机与通知使用各自查询键。
  */
 const PLATFORM_MAP: Record<string, string> = {
   'wpf': 'wpf',
   'windows': 'wpf',
   'android-detector': 'android-detector',
-  'android': 'android-receiver',
 };
 
 /**

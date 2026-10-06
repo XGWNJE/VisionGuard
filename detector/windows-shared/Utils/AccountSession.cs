@@ -8,6 +8,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
+using Microsoft.Win32;
+using System.Security.Principal;
 
 namespace VisionGuard.Detector.Windows.Utils
 {
@@ -39,7 +41,6 @@ namespace VisionGuard.Detector.Windows.Utils
     public static class DisplayNamePolicy
     {
         public const int MaximumLength = 64;
-        public const int DeviceCodeLength = 40;
         public const string Hint = "名称须为 1–64 个字符，不能包含换行或控制字符。";
         public static string Normalize(string value)
         {
@@ -53,16 +54,15 @@ namespace VisionGuard.Detector.Windows.Utils
         {
             try { Normalize(value); return true; } catch (ArgumentException) { return false; }
         }
-        public static string DeviceCode(string value)
+        public static string DeviceModel(string value)
         {
-            var result = new StringBuilder();
-            foreach (char c in value ?? "")
-            {
-                if (result.Length == DeviceCodeLength) break;
-                result.Append(char.IsLetterOrDigit(c) || "._ -".IndexOf(c) >= 0 ? c : '_');
-            }
-            string code = result.ToString().Trim();
-            return code.Length == 0 ? "windows" : code;
+            var clean = new StringBuilder();
+            foreach (char c in value ?? "") clean.Append(c < 32 || c == 127 ? ' ' : c);
+            string model = clean.ToString().Trim();
+            if (Array.IndexOf(new[] { "", "default string", "system product name", "to be filled by o.e.m.", "unknown", "not applicable" }, model.ToLowerInvariant()) >= 0) return "Windows电脑";
+            if (model.Length > 48) model = model.Substring(0, 48);
+            if (char.IsHighSurrogate(model[model.Length - 1])) model = model.Substring(0, model.Length - 1);
+            return model.Length == 0 ? "Windows电脑" : model;
         }
     }
 
@@ -127,6 +127,28 @@ namespace VisionGuard.Detector.Windows.Utils
         public static string Hash(string value)
         {
             using (var sha = SHA256.Create()) return BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(value))).Replace("-", "").ToLowerInvariant();
+        }
+        public static string StableDeviceIdentity()
+        {
+            using (var registry = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
+            using (var key = registry.OpenSubKey(@"SOFTWARE\Microsoft\Cryptography"))
+            using (var user = WindowsIdentity.GetCurrent())
+            {
+                string machine = key == null ? null : key.GetValue("MachineGuid") as string;
+                if (string.IsNullOrWhiteSpace(machine) || user.User == null) throw new InvalidOperationException("无法读取稳定设备身份，请检查系统环境。");
+                // Preview/test accounts have an explicit separate scope. Normal config/executable paths never enter identity.
+                string channel = IsIsolated ? "isolated:" + Path.GetFullPath(Root).TrimEnd(Path.DirectorySeparatorChar).ToUpperInvariant() : "production";
+                return Hash("windows|" + machine.Trim().ToLowerInvariant() + "|" + user.User.Value + "|" + channel);
+            }
+        }
+        public static string DeviceModel()
+        {
+            using (var registry = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64))
+            using (var key = registry.OpenSubKey(@"HARDWARE\DESCRIPTION\System\BIOS"))
+            {
+                string model = DisplayNamePolicy.DeviceModel(key?.GetValue("SystemProductName") as string);
+                return model == "Windows电脑" ? DisplayNamePolicy.DeviceModel(key?.GetValue("BaseBoardProduct") as string) : model;
+            }
         }
         private static string StorePath { get { return Path.Combine(Root, "session-" + Hash(_serviceUrl) + ".bin"); } }
         private static string DevicesPath { get { return Path.Combine(Root, "devices-" + Hash(_serviceUrl) + ".json"); } }
@@ -270,7 +292,7 @@ namespace VisionGuard.Detector.Windows.Utils
                 return value;
             }
         }
-        public static AccountSnapshot Login(string serviceUrl, string username, string password, string deviceCode)
+        public static AccountSnapshot Login(string serviceUrl, string username, string password)
         {
             lock (Sync)
             {
@@ -285,7 +307,7 @@ namespace VisionGuard.Detector.Windows.Utils
                         string rememberedId;
                         RememberedDevices().TryGetValue(normalizedUser, out rememberedId);
                         if (string.IsNullOrWhiteSpace(rememberedId) && previous != null && string.Equals(previous.account.username, normalizedUser, StringComparison.OrdinalIgnoreCase)) rememberedId = previous.device.deviceId;
-                        var body = new Dictionary<string, object> { ["username"] = normalizedUser, ["password"] = password, ["component"] = "windows-inference", ["deviceCode"] = DisplayNamePolicy.DeviceCode(deviceCode) };
+                        var body = new Dictionary<string, object> { ["username"] = normalizedUser, ["password"] = password, ["component"] = "windows-inference", ["deviceIdentity"] = StableDeviceIdentity(), ["deviceModel"] = DeviceModel() };
                         if (!string.IsNullOrWhiteSpace(rememberedId)) body["deviceId"] = rememberedId;
                         try { _current = RequestSession("/api/account/login", body, null); }
                         catch (DeviceRegistrationRejectedException) when (body.ContainsKey("deviceId"))

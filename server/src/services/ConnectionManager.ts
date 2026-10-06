@@ -166,7 +166,9 @@ function sanitizeComponents(value: unknown): Record<string, string> | undefined 
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const result: Record<string, string> = {};
   for (const [key, state] of Object.entries(value).slice(0, MAX_COMPONENTS)) {
-    if (/^[a-z][A-Za-z0-9]{0,31}$/.test(key) && typeof state === 'string' && /^(running|stopped|starting|error|unavailable)$/.test(state)) {
+    const allowed = key === 'cameraApp' ? /^(foreground|background)$/
+      : key === 'cameraPermission' ? /^(granted|required)$/ : /^(running|stopped|starting|error|unavailable)$/;
+    if (/^[a-z][A-Za-z0-9]{0,31}$/.test(key) && typeof state === 'string' && allowed.test(state)) {
       result[key] = state;
     }
   }
@@ -249,7 +251,8 @@ function registerPendingControlRequest(
     }, 'command-timeout->sender');
   }, COMMAND_TIMEOUT_MS);
   timer.unref();
-  const targetWs = (RESIDENT_COMMANDS.has(command) ? residentWindowsClients.get(targetDeviceId) : findDetector(targetDeviceId))!.ws;
+  const targetWs = (RESIDENT_COMMANDS.has(command) ? residentWindowsClients.get(targetDeviceId)
+    : command === 'stop-alarm' && notifierClients.has(targetDeviceId) ? notifierClients.get(targetDeviceId) : findDetector(targetDeviceId))!.ws;
   pendingControlRequests.set(requestId, { senderWs, targetWs, targetDeviceId, command, targetSourceId, timer });
   return true;
 }
@@ -475,7 +478,12 @@ function handleConnection(ws: WebSocket): void {
       case 'heartbeat-notifier':
         if (role === 'notifier') {
           const client = notifierClients.get(authenticatedDeviceId);
-          if (client?.ws === ws) { client.lastSeen = new Date(); sendJson(ws, { type: 'heartbeat-ack', serverTime: new Date().toISOString(),
+          if (client?.ws === ws) { client.lastSeen = new Date();
+            const capabilities = allowedCapabilities(client.identity!, msg.capabilities);
+            const changed = JSON.stringify(client.capabilities ?? []) !== JSON.stringify(capabilities);
+            client.capabilities = capabilities;
+            if (changed) broadcastDeviceList();
+            sendJson(ws, { type: 'heartbeat-ack', serverTime: new Date().toISOString(),
             ...(typeof msg.probeId === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(msg.probeId) ? { probeId: msg.probeId } : {}) }); }
         }
         break;
@@ -599,7 +607,7 @@ function handleConnection(ws: WebSocket): void {
         if (role === 'console') handleRequestScreenshot(ws, msg);
         break;
       case 'command-ack':
-        if (role === 'detector' || role === 'lifecycle') handleCommandAck(msg as WsCommandAck, deviceId!, ws);
+        if (role === 'detector' || role === 'lifecycle' || role === 'notifier') handleCommandAck(msg as WsCommandAck, deviceId!, ws);
         break;
       case 'disconnect-reason':
         if (role === 'console') handleDisconnectReason(msg as WsDisconnectReason, role, connectionKey);
@@ -869,7 +877,9 @@ function handleSessionInfo(msg: WsSessionInfo, authenticatedDeviceId: string): v
 function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
   const residentCommand = RESIDENT_COMMANDS.has(msg.command);
   const detectorCommand = DETECTOR_COMMANDS.has(msg.command);
-  if (!residentCommand && !detectorCommand) {
+  const streamCommand = msg.command === 'start-stream' || msg.command === 'stop-stream';
+  const notifierCommand = msg.command === 'stop-alarm' && notifierClients.has(msg.targetDeviceId);
+  if (!residentCommand && !detectorCommand && !streamCommand) {
     sendJson(senderWs, {
       type: 'command-ack', requestId: msg.requestId, phase: 'completed',
       targetDeviceId: msg.targetDeviceId, targetSourceId: msg.targetSourceId,
@@ -877,7 +887,8 @@ function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
     }, 'command-ack->sender');
     return;
   }
-  const target = residentCommand ? residentWindowsClients.get(msg.targetDeviceId) : findDetector(msg.targetDeviceId);
+  const target = residentCommand ? residentWindowsClients.get(msg.targetDeviceId)
+    : notifierCommand ? notifierClients.get(msg.targetDeviceId) : findDetector(msg.targetDeviceId);
 
   const ack: WsCommandAck = {
     type: 'command-ack', requestId: msg.requestId, phase: 'completed', targetDeviceId: msg.targetDeviceId,
@@ -900,7 +911,13 @@ function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
     return;
   }
 
-  if (detectorCommand && !(target as DetectorClient).capabilities.includes('monitor-control')) {
+  if (notifierCommand && !(target as ReceiverClient).capabilities?.includes('alarm-control')) {
+    ack.reason = '通知节点未提供报警控制'; sendJson(senderWs, ack); return;
+  }
+  if (streamCommand && ((target as DetectorClient).identity.component !== 'android-camera' || !(target as DetectorClient).capabilities.includes('stream-control'))) {
+    ack.reason = '目标不支持推流控制'; sendJson(senderWs, ack); return;
+  }
+  if (detectorCommand && !notifierCommand && !(target as DetectorClient).capabilities.includes('monitor-control')) {
     ack.phase = 'completed'; ack.reason = '目标不支持监控控制';
     sendJson(senderWs, ack); return;
   }
@@ -909,7 +926,7 @@ function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
     ack.phase = 'completed'; ack.reason = '无效的 targetSourceId';
     sendJson(senderWs, ack, 'command-ack->sender'); return;
   }
-  if (msg.targetSourceId && (residentCommand || !(target as DetectorClient).capabilities.includes('source-control'))) {
+  if (msg.targetSourceId && (residentCommand || notifierCommand || streamCommand || !(target as DetectorClient).capabilities.includes('source-control'))) {
     ack.phase = 'completed'; ack.reason = '目标不支持逐来源控制';
     sendJson(senderWs, ack, 'command-ack->sender'); return;
   }
@@ -1134,7 +1151,7 @@ function buildDeviceList(): DeviceStatus[] {
       deviceId: client.deviceId, deviceName: client.deviceName!, online: client.ws.readyState === WebSocket.OPEN,
       isMonitoring: false, isReady: true, lastSeen: client.lastSeen.toISOString(), cooldown: 5, confidence: 0.45,
       targets: '', targetSamplingRate: 3, modelKey: '', modelOptions: [], canSwitchModelWhileMonitoring: false,
-      hasPendingConfigChanges: false, clientType: 'notification', capabilities: ['notification-receipt', 'connection-watchdog'],
+      hasPendingConfigChanges: false, clientType: 'notification', capabilities: ['notification-receipt', 'connection-watchdog', ...(client.capabilities ?? [])],
       components: {}, sources: [], maxSources: 0, sourceLimitExceeded: false });
   }
   return devices;

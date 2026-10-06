@@ -90,7 +90,13 @@ class MainActivity : ComponentActivity() {
                 Box(Modifier.weight(1f)) {
                 if (session == null) AccountLogin(account, "相机推流节点", "android-camera")
                 else key(session!!.scope) {
-                    val connection = remember { CameraPublisher(account) }
+                    val connection = remember { CameraPublisher(account,
+                        controlState = { mapOf("cameraApp" to if (policy.foreground) "foreground" else "background",
+                            "cameraPermission" to if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) "granted" else "required") },
+                        onStreamCommand = { command, done ->
+                            if (command == "stop-stream") { stopCamera("user"); done(true, "已停止推流") }
+                            else startCamera(done)
+                        }) }
                     val prefs = remember { getSharedPreferences("camera-options-" + AccountStore.cacheKey(this@MainActivity), MODE_PRIVATE) }
                     DisposableEffect(connection) {
                         publisher = connection
@@ -129,15 +135,18 @@ class MainActivity : ComponentActivity() {
         super.onPause()
     }
     override fun onStop() { policy.cancelPermissionRequest(); super.onStop() }
-    private fun startCamera() {
+    private fun startCamera(completed: ((Boolean, String) -> Unit)? = null) {
         val state = publisher?.state?.value
-        if (state?.connected != true || state.stream?.targetDeviceId == null) { policy.cancelPermissionRequest(); return }
-        if (!policy.start()) return
+        if (!policy.foreground) { completed?.invoke(false, "请先在设备上打开相机应用并保持前台"); return }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) { completed?.invoke(false, "请先在设备上授予摄像头权限"); return }
+        if (state?.connected != true || state.stream?.targetDeviceId == null) { policy.cancelPermissionRequest(); completed?.invoke(false, "请先关联视觉节点并连接服务"); return }
+        if (streaming) { completed?.invoke(true, "已在推流"); return }
+        if (!policy.start()) { completed?.invoke(false, "当前状态不允许启动推流"); return }
         streaming = true; captureSize = null; sentSize = null; applyScreen(); publisher?.start()
         val own = ++cameraGeneration
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
-            if (own != cameraGeneration || !streaming || !policy.foreground) return@addListener
+            if (own != cameraGeneration || !streaming || !policy.foreground) { completed?.invoke(false, "启动已取消，或相机应用已离开前台"); return@addListener }
             runCatching {
                 val provider = future.get(); cameraProvider = provider
                 val target = if (highResolution) Size(1280, 720) else Size(640, 480)
@@ -176,7 +185,8 @@ class MainActivity : ComponentActivity() {
                     } finally { image.close() }
                 }
                 provider.unbindAll(); provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, analysis)
-            }.onFailure { stopCamera("user"); Toast.makeText(this, "无法启动摄像头", Toast.LENGTH_LONG).show() }
+                completed?.invoke(true, "摄像头已启动，等待画面通道；收帧状态请查看推流统计")
+            }.onFailure { stopCamera("user"); completed?.invoke(false, "无法启动摄像头"); Toast.makeText(this, "无法启动摄像头", Toast.LENGTH_LONG).show() }
         }, ContextCompat.getMainExecutor(this))
     }
     private fun stopCamera(reason: String) {

@@ -83,7 +83,7 @@ test('publish-release.ps1 keeps GitHub optional and release deployment reproduci
 
   assert.match(script, /param\s*\(/);
   assert.match(script, /\$Version/);
-  assert.match(script, /ValidateSet\('All','Windows','Android','Server','WPF','AndroidDetector','AndroidReceiver','AndroidNotifier'\)/);
+  assert.match(script, /ValidateSet\('All','Windows','Android','Server','WPF','AndroidDetector','AndroidNotifier'\)/);
   assert.match(script, /\$PushGitHub/);
   assert.match(script, /\$CreateTag/);
   assert.match(script, /\$CreateGitHubRelease/);
@@ -171,24 +171,25 @@ test('GitHub release creation is safe, repeatable, and requires Chinese notes', 
 
 test('Android signing uses one ignored shared identity across build and release automation', () => {
   const detectorGradle = read('detector/android/app/build.gradle.kts');
-  const receiverGradle = read('receiver/android/app/build.gradle.kts');
+  const notifierGradle = read('notifier/android/app/build.gradle.kts');
   const publishScript = read('scripts/publish-release.ps1');
   const initializer = read('scripts/initialize-android-signing.ps1');
   const gitignore = read('.gitignore');
 
   assert.match(gitignore, /^\.local\/$/m);
-  for (const gradle of [detectorGradle, receiverGradle]) {
+  for (const gradle of [detectorGradle, notifierGradle]) {
     assert.match(gradle, /\.local\/visionguard-release\.env/);
     assert.match(gradle, /VISIONGUARD_ANDROID_STORE_FILE/);
     assert.match(gradle, /VISIONGUARD_ANDROID_STORE_PASSWORD/);
     assert.match(gradle, /VISIONGUARD_ANDROID_KEY_PASSWORD/);
     assert.match(gradle, /releaseStoreFile\?\.isFile == true/);
-    assert.match(gradle, /enableV2Signing = true/);
-    assert.match(gradle, /enableV3Signing = true/);
     assert.match(gradle, /VISIONGUARD_ALLOW_UNSIGNED_RELEASE/);
     assert.match(gradle, /Signed Android Release is required/);
     assert.match(gradle, /releasePackagingRequested && !hasReleaseKeystore/);
   }
+
+  assert.match(detectorGradle, /enableV2Signing = true/);
+  assert.match(detectorGradle, /enableV3Signing = true/);
 
   assert.match(publishScript, /Join-Path \$repoRoot \$storeFile/);
   assert.match(publishScript, /initialize-android-signing\.ps1/);
@@ -239,7 +240,7 @@ test('Windows build script compiles both WPF inference profiles and drops the Wi
   assert.doesNotMatch(script, /windows-winforms/);
   assert.match(
     script,
-    /ValidateSet\("All", "Server", "Windows", "WPF", "WindowsResident", "Android", "AndroidDetector", "AndroidReceiver", "AndroidNotifier"\)/
+    /ValidateSet\("All", "Server", "Windows", "WPF", "WindowsResident", "Android", "AndroidDetector", "AndroidNotifier"\)/
   );
   assert.match(script, /dotnet build detector\\windows-wpf\\VisionGuard\.Detector\.Windows\.sln -c Release/);
   assert.match(script, /-p:OrtProfile=legacy/);

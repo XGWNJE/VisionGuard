@@ -180,7 +180,7 @@ export interface WsCommand {
   requestId?: string;
   targetDeviceId: string;
   targetSourceId?: string;
-  command: 'pause' | 'resume' | 'stop-alarm' | 'open-detector' | 'close-detector';
+  command: 'pause' | 'resume' | 'stop-alarm' | 'open-detector' | 'close-detector' | 'start-stream' | 'stop-stream';
 }
 
 /** 接收端 → 服务器：参数调整 */
@@ -197,7 +197,7 @@ export interface WsSetConfig {
 export interface WsCommandRelay {
   type: 'command';
   requestId?: string;
-  command: 'pause' | 'resume' | 'stop-alarm' | 'open-detector' | 'close-detector';
+  command: 'pause' | 'resume' | 'stop-alarm' | 'open-detector' | 'close-detector' | 'start-stream' | 'stop-stream';
   targetDeviceId: string;
   targetSourceId?: string;
 }
@@ -277,6 +277,7 @@ export interface ReceiverClient {
   lastSeen: Date;
   identity?: import('../services/NodeProtocol').NodeIdentity;
   deviceName?: string;
+  capabilities?: string[];
 }
 
 export interface ResidentClient {

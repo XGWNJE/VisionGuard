@@ -89,7 +89,7 @@ class Peer {
   picture(alertId) { this.send({type:'screenshot-data',alertId,deviceId:this.session.device.deviceId,imageBase64:fs.readFileSync(path.join(HERE,'sample-frame.png')).toString('base64'),width:960,height:540}); }
 }
 async function login(component, key) {
-  const session=await api('/api/account/login',null,{...account,component,deviceCode:'preview-'+key,...(previous.devices[key]?{deviceId:previous.devices[key]}:{})});
+  const session=await api('/api/account/login',null,{...account,component,deviceIdentity:require('node:crypto').createHash('sha256').update('ui-preview|'+key).digest('hex'),deviceModel:'模拟设备',...(previous.devices[key]?{deviceId:previous.devices[key]}:{})});
   sessions.push(session);return session;
 }
 async function main() {
@@ -97,7 +97,7 @@ async function main() {
   const consoleSession=await login('web-console','controller');
   const consolePeer=await new Peer(consoleSession).ready();
   const administrator=JSON.parse(fs.readFileSync(path.join(root,'.local/e2e-server/console-preview/initial-administrator.json'),'utf8'));
-  const adminSession=await api('/api/account/login',null,{username:administrator.username,password:administrator.password,component:'web-console',deviceCode:'preview-admin',...(previous.devices.admin?{deviceId:previous.devices.admin}:{})});
+  const adminSession=await api('/api/account/login',null,{username:administrator.username,password:administrator.password,component:'web-console',deviceIdentity:require('node:crypto').createHash('sha256').update('ui-preview-admin').digest('hex'),deviceModel:'模拟浏览器',...(previous.devices.admin?{deviceId:previous.devices.admin}:{})});
   manifest.devices.admin=adminSession.device.deviceId;
   try {
     const existing=(await api('/api/admin/accounts',adminSession)).accounts;

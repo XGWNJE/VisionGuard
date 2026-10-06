@@ -25,12 +25,13 @@ class AccountSessionInvalidationTest {
                 else -> args[1]
             }
         } as SharedPreferences
-        val constructor = AccountStore::class.java.getDeclaredConstructor(SharedPreferences::class.java, java.lang.Boolean.TYPE).apply { isAccessible = true }
-        val release = constructor.newInstance(prefs, false)
+        val constructor = AccountStore::class.java.getDeclaredConstructor(SharedPreferences::class.java, java.lang.Boolean.TYPE, Function0::class.java).apply { isAccessible = true }
+        val identity = { error("Identity must not be read before login") }
+        val release = constructor.newInstance(prefs, false, identity)
         assertEquals(AccountStore.DEFAULT_ENDPOINT, release.savedEndpoint)
         assertNull(release.session.value)
         assertEquals("An isolated credential must not be decoded as a production session", 0, encryptedReads)
-        val debug = constructor.newInstance(prefs, true)
+        val debug = constructor.newInstance(prefs, true, identity)
         assertEquals("http://127.0.0.1:3173", debug.savedEndpoint)
         assertEquals(1, encryptedReads)
     }
@@ -71,7 +72,7 @@ class AccountSessionInvalidationTest {
                         else -> error("Unexpected preferences read: ${method.name}")
                     }
                 } as SharedPreferences
-                val store = AccountStore::class.java.getDeclaredConstructor(SharedPreferences::class.java, java.lang.Boolean.TYPE).apply { isAccessible = true }.newInstance(prefs, true)
+                val store = AccountStore::class.java.getDeclaredConstructor(SharedPreferences::class.java, java.lang.Boolean.TYPE, Function0::class.java).apply { isAccessible = true }.newInstance(prefs, true, { error("Identity must not be read during an existing session request") })
                 @Suppress("UNCHECKED_CAST")
                 val sessions = AccountStore::class.java.getDeclaredField("mutableSession").apply { isAccessible = true }.get(store) as MutableStateFlow<AccountSession?>
                 val old = AccountSession("http://127.0.0.1:${server.localPort}", "old-token", "2099-01-01T00:00:00Z", "account", "user", "device", "Camera", "android-camera")

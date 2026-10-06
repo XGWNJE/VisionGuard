@@ -2,25 +2,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-export type Component = 'web-console' | 'android-console' | 'android-notifier' | 'android-camera' | 'windows-inference' | 'windows-resident';
+export type Component = 'web-console' | 'android-notifier' | 'android-camera' | 'windows-inference' | 'windows-resident';
 export interface Account { accountId: string; username: string; isAdmin?: boolean }
 export interface AccountDevice {
   accountId: string; deviceId: string; deviceName: string; role: 'detector' | 'console' | 'notifier' | 'lifecycle';
   nodeType: 'visual' | 'sensor' | 'notification' | 'console' | 'resident'; platform: string; component: Component;
 }
 export interface AccountSession { sessionId: string; account: Account; device: AccountDevice; expiresAt: string; parentId?: string }
-interface StoredAccount extends Account { salt: string; passwordHash: string; deviceSequence?: number; disabled?: boolean }
+interface StoredAccount extends Account { salt: string; passwordHash: string; disabled?: boolean }
+interface StoredDevice extends AccountDevice { identityKey?: string }
 interface StoredSession { sessionId: string; tokenHash: string; accountId: string; deviceId: string; component: Component; expiresAt: string; parentId?: string }
-interface Data { accounts: StoredAccount[]; devices: AccountDevice[]; sessions: StoredSession[] }
+interface Data { accounts: StoredAccount[]; devices: StoredDevice[]; sessions: StoredSession[] }
 const SESSION_MS = 30 * 24 * 3600 * 1000;
 const COMPONENTS: Record<Exclude<Component, 'windows-resident'>, Pick<AccountDevice, 'role' | 'nodeType' | 'platform'>> = {
   'web-console': { role: 'console', nodeType: 'console', platform: 'web' },
-  'android-console': { role: 'console', nodeType: 'console', platform: 'android' },
   'android-notifier': { role: 'notifier', nodeType: 'notification', platform: 'android' },
   'android-camera': { role: 'detector', nodeType: 'visual', platform: 'android' },
   'windows-inference': { role: 'detector', nodeType: 'visual', platform: 'windows' },
 };
-const DEVICE_SHORT_NAMES = { 'web-console': '控制', 'android-console': '控制', 'android-notifier': '通知', 'android-camera': '相机', 'windows-inference': '视觉' };
+const DEVICE_NAMES = { 'web-console': '控制台', 'android-notifier': '通知节点', 'android-camera': '相机推流节点', 'windows-inference': '视觉节点' };
+function publicDevice(device: StoredDevice): AccountDevice { const { identityKey: _private, ...value } = device; return value; }
 const tokenHash = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
 export class AccountError extends Error { constructor(readonly status: number, message: string) { super(message); } }
 export function validUsername(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(value); }
@@ -103,7 +104,7 @@ export class AccountStore {
     const stored = { sessionId: crypto.randomUUID(), tokenHash: tokenHash(token), accountId: account.accountId, deviceId: device.deviceId,
       component: device.component, expiresAt: new Date(Date.now() + SESSION_MS).toISOString(), ...(parentId ? { parentId } : {}) };
     return { stored, result: { sessionId: stored.sessionId, token, expiresAt: stored.expiresAt,
-      account: { accountId: account.accountId, username: account.username, isAdmin: !!account.isAdmin }, device: { ...device }, ...(parentId ? { parentId } : {}) } };
+      account: { accountId: account.accountId, username: account.username, isAdmin: !!account.isAdmin }, device: publicDevice(device), ...(parentId ? { parentId } : {}) } };
   }
   async login(value: any): Promise<AccountSession & { token: string; resident?: AccountSession & { token: string } }> {
     if (!value || typeof value !== 'object' || !validUsername(value.username) || typeof value.password !== 'string' || value.password.length > 256
@@ -114,22 +115,30 @@ export class AccountStore {
     if (!(await verifyPassword(value.password, verification)) || !account
       || this.data.accounts.find(item => item.accountId === account.accountId)?.passwordHash !== account.passwordHash || this.data.accounts.find(item => item.accountId === account.accountId)?.disabled) throw new AccountError(401, 'Invalid username or password');
     const component = value.component as Exclude<Component, 'windows-resident'>;
-    let device = value.deviceId ? this.data.devices.find(item => item.deviceId === value.deviceId && item.component === component) : undefined;
-    if (value.deviceId && (!device || device.accountId !== account.accountId)) throw new AccountError(403, 'Device is not owned by this account');
-    let nextAccount = this.data.accounts.find(item => item.accountId === account.accountId)!;
+    if (typeof value.deviceIdentity !== 'string' || !/^[a-f0-9]{64}$/.test(value.deviceIdentity)) throw new AccountError(400, 'Invalid stable device identity');
+    const model = value.deviceModel ?? ({ android: 'Android设备', windows: 'Windows电脑', web: '浏览器' }[COMPONENTS[component].platform as 'android' | 'windows' | 'web']);
+    if (typeof model !== 'string' || !model.trim() || model.trim().length > 48 || /[\x00-\x1f\x7f]/.test(model)) throw new AccountError(400, 'Invalid device model');
+    const identityKey = tokenHash(`${account.accountId}|${component}|${value.deviceIdentity}`);
+    // Lookup after password verification and commit synchronously: concurrent logins share one registration.
+    let device = this.data.devices.find(item => item.accountId === account.accountId && item.component === component && item.identityKey === identityKey);
+    if (value.deviceId) {
+      const remembered = this.data.devices.find(item => item.deviceId === value.deviceId && item.component === component);
+      if (!remembered || remembered.accountId !== account.accountId) throw new AccountError(403, 'Device is not owned by this account');
+      if (remembered.identityKey && remembered.identityKey !== identityKey) throw new AccountError(403, 'Device identity mismatch');
+      // A retained registration can be explicitly claimed once; unidentified historical duplicates are never guessed by name/model.
+      if (!device) device = { ...remembered, identityKey };
+    }
+    const nextAccount = this.data.accounts.find(item => item.accountId === account.accountId)!;
     if (!device) {
-      const code = value.deviceCode ?? COMPONENTS[component].platform;
-      if (typeof code !== 'string' || !/^[\p{L}\p{N}._ -]{1,40}$/u.test(code) || !code.trim()) throw new AccountError(400, 'Invalid device code');
-      const sequence = (nextAccount.deviceSequence ?? 0) + 1;
-      nextAccount = { ...nextAccount, deviceSequence: sequence };
-      device = { accountId: account.accountId, deviceId: crypto.randomUUID(), deviceName: `${code.trim()}-${DEVICE_SHORT_NAMES[component]}-${String(sequence).padStart(3, '0')}`, component, ...COMPONENTS[component] };
+      device = { accountId: account.accountId, deviceId: crypto.randomUUID(), identityKey,
+        deviceName: `${DEVICE_NAMES[component]} · ${model.trim()}`, component, ...COMPONENTS[component] };
     }
     const session = this.issue(nextAccount, device);
     const devices = this.data.devices.filter(item => !(item.deviceId === device!.deviceId && item.component === component));
     devices.push(device);
     let resident: ReturnType<AccountStore['issue']> | undefined;
     if (component === 'windows-inference') {
-      const child: AccountDevice = { ...device, component: 'windows-resident', role: 'lifecycle', nodeType: 'resident' };
+      const child: StoredDevice = { ...device, component: 'windows-resident', role: 'lifecycle', nodeType: 'resident' };
       devices.splice(0, devices.length, ...devices.filter(item => !(item.deviceId === child.deviceId && item.component === child.component)), child);
       resident = this.issue(nextAccount, child, session.stored.sessionId);
     }
@@ -141,12 +150,12 @@ export class AccountStore {
   authenticate(token: unknown): AccountSession | undefined {
     if (typeof token !== 'string' || token.length < 32 || token.length > 256) return undefined;
     const session = this.data.sessions.find(item => item.tokenHash === tokenHash(token) && Date.parse(item.expiresAt) > Date.now());
-    if (!session) return undefined;
+    if (!session || (session.component !== 'windows-resident' && !Object.prototype.hasOwnProperty.call(COMPONENTS, session.component))) return undefined;
     if (session.parentId && !this.data.sessions.some(item => item.sessionId === session.parentId && item.accountId === session.accountId && Date.parse(item.expiresAt) > Date.now())) return undefined;
     const account = this.data.accounts.find(item => item.accountId === session.accountId);
     const device = this.data.devices.find(item => item.accountId === session.accountId && item.deviceId === session.deviceId && item.component === session.component);
     if (!account || account.disabled || !device) return undefined;
-    return { sessionId: session.sessionId, account: { accountId: account.accountId, username: account.username, isAdmin: !!account.isAdmin }, device: { ...device }, expiresAt: session.expiresAt, ...(session.parentId ? { parentId: session.parentId } : {}) };
+    return { sessionId: session.sessionId, account: { accountId: account.accountId, username: account.username, isAdmin: !!account.isAdmin }, device: publicDevice(device), expiresAt: session.expiresAt, ...(session.parentId ? { parentId: session.parentId } : {}) };
   }
   refresh(session: AccountSession): AccountSession & { token: string; resident?: AccountSession & { token: string } } {
     if (!this.data.sessions.some(item => item.sessionId === session.sessionId && item.accountId === session.account.accountId && Date.parse(item.expiresAt) > Date.now())) throw new AccountError(401, 'Session has been revoked');
@@ -168,8 +177,8 @@ export class AccountStore {
     this.commit({ ...this.data, accounts: this.data.accounts.map(item => item.accountId === account.accountId ? { ...item, salt, passwordHash: hashPassword(newPassword, salt) } : item),
       sessions: this.data.sessions.filter(item => item.accountId !== account.accountId) });
   }
-  devices(accountId: string): AccountDevice[] { return this.data.devices.filter(item => item.accountId === accountId && item.role !== 'lifecycle').map(item => ({ ...item })); }
-  identities(accountId: string): AccountDevice[] { return this.data.devices.filter(item => item.accountId === accountId).map(item => ({ ...item })); }
+  devices(accountId: string): AccountDevice[] { return this.data.devices.filter(item => item.accountId === accountId && item.role !== 'lifecycle').map(publicDevice); }
+  identities(accountId: string): AccountDevice[] { return this.data.devices.filter(item => item.accountId === accountId).map(publicDevice); }
   device(accountId: string, deviceId: string): AccountDevice | undefined { return this.devices(accountId).find(item => item.deviceId === deviceId); }
   rename(accountId: string, deviceId: string, deviceName: unknown): void {
     if (!this.device(accountId, deviceId)) throw new AccountError(404, 'Device not found');

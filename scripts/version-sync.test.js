@@ -22,7 +22,7 @@ test('releaseFileName 的产物名必须逐字出现在发布脚本里', () => {
   const publishScript = fs.readFileSync(path.join(ROOT, 'scripts', 'publish-release.ps1'), 'utf-8');
   // sync-version.js 只改 releases.json 的 url，真正生成包的是 publish-release.ps1。
   // 两边文件名写法漂移会让更新接口指向不存在的文件，所以在这里对死。
-  for (const key of ['wpf', 'android-detector', 'android-receiver', 'android-notifier']) {
+  for (const key of ['wpf', 'android-detector', 'android-notifier']) {
     const fileName = releaseFileName(key, '$Version');
     assert.ok(
       publishScript.includes(fileName),
@@ -63,8 +63,6 @@ function withVersionFixture(callback) {
     'detector/windows-resident/VisionGuard.Resident.Windows.csproj',
     'detector/android/app/build.gradle.kts',
     'detector/android/app/src/main/java/com/xgwnje/visionguard/detector/AppConstants.kt',
-    'receiver/android/app/build.gradle.kts',
-    'receiver/android/app/src/main/java/com/xgwnje/visionguard/receiver/AppConstants.kt',
     'notifier/android/app/build.gradle.kts',
     'server/package.json', 'server/package-lock.json', 'server/src/index.ts',
     'server/data/releases.json', 'receiver/web/package.json', 'receiver/web/package-lock.json'
