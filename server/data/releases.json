@@ -1,15 +1,15 @@
 {
     "wpf":  {
-                "version":  "0.6.5",
-                "url":  "/releases/VisionGuard-WPF-v0.6.5.zip",
-                "size":  18168034,
-                "sha256":  "D1FA627E51722CCB744B60387769B13B8F393D918D2D9A4604CAB34A146286BF"
+                "version":  "0.6.6",
+                "url":  "/releases/VisionGuard-WPF-v0.6.6.zip",
+                "size":  18171486,
+                "sha256":  "E857D16D48BB9B70D5968ECA4CE4DA41F6EF685709E295E3E0B1D8ED9FD1BCA5"
             },
     "android-detector":  {
-                             "version":  "0.6.5",
-                             "url":  "/releases/VisionGuard-Detector-v0.6.5.apk",
-                             "size":  12070355,
-                             "sha256":  "DDD6D5E50236B774AC678E8C4E26AE8558113A432C43B61F1500575D0B7B7ECE"
+                             "version":  "0.6.6",
+                             "url":  "/releases/VisionGuard-Detector-v0.6.6.apk",
+                             "size":  12070375,
+                             "sha256":  "6016A7AEE3AC0961F7B1BE1054D740F7192E74C93BD30D2A27E406E7874F6434"
                          },
     "android-receiver":  {
                              "version":  "0.6.0",
@@ -19,9 +19,9 @@
                              "heldBack":  true
                          },
     "android-notifier":  {
-                             "version":  "0.6.5",
-                             "url":  "/releases/VisionGuard-Notifier-v0.6.5.apk",
-                             "size":  3051118,
-                             "sha256":  "8DC1FA76AF99BCFF31DAB80EA13FC802CEC1211092CEE9863F6641A880282E02"
+                             "version":  "0.6.6",
+                             "url":  "/releases/VisionGuard-Notifier-v0.6.6.apk",
+                             "size":  3047914,
+                             "sha256":  "1F489C362C5661D6EB08BF9E658346A4A19783C4D2181AD2DAC78493639ED128"
                          }
 }
