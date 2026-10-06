@@ -22,6 +22,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public string LoginMessage { get => _loginMessage; private set => SetProperty(ref _loginMessage, value); }
         public bool IsLoginError { get => _isLoginError; private set => SetProperty(ref _isLoginError, value); }
         private void SetLoginError(string message) { LoginMessage = message; IsLoginError = true; }
+        public bool IsLoggedIn => AccountSession.Current != null;
         public string AccountText => AccountSession.Current == null ? "未登录" : "已登录 · " + AccountSession.Current.account.username;
         public RelayCommand LoginCommand { get; }
         public RelayCommand LogoutCommand { get; }
@@ -119,13 +120,13 @@ namespace VisionGuard.Detector.Windows.ViewModels
             ServiceAddress = AccountSession.ServiceUrl;
             Username = AccountSession.Current?.account.username ?? "";
             if (AccountSession.Current != null) DeviceName = AccountSession.Current.device.deviceName;
-            OnPropertyChanged(nameof(AccountText));
+            OnPropertyChanged(nameof(AccountText)); OnPropertyChanged(nameof(IsLoggedIn));
             OnPropertyChanged(nameof(CanEditDeviceName));
         }
 
         public void Save()
         {
-            SettingsStore.Set("DeviceName", DeviceName);
+            SettingsStore.Set("DeviceName", DisplayNamePolicy.Normalize(DeviceName));
             SettingsStore.Save();
         }
 
@@ -153,7 +154,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                     Password = ""; AccountChanged?.Invoke(this, EventArgs.Empty); LoginMessage = "登录成功";
                 }
                 catch (Exception ex) { SetLoginError(ex.Message); }
-                finally { _isChangingAccount = false; OnPropertyChanged(nameof(CanEditAccount)); OnPropertyChanged(nameof(CanEditDeviceName)); OnPropertyChanged(nameof(AccountText)); }
+                finally { _isChangingAccount = false; OnPropertyChanged(nameof(CanEditAccount)); OnPropertyChanged(nameof(CanEditDeviceName)); OnPropertyChanged(nameof(AccountText)); OnPropertyChanged(nameof(IsLoggedIn)); }
             });
             LogoutCommand = new RelayCommand(async () =>
             {
@@ -165,7 +166,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                     await Task.Run(AccountSession.Logout); LoginMessage = "已退出登录";
                 }
                 catch (Exception ex) { SetLoginError("本机已退出；服务撤销未确认：" + ex.Message); }
-                finally { _isChangingAccount = false; OnPropertyChanged(nameof(CanEditAccount)); OnPropertyChanged(nameof(CanEditDeviceName)); AccountChanged?.Invoke(this, EventArgs.Empty); Password = ""; OnPropertyChanged(nameof(AccountText)); }
+                finally { _isChangingAccount = false; OnPropertyChanged(nameof(CanEditAccount)); OnPropertyChanged(nameof(CanEditDeviceName)); AccountChanged?.Invoke(this, EventArgs.Empty); Password = ""; OnPropertyChanged(nameof(AccountText)); OnPropertyChanged(nameof(IsLoggedIn)); }
             });
 
             RetryCommand = new RelayCommand(() =>
@@ -215,6 +216,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 try
                 {
                 await Task.Run(() => AccountSession.RenameDevice(DeviceName));
+                DeviceName = AccountSession.Current.device.deviceName;
                 // 先持久化，再刷新驻留配置；主检测端和驻留始终使用同一个名称。
                 Save();
                 _serverPushService.Configure(

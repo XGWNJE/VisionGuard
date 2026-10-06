@@ -13,7 +13,9 @@ namespace VisionGuard.Detector.Windows.Themes
     {
         internal static bool IsDark { get; private set; }
         internal static event EventHandler? Changed;
-        private static readonly string PreferencePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionGuard", "appearance.txt");
+        private static string PreferencePath => Utils.AccountSession.IsIsolated
+            ? Path.Combine(Environment.GetEnvironmentVariable("VISIONGUARD_ACCOUNT_DIR")!, "appearance.txt")
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionGuard", "appearance.txt");
         internal static string Mode { get; private set; } = "system";
         internal static bool SetMode(string mode)
         {

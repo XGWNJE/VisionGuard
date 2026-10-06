@@ -59,6 +59,7 @@ namespace VisionGuard.Detector.Windows.Services
 
         public void Rename(string sourceId, string sourceName)
         {
+            sourceName = Utils.DisplayNamePolicy.Normalize(sourceName);
             Runtime runtime;
             lock (_sync)
             {

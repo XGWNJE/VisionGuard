@@ -28,14 +28,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -769,8 +766,7 @@ private fun CooldownEditor(
     value: Int,
     onChange: (Int) -> Unit
 ) {
-    // 1–300 秒在小屏上很难用滑块精确选，所以用“常用档一点即中 + 数字键盘精确输入”。
-    var customDraft by remember { mutableStateOf<String?>(null) }
+    var customOpen by remember { mutableStateOf(false) }
     val isPreset = CooldownOptions.any { it.first == value }
     ConfigSection(
         icon = LucideIcons.Timer,
@@ -786,35 +782,27 @@ private fun CooldownEditor(
                 QuickValueChip(
                     text = label,
                     selected = value == seconds,
-                    onClick = { onChange(seconds); customDraft = null }
+                    onClick = { onChange(seconds); customOpen = false }
                 )
             }
             QuickValueChip(
                 text = if (isPreset) "自定义" else "$value 秒",
                 selected = !isPreset,
-                onClick = { customDraft = value.toString() }
+                onClick = { customOpen = !customOpen }
             )
         }
-        if (customDraft != null) {
+        if (customOpen) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedTextField(
-                    value = customDraft.orEmpty(),
-                    onValueChange = { raw -> customDraft = raw.filter { it.isDigit() }.take(3) },
-                    label = { Text("1–300 秒") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.weight(1f),
-                    shape = MaterialTheme.shapes.small,
-                    colors = VisionGuardControlColors.outlinedField(focusedLabelColor = ReceiverPrimaryText)
-                )
-                TextButton(shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = ReceiverPrimaryText), onClick = {
-                    customDraft?.toIntOrNull()?.let { onChange(it.coerceIn(1, 300)) }
-                    customDraft = null
-                }) { Text("确定") }
+                TextButton(onClick = { onChange(value - 1) }, enabled = value > 1,
+                    modifier = Modifier.heightIn(min = 48.dp)) { Text("减少") }
+                ReceiverSlider(value = value.toFloat(), onValueChange = { onChange(it.roundToInt()) },
+                    valueRange = 1f..300f, steps = 298, modifier = Modifier.weight(1f))
+                TextButton(onClick = { onChange(value + 1) }, enabled = value < 300,
+                    modifier = Modifier.heightIn(min = 48.dp)) { Text("增加") }
             }
         }
     }
@@ -918,7 +906,7 @@ private fun ConfidenceEditor(
             value = value,
             onValueChange = onChange,
             valueRange = 0.10f..0.95f,
-            steps = 16,
+            steps = 84,
             modifier = Modifier.fillMaxWidth()
         )
     }

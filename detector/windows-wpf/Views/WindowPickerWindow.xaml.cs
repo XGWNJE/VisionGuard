@@ -22,6 +22,11 @@ namespace VisionGuard.Detector.Windows.Views
 
         private async void OnLoaded(object sender, RoutedEventArgs e)
         {
+            var workArea = SystemParameters.WorkArea;
+            Width = Math.Min(Width, Math.Max(MinWidth, workArea.Width - 24));
+            Height = Math.Min(Height, Math.Max(MinHeight, workArea.Height - 24));
+            Left = Math.Max(workArea.Left, Math.Min(Left, workArea.Right - Width));
+            Top = Math.Max(workArea.Top, Math.Min(Top, workArea.Bottom - Height));
             await LoadWindowsAsync();
         }
 
@@ -38,7 +43,9 @@ namespace VisionGuard.Detector.Windows.Views
             WindowList.IsEnabled = false;
 
             var pickerHandle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-            var windows = await Task.Run(() => WindowEnumerator.GetWindows(_excludeHwnd).Where(window => window.Handle != pickerHandle).ToList());
+            var ownerHandle = Owner == null ? IntPtr.Zero : new System.Windows.Interop.WindowInteropHelper(Owner).Handle;
+            var windows = await Task.Run(() => WindowEnumerator.GetWindows(_excludeHwnd)
+                .Where(window => window.Handle != pickerHandle && window.Handle != ownerHandle).ToList());
 
             WindowList.ItemsSource = windows;
             WindowList.IsEnabled = true;

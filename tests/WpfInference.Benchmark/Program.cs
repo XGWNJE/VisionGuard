@@ -26,6 +26,9 @@ var modelPath = Path.GetFullPath(args[0]);
 if (args.Length >= 2 && args[1].Equals("--settings-persistence", StringComparison.OrdinalIgnoreCase))
     return SettingsPersistenceProbe.Run();
 
+if (args.Length >= 2 && args[1].Equals("--display-name-boundaries", StringComparison.OrdinalIgnoreCase))
+    return DisplayNameProbe.Run();
+
 // 与生产程序同一路径：先按档位预加载原生 ONNX Runtime（绝对路径），再建任何推理会话。
 // 不做这一步时 DllImport 会按默认搜索顺序找根目录的 onnxruntime.dll，而它按设计已被移走，
 // legacy 档会以无诊断信息的进程终止失败。
@@ -188,161 +191,55 @@ if (args.Length >= 2 && args[1].Equals("--parser-contract", StringComparison.Ord
     }
 }
 
-// ── 卡片区布局契约探针 ─────────────────────────────────────────────────────
-// 目的：把「只有一个来源时只用了一半预览区」这类布局问题变成机器可判定的检查。
-// 这里只调 CardLayoutPlanner（纯计算），不开窗口、不建推理会话，因此任何机器都能跑；
-// 它证明布局数学，不证明真实界面的视觉与拖拽手感（那部分必须 owner 目检）。
+// ── 有效来源与临时配置生命周期 ──────────────────────────────────
+if (args.Length >= 2 && args[1].Equals("--source-lifecycle", StringComparison.OrdinalIgnoreCase))
+{
+    if (args.Length != 3) return 2;
+    var file = Path.GetFullPath(args[2]); Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+    Environment.SetEnvironmentVariable("VISIONGUARD_ACCOUNT_DIR", Path.Combine(Path.GetDirectoryName(file)!, "lifecycle-account-"+Guid.NewGuid().ToString("N")));
+    Environment.SetEnvironmentVariable("VISIONGUARD_SETTINGS_PATH",file);
+    var store=typeof(MultiSourceViewModel).Assembly.GetType("VisionGuard.Detector.Windows.Utils.SettingsStore",true)!;
+    var checks=new List<object>(); bool passed=true;
+    void Check(string name,bool ok) {checks.Add(new{name,passed=ok}); if(!ok)passed=false;}
+    void Seed(string indexes,string extra) { File.WriteAllText(file,"Source.Indexes="+indexes+"\nSource.LegacyMigrationCompleted=True\nSource.KeyMigrationCompleted=True\n"+extra,new System.Text.UTF8Encoding(false));store.GetMethod("Load")!.Invoke(null,null); }
+    Exception? failure=null;
+    var thread=new Thread(()=>{try {
+      var env=new SettingsViewModel();
+      Seed("1,2,3,4","Source.1.Name=empty\nSource.2.Name=bound\nSource.2.CaptureMode=ScreenRegion\nSource.2.ScreenRegion=0,0,320,240\nSource.3.CaptureMode=ScreenRegion\nSource.3.ScreenRegion=0,0,100,100\nSource.4.CaptureMode=RemoteStream\nSource.4.RemoteStreamId=offline-bound\n");
+      using(var vm=new MultiSourceViewModel(null!,env)) {
+        Check("only valid configurations retained",vm.Sources.Select(x=>x.Index).SequenceEqual(new[]{2,4}));
+        Check("offline bound remote source retained",vm.Sources[1].IsTargetBound && !vm.Sources[1].IsReady);
+        var before=File.ReadAllText(file); var draft=(SourceViewModel)Activator.CreateInstance(typeof(SourceViewModel), System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic,null,new object[]{1,vm,true},null)!;
+        draft.SourceName="temporary"; draft.ThresholdPercent=80;
+        typeof(SourceViewModel).GetMethod("NotifyTargetChanged",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.Invoke(draft,null);
+        Check("draft never reaches persisted source list",vm.Sources.Count==2 && File.ReadAllText(file)==before);
+        var source=vm.Sources[0]; var field=typeof(SourceViewModel).GetField("_screenRegion",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!;
+        var change=typeof(SourceViewModel).GetMethod("ChangeCaptureTarget",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!;
+        bool rejected=false;
+        using(var locked=new FileStream(file,FileMode.Open,FileAccess.Read,FileShare.Read)) {
+          try { change.Invoke(source,new object[]{(Action)(()=>field.SetValue(source,new System.Drawing.Rectangle(5,5,640,360)))}); } catch(System.Reflection.TargetInvocationException) {rejected=true;}
+        }
+        Check("failed capture replacement rolls back configuration",rejected && (System.Drawing.Rectangle)field.GetValue(source)! == new System.Drawing.Rectangle(0,0,320,240));
+        Check("failed capture replacement preserves disk",File.ReadAllText(file)==before);
+        vm.SelectedSource=vm.Sources[1]; typeof(MultiSourceViewModel).GetMethod("ApplySourceLimit",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.Invoke(vm,new object[]{1});
+        Check("capacity handles sparse source indexes",vm.Sources.Count==1 && vm.SelectedSource?.Index==2);
+        var canRemove=(bool)typeof(MultiSourceViewModel).GetMethod("CanRemoveSource",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!.Invoke(vm,new object[]{vm.Sources[0]})!;
+        Check("last configured local source removable",canRemove);
+      }
+      Seed("",""); using(var empty=new MultiSourceViewModel(null!,env)) {Check("empty list needs no placeholder source",!empty.HasSources && empty.SelectedSource==null); Check("empty list allows creation",empty.AddSourceCommand.CanExecute(null));}
+      Seed(string.Join(",",Enumerable.Range(1,16)),string.Join("\n",Enumerable.Range(1,16).Select(i=>$"Source.{i}.CaptureMode=ScreenRegion\nSource.{i}.ScreenRegion=0,0,320,240")));
+      using(var many=new MultiSourceViewModel(null!,env)) {Check("all sixteen configured sources available",many.Sources.Count==16); many.SelectedSource=many.Sources[15]; Check("sixteenth source selectable",many.SelectedSource?.Index==16);}
+    }catch(Exception error){failure=error;}});thread.SetApartmentState(ApartmentState.STA);thread.Start();thread.Join();
+    Check("lifecycle probe succeeds",failure==null);
+    var json=JsonSerializer.Serialize(new{passed,checks,error=failure?.ToString()},new JsonSerializerOptions{WriteIndented=true});File.WriteAllText(file+".report.json",json,new System.Text.UTF8Encoding(false));Console.WriteLine(json);return passed?0:1;
+}
+
+// ── 画面等比与三分区组件补充检查 ──────────────────────────────
 if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.OrdinalIgnoreCase))
 {
-    if (args.Length != 3)
-    {
-        Console.Error.WriteLine("Usage: WpfInference.Benchmark <ignored> --layout-plan <report.json>");
-        return 2;
-    }
-
-    var layoutChecks = new List<object>();
-    var layoutPassed = true;
-    void CheckLayout(string name, bool ok, object? detail = null)
-    {
-        layoutChecks.Add(new { name, passed = ok, detail });
-        if (!ok) layoutPassed = false;
-    }
-
-    // 与 MainWindow 一致的两个固定占用：窗口标题栏/边框，以及卡片区底部工具条。
-    const double WindowChromeHeight = 45;
-    const double ToolBarHeight = 44;
-
-    // 卡片区可用宽度 = 窗口宽度 - 卡片区外边距 - 检查区最小宽度 - 分隔条宽度。
-    double CardsWidthFor(double windowWidth) => Math.Max(
-        CardLayoutPlanner.MinimumCardsPanelWidth - CardLayoutPlanner.HostMarginWidth,
-        windowWidth - CardLayoutPlanner.HostMarginWidth - CardLayoutPlanner.InspectorMinWidth - CardLayoutPlanner.SplitterWidth);
-
-    // 网格面板可用高度 = 窗口高度 - 标题栏/边框 - 卡片区外边距 - 底部工具条。
-    double CardsHeightFor(double windowHeight) => Math.Max(
-        CardLayoutPlanner.MinimumPictureEdge,
-        windowHeight - WindowChromeHeight - CardLayoutPlanner.HostMarginHeight - ToolBarHeight);
-
-    CardLayoutPlan PlanFor(int visible, double windowWidth, double windowHeight, double? aspectRatio = 1d)
-        => CardLayoutPlanner.ComputeScrollable(new CardLayoutRequest
-        {
-            VisibleCount = visible,
-            TotalWidth = CardsWidthFor(windowWidth),
-            TotalHeight = CardsHeightFor(windowHeight),
-            UniformAspectRatio = aspectRatio,
-        });
-
-    var layoutWindows = new[]
-    {
-        (Name: "最小窗口 1200x880", Width: CardLayoutPlanner.MinimumWindowWidth, Height: CardLayoutPlanner.MinimumWindowHeight),
-        (Name: "1420x880", Width: 1420d, Height: 880d),
-        (Name: "1920x1080", Width: 1920d, Height: 1080d),
-    };
-
-    // 1) 比例约束（2026-09-20 新契约）：卡片必须接近方形，宽高比落在 1:1.2 ~ 1.2:1。
-    //    不论预览几张、窗口多大，越界时求解器都要收窄格子并留成间隔，而不是把卡片拉宽。
-    foreach (var window in layoutWindows)
-    {
-        for (int visible = 1; visible <= CardLayoutPlanner.MaximumVisibleCards; visible++)
-        {
-            var plan = PlanFor(visible, window.Width, window.Height);
-            double ratio = plan.CellHeight <= 0 ? 0 : plan.CellWidth / plan.CellHeight;
-            CheckLayout($"{visible} 张 {window.Name} 卡片比例在 1:1.2~1.2:1",
-                plan.IsValid
-                && ratio >= CardLayoutPlanner.MinimumCardAspectRatio - 0.001
-                && ratio <= CardLayoutPlanner.MaximumCardAspectRatio + 0.001,
-                new { plan.Rows, plan.Columns, plan.CellWidth, plan.CellHeight, ratio });
-        }
-    }
-
-    // 2) 网格方向按可见区域选择；空间不足只扩展达到画面下限所需的滚动内容，全部按钮仍可达。
-    foreach (var window in layoutWindows)
-    {
-        for (int visible = 1; visible <= CardLayoutPlanner.MaximumVisibleCards; visible++)
-        {
-            var plan = PlanFor(visible, window.Width, window.Height);
-            double gridWidth = plan.Columns * plan.CellWidth + (plan.Columns - 1) * CardLayoutPlanner.CardSpacing;
-            double gridHeight = plan.Rows * plan.CellHeight + (plan.Rows - 1) * CardLayoutPlanner.CardSpacing;
-            bool rowsAndColumnsMatch = visible <= 2
-                ? plan.Rows * plan.Columns == visible
-                : plan.Rows == 2 && plan.Columns == 2;
-            double minimumCellHeight = CardLayoutPlanner.MinimumPictureEdge + CardLayoutPlanner.CardChromeHeight;
-            double minimumCellWidth = Math.Max(CardLayoutPlanner.MinimumPictureEdge + CardLayoutPlanner.CardChromeWidth,
-                minimumCellHeight * CardLayoutPlanner.MinimumCardAspectRatio);
-            CheckLayout($"{visible} 张 {window.Name} 完整布局且仅必要时扩展滚动内容",
-                plan.IsValid && rowsAndColumnsMatch
-                && gridWidth <= Math.Max(CardsWidthFor(window.Width), plan.Columns * minimumCellWidth + (plan.Columns - 1) * CardLayoutPlanner.CardSpacing) + 0.5
-                && gridHeight <= Math.Max(CardsHeightFor(window.Height), plan.Rows * minimumCellHeight + (plan.Rows - 1) * CardLayoutPlanner.CardSpacing) + 0.5
-                && plan.PictureAreaWidth >= CardLayoutPlanner.MinimumPictureEdge - 0.5
-                && plan.PictureAreaHeight >= CardLayoutPlanner.MinimumPictureEdge - 0.5,
-                new { plan.Rows, plan.Columns, gridWidth, gridHeight, plan.ContentWidth, plan.ContentHeight });
-        }
-    }
-
-    // 3) 40 DIP 按钮与完整内边距下，最小窗口的四路预览通过滚动保持 320 DIP 画面短边。
-    var minSingle = PlanFor(1, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight);
-    CheckLayout("最小窗口 1 张 1:1 画面短边 >= 500",
-        minSingle.IsValid && minSingle.MinimumPictureEdge >= 500,
-        new { minSingle.CellWidth, minSingle.CellHeight, minSingle.PictureWidth, minSingle.PictureHeight });
-    var minPair = PlanFor(2, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight);
-    CheckLayout("最小窗口 2 张 1:1 画面短边 >= 380",
-        minPair.IsValid && minPair.MinimumPictureEdge >= 380,
-        new { minPair.CellWidth, minPair.CellHeight, minPair.PictureWidth, minPair.PictureHeight });
-    var minFour = PlanFor(4, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight);
-    CheckLayout("最小窗口 4 张 1:1 画面短边 >= 320",
-        minFour.IsValid && minFour.MinimumPictureEdge >= CardLayoutPlanner.MinimumPictureEdge - 0.5,
-        new { minFour.CellWidth, minFour.CellHeight, minFour.PictureWidth, minFour.PictureHeight });
-    CheckLayout("最小窗口四路预览滚动承载全部卡片",
-        minFour.ContentHeight > CardsHeightFor(CardLayoutPlanner.MinimumWindowHeight),
-        new { minFour.ContentHeight, viewportHeight = CardsHeightFor(CardLayoutPlanner.MinimumWindowHeight) });
-    var spaciousFour = PlanFor(4, 1920d, 1080d);
-    CheckLayout("足够高的窗口无需扩展滚动内容",
-        spaciousFour.ContentHeight <= CardsHeightFor(1080d) + 0.5 && spaciousFour.ContentWidth <= CardsWidthFor(1920d) + 0.5,
-        new { spaciousFour.ContentWidth, spaciousFour.ContentHeight });
-
-    // 4) 极端可用空间：宽扁 / 窄高容器下比例仍受约束，靠留白吸收差异，绝不出现宽扁条或细高条。
-    var wideShallow = CardLayoutPlanner.ComputeScrollable(new CardLayoutRequest
-    {
-        VisibleCount = 4, TotalWidth = 1800, TotalHeight = 300, UniformAspectRatio = null,
-    });
-    CheckLayout("宽扁容器 4 张比例不超 1.2:1",
-        wideShallow.IsValid
-        && wideShallow.CellWidth / wideShallow.CellHeight <= CardLayoutPlanner.MaximumCardAspectRatio + 0.001,
-        new { wideShallow.Rows, wideShallow.Columns, wideShallow.CellWidth, wideShallow.CellHeight });
-    var narrowTall = CardLayoutPlanner.ComputeScrollable(new CardLayoutRequest
-    {
-        VisibleCount = 4, TotalWidth = 420, TotalHeight = 1400, UniformAspectRatio = null,
-    });
-    CheckLayout("窄高容器 4 张比例不低于 1:1.2",
-        narrowTall.IsValid
-        && narrowTall.CellWidth / narrowTall.CellHeight >= CardLayoutPlanner.MinimumCardAspectRatio - 0.001,
-        new { narrowTall.Rows, narrowTall.Columns, narrowTall.CellWidth, narrowTall.CellHeight });
-
-    // 5) 确定性：同一输入两次求解必须完全一致，界面重排与净室断言都建立在这一点上。
-    var first = PlanFor(3, 1420d, 880d);
-    var second = PlanFor(3, 1420d, 880d);
-    CheckLayout("同一输入结果确定",
-        first.Rows == second.Rows && first.Columns == second.Columns
-        && first.CellWidth == second.CellWidth && first.CellHeight == second.CellHeight,
-        new { first.Rows, first.Columns, first.CellWidth, first.CellHeight });
-
-    // 6) 退化输入不得抛异常，也不得返回“看起来有效”的布局（窗口最小化时视图应原样跳过）。
-    var degenerate = CardLayoutPlanner.Compute(new CardLayoutRequest { VisibleCount = 3, TotalWidth = 0, TotalHeight = 0 });
-    CheckLayout("零可用空间返回无效布局", !degenerate.IsValid, new { degenerate.CellWidth, degenerate.CellHeight });
-    var noAspect = PlanFor(2, 1420d, 880d, null);
-    CheckLayout("无画面比例时仍能求解", noAspect.IsValid && noAspect.Rows * noAspect.Columns >= 2,
-        new { noAspect.CellWidth, noAspect.CellHeight });
-
-    // 7) 原始帧比例只能影响卡片内的等比画面，绝不能改变卡片外框或固定操作区的尺寸。
-    var wideFramePlan = PlanFor(4, 1420d, 880d, 3d);
-    var tallFramePlan = PlanFor(4, 1420d, 880d, 1d / 3d);
-    CheckLayout("3:1 与 1:3 画面不改变卡片外框尺寸",
-        wideFramePlan.CellWidth == tallFramePlan.CellWidth && wideFramePlan.CellHeight == tallFramePlan.CellHeight,
-        new
-        {
-            wide = new { wideFramePlan.CellWidth, wideFramePlan.CellHeight, wideFramePlan.PictureWidth, wideFramePlan.PictureHeight },
-            tall = new { tallFramePlan.CellWidth, tallFramePlan.CellHeight, tallFramePlan.PictureWidth, tallFramePlan.PictureHeight },
-        });
-
+    if (args.Length != 3) return 2;
+    var checks = new List<object>(); bool passed = true;
+    void CheckLayout(string name, bool ok, object? detail = null) { checks.Add(new { name, passed = ok, detail }); if (!ok) passed = false; }
     // 8) 等比留白输入：方形无黑边，2:1 边界仍保留一半有效面积，3:1 / 1:3 居中留黑边。
     // 同时检查张量中留白位置真的是纯黑，而不是 Bitmap 默认值或拉伸后的图像残留。
     void CheckLetterbox(string name, int width, int height, int expectedWidth, int expectedHeight, int expectedLeft, int expectedTop)
@@ -400,86 +297,98 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
         && Math.Abs(legacyLetterboxDetections[0].BoundingBox.Height - 40) < 0.01f,
         legacyLetterboxDetections.Select(detection => detection.BoundingBox).ToArray());
 
-    // 10) 预览容器的原始帧尺寸不得反向撑开卡片：在固定 400×200 画面区中，
-    // 3:1 画布只等比缩放并居中，容器自身的期望尺寸仍为 0（由外层星号行决定）。
-    Exception? presenterFailure = null;
-    bool emptyFrameArranged = false;
-    WpfSize presenterDesired = WpfSize.Empty;
-    WpfMatrix presenterMatrix = WpfMatrix.Identity;
-    var presenterThread = new Thread(() =>
-    {
-        try
-        {
-            var sourceCanvas = new Grid { Width = 300, Height = 100 };
-            var presenter = new UniformFramePresenter { Child = sourceCanvas };
-            presenter.Measure(new WpfSize(400, 200));
-            presenterDesired = presenter.DesiredSize;
-            presenter.Arrange(new WpfRect(0, 0, 400, 200));
-            presenterMatrix = ((WpfMatrixTransform)sourceCanvas.RenderTransform).Matrix;
 
-            // 启动时还没有捕获帧，绑定的 Grid 宽高均为 0。此前把它 Arrange 到 Rect.Empty，
-            // WPF 会在 ArrangeCore 内部修改 Size.Empty 而直接抛异常。
-            var emptyFramePresenter = new UniformFramePresenter { Child = new Grid { Width = 0, Height = 0 } };
-            emptyFramePresenter.Measure(new WpfSize(400, 200));
-            emptyFramePresenter.Arrange(new WpfRect(0, 0, 400, 200));
-            emptyFrameArranged = true;
+    Exception? failure = null;
+    var thread = new Thread(() => {
+      try {
+        var app = new System.Windows.Application(); app.Resources.MergedDictionaries.Add(new System.Windows.ResourceDictionary { Source = new Uri("/VisionGuard.Detector.Windows;component/Themes/DarkTheme.xaml", UriKind.Relative) });
+        foreach (var dimensions in new[] { new WpfSize(300,100),new WpfSize(100,300),new WpfSize(300,300) }) {
+          var canvas = new Grid { Width=dimensions.Width,Height=dimensions.Height }; var presenter = new UniformFramePresenter { Child=canvas };
+          presenter.Measure(new WpfSize(400,200)); presenter.Arrange(new WpfRect(0,0,400,200));
+          var matrix = ((System.Windows.Media.MatrixTransform)canvas.RenderTransform).Matrix;
+          CheckLayout("preview preserves aspect "+dimensions, Math.Abs(matrix.M11-matrix.M22)<.001 && presenter.DesiredSize.Width == 0 && presenter.DesiredSize.Height == 0);
         }
-        catch (Exception ex)
-        {
-            presenterFailure = ex;
+        var primary = new SourcePreviewCard { IsPrimary=true }; primary.Measure(new WpfSize(700,600)); primary.Arrange(new WpfRect(0,0,700,600));
+        CheckLayout("primary stretches after dependency property initialization", double.IsNaN(primary.Height) && primary.ActualHeight == 600);
+        var secondary = new SourcePreviewCard(); secondary.Measure(new WpfSize(260,double.PositiveInfinity)); secondary.Arrange(new WpfRect(0,0,260,195)); secondary.UpdateLayout();
+        CheckLayout("source card bounded height",secondary.Height>=156 && secondary.Height<=420);
+        // 高亮画面与标题都不能盖住描边；重排和渲染 DPI 改变后四角仍闭合。
+        var pixels = Enumerable.Repeat((byte)255, 256 * 176 * 4).ToArray();
+        var brightFrame = System.Windows.Media.Imaging.BitmapSource.Create(256,176,96,96,System.Windows.Media.PixelFormats.Bgra32,null,pixels,256*4);
+        var roundedCard = new SourcePreviewCard { IsPrimary=true, DataContext=new {
+            IsSelected=true, SourceName="圆角回归", StatusText="就绪", FpsText="0.0 FPS",
+            FrameWidth=256d, FrameHeight=176d, PreviewImage=brightFrame, IsMonitoring=true
+        }};
+        foreach (var size in new[] { new WpfSize(180,156),new WpfSize(420,300) }) {
+          roundedCard.Measure(size); roundedCard.Arrange(new WpfRect(new System.Windows.Point(),size)); roundedCard.UpdateLayout();
+          foreach (var dpi in new[] {96d,120d,144d}) {
+            var scale=dpi/96;
+            var bitmap=new System.Windows.Media.Imaging.RenderTargetBitmap((int)(size.Width*scale),(int)(size.Height*scale),dpi,dpi,System.Windows.Media.PixelFormats.Pbgra32);
+            bitmap.Render(roundedCard);
+            var stride=bitmap.PixelWidth*4; var rendered=new byte[stride*bitmap.PixelHeight]; bitmap.CopyPixels(rendered,stride,0);
+            bool Cyan(double x,double y) {
+              // 分数 DPI 下弧线跨像素，检查该弧段的 2×2 像素邻域。
+              for(var py=(int)(y*scale);py<=(int)(y*scale)+1;py++)
+                for(var px=(int)(x*scale);px<=(int)(x*scale)+1;px++) {
+                  var i=py*stride+px*4;
+                  if(rendered[i+3]>80 && rendered[i+1]>rendered[i+2]+30 && rendered[i]>rendered[i+2]+30)return true;
+                }
+              return false;
+            }
+            CheckLayout($"selected rounded outline complete {size} at {dpi} DPI",rendered[3]==0
+              && Cyan(2,3) && Cyan(size.Width-3,3) && Cyan(2,size.Height-4) && Cyan(size.Width-3,size.Height-4));
+          }
         }
-    });
-    presenterThread.SetApartmentState(ApartmentState.STA);
-    presenterThread.Start();
-    presenterThread.Join();
-    CheckLayout("极端帧不撑开卡片且在固定画面区等比居中",
-        presenterFailure == null
-        && presenterDesired.Width == 0 && presenterDesired.Height == 0
-        && Math.Abs(presenterMatrix.M11 - (4d / 3d)) < 0.001
-        && Math.Abs(presenterMatrix.M22 - (4d / 3d)) < 0.001
-        && Math.Abs(presenterMatrix.OffsetX) < 0.001
-        && Math.Abs(presenterMatrix.OffsetY - (200d - 100d * 4d / 3d) / 2d) < 0.001
-        && emptyFrameArranged,
-        new { presenterDesired, presenterMatrix, emptyFrameArranged, error = presenterFailure?.Message });
-
-    var layoutReport = new
-    {
-        passed = layoutPassed,
-        probe = "card-layout-plan",
-        constants = new
-        {
-            CardLayoutPlanner.MaximumVisibleCards,
-            CardLayoutPlanner.MinimumPictureEdge,
-            CardLayoutPlanner.MinimumCardAspectRatio,
-            CardLayoutPlanner.MaximumCardAspectRatio,
-            CardLayoutPlanner.CardChromeWidth,
-            CardLayoutPlanner.CardChromeHeight,
-            CardLayoutPlanner.MinimumCardsPanelWidth,
-            CardLayoutPlanner.MinimumInspectorPanelWidth,
-            CardLayoutPlanner.MaximumInspectorPanelWidth,
-            CardLayoutPlanner.MinimumWindowWidth,
-            CardLayoutPlanner.MinimumWindowHeight,
-        },
-        samples = new[]
-        {
-            new { visible = 1, window = "最小窗口 1200x880", plan = PlanFor(1, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight) },
-            new { visible = 2, window = "最小窗口 1200x880", plan = PlanFor(2, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight) },
-            new { visible = 4, window = "最小窗口 1200x880", plan = PlanFor(4, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight) },
-            new { visible = 4, window = "1420x880", plan = PlanFor(4, 1420d, 880d) },
-            new { visible = 4, window = "1920x1080", plan = PlanFor(4, 1920d, 1080d) },
-        },
-        checks = layoutChecks,
-    };
-    var layoutReportPath = Path.GetFullPath(args[2]);
-    Directory.CreateDirectory(Path.GetDirectoryName(layoutReportPath)!);
-    var layoutJson = JsonSerializer.Serialize(layoutReport, new JsonSerializerOptions { WriteIndented = true });
-    File.WriteAllText(layoutReportPath, layoutJson, new System.Text.UTF8Encoding(false));
-    Console.WriteLine(layoutJson);
-    return layoutPassed ? 0 : 1;
+        // 量测真实滚动模板：内容、轨道和外沿留白一致，短内容也保留相同可用宽度。
+        var body=new Border {Height=900};
+        var scroller=new ScrollViewer {Style=(System.Windows.Style)app.Resources["PaneScrollViewer"],Content=body};
+        void ArrangeScroll() {scroller.Measure(new WpfSize(320,400));scroller.Arrange(new WpfRect(0,0,320,400));scroller.UpdateLayout();}
+        ArrangeScroll();
+        var track=(System.Windows.Controls.Primitives.ScrollBar)scroller.Template.FindName("PART_VerticalScrollBar",scroller);
+        var bodyStart=body.TranslatePoint(new System.Windows.Point(),scroller).X;
+        var trackStart=track.TranslatePoint(new System.Windows.Point(),scroller).X;
+        var bodyWidth=body.ActualWidth;
+        CheckLayout("pane scrollbar leaves content and outer gutters",Math.Abs(trackStart-bodyStart-bodyWidth-12)<.01 && Math.Abs(320-trackStart-track.ActualWidth-8)<.01 && track.ActualWidth==10);
+        scroller.ScrollToVerticalOffset(120); scroller.UpdateLayout();
+        CheckLayout("custom pane scrollbar scrolls content",scroller.VerticalOffset==120 && body.TranslatePoint(new System.Windows.Point(),scroller).Y<0);
+        body.Height=30;ArrangeScroll();
+        CheckLayout("scrollbar appearance preserves content width",track.Visibility==System.Windows.Visibility.Collapsed && Math.Abs(body.ActualWidth-bodyWidth)<.01);
+        var page = new GlobalSettingsPage(); page.Measure(new WpfSize(696,420)); page.Arrange(new WpfRect(0,0,696,420));
+        CheckLayout("five settings categories",((System.Windows.Controls.ListBox)page.FindName("CategoryList")).Items.Count==5);
+        var button = new System.Windows.Controls.Button { Style=(System.Windows.Style)app.Resources["PaneButton"] };
+        var box = new System.Windows.Controls.TextBox { Style=(System.Windows.Style)app.Resources["PaneTextBox"] };
+        var combo = new System.Windows.Controls.ComboBox { Style=(System.Windows.Style)app.Resources["PaneComboBox"] };
+        CheckLayout("menu controls share height",button.Height==36 && box.Height==36 && combo.Height==36);
+        // 回归分隔条边界：调用真实窗口使用的限制函数，再量测 WPF 三列。
+        var limitMethod = typeof(MainWindow).GetMethod("LimitSidePaneWidth", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        double Limit(double request, double other, double area, double min, double max, bool compact = false)
+          => (double)limitMethod.Invoke(null, new object[] {request,other,area,min,max,compact})!;
+        var panes = new Grid();
+        var mainColumn = new ColumnDefinition { Width = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star), MinWidth = 240 };
+        var sourcesColumn = new ColumnDefinition { Width = new System.Windows.GridLength(280) };
+        var inspectorColumn = new ColumnDefinition { Width = new System.Windows.GridLength(320) };
+        panes.ColumnDefinitions.Add(mainColumn);
+        panes.ColumnDefinitions.Add(new ColumnDefinition { Width = new System.Windows.GridLength(8) });
+        panes.ColumnDefinitions.Add(sourcesColumn);
+        panes.ColumnDefinitions.Add(new ColumnDefinition { Width = new System.Windows.GridLength(8) });
+        panes.ColumnDefinitions.Add(inspectorColumn);
+        void ArrangePanes() { panes.Measure(new WpfSize(1100,600)); panes.Arrange(new WpfRect(0,0,1100,600)); panes.UpdateLayout(); }
+        ArrangePanes();
+        sourcesColumn.Width = new System.Windows.GridLength(Limit(900,inspectorColumn.ActualWidth,1100,240,380)); ArrangePanes();
+        CheckLayout("source drag clamps live without resizing inspector", sourcesColumn.ActualWidth==380 && inspectorColumn.ActualWidth==320 && mainColumn.ActualWidth>=240);
+        inspectorColumn.Width = new System.Windows.GridLength(Limit(900,sourcesColumn.ActualWidth,1100,300,420)); ArrangePanes();
+        CheckLayout("inspector can widen without resizing sources", inspectorColumn.ActualWidth==420 && sourcesColumn.ActualWidth==380 && mainColumn.ActualWidth>=240);
+        CheckLayout("inspector stops at lower bound",Limit(-100,380,1100,300,420)==300);
+        CheckLayout("sources stop at lower bound",Limit(-100,320,1100,240,380)==240);
+        CheckLayout("reverse from upper bound follows pointer",Limit(410,380,1100,300,420)==410);
+        CheckLayout("narrow wide mode reserves main preview",Limit(380,420,1042,240,380)==366);
+        CheckLayout("compact resize uses one separator",Limit(900,0,682,240,380,true)==380);
+      } catch(Exception error) { failure=error; }
+    }); thread.SetApartmentState(ApartmentState.STA); thread.Start(); thread.Join();
+    CheckLayout("component layout succeeds",failure==null,failure?.ToString());
+    var json=JsonSerializer.Serialize(new {passed,checks},new JsonSerializerOptions{WriteIndented=true}); File.WriteAllText(args[2],json,new System.Text.UTF8Encoding(false)); Console.WriteLine(json); return passed?0:1;
 }
 
-// ── 推理性能看门狗契约探针 ─────────────────────────────────────────────────
-// 目的：把「实测帧率达不到目标帧率」的判定口径变成机器可判定的检查。
 // 2026-09-20 起取代容量基线：不再让用户配置「DirectML 几路 / CPU 几路」，直接看实测帧率。
 if (args.Length >= 2 && args[1].Equals("--performance-watchdog", StringComparison.OrdinalIgnoreCase))
 {
@@ -647,6 +556,9 @@ if (args.Length >= 2 && args[1].Equals("--source-autosave", StringComparison.Ord
     }
 
     var settingsPath = Path.GetFullPath(args[2]);
+    var probeAccountRoot = Path.Combine(Path.GetDirectoryName(settingsPath)!, "parameter-probe-" + Guid.NewGuid().ToString("N"));
+    Environment.SetEnvironmentVariable("VISIONGUARD_ACCOUNT_DIR", probeAccountRoot);
+    Environment.SetEnvironmentVariable("VISIONGUARD_LOG_DIR", Path.Combine(probeAccountRoot, "logs"));
     Environment.SetEnvironmentVariable("VISIONGUARD_SETTINGS_PATH", settingsPath);
     if (File.Exists(settingsPath)) File.Delete(settingsPath);
     // 种子文件先写到旁边再改名：确认探针读到的是完整内容，而不是写了一半的文件。
@@ -671,6 +583,9 @@ if (args.Length >= 2 && args[1].Equals("--source-autosave", StringComparison.Ord
         new System.Text.UTF8Encoding(false));
     File.Move(seedPath, settingsPath);
     Environment.SetEnvironmentVariable("VISIONGUARD_SETTINGS_PATH", settingsPath);
+    // 与真实启动入口一样先加载设置，避免未加载的共享存储跳过持久化。
+    typeof(MultiSourceViewModel).Assembly.GetType("VisionGuard.Detector.Windows.Utils.SettingsStore", true)!
+        .GetMethod("Load")!.Invoke(null, null);
 
     var autoSaveChecks = new List<object>();
     var stageLogPath = settingsPath + ".stages.log";
@@ -716,18 +631,51 @@ if (args.Length >= 2 && args[1].Equals("--source-autosave", StringComparison.Ord
 
         // 1) 打开时不应有「已保存待生效」的项：磁盘上的值就是已生效值。
         CheckAutoSave("no-pending-on-load", !source.HasPendingApply, source.PendingApplyText);
+        var applyStatus = typeof(SourceViewModel).GetMethod("ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        using (var runningEditor = new SourceParametersEditorViewModel(source))
+        {
+            runningEditor.Confidence = 70;
+            applyStatus.Invoke(source, new object[] { new VisionGuard.Detector.Windows.Models.MonitorSourceStatus { IsMonitoring = true, ActualFps = 3 } });
+            CheckAutoSave("running-parameters-readonly", !runningEditor.CanEdit && !runningEditor.CanSave && !runningEditor.TrySave() && source.ThresholdPercent == 45);
+            CheckAutoSave("running-fps-shows-current-measurement", source.FpsText == "3.0 FPS");
+            applyStatus.Invoke(source, new object[] { new VisionGuard.Detector.Windows.Models.MonitorSourceStatus { IsMonitoring = false, ActualFps = 3 } });
+            CheckAutoSave("stopped-fps-does-not-show-stale-measurement", source.FpsText == "0.0 FPS" && source.ActualFps == 3);
+        }
 
-        var confidenceRow = source.ParameterRows.Single(row => row.Key == "confidence");
-        confidenceRow.EditCommand.Execute(null); confidenceRow.Draft = "70";
-        CheckAutoSave("parameter-draft-isolated", source.ThresholdPercent == 45 && ReadSetting("Source.1.Threshold") == "45", confidenceRow.Draft);
-        confidenceRow.Draft = "96";
-        CheckAutoSave("parameter-range-rejected", !confidenceRow.SaveCommand.CanExecute(null), confidenceRow.Draft);
-        confidenceRow.RestoreCommand.Execute(null);
-        CheckAutoSave("parameter-restore-current", confidenceRow.Draft == "45", confidenceRow.Draft);
-        confidenceRow.Draft = "70"; confidenceRow.SaveCommand.Execute(null);
-        CheckAutoSave("parameter-save-confirmed", source.ThresholdPercent == 70 && ReadSetting("Source.1.Threshold") == "70" && confidenceRow.Message == "已保存", confidenceRow.Message);
-        confidenceRow.EditCommand.Execute(null); confidenceRow.Draft = "80"; confidenceRow.CancelCommand.Execute(null);
-        CheckAutoSave("parameter-cancel-keeps-value", source.ThresholdPercent == 70 && !confidenceRow.IsEditing, confidenceRow.Draft);
+        using (var editor = new SourceParametersEditorViewModel(source))
+        {
+            editor.Confidence = 70; editor.Fps = 2; editor.Cooldown = 30;
+            CheckAutoSave("parameter-draft-isolated", source.ThresholdPercent == 45 && source.TargetFps == 3 && source.Cooldown == 5 && ReadSetting("Source.1.Threshold") == "45");
+            editor.Confidence = 96; editor.Fps = 0; editor.Cooldown = 301;
+            CheckAutoSave("parameter-selection-bounds", editor.Confidence == 95 && editor.Fps == 1 && editor.Cooldown == 300);
+            editor.RestoreCommand.Execute(null);
+            CheckAutoSave("parameter-restore-current", editor.Confidence == 45 && editor.Fps == 3 && editor.Cooldown == 5 && !editor.CanSave);
+            editor.Targets.Single(x => x.EnglishName == "person").IsSelected = false;
+            CheckAutoSave("parameter-last-target-protected", editor.Targets.Count(x => x.IsSelected) == 1 && editor.Message.Length > 0);
+            editor.Search = "car";
+            CheckAutoSave("parameter-target-search", editor.FilteredTargets.Any(x => x.EnglishName == "car") && editor.FilteredTargets.All(x => (x.EnglishName + x.ChineseName).IndexOf("car", StringComparison.OrdinalIgnoreCase) >= 0));
+            editor.Confidence = 70;
+            source.Cooldown = 6;
+            CheckAutoSave("parameter-stale-draft-blocked", editor.SourceChanged && !editor.CanSave && !editor.TrySave() && source.ThresholdPercent == 45);
+            editor.RestoreCommand.Execute(null);
+            CheckAutoSave("parameter-restore-refreshes-baseline", editor.Cooldown == 6 && !editor.SourceChanged);
+            editor.ModelKey = "unsupported-model";
+            CheckAutoSave("parameter-unavailable-model-blocked", !editor.CanSave && !editor.TrySave() && ReadSetting("Source.1.Threshold") == "45");
+            editor.RestoreCommand.Execute(null);
+            editor.Confidence = 70; editor.Fps = 3; editor.Cooldown = 5;
+            CheckAutoSave("parameter-batch-save-confirmed", editor.TrySave() && source.ThresholdPercent == 70 && source.TargetFps == 3 && source.Cooldown == 5 && ReadSetting("Source.1.Threshold") == "70" && ReadSetting("Source.1.Cooldown") == "5" && !source.HasPendingApply, editor.Message);
+        }
+        using (var canceled = new SourceParametersEditorViewModel(source)) { canceled.Confidence = 80; canceled.Cooldown = 300; }
+        CheckAutoSave("parameter-cancel-keeps-value", source.ThresholdPercent == 70 && source.Cooldown == 5 && ReadSetting("Source.1.Threshold") == "70");
+        using (var failedEditor = new SourceParametersEditorViewModel(source))
+        {
+            failedEditor.Confidence = 75; failedEditor.Fps = 4; failedEditor.Cooldown = 60;
+            using (var lockedSettings = new FileStream(settingsPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                CheckAutoSave("parameter-write-failure-rolls-back-all-fields", !failedEditor.TrySave()
+                    && source.ThresholdPercent == 70 && source.TargetFps == 3 && source.Cooldown == 5
+                    && ReadSetting("Source.1.Threshold") == "70" && ReadSetting("Source.1.Fps") == "3" && ReadSetting("Source.1.Cooldown") == "5"
+                    && failedEditor.Confidence == 75 && failedEditor.Fps == 4 && failedEditor.Cooldown == 60 && failedEditor.Message.Length > 0, failedEditor.Message);
+        }
 
         // 2) 改阈值：不需要任何保存动作，防抖到点后必须已经在磁盘上。
         source.ThresholdPercent = 61;
@@ -753,25 +701,10 @@ if (args.Length >= 2 && args[1].Equals("--source-autosave", StringComparison.Ord
                 CheckAutoSave("pending-text-lists-all", source.PendingApplyText.Contains("阈值") && source.PendingApplyText.Contains("频率") && source.PendingApplyText.Contains("冷却"),
                     source.PendingApplyText);
 
-                // 4) 采集目标三件套：重置必须把窗口/选区/遮罩一起清掉并立即落盘（不需要保存按钮）。
-                Stage("before-reset hasTarget=" + source.HasAnyTarget);
-                try
-                {
-                    source.ResetTargetCommand.Execute(null);
-                }
-                catch (Exception ex)
-                {
-                    Stage("reset-threw " + ex.GetType().FullName + ": " + ex.Message + " | " + ex.StackTrace);
-                }
-                Stage("after-reset hasTarget=" + source.HasAnyTarget);
-                CheckAutoSave("target-cleared", !source.HasAnyTarget, source.TargetInfo + " / " + source.MaskInfo);
-                CheckAutoSave("target-persisted", ReadSetting("Source.1.ScreenRegion") == "" && ReadSetting("Source.1.Masks") == "",
-                    "region=[" + ReadSetting("Source.1.ScreenRegion") + "] masks=[" + ReadSetting("Source.1.Masks") + "]");
-                CheckAutoSave("reset-survived-reconfigure", source.ResetTargetCommand.CanExecute(null) == false
-                    || source.HasAnyTarget, "canExecute=" + source.ResetTargetCommand.CanExecute(null) + " hasTarget=" + source.HasAnyTarget);
+                CheckAutoSave("configured-target-and-masks-preserved", source.IsTargetBound && source.MaskRegions.Count == 1);
+                CheckAutoSave("target-and-masks-persisted", ReadSetting("Source.1.ScreenRegion") == "10,20,320,240" && ReadSetting("Source.1.Masks") == "0.1,0.1,0.2,0.2");
                 Stage("after-persist-checks");
                 CheckAutoSave("pending-does-not-track-target", !source.PendingApplyText.Contains("窗口") && !source.PendingApplyText.Contains("遮罩"), source.PendingApplyText);
-                CheckAutoSave("individual-parameter-rows", source.ParameterRows.Count == 5, "rows=" + source.ParameterRows.Count);
                 Stage("checks-complete");
                 dispatcherDone.Set();
             };

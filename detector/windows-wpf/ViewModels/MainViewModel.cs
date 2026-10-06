@@ -153,11 +153,11 @@ namespace VisionGuard.Detector.Windows.ViewModels
             sps.UpdateHeartbeatParams(
                 isMonitoring: sourceStatuses.Any(x => x.IsMonitoring),
                 isReady: sourceStatuses.Any(x => x.IsReady),
-                cooldown: MultiSourceVm.Sources[0].Cooldown,
-                confidence: MultiSourceVm.Sources[0].ThresholdPercent / 100f,
-                targets: MultiSourceVm.Sources[0].Targets,
-                targetSamplingRate: MultiSourceVm.Sources[0].TargetFps,
-                modelKey: MultiSourceVm.Sources[0].ModelKey,
+                cooldown: MultiSourceVm.Sources.FirstOrDefault()?.Cooldown ?? 5,
+                confidence: (MultiSourceVm.Sources.FirstOrDefault()?.ThresholdPercent ?? 45) / 100f,
+                targets: MultiSourceVm.Sources.FirstOrDefault()?.Targets ?? "person",
+                targetSamplingRate: MultiSourceVm.Sources.FirstOrDefault()?.TargetFps ?? 3,
+                modelKey: MultiSourceVm.Sources.FirstOrDefault()?.ModelKey ?? Utils.ModelManager.DefaultModelKey,
                 modelOptions: Utils.ModelManager.ModelKeys.Where(Utils.ModelManager.IsDownloaded).ToArray(),
                 canSwitchModelWhileMonitoring: false,
                 sources: heartbeatSources);

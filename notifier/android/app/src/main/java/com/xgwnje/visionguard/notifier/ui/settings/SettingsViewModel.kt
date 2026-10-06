@@ -106,8 +106,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun renameLibraryRingtone(fileName: String, newName: String) {
-        val trimmed = newName.trim()
-        if (trimmed.isEmpty()) return
+        val trimmed = com.xgwnje.visionguard.account.DisplayNamePolicy.normalize(newName)
         sharedPreferencesHelper.putRingtoneLibraryEntry(fileName, trimmed)
         loadRingtoneLibrary()
         updateSelectedRingtoneName()

@@ -10,7 +10,7 @@ namespace VisionGuard.Detector.Windows.Views
     ///
     /// 普通 <see cref="Viewbox"/> 会把子画布的自然尺寸参与 Measure；当选区特别高或特别宽时，
     /// 这会反向撑大卡片的星号行并挤压底部按钮。本容器仍按 Uniform 等比显示，
-    /// 但 Measure 永远不把原始帧的尺寸上报给父布局，卡片尺寸只由 CardGridPanel 决定。
+    /// 但 Measure 永远不把原始帧的尺寸上报给父布局，卡片尺寸只由外层分区与来源列表决定。
     /// </summary>
     public sealed class UniformFramePresenter : Decorator
     {

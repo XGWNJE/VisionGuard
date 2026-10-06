@@ -17,34 +17,17 @@ using VisionGuard.Detector.Windows.Runtime;
 
 namespace VisionGuard.Detector.Windows.ViewModels
 {
-    public sealed class MultiSourceViewModel : ViewModelBase, IDisposable, ICardGridHost
+    public sealed class MultiSourceViewModel : ViewModelBase, IDisposable
     {
         private readonly MultiSourceMonitorCoordinator _coordinator;
         private readonly ServerPushService _server;
         private readonly SettingsViewModel _settings;
         private SourceViewModel? _selectedSource;
         private string _sourceLimitWarning = "";
-        private string _previewSelectionHint = "";
-        private bool _isGlobalView;
-        // 上一次性能弹窗的时间（UTC）。实测帧率持续不足时按冷却时间提醒，避免反复打扰。
         private DateTime _lastPerformanceAlertUtc = DateTime.MinValue;
-        // 收到服务端 maxSources 之前先放开到最大值，否则本地会被默认上限卡住，用户加不了更多来源。
         private int _sourceLimit = MultiSourceMonitorCoordinator.MaximumSourceLimit;
         private int _viewGeneration;
-
-        // ── 卡片区状态（固定网格、最多 4 个实时预览位、可拖宽度）──
-        // 布局求解本身在 CardLayoutPlanner（纯计算）；这里只保存用户交互产生的状态。
-        private double _inspectorPanelWidth = LoadInspectorPanelWidth();
-
-        /// <summary>全部来源：全局来源视图与来源上限都作用在它上面。</summary>
         public ObservableCollection<SourceViewModel> Sources { get; } = new();
-
-        /// <summary>
-        /// 进入实时预览的来源（最多 <see cref="CardLayoutPlanner.MaximumVisibleCards"/> 个，按来源顺序排列）。
-        /// 主视图只排布它们；不在其中的来源照常采集、推理与报警，只是不占预览位。
-        /// </summary>
-        public ObservableCollection<SourceViewModel> PreviewSources { get; } = new();
-
         public IReadOnlyList<MonitorSourceStatus> Statuses => _coordinator.Statuses;
         public SourceViewModel? SelectedSource
         {
@@ -53,83 +36,18 @@ namespace VisionGuard.Detector.Windows.ViewModels
             {
                 if (ReferenceEquals(_selectedSource, value)) return;
                 if (_selectedSource != null) _selectedSource.IsSelected = false;
-                // 选中只影响右侧检查区；不再有「跳到这一页」——卡片不再分页。
                 if (SetProperty(ref _selectedSource, value) && value != null) value.IsSelected = true;
+                OnPropertyChanged(nameof(HasSelectedSource));
             }
         }
+        public bool HasSelectedSource => SelectedSource != null;
+        public bool HasSources => Sources.Count > 0;
+        public string SourceCountText => $"来源 · {Sources.Count}";
+        public string SourceLimitText => $"最多 {_sourceLimit} 路来源";
+        public string SourceNotice => _sourceLimitWarning;
+        public bool HasSourceNotice => !string.IsNullOrEmpty(SourceNotice);
+        public RelayCommand AddSourceCommand { get; private set; } = null!;
 
-        /// <summary>
-        /// 是否处于「全局来源」模式：卡片区换成编号卡片网格，用来勾选进入实时预览的来源。
-        /// 只是显示切换，采集、推理与报警都不受影响。
-        /// </summary>
-        public bool IsGlobalView
-        {
-            get => _isGlobalView;
-            private set
-            {
-                if (!SetProperty(ref _isGlobalView, value)) return;
-                OnPropertyChanged(nameof(IsPreviewView));
-                OnPropertyChanged(nameof(GlobalViewToggleText));
-            }
-        }
-
-        /// <summary>预览视图可见性，与全局来源模式互斥。</summary>
-        public bool IsPreviewView => !_isGlobalView;
-
-        /// <summary>切换按钮文案：进全局视图说清目的，退出说清回到哪里。</summary>
-        public string GlobalViewToggleText => _isGlobalView ? "返回预览" : "全局来源";
-
-        /// <summary>实时预览位占用情况，常驻卡片区底部。</summary>
-        public string PreviewSelectionText => $"实时预览 {PreviewSources.Count}/{CardLayoutPlanner.MaximumVisibleCards}";
-
-        /// <summary>勾选被拒绝时的提示（例如已满 4 个还想再选）；为空表示没有提示。</summary>
-        public string PreviewSelectionHint
-        {
-            get => _previewSelectionHint;
-            private set
-            {
-                if (!SetProperty(ref _previewSelectionHint, value)) return;
-                OnPropertyChanged(nameof(HasPreviewSelectionHint));
-            }
-        }
-
-        public bool HasPreviewSelectionHint => !string.IsNullOrEmpty(_previewSelectionHint);
-
-        /// <summary>
-        /// 还在实时预览里的来源数（由 <see cref="PreviewSources"/> 派生，避免两处状态各说各话）。
-        /// </summary>
-        public int PreviewCount => PreviewSources.Count;
-
-        /// <summary>
-        /// 右侧检查区宽度（DIP），默认取最窄的 <see cref="CardLayoutPlanner.MinimumInspectorPanelWidth"/>，
-        /// 卡片区因此占满其余空间；用户拖拽分隔条后按拖拽结果持久化。
-        ///
-        /// 类型必须是 <see cref="GridLength"/> 而不是 double：`ColumnDefinition.Width` 是 GridLength，
-        /// double 绑定不会生效——上一版 `CardsPanelWidth` 的 double 绑定就是这样静默失效的，
-        /// 结果卡片区与检查区各占一半、设置里的宽度从来没生效过。
-        /// </summary>
-        public GridLength InspectorWidth
-        {
-            get => new GridLength(_inspectorPanelWidth);
-            set
-            {
-                double clamped = Net472Compat.Clamp(value.Value,
-                    CardLayoutPlanner.MinimumInspectorPanelWidth, CardLayoutPlanner.MaximumInspectorPanelWidth);
-                if (Math.Abs(clamped - _inspectorPanelWidth) < 0.5) return;
-                _inspectorPanelWidth = clamped;
-                OnPropertyChanged(nameof(InspectorWidth));
-                SettingsStore.Set(CardLayoutPlanner.InspectorPanelWidthSettingKey, (int)Math.Round(clamped));
-            }
-        }
-
-        public RelayCommand ToggleGlobalViewCommand { get; }
-
-        public string SourceLimitText => $"服务端允许最多 {_sourceLimit} 路来源";
-
-        /// <summary>
-        /// 本机可用模型集合变化后（例如刚在「全局设定」下载完模型）让每个来源重新求值：
-        /// 来源页的模型下拉只列已下载模型，下载完必须立刻能看到，不需要重启程序。
-        /// </summary>
         internal void RefreshModelAvailability()
         {
             foreach (var source in Sources)
@@ -157,19 +75,11 @@ namespace VisionGuard.Detector.Windows.ViewModels
             _server = server;
             _settings = settings;
             _coordinator = new MultiSourceMonitorCoordinator();
-            ToggleGlobalViewCommand = new RelayCommand(() => IsGlobalView = !IsGlobalView);
+            AddSourceCommand = new RelayCommand(AddSource, () => CanAddSource);
             EnsureLegacyBackupAndMigration();
             EnsureSourceKeyMigration();
-            foreach (int index in ResolveInitialSourceIndexes())
-            {
-                var slot = new SourceViewModel(index, this);
-                Sources.Add(slot);
-                _coordinator.Add(slot.BuildSource());
-            }
-            RestorePreviewSelection();
-            SelectedSource = PreviewSources.FirstOrDefault() ?? Sources[0];
-            // server 允许为 null：来源配置的自动保存与采集目标重置需要能在没有服务端连接的进程里被单独驱动
-            // 与断言（验证探针就是这么做的）。
+            LoadConfiguredSources();
+            // 独立配置探针允许不连接服务。
             if (_server != null)
             {
                 _server.SourceLimitReceived += (_, limit) => Application.Current.Dispatcher.Invoke(() => ApplySourceLimit(limit));
@@ -182,7 +92,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
             // 状态/帧事件可能在来源已被移除之后才送达（重建来源就是在 Remove 之后 Add，
             // 协调器在 Add 里立刻 RaiseStatus）；这里必须按“找不到就丢弃”处理，
-            // 用 First() 会在重建来源时抛 NullReferenceException（2026-09-17 实测：点“重置”即触发）。
+            // 不允许已移除来源的迟到事件重新进入界面。
             _coordinator.AlertTriggered += (_, alert) =>
             {
                 _server?.PushAlert(alert);
@@ -212,9 +122,8 @@ namespace VisionGuard.Detector.Windows.ViewModels
                     if (slot == null) { e.Frame.Frame?.Dispose(); return; }
                     using (e.Frame.Frame)
                     {
-                        // 不在实时预览里的来源照常采集与推理（报警由协调器独立触发并推送），
-                        // 但不做每帧位图转换、不更新检测框与缩放基准：那是纯 UI 开销，省给预览的那几路。
-                        if (!slot.IsPreviewSelected)
+                        // 可见来源与主画面刷新位图；滚出列表的来源继续推理，仅更新统计。
+                        if (!slot.IsSelected && !slot.IsPreviewVisible)
                         {
                             slot.ApplyFrameStatsOnly(e.Frame.InferenceMs);
                             return;
@@ -248,13 +157,20 @@ namespace VisionGuard.Detector.Windows.ViewModels
         {
             _viewGeneration++;
             foreach (var slot in Sources.ToArray()) { slot.ReleaseForAccountSwitch(); _coordinator.Remove(slot.SourceId); }
-            Sources.Clear(); PreviewSources.Clear(); SelectedSource = null;
+            Sources.Clear(); SelectedSource = null;
             RemoteFrameStore.Shared.Clear();
+            LoadConfiguredSources(); RefreshSummary();
+        }
+        private void LoadConfiguredSources()
+        {
             foreach (int index in ResolveInitialSourceIndexes())
             {
-                var slot = new SourceViewModel(index, this); Sources.Add(slot); _coordinator.Add(slot.BuildSource());
+                var slot = new SourceViewModel(index, this);
+                if (!slot.IsTargetBound) { slot.DiscardEditing(); continue; }
+                Sources.Add(slot); _coordinator.Add(slot.BuildSource());
             }
-            RestorePreviewSelection(); SelectedSource = PreviewSources.FirstOrDefault() ?? Sources[0]; RefreshSummary();
+            SelectedSource = Sources.FirstOrDefault();
+            PersistSourceIndexes();
         }
         private void ApplyStreams(IReadOnlyList<RemoteStreamInfo> streams)
         {
@@ -262,7 +178,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             foreach (var removed in Sources.Where(s => s.IsRemoteStream && !bound.Any(b => b.sourceId == s.SourceId)).ToArray())
             {
                 if (IsRunning(removed)) Stop(removed);
-                removed.FinishEditing(); _coordinator.Remove(removed.SourceId); removed.ForgetRemoteBinding(); PreviewSources.Remove(removed); Sources.Remove(removed);
+                removed.FinishEditing(); _coordinator.Remove(removed.SourceId); removed.ForgetRemoteBinding(); Sources.Remove(removed);
             }
             foreach (var stream in bound)
             {
@@ -270,13 +186,10 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 if (slot == null)
                 {
                     int index = 1; while (Sources.Any(s => s.Index == index)) index++;
-                    // Reuse an empty slot to avoid a useless extra first card.
-                    slot = Sources.FirstOrDefault(s => !s.IsTargetBound && !s.IsMonitoring);
-                    if (slot == null && Sources.Count >= _sourceLimit) { _sourceLimitWarning = "远程镜头超过来源上限。"; continue; }
-                    if (slot != null) _coordinator.Remove(slot.SourceId);
-                    else { slot = new SourceViewModel(index, this); Sources.Add(slot); AddPreview(slot); }
+                    if (Sources.Count >= _sourceLimit) { _sourceLimitWarning = "远程镜头超过来源上限。"; continue; }
+                    slot = new SourceViewModel(index, this, fresh: true); Sources.Add(slot);
                     slot.BindRemote(stream);
-                    _coordinator.Add(slot.BuildSource()); PersistSourceIndexes(); SelectedSource = slot;
+                    _coordinator.Add(slot.BuildSource()); PersistSourceIndexes(); SelectedSource ??= slot;
                 }
                 if (!stream.isStreaming && RemoteFrameStore.Shared.IsExpectedStop(stream.streamId))
                 {
@@ -286,70 +199,48 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 else if (!stream.isStreaming) slot.SetError("镜头已断流，等待恢复");
                 slot.RefreshRemoteAvailability();
             }
-            if (Sources.Count == 0) AddSource();
-            PersistSourceIndexes(); EnsurePreviewSelectionNotEmpty();
-            if (SelectedSource == null || !Sources.Contains(SelectedSource)) SelectedSource = Sources[0];
+            PersistSourceIndexes();
+            if (SelectedSource == null || !Sources.Contains(SelectedSource)) SelectedSource = Sources.FirstOrDefault();
             RefreshSummary();
         }
 
-        /// <summary>
-        /// 在服务端上限内新增一个来源：新来源默认未配置，等待用户设定采集目标。
-        /// </summary>
         internal bool CanAddSource => Sources.Count < _sourceLimit;
-
         internal bool CanRemoveSource(SourceViewModel slot)
-            => Sources.Count > 1 && !slot.IsMonitoring && !slot.IsRemoteStream;
+            => Sources.Contains(slot) && !IsRunning(slot) && !slot.IsRemoteStream;
 
         internal void AddSource()
         {
-            if (Sources.Count >= _sourceLimit) return;
-            int index = 1;
-            while (Sources.Any(source => source.Index == index)) index++;
-            var slot = new SourceViewModel(index, this);
-            Sources.Add(slot);
-            _coordinator.Add(slot.BuildSource());
-            // 预览位没满就顺手把新来源放进去，用户点「+」后立刻能看到它；满了则先留在全局来源里等勾选。
-            if (PreviewSources.Count < CardLayoutPlanner.MaximumVisibleCards)
+            if (!CanAddSource) return;
+            int index = 1; while (Sources.Any(source => source.Index == index)) index++;
+            var draft = new SourceViewModel(index, this, fresh: true);
+            try
             {
-                AddPreview(slot);
-                PersistPreviewSelection();
+                var dialog = new AddSourceWindow(draft) { Owner = Application.Current.MainWindow };
+                if (dialog.ShowDialog() != true || !draft.IsReady) return;
+                if (!CanAddSource) throw new InvalidOperationException("已达服务端来源上限，请重新添加。");
+                draft.PersistCurrent();
+                _coordinator.Add(draft.BuildSource());
+                Sources.Add(draft); PersistSourceIndexes(); SelectedSource = draft;
+                _sourceLimitWarning = "";
             }
-            SelectedSource = slot;
-            PersistSourceIndexes();
-            RefreshSummary();
+            catch (Exception error)
+            {
+                _coordinator.Remove(draft.SourceId); Sources.Remove(draft);
+                SelectedSource = Sources.FirstOrDefault();
+                try { PersistSourceIndexes(); } catch { }
+                _sourceLimitWarning = "添加失败：" + error.Message;
+            }
+            finally { draft.DiscardEditing(); RefreshSummary(); }
         }
 
-        /// <summary>删除当前来源，保底保留一个；运行中的来源必须先停止。</summary>
         internal void RemoveSource(SourceViewModel slot)
         {
-            if (slot == null || Sources.Count <= 1) return;
-            if (slot.IsMonitoring)
-            {
-                _sourceLimitWarning = "请先停止该来源再删除";
-                RefreshSummary();
-                return;
-            }
-            if (Views.ThemedMessageBox.Show($"删除来源“{slot.SourceName}”？它将从来源列表和实时预览中移除。", "删除来源",
+            if (!CanRemoveSource(slot)) return;
+            if (ThemedMessageBox.Show($"删除来源“{slot.SourceName}”？", "删除来源",
                     MessageBoxButton.YesNo, MessageBoxImage.Warning, "删除来源", destructive: true) != MessageBoxResult.Yes) return;
-            _sourceLimitWarning = "";
-            _coordinator.Remove(slot.SourceId);
-            RemovePreview(slot);
-            Sources.Remove(slot);
-            EnsurePreviewSelectionNotEmpty();
-            PersistPreviewSelection();
-            SelectedSource = PreviewSources.FirstOrDefault() ?? Sources[0];
-            PersistSourceIndexes();
-            RefreshSummary();
-        }
-
-        /// <summary>预览位被清空时补回前几个来源：主视图不能一个卡片都不剩。</summary>
-        private void EnsurePreviewSelectionNotEmpty()
-        {
-            foreach (var slot in Sources.Take(CardLayoutPlanner.MaximumVisibleCards).ToArray())
-            {
-                if (PreviewSources.Count > 0) break;
-                AddPreview(slot);
-            }
+            slot.DiscardEditing(); _coordinator.Remove(slot.SourceId); Sources.Remove(slot);
+            if (ReferenceEquals(SelectedSource, slot)) SelectedSource = Sources.FirstOrDefault();
+            PersistSourceIndexes(); RefreshSummary();
         }
 
         internal InferenceBackend PreferredBackend => _settings.PreferredBackend;
@@ -376,7 +267,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             // 重建时排队的“就绪”状态会在异常提示之后送达，从而把实际错误伪装成“无响应”。
             var modelPath = ModelManager.GetModelPath(slot.ModelKey);
             if (!File.Exists(modelPath))
-                throw new FileNotFoundException($"模型 {slot.ModelKey} 未下载，请在“全局设定 → 模型资源”中下载后重试。", modelPath);
+                throw new FileNotFoundException($"模型 {slot.ModelKey} 未下载，请在“全局设置 → 推理与模型”中下载后重试。", modelPath);
 
             if (!slot.ResolveWindowForStart()) throw new InvalidOperationException(slot.StatusText);
             Reconfigure(slot);
@@ -445,7 +336,10 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
         public void RefreshSummary()
         {
+            AddSourceCommand.RaiseCanExecuteChanged();
             OnPropertyChanged(nameof(SourceLimitText));
+            OnPropertyChanged(nameof(HasSources)); OnPropertyChanged(nameof(SourceCountText));
+            OnPropertyChanged(nameof(SourceNotice)); OnPropertyChanged(nameof(HasSourceNotice));
             foreach (var source in Sources) source.RaiseSourceActionStates();
         }
 
@@ -483,133 +377,11 @@ namespace VisionGuard.Detector.Windows.ViewModels
             }));
         }
 
-        // ── 卡片区：画面比例、实时预览选择与全局来源视图 ──────────────────────────
-
-        /// <summary>
-        /// 本屏（= 进入实时预览的来源）的画面宽高比（宽/高）。比例不一致或还没有画面时返回 null，
-        /// 此时卡片按画面区填满估算；一致时交给求解器按真实比例等比缩放，画面不会变形。
-        /// </summary>
-        double? ICardGridHost.UniformCardAspectRatio
-        {
-            get
-            {
-                double? ratio = null;
-                foreach (var source in PreviewSources)
-                {
-                    if (source.FrameWidth <= 0 || source.FrameHeight <= 0) return null;
-                    double current = source.FrameWidth / source.FrameHeight;
-                    if (ratio.HasValue && Math.Abs(ratio.Value - current) > 0.001) return null;
-                    ratio = current;
-                }
-                return ratio;
-            }
-        }
-
-        /// <summary>
-        /// 勾选/取消某个来源的实时预览位，由「全局来源」的编号卡片调用。
-        /// 勾满 <see cref="CardLayoutPlanner.MaximumVisibleCards"/> 个后再勾第 5 个会被拒绝并给出提示：
-        /// 不自动顶掉用户正在看的画面。
-        /// </summary>
-        internal void TogglePreviewSelection(SourceViewModel slot)
-        {
-            if (slot == null) return;
-            if (slot.IsPreviewSelected)
-            {
-                RemovePreview(slot);
-                PreviewSelectionHint = "";
-                PersistPreviewSelection();
-                return;
-            }
-            if (PreviewSources.Count >= CardLayoutPlanner.MaximumVisibleCards)
-            {
-                PreviewSelectionHint = $"实时预览最多 {CardLayoutPlanner.MaximumVisibleCards} 个，请先取消一个再勾选";
-                return;
-            }
-            PreviewSelectionHint = "";
-            AddPreview(slot);
-            PersistPreviewSelection();
-        }
-
-        private void AddPreview(SourceViewModel slot)
-        {
-            if (slot == null || slot.IsPreviewSelected) return;
-            if (PreviewSources.Count >= CardLayoutPlanner.MaximumVisibleCards) return;
-            slot.IsPreviewSelected = true;
-            // 按来源顺序插入：卡片顺序不随勾选先后跳动。
-            int sourceIndex = Sources.IndexOf(slot);
-            int insert = 0;
-            while (insert < PreviewSources.Count && Sources.IndexOf(PreviewSources[insert]) < sourceIndex) insert++;
-            PreviewSources.Insert(insert, slot);
-            RaisePreviewState();
-        }
-
-        private void RemovePreview(SourceViewModel slot)
-        {
-            if (slot == null || !slot.IsPreviewSelected) return;
-            slot.IsPreviewSelected = false;
-            PreviewSources.Remove(slot);
-            // 移出预览后不再保留最后一帧：位图是每路数 MB 的常驻内存，而用户已经看不到它。
-            slot.ClearPreviewFrame();
-            RaisePreviewState();
-        }
-
-        private void RaisePreviewState()
-        {
-            OnPropertyChanged(nameof(PreviewCount));
-            OnPropertyChanged(nameof(PreviewSelectionText));
-        }
-
-        /// <summary>
-        /// 恢复实时预览选择：设置里有记录就用记录（按来源顺序、最多 4 个），
-        /// 没有记录（首次运行或升级）默认预览前 4 个来源。
-        /// </summary>
-        private void RestorePreviewSelection()
-        {
-            foreach (var slot in Sources) slot.IsPreviewSelected = false;
-            PreviewSources.Clear();
-            var wanted = new List<int>();
-            string saved = SettingsStore.GetString(CardLayoutPlanner.PreviewSourceIndexesSettingKey, null);
-            if (!string.IsNullOrWhiteSpace(saved))
-            {
-                foreach (string part in saved.Split(','))
-                {
-                    int value;
-                    if (!int.TryParse(part.Trim(), out value)) continue;
-                    if (!wanted.Contains(value)) wanted.Add(value);
-                }
-            }
-            foreach (int index in wanted)
-            {
-                if (PreviewSources.Count >= CardLayoutPlanner.MaximumVisibleCards) break;
-                AddPreview(Sources.FirstOrDefault(source => source.Index == index));
-            }
-            if (PreviewSources.Count == 0)
-                foreach (var slot in Sources.Take(CardLayoutPlanner.MaximumVisibleCards).ToArray()) AddPreview(slot);
-            PersistPreviewSelection();
-            RaisePreviewState();
-        }
-
-        private void PersistPreviewSelection()
-        {
-            SettingsStore.Set(CardLayoutPlanner.PreviewSourceIndexesSettingKey,
-                string.Join(",", PreviewSources.Select(source => source.Index)));
-            SettingsStore.Save();
-        }
-
-        /// <summary>检查区宽度的持久化读取；非法值一律回落到最窄宽度。</summary>
-        private static double LoadInspectorPanelWidth()
-        {
-            int stored = SettingsStore.GetInt(CardLayoutPlanner.InspectorPanelWidthSettingKey,
-                CardLayoutPlanner.MinimumInspectorPanelWidth);
-            return Net472Compat.Clamp(stored,
-                CardLayoutPlanner.MinimumInspectorPanelWidth, CardLayoutPlanner.MaximumInspectorPanelWidth);
-        }
-
         private void ApplySourceLimit(int limit)
         {
             // 上限只是上界：不超过上限时不动用户的来源数量，超出的部分才需要裁掉。
             _sourceLimit = Net472Compat.Clamp(limit, 1, MultiSourceMonitorCoordinator.MaximumSourceLimit);
-            var overLimit = Sources.Where(source => source.Index > _sourceLimit).ToArray();
+            var overLimit = Sources.OrderBy(source => source.Index).Skip(_sourceLimit).ToArray();
             if (overLimit.Length == 0)
             {
                 _sourceLimitWarning = "";
@@ -625,13 +397,10 @@ namespace VisionGuard.Detector.Windows.ViewModels
             _sourceLimitWarning = "";
             foreach (var slot in overLimit)
             {
-                if (ReferenceEquals(SelectedSource, slot)) SelectedSource = Sources.First(source => source.Index <= _sourceLimit);
+                if (ReferenceEquals(SelectedSource, slot)) SelectedSource = Sources.FirstOrDefault(source => !overLimit.Contains(source));
                 _coordinator.Remove(slot.SourceId);
-                RemovePreview(slot);
                 Sources.Remove(slot);
             }
-            EnsurePreviewSelectionNotEmpty();
-            PersistPreviewSelection();
             PersistSourceIndexes();
             RefreshSummary();
         }
@@ -722,13 +491,13 @@ namespace VisionGuard.Detector.Windows.ViewModels
                     if (!indexes.Contains(value)) indexes.Add(value);
                 }
             }
-            if (indexes.Count == 0)
+            if (saved == null)
             {
                 // 首次运行或从早期版本升级：按已有的来源键推断数量，一个都没有就是一个来源。
                 int highest = 0;
                 for (int i = 1; i <= MultiSourceMonitorCoordinator.MaximumSourceLimit; i++)
                     if (SettingsStore.GetString($"Source.{i}.Name", null) != null) highest = i;
-                for (int i = 1; i <= Math.Max(1, highest); i++) indexes.Add(i);
+                for (int i = 1; i <= highest; i++) indexes.Add(i);
             }
             indexes.Sort();
             return indexes;
@@ -763,7 +532,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private string _sourceName = "", _modelKey = "", _targets = "", _statusText = "未配置", _targetWindowTitle = "";
         private string _targetWindowClassName = "", _targetWindowProcessName = "", _windowResolutionError = "";
         private int _thresholdPercent, _targetFps, _cooldown;
-        private bool _isMonitoring, _isSelected, _syncingTargetOptions, _isPreviewSelected;
+        private bool _isMonitoring, _isSelected, _syncingTargetOptions;
         private CaptureMode _captureMode;
         private Rectangle _screenRegion, _windowSubRegion;
         private WindowInfo? _targetWindow;
@@ -776,7 +545,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         };
         private BitmapSource? _previewImage;
         private double _frameWidth, _frameHeight;
-        private string _lastFrameText = "尚无画面", _inferenceText = "推理 — ms", _lastAlertText = "最后报警 —", _backendText = "后端 —";
+        private string _lastFrameText = "尚无画面", _inferenceText = "— ms", _lastAlertText = "—", _backendText = "—";
         private string _statusToolTip = "";
         private double _actualFps;
         private bool _isPerformanceInsufficient;
@@ -837,10 +606,9 @@ namespace VisionGuard.Detector.Windows.ViewModels
         }
 
         public ObservableCollection<DetectionItem> Detections { get; } = new();
-        public ObservableCollection<SourceParameterViewModel> ParameterRows { get; } = new();
         public ObservableCollection<DetectionClassOption> TargetOptions { get; } = new();
         public List<RectangleF> MaskRegions { get; private set; } = new();
-        public string SourceName { get => _sourceName; set { if (SetProperty(ref _sourceName, value)) MarkDirty(); } }
+        public string SourceName { get => _sourceName; set { DisplayNamePolicy.Normalize(value); if (SetProperty(ref _sourceName, value)) MarkDirty(); } }
         public string ModelKey { get => _modelKey; set { if (SetProperty(ref _modelKey, value)) MarkDirty(); } }
         public string Targets
         {
@@ -865,28 +633,29 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 return $"{string.Join("、", selected.Take(2).Select(option => option.ChineseName))}等 {selected.Count} 类";
             }
         }
+        public string ParameterSummary
+        {
+            get
+            {
+                var selected = TargetOptions.Where(x => x.IsSelected).ToList();
+                string targets = string.Join("、", selected.Take(2).Select(x => x.ChineseName));
+                if (selected.Count > 2) targets += $"等 {selected.Count} 类";
+                return $"{SourceParametersEditorViewModel.ModelLabel(ModelKey)} · {targets} · {TargetFps} FPS";
+            }
+        }
+        public string ParameterDetails => $"置信度 {ThresholdPercent}% · 冷却 {Cooldown} 秒";
+        public string SourceTypeText => IsRemoteStream ? "远程镜头" : _captureMode == CaptureMode.WindowHandle ? "窗口采集" : "屏幕选区";
+        public string ModelDisplayText => SourceParametersEditorViewModel.ModelLabel(ModelKey);
+        public string TargetsDisplayText => string.Join("、", Targets.Split(',').Select(label => CocoClassMap.EnZh.TryGetValue(label, out var chinese) ? chinese : label));
+        public string EditActionHint => IsMonitoring ? "请先停止此来源再修改配置" : "修改当前来源配置";
+        public string StartActionHint => IsMonitoring ? "正在检测" : !IsReady ? "采集目标当前不可用，请核对目标或等待镜头恢复" : !ModelManager.IsDownloaded(ModelKey) ? "请先在全局设置中下载所选模型" : "开始检测";
+        public string DeleteActionHint => IsRemoteStream ? "远程镜头的绑定由控制台管理" : IsMonitoring ? "请先停止此来源再删除" : "删除此来源";
+        public bool IsPreviewVisible { get; internal set; }
         public int ThresholdPercent { get => _thresholdPercent; set { if (SetProperty(ref _thresholdPercent, Net472Compat.Clamp(value, 10, 95))) MarkDirty(); } }
         public int TargetFps { get => _targetFps; set { if (SetProperty(ref _targetFps, Net472Compat.Clamp(value, 1, 5))) MarkDirty(); } }
         public int Cooldown { get => _cooldown; set { if (SetProperty(ref _cooldown, Net472Compat.Clamp(value, 1, 300))) MarkDirty(); } }
-        public bool IsMonitoring { get => _isMonitoring; private set { if (SetProperty(ref _isMonitoring, value)) RaiseCommandStates(); } }
+        public bool IsMonitoring { get => _isMonitoring; private set { if (SetProperty(ref _isMonitoring, value)) { OnPropertyChanged(nameof(FpsText)); RaiseCommandStates(); } } }
         public bool IsSelected { get => _isSelected; internal set => SetProperty(ref _isSelected, value); }
-
-        /// <summary>
-        /// 是否占用了实时预览位。占用时每帧刷画面；未占用时照常采集、推理与报警，
-        /// 只是不做位图转换，也不在全局来源视图之外显示画面。
-        /// </summary>
-        public bool IsPreviewSelected
-        {
-            get => _isPreviewSelected;
-            internal set
-            {
-                if (!SetProperty(ref _isPreviewSelected, value)) return;
-                OnPropertyChanged(nameof(PreviewStateText));
-            }
-        }
-
-        /// <summary>全局来源的编号卡片上显示这一路当前是「实时预览」还是「仅推理」。</summary>
-        public string PreviewStateText => _isPreviewSelected ? "实时预览" : "仅推理";
 
         /// <summary>
         /// 与「已生效配置」不一致的参数名（例如“阈值”“检测类别”）。
@@ -909,7 +678,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         /// <summary>已选择采集目标；窗口暂时失联时仍视为已绑定。</summary>
         public bool IsTargetBound => IsRemoteStream ? !string.IsNullOrWhiteSpace(_remoteStreamId) : _captureMode == CaptureMode.WindowHandle
             ? !string.IsNullOrWhiteSpace(_targetWindowTitle)
-            : _screenRegion != Rectangle.Empty;
+            : CaptureSizeConstraints.IsValid(_screenRegion);
         private bool _hasStatusError;
         public bool HasStatusError { get => _hasStatusError; private set => SetProperty(ref _hasStatusError, value); }
         public string StatusText { get => _statusText; private set { SetProperty(ref _statusText, value); HasStatusError = false; StatusToolTip = value; } }
@@ -951,7 +720,8 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public string BackendText { get => _backendText; private set => SetProperty(ref _backendText, value); }
 
         /// <summary>实测推理帧率（10 秒滚动窗口），由协调器的状态推送。</summary>
-        public double ActualFps { get => _actualFps; private set => SetProperty(ref _actualFps, value); }
+        public double ActualFps { get => _actualFps; private set { if (SetProperty(ref _actualFps, value)) OnPropertyChanged(nameof(FpsText)); } }
+        public string FpsText => IsMonitoring ? $"{ActualFps:0.0} FPS" : "0.0 FPS";
 
         /// <summary>实测帧率已持续低于目标（看门狗确认）：卡片显示短提示，宿主据此弹窗。</summary>
         public bool IsPerformanceInsufficient
@@ -966,52 +736,39 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public RelayCommand SelectCommand { get; }
         public RelayCommand PickWindowCommand { get; }
         public RelayCommand SelectRegionCommand { get; }
-        public RelayCommand ResetTargetCommand { get; }
         public RelayCommand EditMasksCommand { get; }
         public RelayCommand StartCommand { get; }
         public RelayCommand StopCommand { get; }
-        public RelayCommand AddSourceCommand { get; }
         public RelayCommand RemoveSourceCommand { get; }
-        public RelayCommand TogglePreviewCommand { get; }
 
-        internal SourceViewModel(int index, MultiSourceViewModel owner)
+        internal SourceViewModel(int index, MultiSourceViewModel owner, bool fresh = false)
         {
             _owner = owner; _index = index; SourceId = SettingsStore.GetString(Prefix + "SourceId", index == 1 ? "default" : $"signal-{index}");
-            Load();
+            if (fresh)
+            {
+                SourceId = index == 1 ? "default" : $"signal-{index}";
+                _sourceName = $"来源 {index}"; _modelKey = ModelManager.DefaultModelKey; _targets = "person";
+                _thresholdPercent = 45; _targetFps = 3; _cooldown = 5; _captureMode = CaptureMode.ScreenRegion;
+                MaskRegions = new List<RectangleF>();
+            }
+            else Load();
             InitializeTargetOptions();
             _saved = CaptureState();
             _autoSaveTimer.Tick += AutoSaveTick;
             SelectCommand = new RelayCommand(() => _owner.Select(this));
             PickWindowCommand = new RelayCommand(PickWindow, () => CanEdit && !IsRemoteStream);
             SelectRegionCommand = new RelayCommand(SelectRegion, () => CanEdit && !IsRemoteStream);
-            // 采集目标三件套（窗口 / 选区 / 遮罩）合用一个重置：它们本来就要一起变，分开清除只会留下半套配置。
-            ResetTargetCommand = new RelayCommand(ResetTarget, () => CanEdit && HasAnyTarget && !IsRemoteStream);
             EditMasksCommand = new RelayCommand(EditMasks, () => CanEdit && IsReady);
             StartCommand = new RelayCommand(Start, () => CanStart);
             StopCommand = new RelayCommand(() => _owner.Stop(this), () => IsMonitoring);
-            AddSourceCommand = new RelayCommand(_owner.AddSource, () => _owner.CanAddSource);
             RemoveSourceCommand = new RelayCommand(() => _owner.RemoveSource(this), () => _owner.CanRemoveSource(this));
-            // 预览位是否还能再勾由宿主判断：满了要给提示，所以命令本身始终可执行。
-            TogglePreviewCommand = new RelayCommand(() => _owner.TogglePreviewSelection(this));
-            StatusText = IsReady ? "就绪" : (!string.IsNullOrWhiteSpace(_targetWindowTitle) ? (string.IsNullOrWhiteSpace(_windowResolutionError) ? "窗口未找到" : _windowResolutionError) : "未配置");
-            foreach (var field in new[] { ("modelKey", "推理模型"), ("targets", "检测目标"), ("confidence", "置信度（%）"), ("targetSamplingRate", "采样频率（FPS）"), ("cooldown", "报警冷却（秒）") })
-                ParameterRows.Add(new SourceParameterViewModel(this, field.Item1, field.Item2));
+            RefreshIdleStatus();
         }
 
         internal void RaiseSourceActionStates()
         {
-            AddSourceCommand.RaiseCanExecuteChanged();
             RemoveSourceCommand.RaiseCanExecuteChanged();
-            OnPropertyChanged(nameof(AddSourceToolTip));
         }
-
-        /// <summary>
-        /// 新增按钮的提示文案：加不了时必须说清是「服务端上限」而不是静默变灰。
-        /// 默认上限曾是 4，界面上完全没有提示，被误读成「布局改崩了、来源加不上」。
-        /// </summary>
-        public string AddSourceToolTip => _owner.CanAddSource
-            ? "新增来源"
-            : $"已达服务端上限：{_owner.SourceLimitText}";
 
         private string Prefix => $"Source.{_index}.";
 
@@ -1138,11 +895,13 @@ namespace VisionGuard.Detector.Windows.ViewModels
         {
             var main = Application.Current.MainWindow;
             var excluded = main == null ? IntPtr.Zero : new System.Windows.Interop.WindowInteropHelper(main).Handle;
-            var picker = new WindowPickerWindow(excluded) { Owner = main };
+            var picker = new WindowPickerWindow(excluded) { Owner = Application.Current.Windows.Cast<Window>().FirstOrDefault(window => window.IsActive) ?? main };
             if (picker.ShowDialog() != true || picker.SelectedWindow == null || !ConfirmTargetChange()) return;
-            _captureMode = CaptureMode.WindowHandle; _targetWindow = picker.SelectedWindow; _targetWindowTitle = picker.SelectedWindow.Title;
-            _targetWindowClassName = picker.SelectedWindow.ClassName; _targetWindowProcessName = picker.SelectedWindow.ProcessName; _windowResolutionError = "";
-            _screenRegion = Rectangle.Empty; _windowSubRegion = Rectangle.Empty; ClearMasksInternal(); NotifyTargetChanged();
+            ChangeCaptureTarget(() => {
+                _captureMode = CaptureMode.WindowHandle; _targetWindow = picker.SelectedWindow; _targetWindowTitle = picker.SelectedWindow.Title;
+                _targetWindowClassName = picker.SelectedWindow.ClassName; _targetWindowProcessName = picker.SelectedWindow.ProcessName; _windowResolutionError = "";
+                _screenRegion = Rectangle.Empty; _windowSubRegion = Rectangle.Empty; ClearMasksInternal();
+            });
         }
 
         private void SelectRegion()
@@ -1155,9 +914,27 @@ namespace VisionGuard.Detector.Windows.ViewModels
             var selector = new RegionSelectorWindow(background) { Owner = Application.Current.MainWindow };
             selector.ShowDialog();
             if (!selector.IsConfirmed || !ConfirmTargetChange()) return;
-            if (windowMode) _windowSubRegion = selector.SelectedRegion;
-            else { _captureMode = CaptureMode.ScreenRegion; _screenRegion = selector.SelectedRegion; _targetWindow = null; _targetWindowTitle = string.Empty; _targetWindowClassName = string.Empty; _targetWindowProcessName = string.Empty; _windowResolutionError = ""; _windowSubRegion = Rectangle.Empty; }
-            ClearMasksInternal(); NotifyTargetChanged();
+            ChangeCaptureTarget(() => {
+                if (windowMode) _windowSubRegion = selector.SelectedRegion;
+                else { _captureMode = CaptureMode.ScreenRegion; _screenRegion = selector.SelectedRegion; _targetWindow = null; _targetWindowTitle = string.Empty; _targetWindowClassName = string.Empty; _targetWindowProcessName = string.Empty; _windowResolutionError = ""; _windowSubRegion = Rectangle.Empty; }
+                ClearMasksInternal();
+            });
+        }
+
+        internal void ChangeCaptureTarget(Action change)
+        {
+            if (!CanEdit) throw new InvalidOperationException("请先停止此来源。");
+            var previous = CaptureState(); var previousWindow = _targetWindow; var previousSaved = _saved;
+            try { change(); if (!IsReady) throw new InvalidOperationException("采集配置无效。"); NotifyTargetChanged(); }
+            catch
+            {
+                _captureMode = previous.CaptureMode; _targetWindow = previousWindow; _targetWindowTitle = previous.TargetWindowTitle;
+                _targetWindowClassName = previous.TargetWindowClassName; _targetWindowProcessName = previous.TargetWindowProcessName;
+                _screenRegion = previous.ScreenRegion; _windowSubRegion = previous.WindowSubRegion; MaskRegions = previous.Masks.ToList(); _saved = previousSaved;
+                if (_owner.Sources.Contains(this)) { PersistCurrent(); try { SettingsStore.Save(); _owner.Reconfigure(this); } catch { } }
+                OnPropertyChanged(nameof(TargetInfo)); OnPropertyChanged(nameof(MaskInfo)); OnPropertyChanged(nameof(SourceTypeText));
+                throw;
+            }
         }
 
         /// <summary>是否已配置采集目标三件套中的任意一项（窗口 / 选区 / 遮罩）。</summary>
@@ -1165,17 +942,6 @@ namespace VisionGuard.Detector.Windows.ViewModels
             || _screenRegion != Rectangle.Empty
             || _windowSubRegion != Rectangle.Empty
             || MaskRegions.Count > 0;
-
-        /// <summary>
-        /// 重置采集目标：窗口、选区、遮罩一起清空，随后立即持久化。
-        /// 这三项是一个整体——换了窗口或选区，原来的遮罩坐标就失去意义，所以只提供整体重置。
-        /// </summary>
-        private void ResetTarget()
-        {
-            if (!ConfirmTargetChange()) return;
-            _captureMode = CaptureMode.ScreenRegion; _targetWindow = null; _targetWindowTitle = string.Empty; _targetWindowClassName = string.Empty; _targetWindowProcessName = string.Empty; _windowResolutionError = "";
-            _screenRegion = Rectangle.Empty; _windowSubRegion = Rectangle.Empty; ClearMasksInternal(); NotifyTargetChanged();
-        }
 
         private bool ConfirmTargetChange() => MaskRegions.Count == 0 || VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show("更换捕获目标或选区会清除当前遮罩。是否继续？", "视觉节点", MessageBoxButton.YesNo, MessageBoxImage.Warning, "更换目标", destructive: true) == MessageBoxResult.Yes;
 
@@ -1202,12 +968,12 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
         /// <summary>
         /// 把当前配置落盘并让协调器按最新配置重建来源。
-        /// 保存按钮已移除：参数改动即持久化，这里只剩「需要立刻重建来源」的场景（启动前、远控改配置、目标三件套变更）。
+        /// 参数编辑统一保存整组草稿；该入口也用于远控的单项配置。
         /// </summary>
         internal void ApplyAndPersist()
         {
             if (IsMonitoring) throw new InvalidOperationException("请先停止该来源再修改配置。");
-            SourceName = string.IsNullOrWhiteSpace(SourceName) ? DisplayIndex : SourceName.Trim();
+            SourceName = DisplayNamePolicy.Normalize(SourceName);
             PersistCurrent(); SettingsStore.Save(); _saved = CaptureState(); RefreshPendingApply(); _owner.Reconfigure(this);
         }
 
@@ -1236,9 +1002,28 @@ namespace VisionGuard.Detector.Windows.ViewModels
             }
         }
 
+        internal void CommitParameters(string model, string targets, int confidence, int fps, int cooldown)
+        {
+            if (!CanEdit) throw new InvalidOperationException("请先停止当前来源。");
+            if (!ModelManager.IsSupported(model) || !ModelManager.IsDownloaded(model)) throw new ArgumentException("模型不可用，请先下载。");
+            if (string.IsNullOrWhiteSpace(targets) || targets.Length > 4096 || targets.Split(',').Any(label => !CocoClassMap.EnglishNames.Contains(label))) throw new ArgumentException("至少选择一个当前模型中的目标。");
+            if (confidence < 10 || confidence > 95 || fps < 1 || fps > 5 || cooldown < 1 || cooldown > 300) throw new ArgumentException("参数范围无效。");
+            var previous = CaptureState(); var saved = _saved;
+            void Assign(string nextModel, string nextTargets, int nextConfidence, int nextFps, int nextCooldown)
+            { ModelKey = nextModel; Targets = nextTargets; ThresholdPercent = nextConfidence; TargetFps = nextFps; Cooldown = nextCooldown; }
+            try { Assign(model, targets, confidence, fps, cooldown); _autoSaveTimer.Stop(); ApplyAndPersist(); }
+            catch
+            {
+                Assign(previous.ModelKey, previous.Targets, previous.ThresholdPercent, previous.TargetFps, previous.Cooldown);
+                _autoSaveTimer.Stop(); _saved = saved; PersistCurrent(); RefreshPendingApply();
+                try { SettingsStore.Save(); _owner.Reconfigure(this); } catch (Exception error) { LogManager.StaticWarn("[Parameter] 还原失败：" + error.Message); }
+                throw;
+            }
+        }
+
         internal void CommitSourceNameEdit()
         {
-            SourceName = string.IsNullOrWhiteSpace(SourceName) ? DisplayIndex : SourceName.Trim();
+            SourceName = DisplayNamePolicy.Normalize(SourceName);
             SettingsStore.Set(Prefix + "Name", SourceName);
             SettingsStore.Save();
             _saved = _saved with { SourceName = SourceName };
@@ -1259,7 +1044,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             SettingsStore.Set(Prefix + "SourceId", SourceId);
             SettingsStore.Set(Prefix + "RemoteStreamId", _remoteStreamId);
             SettingsStore.Set(Prefix + "RemotePublisherName", _remotePublisherName);
-            SettingsStore.Set(Prefix + "Initialized", true); SettingsStore.Set(Prefix + "Name", SourceName);
+            SettingsStore.Set(Prefix + "Initialized", true); SettingsStore.Set(Prefix + "Name", DisplayNamePolicy.IsValid(SourceName) ? SourceName.Trim() : _saved?.SourceName ?? DisplayIndex);
             SettingsStore.Set(Prefix + "CaptureMode", _captureMode.ToString()); SettingsStore.Set(Prefix + "TargetWindowTitle", _targetWindowTitle);
             SettingsStore.Set(Prefix + "TargetWindowClassName", _targetWindowClassName); SettingsStore.Set(Prefix + "TargetWindowProcessName", _targetWindowProcessName);
             SettingsStore.Set(Prefix + "WindowSubRegion", FormatRectangle(_windowSubRegion)); SettingsStore.Set(Prefix + "ScreenRegion", FormatRectangle(_screenRegion));
@@ -1279,6 +1064,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             OnPropertyChanged(nameof(IsRemoteStream)); OnPropertyChanged(nameof(IsReady)); OnPropertyChanged(nameof(CanStart));
             RaiseCommandStates();
         }
+        internal void DiscardEditing() { _autoSaveTimer.Stop(); ClearPreviewFrame(); }
         internal void FinishEditing() { _autoSaveTimer.Stop(); PersistCurrent(); SettingsStore.Save(); ClearPreviewFrame(); }
         internal void ReleaseForAccountSwitch() { _autoSaveTimer.Stop(); ClearPreviewFrame(); }
         internal void ForgetRemoteBinding()
@@ -1325,7 +1111,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private void RefreshIdleStatus()
             => StatusText = IsReady
                 ? (PreviewImage == null ? "就绪" : "已停止 · 保留最后画面")
-                : (!string.IsNullOrWhiteSpace(_targetWindowTitle) ? (string.IsNullOrWhiteSpace(_windowResolutionError) ? "窗口未找到" : _windowResolutionError) : "未配置");
+                : (IsRemoteStream && IsTargetBound ? "镜头暂不可用 · 等待恢复" : !string.IsNullOrWhiteSpace(_targetWindowTitle) ? (string.IsNullOrWhiteSpace(_windowResolutionError) ? "窗口未找到" : _windowResolutionError) : "未配置");
 
         private void Start() { try { _owner.Start(this); } catch (Exception ex) { SetError(ex.Message); } }
         internal void MarkStarting() => StatusText = "启动中";
@@ -1337,7 +1123,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             // 只有“持续不足”达到看门狗的持续时间阈值后 PerformanceWarning 才有文案，
             // 因此直接用它作为“已确认性能不足”的标记，卡片与弹窗共用同一个判据。
             IsPerformanceInsufficient = !string.IsNullOrWhiteSpace(status.PerformanceWarning);
-            BackendText = status.ActiveBackend == "Unavailable" ? "后端 —" : $"{status.ActiveBackend} · {status.ActualFps:0.0} FPS";
+            BackendText = status.ActiveBackend == "Unavailable" ? "—" : status.ActiveBackend;
             StatusText = !string.IsNullOrWhiteSpace(status.Error)
                 ? $"异常：{status.Error}"
                 : IsPerformanceInsufficient
@@ -1345,7 +1131,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                     ? $"性能不足 {status.ActualFps:0.0}/{status.TargetFps:0.0} FPS"
                 : status.IsMonitoring
                     ? "检测中"
-                    : (IsReady ? (PreviewImage == null ? "就绪" : "已停止 · 保留最后画面") : (!string.IsNullOrWhiteSpace(_targetWindowTitle) ? (string.IsNullOrWhiteSpace(_windowResolutionError) ? "窗口未找到" : _windowResolutionError) : "未配置"));
+                    : (IsReady ? (PreviewImage == null ? "就绪" : "已停止 · 保留最后画面") : (IsRemoteStream && IsTargetBound ? "镜头暂不可用 · 等待恢复" : !string.IsNullOrWhiteSpace(_targetWindowTitle) ? (string.IsNullOrWhiteSpace(_windowResolutionError) ? "窗口未找到" : _windowResolutionError) : "未配置"));
             HasStatusError = !string.IsNullOrWhiteSpace(status.Error);
             StatusToolTip = HasStatusError ? StatusText : IsPerformanceInsufficient ? status.PerformanceWarning : StatusText;
         }
@@ -1355,44 +1141,46 @@ namespace VisionGuard.Detector.Windows.ViewModels
             PreviewImage = image; FrameWidth = image.PixelWidth; FrameHeight = image.PixelHeight; Detections.Clear();
             foreach (var d in detections) Detections.Add(new DetectionItem { Left = d.BoundingBox.Left, Top = d.BoundingBox.Top, Width = d.BoundingBox.Width, Height = d.BoundingBox.Height, Label = $"{d.Label} {(int)(d.Confidence * 100)}%" });
             LastFrameText = $"更新 {DateTime.Now:HH:mm:ss}";
-            InferenceText = $"推理 {inferenceMs} ms";
+            InferenceText = $"{inferenceMs} ms";
         }
 
         /// <summary>
-        /// 未进入实时预览的来源只更新统计文字：帧、检测框与缩放基准都不碰，
+        /// 滚出列表的非选中来源只更新统计文字：帧、检测框与缩放基准都不碰，
         /// 因此不会产生 BitmapSource，也不会有每帧的 UI 通知风暴。
         /// </summary>
         internal void ApplyFrameStatsOnly(long inferenceMs)
         {
             LastFrameText = $"更新 {DateTime.Now:HH:mm:ss}";
-            InferenceText = $"推理 {inferenceMs} ms";
+            InferenceText = $"{inferenceMs} ms";
         }
 
-        /// <summary>移出实时预览时释放最后一帧：位图是每路数 MB 的常驻内存，留着也不会再显示。</summary>
+        /// <summary>配置、账号或来源生命周期结束时释放画面。</summary>
         internal void ClearPreviewFrame()
         {
             PreviewImage = null;
             Detections.Clear();
             FrameWidth = 0;
             FrameHeight = 0;
-            LastFrameText = "已移出实时预览 · 仍在推理";
+            LastFrameText = "暂无画面";
         }
 
         internal void ApplyAlert(AlertEvent alert)
         {
             var target = alert.Detections.FirstOrDefault()?.Label ?? "目标";
-            LastAlertText = $"最后报警 {DateTime.Now:HH:mm:ss} · {target} ×{alert.Detections.Count}";
+            LastAlertText = $"{DateTime.Now:HH:mm:ss} · {target} ×{alert.Detections.Count}";
         }
 
         /// <summary>采集目标三件套变更：立即持久化并重建来源（这三项本来就不经过冷改动路径）。</summary>
         private void NotifyTargetChanged()
         {
-            PersistCurrent();
-            SettingsStore.Save();
+            bool registered = _owner.Sources.Contains(this);
+            if (registered) { PersistCurrent(); SettingsStore.Save(); }
             _saved = CaptureState();
             RefreshPendingApply();
             StatusText = IsReady ? "就绪" : "未配置";
+            OnPropertyChanged(nameof(SourceTypeText));
             OnPropertyChanged(nameof(TargetInfo));
+            OnPropertyChanged(nameof(IsRemoteStream));
             OnPropertyChanged(nameof(AspectRatioWarning));
             OnPropertyChanged(nameof(HasAspectRatioWarning));
             OnPropertyChanged(nameof(MaskInfo));
@@ -1400,7 +1188,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             OnPropertyChanged(nameof(IsReady));
             OnPropertyChanged(nameof(CanStart));
             RaiseCommandStates();
-            _owner.Reconfigure(this);
+            if (registered) _owner.Reconfigure(this);
         }
 
         private void ClearMasksInternal() { MaskRegions.Clear(); OnPropertyChanged(nameof(MaskInfo)); OnPropertyChanged(nameof(HasAnyTarget)); }
@@ -1418,6 +1206,12 @@ namespace VisionGuard.Detector.Windows.ViewModels
         /// </summary>
         private void MarkDirty()
         {
+            if (!_owner.Sources.Contains(this)) return;
+            OnPropertyChanged(nameof(ParameterSummary));
+            OnPropertyChanged(nameof(ParameterDetails));
+            OnPropertyChanged(nameof(ModelDisplayText)); OnPropertyChanged(nameof(TargetsDisplayText));
+            OnPropertyChanged(nameof(StartActionHint));
+            OnPropertyChanged(nameof(EditActionHint)); OnPropertyChanged(nameof(DeleteActionHint));
             RefreshPendingApply();
             if (!IsMonitoring) StatusText = HasPendingApply ? PendingApplyText : (IsReady ? "就绪" : "未配置");
             _autoSaveTimer.Stop();
@@ -1427,6 +1221,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private void AutoSaveTick(object? sender, EventArgs e)
         {
             _autoSaveTimer.Stop();
+            if (!_owner.Sources.Contains(this)) { RefreshIdleStatus(); return; }
             PersistCurrent();
             SettingsStore.Save();
         }
@@ -1434,7 +1229,9 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private void RaiseCommandStates()
         {
             OnPropertyChanged(nameof(CanEdit)); OnPropertyChanged(nameof(CanStart));
-            PickWindowCommand?.RaiseCanExecuteChanged(); SelectRegionCommand?.RaiseCanExecuteChanged(); ResetTargetCommand?.RaiseCanExecuteChanged();
+            OnPropertyChanged(nameof(StartActionHint));
+            OnPropertyChanged(nameof(EditActionHint)); OnPropertyChanged(nameof(DeleteActionHint));
+            PickWindowCommand?.RaiseCanExecuteChanged(); SelectRegionCommand?.RaiseCanExecuteChanged();
             EditMasksCommand?.RaiseCanExecuteChanged(); StartCommand?.RaiseCanExecuteChanged(); StopCommand?.RaiseCanExecuteChanged();
         }
 

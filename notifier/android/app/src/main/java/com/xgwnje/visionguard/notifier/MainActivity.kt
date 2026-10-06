@@ -47,7 +47,7 @@ class MainActivity : AppCompatActivity() {
             } }
             NotificationTheme(darkTheme = dark) {
                 Column(Modifier.fillMaxSize().statusBarsPadding()) {
-                ApplicationOptions(appearance, BuildConfig.VERSION_NAME, "android-notifier")
+                if (session == null) ApplicationOptions(appearance, BuildConfig.VERSION_NAME, "android-notifier")
                 Box(Modifier.weight(1f)) {
                 if (session == null) AccountLogin(account, "通知节点", "android-notifier")
                 else key(session!!.scope) {
@@ -66,7 +66,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-                        AccountHeader(account, session!!, beforeLogout = { stopAccount() })
+                        AccountHeader(account, session!!, actions = { ApplicationOptions(appearance, BuildConfig.VERSION_NAME, "android-notifier", Modifier) }, beforeLogout = { stopAccount() })
                         val nav = rememberNavController()
                         NavHost(navController = nav, startDestination = "node", modifier = Modifier.weight(1f)) {
                             composable("node") { NotificationDashboard(model, onHistory = { nav.navigate("history") }, onLibrary = { nav.navigate("ringtones") }) }

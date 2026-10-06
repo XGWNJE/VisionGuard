@@ -11,7 +11,7 @@ import fs from 'fs';
 import { config } from '../config';
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { accountStore, accountDirectory, type AccountSession } from './AccountStore';
+import { accountStore, accountDirectory, validDeviceName, type AccountSession } from './AccountStore';
 import { mediaRelay } from './MediaRelay';
 import { NotificationScopeStore, parseNotificationScope, scopeAccepts } from './NotificationScopeStore';
 import { TimeStandardStore, validAlarmTimeZone } from './TimeStandardStore';
@@ -195,7 +195,7 @@ function sanitizeSources(value: unknown): SourceStatus[] | undefined {
     if (!item || typeof item !== 'object') continue;
     const sourceId = typeof item.sourceId === 'string' ? item.sourceId.trim() : '';
     const sourceName = typeof item.sourceName === 'string' ? item.sourceName.trim() : '';
-    if (!/^[A-Za-z0-9_-]{1,64}$/.test(sourceId) || !sourceName || sourceName.length > 64 || ids.has(sourceId)) continue;
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(sourceId) || !validDeviceName(item.sourceName) || ids.has(sourceId)) continue;
     ids.add(sourceId);
     const actualFps = typeof item.actualFps === 'number' && isFinite(item.actualFps)
       ? Math.max(0, Math.min(240, item.actualFps)) : undefined;

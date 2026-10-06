@@ -128,7 +128,7 @@ object RingtoneLibrary {
             } ?: return null
             Log.i(TAG, "已导入铃声: ${target.name} (来源: $rawName)")
             NotificationLogger.i(context, TAG, "铃声已导入: ${target.name} (来源: $rawName)")
-            target.name to baseName
+            target.name to com.xgwnje.visionguard.account.DisplayNamePolicy.generated(baseName, "导入铃声")
         } catch (e: Exception) {
             Log.e(TAG, "导入铃声失败: $uri", e)
             NotificationLogger.e(context, TAG, "导入铃声失败: $uri", e)

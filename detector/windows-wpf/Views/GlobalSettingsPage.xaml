@@ -1,166 +1,339 @@
-<UserControl x:Class="VisionGuard.Detector.Windows.Views.GlobalSettingsPage"
-             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:icons="clr-namespace:VisionGuard.Detector.Windows.Icons"
-             Background="Transparent">
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Margin="4,8,8,8">
-            <StackPanel Margin="0,0,0,16">
-                <TextBlock Text="外观" Style="{StaticResource SectionLabel}" Margin="0,0,0,8"/>
-                <ComboBox ItemsSource="{Binding AppearanceOptions}" SelectedIndex="{Binding AppearanceIndex}" Style="{StaticResource DarkComboBox}"/>
-                <TextBlock Text="{Binding AppearanceStatus}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-            </StackPanel>
-            <!-- ═══ 推理设备与模型资源（原「运行环境」页） ═══ -->
-            <StackPanel DataContext="{Binding Environment}">
-                <StackPanel Margin="0,0,0,16">
-                    <TextBlock Text="推理设备" Style="{StaticResource SectionLabel}" Margin="0,0,0,8"/>
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="64"/><ColumnDefinition/></Grid.ColumnDefinitions>
-                        <TextBlock Text="后端" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
-                        <!-- 后端清单按档位变化：legacy 档（Windows 7）没有 DirectML 提供程序，只提供 CPU。 -->
-                        <ComboBox Grid.Column="1" Style="{StaticResource DarkComboBox}" ItemsSource="{Binding BackendOptions}" SelectedIndex="{Binding SelectedBackendIndex}" />
-                    </Grid>
-                    <TextBlock Text="加速失败时，具体回退原因会显示在对应来源中。" Style="{StaticResource CaptionText}"
-                               TextWrapping="Wrap" Margin="64,8,0,0"/>
-                </StackPanel>
-
-                <!-- 模型资源默认收起，需要下载或管理模型时再展开，避免全局设定首次打开被清单淹没。 -->
-                <Expander IsExpanded="False" Margin="0,0,0,16">
-                    <Expander.Header>
-                        <TextBlock Text="模型资源" Style="{StaticResource SectionLabel}"/>
-                    </Expander.Header>
-                    <StackPanel Margin="0,8,0,0">
-                    <ItemsControl ItemsSource="{Binding Models}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border Style="{StaticResource CardBorder}" Background="{DynamicResource SurfaceLight}" Padding="12,8" Margin="0,0,0,8">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                        <StackPanel VerticalAlignment="Center" Margin="0,0,8,0">
-                                            <TextBlock Text="{Binding DisplayName}" Style="{StaticResource BodyText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                                                <icons:LucideIcon Kind="Check" Width="16" Height="16" Margin="0,0,4,0" Foreground="{DynamicResource TextSecondary}" Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVis}}"/>
-                                                <TextBlock Text="{Binding StatusText}" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                            <ProgressBar Height="4" Margin="0,8,0,0" Minimum="0" Maximum="100" Value="{Binding Progress, Mode=OneWay}"
-                                                         Background="{DynamicResource SurfaceLight}" Foreground="{DynamicResource Primary}" BorderThickness="0">
-                                                <ProgressBar.Style>
-                                                    <Style TargetType="ProgressBar" BasedOn="{StaticResource ThemeProgressBar}">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsDownloading}" Value="True">
-                                                                <Setter Property="Visibility" Value="Visible"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </ProgressBar.Style>
-                                            </ProgressBar>
-                                        </StackPanel>
-                                        <Button Grid.Column="1" Content="{Binding ActionText}" Command="{Binding DownloadCommand}"
-                                                MinWidth="72" VerticalAlignment="Center">
-                                            <Button.Style>
-                                                <Style TargetType="Button" BasedOn="{StaticResource DarkButton}">
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsDownloaded}" Value="True">
-                                                            <Setter Property="Foreground" Value="{DynamicResource SelectedTextBrush}"/>
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding IsDownloading}" Value="True">
-                                                            <Setter Property="Foreground" Value="{DynamicResource SelectedTextBrush}"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Button.Style>
-                                        </Button>
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="VisionGuard.Detector.Windows.Views.GlobalSettingsPage">
+    <Grid Margin="16,0,16,16">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="168"/>
+            <ColumnDefinition/>
+        </Grid.ColumnDefinitions>
+        <ListBox x:Name="CategoryList" SelectedIndex="0" BorderThickness="0" Background="Transparent" ItemContainerStyle="{StaticResource SettingsNavItem}" Margin="0,12,12,0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBoxItem Content="账号与连接"/>
+            <ListBoxItem Content="推理与模型"/>
+            <ListBoxItem Content="外观"/>
+            <ListBoxItem Content="后台运行"/>
+            <ListBoxItem Content="版本与维护"/>
+        </ListBox>
+        <Border Grid.Column="1" Background="{DynamicResource SurfaceDark}" CornerRadius="8">
+            <Grid>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ScrollViewer.Style>
+                        <Style TargetType="ScrollViewer" BasedOn="{StaticResource PaneScrollViewer}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SelectedIndex, ElementName=CategoryList}" Value="0">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ScrollViewer.Style>
+                    <StackPanel MaxWidth="800" HorizontalAlignment="Stretch">
+                        <TextBlock Text="账号与连接" Style="{StaticResource TitleText}" FontSize="16" Margin="0,0,0,16"/>
+                        <StackPanel DataContext="{Binding Connection}">
+                            <StackPanel Style="{StaticResource SettingsSection}" IsEnabled="{Binding CanEditAccount}">
+                                <Grid MinHeight="36" Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="96"/>
+                                        <ColumnDefinition/>
+                                        <ColumnDefinition Width="112"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="当前账号" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                                    <Grid Grid.Column="1" Margin="0,0,12,0">
+                                        <TextBlock Text="{Binding AccountText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
                                     </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                    <TextBlock Text="{Binding ModelDownloadProgress}" Foreground="{DynamicResource SelectedTextBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
-                               Visibility="{Binding HasModelNotice, Converter={StaticResource BoolToVis}}"/>
-                    </StackPanel>
-                </Expander>
-            </StackPanel>
-
-            <!-- ═══ 连接、设备身份与驻留（原「连接」页） ═══ -->
-            <StackPanel DataContext="{Binding Connection}">
-                <StackPanel Margin="0,0,0,16" IsEnabled="{Binding CanEditAccount}">
-                    <TextBlock Text="账号" Style="{StaticResource SectionLabel}" Margin="0,0,0,8"/>
-                    <TextBlock Text="{Binding AccountText}" Style="{StaticResource BodyText}" Margin="0,0,0,8"/>
-                    <StackPanel Visibility="{Binding AllowsTestEndpoint, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="隔离服务地址" Style="{StaticResource CaptionText}" Margin="0,0,0,4"/>
-                        <TextBox Text="{Binding ServiceAddress, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}" AutomationProperties.Name="隔离服务地址" Margin="0,0,0,12"/>
-                    </StackPanel>
-                    <TextBlock Text="账号" Style="{StaticResource CaptionText}" Margin="0,0,0,4"/>
-                    <TextBox Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}" AutomationProperties.Name="账号" Margin="0,0,0,12"/>
-                    <TextBlock Text="密码" Style="{StaticResource CaptionText}" Margin="0,0,0,4"/>
-                    <PasswordBox PasswordChanged="AccountPasswordChanged" AutomationProperties.Name="密码" Margin="0,0,0,16"/>
-                    <StackPanel Orientation="Horizontal">
-                        <Button Content="登录" Style="{StaticResource PrimaryButton}" Command="{Binding LoginCommand}" MinWidth="72"/>
-                        <Button Content="退出登录" Style="{StaticResource DarkButton}" Command="{Binding LogoutCommand}" MinWidth="88" Margin="8,0,0,0"/>
-                    </StackPanel>
-                    <TextBlock Text="{Binding LoginMessage}" TextWrapping="Wrap" Margin="0,8,0,0">
-                        <TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource CaptionText}"><Style.Triggers>
-                            <DataTrigger Binding="{Binding IsLoginError}" Value="True"><Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/></DataTrigger>
-                        </Style.Triggers></Style></TextBlock.Style>
-                    </TextBlock>
-                </StackPanel>
-                <StackPanel Margin="0,0,0,16">
-                    <TextBlock Text="服务器" Style="{StaticResource SectionLabel}" Margin="0,0,0,8"/>
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="{Binding ConnectionState}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,8,0">
-                            <TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource BodyText}">
-                                <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsConnecting}" Value="True"><Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/></DataTrigger>
-                                    <DataTrigger Binding="{Binding IsConnected}" Value="True"><Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/></DataTrigger>
-                                </Style.Triggers>
-                            </Style></TextBlock.Style>
-                        </TextBlock>
-                        <Button Grid.Column="1" Content="重连" Style="{StaticResource DarkButton}" Command="{Binding RetryCommand}" MinWidth="72" Margin="8,0,0,0"/>
-                    </Grid>
-                </StackPanel>
-
-                <StackPanel Margin="0,0,0,16" IsEnabled="{Binding CanEditDeviceName}">
-                    <TextBlock Text="设备身份" Style="{StaticResource SectionLabel}" Margin="0,0,0,8"/>
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="64"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="名称" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
-                        <TextBox Grid.Column="1" Style="{StaticResource DarkTextBox}" Text="{Binding DeviceName, UpdateSourceTrigger=PropertyChanged}"/>
-                        <Button Grid.Column="2" Content="应用" Style="{StaticResource PrimaryButton}" Command="{Binding ApplyNameCommand}" MinWidth="64" Margin="8,0,0,0"/>
-                    </Grid>
-                </StackPanel>
-
-                <!-- 驻留程序：独立进程，只表达状态；未运行时状态文本本身就是失败原因 -->
-                <StackPanel Margin="0,0,0,16">
-                    <TextBlock Text="后台驻留" Style="{StaticResource SectionLabel}" Margin="0,0,0,8"/>
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <TextBlock Text="{Binding ResidentStatusText}" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,8,0">
-                            <TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource BodyText}">
-                                <Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/>
-                                <Style.Triggers><DataTrigger Binding="{Binding IsResidentRunning}" Value="True"><Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/></DataTrigger></Style.Triggers>
-                            </Style></TextBlock.Style>
-                        </TextBlock>
-                        <Button Grid.Column="1" Content="刷新" Style="{StaticResource DarkButton}" Command="{Binding RefreshResidentCommand}" MinWidth="72" Margin="8,0,0,0"/>
-                    </Grid>
-                </StackPanel>
-
-                <StackPanel>
-                    <TextBlock Text="客户端" Style="{StaticResource SectionLabel}" Margin="0,0,0,8"/>
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="{Binding VersionText}" Style="{StaticResource BodyText}" FontWeight="SemiBold"/>
-                            <TextBlock Text="{Binding UpdateStatusText}" Foreground="{DynamicResource SelectedTextBrush}" FontSize="12" Margin="0,4,0,0" Visibility="{Binding IsCheckingUpdate, Converter={StaticResource BoolToVis}}"/>
+                                    <Grid Grid.Column="2">
+                                        <Button Content="退出登录" Command="{Binding LogoutCommand}" Style="{StaticResource PaneButton}"/>
+                                    </Grid>
+                                </Grid>
+                                <StackPanel>
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsLoggedIn}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+                                    <Grid MinHeight="36" Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition/>
+                                            <ColumnDefinition Width="0"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="账号" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                                        <Grid Grid.Column="1" Margin="0,0,0,0">
+                                            <TextBox Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource PaneTextBox}" AutomationProperties.Name="Username"/>
+                                        </Grid>
+                                        <Grid Grid.Column="2"/>
+                                    </Grid>
+                                    <Grid MinHeight="36" Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition/>
+                                            <ColumnDefinition Width="112"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="密码" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                                        <Grid Grid.Column="1" Margin="0,0,12,0">
+                                            <PasswordBox PasswordChanged="AccountPasswordChanged" Height="36" AutomationProperties.Name="密码"/>
+                                        </Grid>
+                                        <Grid Grid.Column="2">
+                                            <Button Content="登录" Command="{Binding LoginCommand}" Style="{StaticResource PanePrimaryButton}"/>
+                                        </Grid>
+                                    </Grid>
+                                </StackPanel>
+                                <TextBlock Text="{Binding LoginMessage}" Style="{StaticResource CaptionText}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <StackPanel Style="{StaticResource SettingsSection}">
+                                <TextBlock Text="设备身份" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+                                <Grid MinHeight="36" Margin="0,0,0,12" IsEnabled="{Binding CanEditDeviceName}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="96"/>
+                                        <ColumnDefinition/>
+                                        <ColumnDefinition Width="112"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="设备名称" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                                    <Grid Grid.Column="1" Margin="0,0,12,0">
+                                        <TextBox Text="{Binding DeviceName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource PaneTextBox}" MaxLength="64" DataObject.Pasting="DeviceName_OnPasting" AutomationProperties.Name="设备名称"/>
+                                    </Grid>
+                                    <Grid Grid.Column="2">
+                                        <Button Content="应用名称" Command="{Binding ApplyNameCommand}" Style="{StaticResource PaneButton}"/>
+                                    </Grid>
+                                </Grid>
+                            </StackPanel>
+                            <StackPanel Style="{StaticResource SettingsSection}">
+                                <TextBlock Text="服务连接" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+                                <Grid MinHeight="36" Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="96"/>
+                                        <ColumnDefinition/>
+                                        <ColumnDefinition Width="112"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="连接状态" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                                    <Grid Grid.Column="1" Margin="0,0,12,0">
+                                        <TextBlock Text="{Binding ConnectionState}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <Grid Grid.Column="2">
+                                        <Button Content="重新连接" Command="{Binding RetryCommand}" Style="{StaticResource PaneButton}"/>
+                                    </Grid>
+                                </Grid>
+                                <StackPanel Visibility="{Binding AllowsTestEndpoint, Converter={StaticResource BoolToVis}}">
+                                    <Grid MinHeight="36" Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition/>
+                                            <ColumnDefinition Width="0"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="隔离地址" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                                        <Grid Grid.Column="1" Margin="0,0,0,0">
+                                            <TextBox Text="{Binding ServiceAddress, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource PaneTextBox}" AutomationProperties.Name="ServiceAddress" IsReadOnly="{Binding IsLoggedIn}"/>
+                                        </Grid>
+                                        <Grid Grid.Column="2"/>
+                                    </Grid>
+                                </StackPanel>
+                            </StackPanel>
                         </StackPanel>
-                        <Button Grid.Column="1" Content="{Binding UpdateButtonText}" Style="{StaticResource DarkButton}" Command="{Binding CheckUpdateCommand}" IsEnabled="{Binding IsUpdateButtonEnabled}" MinWidth="88" Margin="8,0,0,0"/>
-                        <Button Grid.Column="2" Content="完整退出" Style="{StaticResource DarkButton}" Command="{Binding FullExitCommand}" MinWidth="88" Margin="8,0,0,0"
-                                ToolTip="停止检测端并关闭驻留程序；下次手动启动检测端会自动恢复驻留。"/>
-                    </Grid>
-                </StackPanel>
-            </StackPanel>
-        </StackPanel>
-    </ScrollViewer>
+                    </StackPanel>
+                </ScrollViewer>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ScrollViewer.Style>
+                        <Style TargetType="ScrollViewer" BasedOn="{StaticResource PaneScrollViewer}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SelectedIndex, ElementName=CategoryList}" Value="1">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ScrollViewer.Style>
+                    <StackPanel MaxWidth="800" HorizontalAlignment="Stretch">
+                        <TextBlock Text="推理与模型" Style="{StaticResource TitleText}" FontSize="16" Margin="0,0,0,16"/>
+                        <StackPanel DataContext="{Binding Environment}">
+                            <StackPanel Style="{StaticResource SettingsSection}">
+                                <Grid MinHeight="36" Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="96"/>
+                                        <ColumnDefinition/>
+                                        <ColumnDefinition Width="0"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="推理后端" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                                    <Grid Grid.Column="1" Margin="0,0,0,0">
+                                        <ComboBox ItemsSource="{Binding BackendOptions}" SelectedIndex="{Binding SelectedBackendIndex}" Style="{StaticResource PaneComboBox}"/>
+                                    </Grid>
+                                    <Grid Grid.Column="2"/>
+                                </Grid>
+                                <TextBlock Text="加速回退原因在对应来源的运行状态中显示。" Style="{StaticResource CaptionText}" Margin="96,0,0,0"/>
+                            </StackPanel>
+                            <TextBlock Text="模型资源" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+                            <ItemsControl ItemsSource="{Binding Models}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,12" MinHeight="60">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition/>
+                                                <ColumnDefinition Width="112"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Margin="0,0,12,0">
+                                                <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold"/>
+                                                <TextBlock Text="{Binding StatusText}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                                <ProgressBar Style="{StaticResource ThemeProgressBar}" Height="4" Maximum="100" Value="{Binding Progress, Mode=OneWay}" Margin="0,8,0,0" Visibility="{Binding IsDownloading, Converter={StaticResource BoolToVis}}"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="{Binding ActionText}" Command="{Binding DownloadCommand}" Style="{StaticResource PaneButton}" VerticalAlignment="Top"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Text="{Binding ModelDownloadProgress}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Visibility="{Binding HasModelNotice, Converter={StaticResource BoolToVis}}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ScrollViewer.Style>
+                        <Style TargetType="ScrollViewer" BasedOn="{StaticResource PaneScrollViewer}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SelectedIndex, ElementName=CategoryList}" Value="2">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ScrollViewer.Style>
+                    <StackPanel MaxWidth="800" HorizontalAlignment="Stretch">
+                        <TextBlock Text="外观" Style="{StaticResource TitleText}" FontSize="16" Margin="0,0,0,16"/>
+                        <UniformGrid Columns="3" Margin="0,0,0,16">
+                            <Button Content="跟随系统" Tag="0" Click="Appearance_OnClick" Margin="0,0,4,0">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource PaneButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding AppearanceIndex}" Value="0">
+                                                <Setter Property="Background" Value="{DynamicResource SelectedBrush}"/>
+                                                <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource SelectedTextBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <Button Content="浅色" Tag="1" Click="Appearance_OnClick" Margin="4,0">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource PaneButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding AppearanceIndex}" Value="1">
+                                                <Setter Property="Background" Value="{DynamicResource SelectedBrush}"/>
+                                                <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource SelectedTextBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                            <Button Content="深色" Tag="2" Click="Appearance_OnClick" Margin="4,0,0,0">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource PaneButton}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding AppearanceIndex}" Value="2">
+                                                <Setter Property="Background" Value="{DynamicResource SelectedBrush}"/>
+                                                <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource SelectedTextBrush}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </UniformGrid>
+                        <Grid MinHeight="36" Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="96"/>
+                                <ColumnDefinition/>
+                                <ColumnDefinition Width="0"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="当前外观" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                            <Grid Grid.Column="1" Margin="0,0,0,0">
+                                <TextBlock Text="{Binding AppearanceName}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                            </Grid>
+                            <Grid Grid.Column="2"/>
+                        </Grid>
+                        <TextBlock Text="{Binding AppearanceStatus}" Style="{StaticResource CaptionText}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </ScrollViewer>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ScrollViewer.Style>
+                        <Style TargetType="ScrollViewer" BasedOn="{StaticResource PaneScrollViewer}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SelectedIndex, ElementName=CategoryList}" Value="3">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ScrollViewer.Style>
+                    <StackPanel MaxWidth="800" HorizontalAlignment="Stretch">
+                        <TextBlock Text="后台运行" Style="{StaticResource TitleText}" FontSize="16" Margin="0,0,0,16"/>
+                        <StackPanel DataContext="{Binding Connection}">
+                            <Grid MinHeight="36" Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="96"/>
+                                    <ColumnDefinition/>
+                                    <ColumnDefinition Width="112"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="驻留状态" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                                <Grid Grid.Column="1" Margin="0,0,12,0">
+                                    <TextBlock Text="{Binding ResidentStatusText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                </Grid>
+                                <Grid Grid.Column="2">
+                                    <Button Content="刷新状态" Command="{Binding RefreshResidentCommand}" Style="{StaticResource PaneButton}"/>
+                                </Grid>
+                            </Grid>
+                            <TextBlock Text="关闭主窗口与完整退出是不同操作；完整退出同时关闭驻留程序。" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="96,0,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ScrollViewer.Style>
+                        <Style TargetType="ScrollViewer" BasedOn="{StaticResource PaneScrollViewer}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SelectedIndex, ElementName=CategoryList}" Value="4">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ScrollViewer.Style>
+                    <StackPanel MaxWidth="800" HorizontalAlignment="Stretch">
+                        <TextBlock Text="版本与维护" Style="{StaticResource TitleText}" FontSize="16" Margin="0,0,0,16"/>
+                        <StackPanel DataContext="{Binding Connection}">
+                            <Grid MinHeight="36" Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="96"/>
+                                    <ColumnDefinition/>
+                                    <ColumnDefinition Width="112"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="客户端" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                                <Grid Grid.Column="1" Margin="0,0,12,0">
+                                    <TextBlock Text="{Binding VersionText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                </Grid>
+                                <Grid Grid.Column="2">
+                                    <Button Content="{Binding UpdateButtonText}" Command="{Binding CheckUpdateCommand}" IsEnabled="{Binding IsUpdateButtonEnabled}" Style="{StaticResource PaneButton}"/>
+                                </Grid>
+                            </Grid>
+                            <TextBlock Text="{Binding UpdateStatusText}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="96,0,0,24"/>
+                            <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Padding="0,24,0,0">
+                                <Grid MinHeight="36" Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="96"/>
+                                        <ColumnDefinition/>
+                                        <ColumnDefinition Width="112"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="退出应用" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                                    <Grid Grid.Column="1" Margin="0,0,12,0">
+                                        <TextBlock Text="停止全部检测，并关闭后台驻留。" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <Grid Grid.Column="2">
+                                        <Button Content="完整退出" Command="{Binding FullExitCommand}" Style="{StaticResource PaneDangerButton}"/>
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+    </Grid>
 </UserControl>

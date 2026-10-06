@@ -1,0 +1,22 @@
+// UI-only isolated Release builds. Never use these debuggable APKs for publication.
+def tasks = gradle.startParameter.taskNames.collect { it.tokenize(':').last().toLowerCase() }
+if (tasks.any { it.contains('publish') || it.contains('bundle') }) {
+    throw new GradleException('UI preview builds cannot publish or bundle an application.')
+}
+allprojects {
+    afterEvaluate { p ->
+        if (!p.plugins.hasPlugin('com.android.application')) return
+        def repository = rootDir.parentFile.parentFile
+        p.layout.buildDirectory.set(new File(repository, '.local/console-preview/android/' + rootProject.name + '/' + p.name))
+        def previewResources = new File(p.layout.buildDirectory.get().asFile, 'preview-res/values')
+        previewResources.mkdirs()
+        def names = ['detector':'相机推流节点', 'receiver':'控制台', 'notifier':'通知节点']
+        def component = rootDir.parentFile.name
+        new File(previewResources, 'strings.xml').setText('<resources><string name="app_name">' + names[component] + ' UI预览</string></resources>', 'UTF-8')
+        p.android.sourceSets.release.res.srcDir(previewResources.parentFile)
+        p.android.buildTypes.release.applicationIdSuffix = '.uipreview'
+        p.android.buildTypes.release.debuggable = true
+        p.android.buildTypes.release.minifyEnabled = false
+        p.android.buildTypes.release.shrinkResources = false
+    }
+}

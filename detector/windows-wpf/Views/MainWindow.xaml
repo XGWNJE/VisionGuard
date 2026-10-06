@@ -1,260 +1,147 @@
-<Window x:Class="VisionGuard.Detector.Windows.Views.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:vm="clr-namespace:VisionGuard.Detector.Windows.ViewModels"
-        xmlns:icons="clr-namespace:VisionGuard.Detector.Windows.Icons"
-        xmlns:local="clr-namespace:VisionGuard.Detector.Windows.Views"
-        mc:Ignorable="d"
-        Title="视觉节点"
-        Width="1420" Height="880" MinWidth="1200" MinHeight="880"
-        Background="{DynamicResource BackgroundDark}"
-        WindowStartupLocation="CenterScreen">
-    <!--
-        MinWidth/MinHeight 与 CardLayoutPlanner.MinimumWindowWidth/MinimumWindowHeight 保持一致：
-        预览区空间不足时滚动，保留 40 DIP 操作按钮与至少 320 DIP 的画面区域。
-    -->
-    <Window.DataContext><vm:MainViewModel/></Window.DataContext>
-
-    <Grid Background="{DynamicResource BackgroundDark}">
-        <!-- 运行状态、服务器状态与全局操作均收敛到来源卡片和连接页，避免顶栏重复表达。 -->
-        <Grid x:Name="MainLayout">
-            <Grid.ColumnDefinitions>
-                <!--
-                    卡片区自适应占满剩余空间（MinWidth 与 CardLayoutPlanner.MinimumCardsPanelWidth 一致）；
-                    检查区宽度由分隔条拖拽决定、默认最窄（320），拖拽结果持久化在 Layout.InspectorPanelWidth。
-                -->
-                <ColumnDefinition x:Name="CardsColumn" Width="*" MinWidth="680"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition x:Name="InspectorColumn" Width="{Binding MultiSourceVm.InspectorWidth, Mode=TwoWay}" MinWidth="320"/>
-            </Grid.ColumnDefinitions>
-
-            <Grid Grid.Column="0" x:Name="CardsHost" Margin="8">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-
-                <!--
-                    实时预览：只排布进入预览的来源（最多 CardLayoutPlanner.MaximumVisibleCards 个）。
-                    行列与卡片尺寸由 CardGridPanel 按自身可用的实际像素求解，不再有分页与翻页；
-                    没进预览的来源在下面的「全局来源」里勾选。
-                -->
-                <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" CanContentScroll="False"
-                              Visibility="{Binding MultiSourceVm.IsPreviewView, Converter={StaticResource BoolToVis}}">
-                <ItemsControl ItemsSource="{Binding MultiSourceVm.PreviewSources}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <local:CardGridPanel Host="{Binding MultiSourceVm}"
-                                                 ViewportWidth="{Binding ViewportWidth, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"
-                                                 ViewportHeight="{Binding ViewportHeight, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"/>
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border Margin="4" Padding="8" CornerRadius="12" Background="{DynamicResource SurfaceDark}">
-                                <Border.Style>
-                                    <Style TargetType="Border">
-                                        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
-                                        <Setter Property="BorderThickness" Value="1"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
-                                                <Setter Property="BorderThickness" Value="2"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
-                                <Grid>
-                                    <!-- 标题与操作按钮各 40 DIP；上下间距各 4，与 CardChromeHeight 对应。 -->
-                                    <Grid.RowDefinitions><RowDefinition Height="Auto" MinHeight="44"/><RowDefinition Height="*"/><RowDefinition Height="Auto" MinHeight="44"/></Grid.RowDefinitions>
-
-                                    <Grid Grid.Row="0" Margin="0,0,0,4">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="40"/><ColumnDefinition Width="40"/></Grid.ColumnDefinitions>
-                                        <Button Grid.ColumnSpan="3" Style="{StaticResource GhostButton}" Command="{Binding SelectCommand}" HorizontalContentAlignment="Stretch" Padding="4,0" MinHeight="40">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                            <Ellipse Width="6" Height="6" Fill="{DynamicResource Primary}" VerticalAlignment="Center" Margin="4,0,1,0"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding SourceName}" Style="{StaticResource TitleText}" VerticalAlignment="Center" Margin="8,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding SourceName}"/>
-                                            <TextBlock Grid.Column="2" Text="{Binding StatusText}" Style="{StaticResource SourceStatusText}" VerticalAlignment="Center"
-                                                       MaxWidth="130" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding StatusToolTip}"/>
-                                            </Grid>
-                                        </Button>
-                                        <Button Grid.Column="3" Style="{StaticResource CardIconButton}" Command="{Binding AddSourceCommand}"
-                                                AutomationProperties.Name="添加来源"
-                                                ToolTip="{Binding AddSourceToolTip}">
-                                            <icons:LucideIcon Kind="Plus" Width="20" Height="20"/>
-                                        </Button>
-                                        <Button Grid.Column="4" Style="{StaticResource CardIconButton}" Command="{Binding RemoveSourceCommand}"
-                                                AutomationProperties.Name="删除来源"
-                                                ToolTip="删除当前来源；至少保留一个，运行中请先停止">
-                                            <icons:LucideIcon Kind="Trash2" Width="20" Height="20"/>
-                                        </Button>
-                                    </Grid>
-
-                                    <Border Grid.Row="1" Background="{DynamicResource CanvasBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" ClipToBounds="True" MinHeight="100">
-                                        <Grid>
-                                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="200">
-                                                <TextBlock Text="暂无画面" Foreground="{DynamicResource OverlaySecondaryBrush}" FontSize="14" LineHeight="20" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                                                <TextBlock Text="{Binding TargetInfo}" Foreground="{DynamicResource OverlaySecondaryBrush}" TextWrapping="Wrap" TextAlignment="Center" Margin="0,8,0,0">
-                                                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding PreviewImage}" Value="{x:Null}"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
-                                                </TextBlock>
-                                            </StackPanel>
-                                            <!-- 原始画布只在固定画面区内等比缩放；其自然像素尺寸不得参与卡片测量，
-                                                 否则极端选区会把星号画面行撑开并遮住底部按钮。 -->
-                                            <local:UniformFramePresenter Margin="1">
-                                                <Grid Width="{Binding FrameWidth}" Height="{Binding FrameHeight}">
-                                                    <Image Source="{Binding PreviewImage}" Stretch="None"/>
-                                                    <ItemsControl ItemsSource="{Binding Detections}">
-                                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><Canvas IsItemsHost="True"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                                                        <ItemsControl.ItemContainerStyle><Style TargetType="ContentPresenter"><Setter Property="Canvas.Left" Value="{Binding Left}"/><Setter Property="Canvas.Top" Value="{Binding Top}"/></Style></ItemsControl.ItemContainerStyle>
-                                                        <ItemsControl.ItemTemplate><DataTemplate><Grid><Rectangle Width="{Binding Width}" Height="{Binding Height}" Stroke="{DynamicResource DetectionBrush}" StrokeThickness="2"/><TextBlock Text="{Binding Label}" Foreground="{DynamicResource OverlayTextBrush}" Background="{DynamicResource DetectionLabelBrush}" FontSize="12" Padding="4,1" VerticalAlignment="Top" Margin="0,-19,0,0"/></Grid></DataTemplate></ItemsControl.ItemTemplate>
-                                                    </ItemsControl>
-                                                </Grid>
-                                            </local:UniformFramePresenter>
-                                            <!--
-                                                信息量压缩：原来底部两行四段，现在一行三段。
-                                                三段统一用 CaptionText（同一字号）并显式垂直居中，避免基线与字号不一致而错位。
-                                            -->
-                                            <Border Background="{DynamicResource OverlaySurfaceBrush}" VerticalAlignment="Bottom" Padding="8,4">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                        <TextBlock Text="{Binding LastFrameText}" Style="{StaticResource CaptionText}" Foreground="{DynamicResource OverlaySecondaryBrush}" TextWrapping="NoWrap" VerticalAlignment="Center"/>
-                                                        <TextBlock Text="{Binding InferenceText}" Style="{StaticResource CaptionText}" Foreground="{DynamicResource OverlaySecondaryBrush}" TextWrapping="NoWrap" VerticalAlignment="Center" Margin="8,0,0,0"/>
-                                                    </StackPanel>
-                                                    <TextBlock Grid.Column="1" Text="{Binding LastAlertText}" Style="{StaticResource CaptionText}" Foreground="{DynamicResource OverlaySecondaryBrush}" TextWrapping="NoWrap" VerticalAlignment="Center" Margin="8,0" TextTrimming="CharacterEllipsis" ToolTip="{Binding LastAlertText}"/>
-                                                    <TextBlock Grid.Column="2" Text="{Binding BackendText}" Style="{StaticResource CaptionText}" Foreground="{DynamicResource OverlaySecondaryBrush}" TextWrapping="NoWrap" VerticalAlignment="Center"/>
-                                                </Grid>
-                                            </Border>
-                                        </Grid>
-                                    </Border>
-
-                                    <Grid Grid.Row="2" Margin="0,4,0,0">
-                                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                                        <Button Content="启动此路" Style="{StaticResource PrimaryButton}" Command="{Binding StartCommand}" Margin="0,0,4,0" Padding="8,4" MinHeight="40" FontSize="14"/>
-                                        <Button Grid.Column="1" Content="停止" Style="{StaticResource GhostButton}" Command="{Binding StopCommand}" Margin="4,0,0,0" Padding="8,4" MinHeight="40" FontSize="14"/>
-                                    </Grid>
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                </ScrollViewer>
-
-                <!--
-                    全局来源：卡片区原位换成简易编号卡片，用来勾选进入实时预览的来源。
-                    卡片尺寸由 GlobalSourcePanel 按可用空间自适应（铺满容器），来源上限 16，
-                    窗口最小尺寸已保证任何允许的窗口比例下都排得下。
-                -->
-                <Grid Grid.Row="0" Visibility="{Binding MultiSourceVm.IsGlobalView, Converter={StaticResource BoolToVis}}">
-                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Margin="4,0,4,8" TextWrapping="Wrap" Foreground="{DynamicResource TextSecondary}"
-                               Text="勾选要展示的来源（最多 4 个）；未勾选的来源照常采集、推理与报警，只是不显示实时画面"/>
-                    <!--
-                        编号卡片用 GlobalSourcePanel 按可用空间自适应铺满整个容器（最后一行不满时均分拉伸）。
-                        这里不能用 ScrollViewer 包：ScrollViewer 给子元素无限高度，面板就无法按容器高度铺满。
-                    -->
-                    <ItemsControl Grid.Row="1" ItemsSource="{Binding MultiSourceVm.Sources}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate><local:GlobalSourcePanel/></ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <!--
-                                    选中态不用勾选框（太小、不显眼），直接用整块卡片背景区分：
-                                    选中使用统一选中背景与强调文字，未选中使用卡片表面色与次级文字。
-                                -->
-                                <Button Command="{Binding TogglePreviewCommand}"
-                                        Padding="7,5" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
-                                        ToolTip="点击切换这一路是否进入实时预览（最多 4 个）">
-                                    <Button.Style>
-                                        <Style TargetType="Button" BasedOn="{StaticResource GhostButton}">
-                                            <Setter Property="Background" Value="{DynamicResource SurfaceDark}"/>
-                                            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
-                                            <Setter Property="BorderThickness" Value="1"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsPreviewSelected}" Value="True">
-                                                    <Setter Property="Background" Value="{DynamicResource SelectedBrush}"/>
-                                                    <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
-                                                    <Setter Property="BorderThickness" Value="2"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Button.Style>
-                                    <Grid>
-                                        <Grid.Style>
-                                            <!-- 前景色走 Style（不能同时写局部值，局部值会盖掉下面的触发器）。 -->
-                                            <Style TargetType="Grid">
-                                                <Setter Property="TextElement.Foreground" Value="{DynamicResource TextSecondary}"/>
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsPreviewSelected}" Value="True">
-                                                        <Setter Property="TextElement.Foreground" Value="{DynamicResource SelectedTextBrush}"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Grid.Style>
-                                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                        <TextBlock Text="{Binding SlotNumber}" FontSize="14" LineHeight="20" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Row="1" Text="{Binding SourceName}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                                        <StackPanel Grid.Row="2" Orientation="Horizontal">
-                                            <TextBlock Text="{Binding StatusText}" Style="{StaticResource SourceStatusText}" MaxWidth="88" TextTrimming="CharacterEllipsis" ToolTip="{Binding StatusToolTip}"/>
-                                            <TextBlock Text="{Binding PreviewStateText}" FontSize="12" FontWeight="SemiBold" Margin="8,0,0,0"/>
-                                        </StackPanel>
-                                    </Grid>
-                                </Button>
-                            </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                </Grid>
-
-                <!-- 工具条：全局来源切换、勾选被拒的提示、预览位占用情况。 -->
-                <Grid Grid.Row="1">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <Button Grid.Column="0" Content="{Binding MultiSourceVm.GlobalViewToggleText}" Style="{StaticResource GhostButton}"
-                            Command="{Binding MultiSourceVm.ToggleGlobalViewCommand}" Padding="12,4" MinHeight="40" MinWidth="96"
-                            ToolTip="在实时预览与全局来源之间切换；切换只影响显示，不影响采集与报警"/>
-                    <TextBlock Grid.Column="1" Margin="12,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                               Text="{Binding MultiSourceVm.PreviewSelectionHint}" Foreground="{DynamicResource DangerBrush}"
-                               Visibility="{Binding MultiSourceVm.HasPreviewSelectionHint, Converter={StaticResource BoolToVis}}"/>
-                    <TextBlock Grid.Column="2" Text="{Binding MultiSourceVm.PreviewSelectionText}" Style="{StaticResource CaptionText}"
-                               VerticalAlignment="Center" ToolTip="进入实时预览的来源数量上限；其余来源仍在推理与报警"/>
-                </Grid>
-            </Grid>
-
-            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
-                          Background="Transparent" Cursor="SizeWE"
-                          DragCompleted="CardsSplitter_OnDragCompleted"
-                          ToolTip="拖拽调整预览区与右侧检查区的宽度">
-                <GridSplitter.Template>
-                    <ControlTemplate TargetType="GridSplitter">
-                        <Border x:Name="SplitterSurface" Background="{DynamicResource BackgroundDark}">
-                            <Rectangle Width="1" Fill="{DynamicResource BorderBrush}" HorizontalAlignment="Center"/>
-                        </Border>
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="clr-namespace:VisionGuard.Detector.Windows.ViewModels" xmlns:local="clr-namespace:VisionGuard.Detector.Windows.Views" x:Class="VisionGuard.Detector.Windows.Views.MainWindow" Title="视觉节点" Width="1420" Height="800" MinWidth="720" MinHeight="480" Background="{DynamicResource BackgroundDark}" WindowStartupLocation="CenterScreen" ResizeMode="CanResizeWithGrip">
+    <Window.Resources>
+        <Style x:Key="PaneResizeHandle" TargetType="Thumb">
+            <Setter Property="Width" Value="8"/>
+            <Setter Property="Cursor" Value="SizeWE"/>
+            <Setter Property="Focusable" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Grid Background="Transparent">
+                            <Border x:Name="ResizeLine" Width="2" Background="{DynamicResource BorderBrush}" Opacity="0"/>
+                        </Grid>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="SplitterSurface" Property="Background" Value="{DynamicResource Primary}"/>
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="SplitterSurface" Property="Background" Value="{DynamicResource Primary}"/></Trigger>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ResizeLine" Property="Opacity" Value="1"/></Trigger>
+                            <Trigger Property="IsDragging" Value="True"><Setter TargetName="ResizeLine" Property="Opacity" Value="1"/><Setter TargetName="ResizeLine" Property="Background" Value="{DynamicResource Primary}"/></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ResizeLine" Property="Opacity" Value="1"/><Setter TargetName="ResizeLine" Property="Background" Value="{DynamicResource Primary}"/></Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
-                </GridSplitter.Template>
-            </GridSplitter>
-
-            <Border Grid.Column="2" Background="{DynamicResource MutedSurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1,0,0,0">
-                <Grid Margin="12,8,12,8">
-                    <TabControl Style="{StaticResource InspectorTabs}" Background="Transparent">
-                        <TabItem Header="当前来源" Style="{StaticResource InspectorTabItem}">
-                            <local:MonitorPage DataContext="{Binding MultiSourceVm}"/>
-                        </TabItem>
-                        <TabItem Header="全局设定" Style="{StaticResource InspectorTabItem}">
-                            <local:GlobalSettingsPage DataContext="{Binding GlobalSettingsVm}"/>
-                        </TabItem>
-                    </TabControl>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    <Window.DataContext>
+        <vm:MainViewModel/>
+    </Window.DataContext>
+    <Grid>
+        <Grid x:Name="MainLayout" Margin="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="CardsColumn" Width="*" MinWidth="240"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition x:Name="SourcesColumn" Width="280" MinWidth="240" MaxWidth="380"/>
+                <ColumnDefinition x:Name="InspectorGap" Width="8"/>
+                <ColumnDefinition x:Name="InspectorColumn" Width="320" MaxWidth="420"/>
+            </Grid.ColumnDefinitions>
+            <Grid>
+                <local:SourcePreviewCard IsPrimary="True" DataContext="{Binding MultiSourceVm.SelectedSource}" Visibility="{Binding MultiSourceVm.HasSelectedSource, Converter={StaticResource BoolToVis}}"/>
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="240">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding MultiSourceVm.HasSources}" Value="False">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <TextBlock Text="添加第一个来源" Style="{StaticResource TitleText}" FontSize="16" TextAlignment="Center"/>
+                    <TextBlock Text="选择采集窗口或屏幕区域后，来源会出现在列表中。" Style="{StaticResource CaptionText}" TextWrapping="Wrap" TextAlignment="Center" Margin="0,8,0,16"/>
+                    <Button Content="添加来源" Style="{StaticResource PanePrimaryButton}" Command="{Binding MultiSourceVm.AddSourceCommand}"/>
+                </StackPanel>
+            </Grid>
+            <Thumb x:Name="SourcesSplitter" Grid.Column="1" Style="{StaticResource PaneResizeHandle}" DragStarted="PaneResize_OnDragStarted" DragDelta="PaneResize_OnDragDelta" DragCompleted="PaneResize_OnDragCompleted" KeyDown="PaneResize_OnKeyDown" AutomationProperties.Name="调整来源列表宽度" ToolTip="调整来源列表宽度 · 左右方向键细调"/>
+            <Border Grid.Column="2" Background="{DynamicResource SurfaceDark}" CornerRadius="8">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="44"/>
+                        <RowDefinition/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="{Binding MultiSourceVm.SourceCountText}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="16,0"/>
+                    <ListBox x:Name="SourceList" Grid.Row="1" ItemsSource="{Binding MultiSourceVm.Sources}" SelectedItem="{Binding MultiSourceVm.SelectedSource}" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel">
+                        <ListBox.Template>
+                            <ControlTemplate TargetType="ListBox">
+                                <ScrollViewer x:Name="PART_ScrollViewer" Style="{StaticResource PaneScrollViewer}"
+                                    Padding="16,8,12,0" Focusable="False"
+                                    CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}">
+                                    <ItemsPresenter/>
+                                </ScrollViewer>
+                            </ControlTemplate>
+                        </ListBox.Template>
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Padding" Value="0"/>
+                                <Setter Property="Margin" Value="0,0,0,8"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <ContentPresenter/>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <local:SourcePreviewCard/>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock Grid.Row="2" Text="{Binding MultiSourceVm.SourceNotice}" Foreground="{DynamicResource WarningBrush}" TextWrapping="Wrap" Margin="16,8" Visibility="{Binding MultiSourceVm.HasSourceNotice, Converter={StaticResource BoolToVis}}"/>
+                    <UniformGrid x:Name="SourceFooter" Grid.Row="3" Columns="1" Margin="16,12,16,12">
+                        <Button Content="添加来源" Style="{StaticResource PaneButton}" Command="{Binding MultiSourceVm.AddSourceCommand}" ToolTip="{Binding MultiSourceVm.SourceLimitText}" ToolTipService.ShowOnDisabled="True" Margin="0,0,4,0"/>
+                        <Button x:Name="InspectorToggle" Content="来源检查" Style="{StaticResource PaneButton}" Click="ToggleInspector_OnClick" Margin="4,0,0,0" Visibility="Collapsed"/>
+                    </UniformGrid>
                 </Grid>
             </Border>
+            <Thumb x:Name="InspectorSplitter" Grid.Column="3" Style="{StaticResource PaneResizeHandle}" DragStarted="PaneResize_OnDragStarted" DragDelta="PaneResize_OnDragDelta" DragCompleted="PaneResize_OnDragCompleted" KeyDown="PaneResize_OnKeyDown" AutomationProperties.Name="调整来源检查区宽度" ToolTip="调整检查区宽度 · 左右方向键细调"/>
+            <Border x:Name="InspectorHost" Grid.Column="4" Background="{DynamicResource SurfaceDark}" CornerRadius="8">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <local:MonitorPage DataContext="{Binding MultiSourceVm}"/>
+                    <Border Grid.Row="1" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource BorderBrush}" Padding="16,12">
+                        <Button Content="全局设置" Style="{StaticResource PaneButton}" Click="OpenGlobalSettings_OnClick"/>
+                    </Border>
+                </Grid>
+            </Border>
+            <Border x:Name="CompactActions" Grid.Column="0" VerticalAlignment="Bottom" HorizontalAlignment="Left" Visibility="Collapsed" Margin="12">
+                <Button Content="全局设置" Style="{StaticResource PaneButton}" Width="112" Click="OpenGlobalSettings_OnClick"/>
+            </Border>
         </Grid>
-
+        <Border x:Name="InspectorDrawer" Background="{DynamicResource SurfaceDark}" HorizontalAlignment="Right" Width="336" Visibility="Collapsed" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1,0,0,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Button Content="返回预览" Style="{StaticResource PaneButton}" Click="CloseInspector_OnClick" Margin="16,12"/>
+                <local:MonitorPage Grid.Row="1" DataContext="{Binding MultiSourceVm}"/>
+                <Button Grid.Row="2" Content="全局设置" Style="{StaticResource PaneButton}" Click="OpenGlobalSettings_OnClick" Margin="16,12"/>
+            </Grid>
+        </Border>
+        <Border x:Name="GlobalHost" Background="{DynamicResource BackgroundDark}" Visibility="Collapsed">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition/>
+                </Grid.RowDefinitions>
+                <Grid Margin="16,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="128"/>
+                        <ColumnDefinition/>
+                    </Grid.ColumnDefinitions>
+                    <Button Content="返回预览" Style="{StaticResource PaneButton}" Click="CloseGlobalSettings_OnClick"/>
+                    <TextBlock Grid.Column="1" Text="全局设置" Style="{StaticResource TitleText}" FontSize="16" VerticalAlignment="Center" Margin="24,0,0,0"/>
+                </Grid>
+                <local:GlobalSettingsPage Grid.Row="1" DataContext="{Binding GlobalSettingsVm}"/>
+            </Grid>
+        </Border>
     </Grid>
 </Window>

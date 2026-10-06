@@ -1,6 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseLogin, accountRequest, rotateLogin, AccountRequestError } from '../src/account.ts';
+import { parseLogin, accountRequest, rotateLogin, AccountRequestError, normalizeDisplayName } from '../src/account.ts';
+
+test('name edits reject invalid UTF-16 lengths and controls before contacting the server',async()=>{
+  for (const value of ['门'.repeat(64), 'A'.repeat(64), '😀'.repeat(32)]) assert.equal(normalizeDisplayName(value),value);
+  assert.equal(normalizeDisplayName('  门厅  '),'门厅');
+  const original=globalThis.fetch;let calls=0;
+  globalThis.fetch=async()=>{calls++;return new Response('{}',{headers:{'Content-Type':'application/json'}});};
+  try {
+    for (const value of ['门'.repeat(65),'😀'.repeat(33),'  ','门\n','a\0b']) {
+      assert.throws(()=>normalizeDisplayName(value),/名称须/);
+      await assert.rejects(accountRequest('/api/devices/node','token',{deviceName:value},'PATCH'),/名称须/);
+    }
+    assert.equal(calls,0);
+    await accountRequest('/api/devices/node','token',{deviceName:'门'.repeat(64)},'PATCH');assert.equal(calls,1);
+  } finally {globalThis.fetch=original;}
+});
 
 const session = { token:'a'.repeat(32), expiresAt:'2026-12-01T00:00:00Z', channel:'isolated', account:{accountId:'one',username:'test'}, device:{deviceId:'console',deviceName:'Web 控制台',role:'console',nodeType:'console',platform:'web',component:'web-console'} };
 

@@ -284,8 +284,9 @@ class SharedPreferencesHelper(context: Context) {
     }
 
     fun putRingtoneLibraryEntry(fileName: String, displayName: String) {
+        val name = com.xgwnje.visionguard.account.DisplayNamePolicy.normalize(displayName)
         val map = getRingtoneLibraryMap().toMutableMap()
-        map[fileName] = displayName
+        map[fileName] = name
         prefs.edit().putString(KEY_RINGTONE_LIBRARY, JSONObject(map as Map<*, *>).toString()).apply()
         Log.i("SharedPreferencesHelper", "铃声库条目已保存: $fileName -> $displayName")
     }

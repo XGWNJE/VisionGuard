@@ -1,0 +1,84 @@
+<Window x:Class="VisionGuard.Detector.Windows.Views.ParameterEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:icons="clr-namespace:VisionGuard.Detector.Windows.Icons"
+        Title="调整检测参数" Width="560" Height="560" MinWidth="480" MinHeight="420"
+        Background="{DynamicResource BackgroundDark}" WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+    <Grid Margin="24,16,24,20">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <StackPanel Margin="0,0,0,16">
+            <TextBlock Text="调整检测参数" Style="{StaticResource HeroText}"/>
+            <Grid Margin="0,8,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding SourceName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding SourceName}"/>
+                <TextBlock Grid.Column="1" Text="{Binding StatusText}" Style="{StaticResource CaptionText}" Margin="12,0,0,0"/>
+            </Grid>
+        </StackPanel>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+                <StackPanel IsEnabled="{Binding CanEdit}">
+                    <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition Width="92"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <TextBlock Text="推理模型" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1" ItemsSource="{Binding ModelOptions}" DisplayMemberPath="Label" SelectedValuePath="Key" SelectedValue="{Binding ModelKey, Mode=TwoWay}" Style="{StaticResource DarkComboBox}" AutomationProperties.Name="推理模型"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition Width="92"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <TextBlock Text="检测目标" Margin="0,8,0,0"/>
+                        <StackPanel Grid.Column="1" IsEnabled="{Binding ModelAvailable}">
+                            <ItemsControl ItemsSource="{Binding CommonTargets}">
+                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate><DataTemplate><CheckBox Content="{Binding ChineseName}" IsChecked="{Binding IsSelected, Mode=TwoWay}" Style="{StaticResource TargetChoice}" Margin="0,0,8,0"/></DataTemplate></ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Expander Header="更多检测目标" Margin="0,4,0,0">
+                                <StackPanel Margin="0,8,0,0">
+                                    <TextBlock Text="{Binding TargetsSummary}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                    <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}" AutomationProperties.Name="搜索检测目标" ToolTip="搜索中文名称或模型标签"/>
+                                    <ScrollViewer MaxHeight="180" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
+                                        <ItemsControl ItemsSource="{Binding FilteredTargets}"><ItemsControl.ItemTemplate><DataTemplate>
+                                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" MinHeight="36"><StackPanel Orientation="Horizontal"><TextBlock Text="{Binding ChineseName}"/><TextBlock Text="{Binding EnglishName}" Style="{StaticResource CaptionText}" Margin="12,0,0,0"/></StackPanel></CheckBox>
+                                        </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+                                    </ScrollViewer>
+                                </StackPanel>
+                            </Expander>
+                        </StackPanel>
+                    </Grid>
+                    <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition Width="92"/><ColumnDefinition/><ColumnDefinition Width="32"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="采样频率" VerticalAlignment="Center"/>
+                        <ItemsControl Grid.Column="1" ItemsSource="{Binding FpsOptions}" ItemTemplate="{StaticResource ParameterChoiceTemplate}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl>
+                        <TextBlock Grid.Column="2" Text="FPS" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Grid Margin="0,0,0,16"><Grid.ColumnDefinitions><ColumnDefinition Width="92"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <TextBlock Text="置信度阈值" VerticalAlignment="Center"/>
+                        <Grid Grid.Column="1"><Grid.ColumnDefinitions><ColumnDefinition Width="36"/><ColumnDefinition/><ColumnDefinition Width="36"/><ColumnDefinition Width="48"/></Grid.ColumnDefinitions>
+                            <Button Command="{Binding DecreaseConfidence}" Style="{StaticResource DarkButton}" Padding="0" AutomationProperties.Name="降低置信度"><icons:LucideIcon Kind="Minus" Width="16" Height="16"/></Button>
+                            <Slider Grid.Column="1" Minimum="10" Maximum="95" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding Confidence, Mode=TwoWay}" VerticalAlignment="Center" Margin="12,0" AutomationProperties.Name="置信度阈值"/>
+                            <Button Grid.Column="2" Command="{Binding IncreaseConfidence}" Style="{StaticResource DarkButton}" Padding="0" AutomationProperties.Name="提高置信度"><icons:LucideIcon Kind="Plus" Width="16" Height="16"/></Button>
+                            <TextBlock Grid.Column="3" Text="{Binding Confidence, StringFormat={}{0}%}" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                        </Grid>
+                    </Grid>
+                    <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="92"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                        <TextBlock Text="报警冷却" Margin="0,8,0,0"/>
+                        <StackPanel Grid.Column="1">
+                            <ItemsControl ItemsSource="{Binding CooldownOptions}" ItemTemplate="{StaticResource ParameterChoiceTemplate}"><ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate></ItemsControl.ItemsPanel></ItemsControl>
+                            <Expander Header="完整范围 · 1–300 秒" IsExpanded="{Binding IsCustomCooldown, Mode=OneWay}" Margin="0,4,0,0">
+                                <Grid Margin="0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="36"/><ColumnDefinition/><ColumnDefinition Width="36"/><ColumnDefinition Width="56"/></Grid.ColumnDefinitions>
+                                    <Button Command="{Binding DecreaseCooldown}" Style="{StaticResource DarkButton}" Padding="0" AutomationProperties.Name="减少冷却时间"><icons:LucideIcon Kind="Minus" Width="16" Height="16"/></Button>
+                                    <Slider Grid.Column="1" Minimum="1" Maximum="300" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding Cooldown, Mode=TwoWay}" VerticalAlignment="Center" Margin="12,0" AutomationProperties.Name="冷却秒数"/>
+                                    <Button Grid.Column="2" Command="{Binding IncreaseCooldown}" Style="{StaticResource DarkButton}" Padding="0" AutomationProperties.Name="增加冷却时间"><icons:LucideIcon Kind="Plus" Width="16" Height="16"/></Button>
+                                    <TextBlock Grid.Column="3" Text="{Binding Cooldown, StringFormat={}{0} 秒}" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                                </Grid>
+                            </Expander>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+                <TextBlock Text="{Binding Message}" Foreground="{DynamicResource DangerBrush}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+            </StackPanel>
+        </ScrollViewer>
+        <StackPanel Grid.Row="2" Margin="0,16,0,0">
+            <TextBlock Text="{Binding EditHint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Button Content="取消" Style="{StaticResource GhostButton}" HorizontalAlignment="Left" IsCancel="True" MinWidth="80"/>
+                <Button Grid.Column="1" Content="还原当前值" Style="{StaticResource DarkButton}" Command="{Binding RestoreCommand}" Margin="0,0,8,0"/>
+                <Button Grid.Column="2" Content="保存参数" Style="{StaticResource PrimaryButton}" IsEnabled="{Binding CanSave}" Click="Save_OnClick" MinWidth="104"/>
+            </Grid>
+        </StackPanel>
+    </Grid>
+</Window>
