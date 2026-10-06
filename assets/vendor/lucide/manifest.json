@@ -188,6 +188,16 @@
       "sha256": "d29f0143a9c0c11b344db6bb07c9f917143f211860ad7e2360682b3bbdc76b20"
     },
     {
+      "name": "ellipsis",
+      "symbol": "Ellipsis",
+      "platforms": [
+        "windows"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "9d0c453ec383a9ed9204e4699ac91d3dacc45b342ba62809206ddd0c6d25ec28"
+    },
+    {
       "name": "grip-horizontal",
       "symbol": "GripHorizontal",
       "platforms": [
@@ -216,6 +226,16 @@
       "autoMirror": true,
       "notification": false,
       "sha256": "61b2e34a195833ffe9b893e7562eb8dec14c58d30ef1574f5377e907ec7949cc"
+    },
+    {
+      "name": "minus",
+      "symbol": "Minus",
+      "platforms": [
+        "windows"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "70801b3c3104e559fc1b5124a742050419df77bd3142d92e8ead69776fdd9640"
     },
     {
       "name": "monitor",

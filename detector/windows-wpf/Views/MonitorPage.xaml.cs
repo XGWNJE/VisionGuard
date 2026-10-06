@@ -80,11 +80,13 @@ namespace VisionGuard.Detector.Windows.Views
             if (restoreFocus) SourceNameText.Focus();
         }
 
-        private void ParameterEditor_OnKeyDown(object sender, KeyEventArgs e)
+        private void AdjustParameters_OnClick(object sender, RoutedEventArgs e)
         {
-            if ((sender as FrameworkElement)?.DataContext is not SourceParameterViewModel parameter) return;
-            if (e.Key == Key.Escape) { parameter.CancelCommand.Execute(null); e.Handled = true; }
-            else if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.Control && parameter.SaveCommand.CanExecute(null)) { parameter.SaveCommand.Execute(null); e.Handled = true; }
+            if ((sender as FrameworkElement)?.DataContext is not SourceViewModel source) return;
+            var dialog = new ParameterEditorWindow(source) { Owner = Window.GetWindow(this) };
+            dialog.ShowDialog();
+            AdjustParametersButton.Focus();
+            e.Handled = true;
         }
     }
 }

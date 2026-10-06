@@ -4,8 +4,8 @@
         xmlns:vm="clr-namespace:VisionGuard.Detector.Windows.ViewModels"
         xmlns:icons="clr-namespace:VisionGuard.Detector.Windows.Icons"
         xmlns:local="clr-namespace:VisionGuard.Detector.Windows.Views"
-        Title="视觉节点" Width="1420" Height="720" MinWidth="1040" MinHeight="540"
-        Background="{DynamicResource BackgroundDark}" WindowStartupLocation="CenterScreen">
+        Title="视觉节点" Width="1420" Height="800" MinWidth="1040" MinHeight="540"
+        Background="{DynamicResource BackgroundDark}" WindowStartupLocation="CenterScreen" ResizeMode="CanResizeWithGrip">
     <Window.DataContext><vm:MainViewModel/></Window.DataContext>
     <Grid>
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
@@ -43,75 +43,7 @@
                                 ViewportHeight="{Binding ViewportHeight, RelativeSource={RelativeSource AncestorType=ScrollViewer}}"/>
                         </ItemsPanelTemplate></ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate><DataTemplate>
-                            <Border CornerRadius="8" ClipToBounds="True" Background="{DynamicResource CanvasBrush}">
-                                <Border.Style><Style TargetType="Border"><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Style.Triggers><DataTrigger Binding="{Binding IsSelected}" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource Primary}"/><Setter Property="BorderThickness" Value="2"/></DataTrigger></Style.Triggers></Style></Border.Style>
-                                <Grid>
-                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="220" Margin="12,32,12,44">
-                                        <StackPanel.Style><Style TargetType="StackPanel"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding PreviewImage}" Value="{x:Null}"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></StackPanel.Style>
-                                        <icons:LucideIcon Kind="Camera" Foreground="{DynamicResource OverlaySecondaryBrush}" Width="24" Height="24" HorizontalAlignment="Center" Margin="0,0,0,8">
-                                            <icons:LucideIcon.Style><Style TargetType="icons:LucideIcon"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ContentPresenter}, Path=(local:CardGridPanel.IsPrimaryCard)}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></icons:LucideIcon.Style>
-                                        </icons:LucideIcon>
-                                        <TextBlock Text="暂无画面" Foreground="{DynamicResource OverlaySecondaryBrush}" FontSize="14" HorizontalAlignment="Center"/>
-                                        <TextBlock Text="{Binding TargetInfo}" Foreground="{DynamicResource OverlaySecondaryBrush}" TextWrapping="Wrap" TextAlignment="Center" FontSize="12" Margin="0,4,0,0">
-                                            <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ContentPresenter}, Path=(local:CardGridPanel.IsPrimaryCard)}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
-                                        </TextBlock>
-                                    </StackPanel>
-                                    <local:UniformFramePresenter>
-                                        <Grid Width="{Binding FrameWidth}" Height="{Binding FrameHeight}">
-                                            <Image Source="{Binding PreviewImage}" Stretch="None"/>
-                                            <ItemsControl ItemsSource="{Binding Detections}">
-                                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><Canvas IsItemsHost="True"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                                                <ItemsControl.ItemContainerStyle><Style TargetType="ContentPresenter"><Setter Property="Canvas.Left" Value="{Binding Left}"/><Setter Property="Canvas.Top" Value="{Binding Top}"/></Style></ItemsControl.ItemContainerStyle>
-                                                <ItemsControl.ItemTemplate><DataTemplate><Grid><Rectangle Width="{Binding Width}" Height="{Binding Height}" Stroke="{DynamicResource DetectionBrush}" StrokeThickness="2"/><TextBlock Text="{Binding Label}" Foreground="{DynamicResource OverlayTextBrush}" Background="{DynamicResource DetectionLabelBrush}" FontSize="12" Padding="4,1" VerticalAlignment="Top" Margin="0,-19,0,0"/></Grid></DataTemplate></ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </Grid>
-                                    </local:UniformFramePresenter>
-                                    <Border Background="{DynamicResource OverlaySurfaceBrush}" VerticalAlignment="Top">
-                                        <Button Command="{Binding SelectCommand}" HorizontalContentAlignment="Stretch" Padding="8,4" MinHeight="32" ToolTip="选择此路作为主画面">
-                                            <Button.Style><Style TargetType="Button" BasedOn="{StaticResource GhostButton}"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Foreground" Value="{DynamicResource OverlayTextBrush}"/></Style></Button.Style>
-                                            <Grid>
-                                                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                                    <TextBlock Text="{Binding SourceName}" Foreground="{DynamicResource OverlayTextBrush}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding SourceName}" VerticalAlignment="Center"/>
-                                                    <TextBlock Grid.Column="1" Text="{Binding StatusText}" MaxWidth="84" TextTrimming="CharacterEllipsis" Margin="8,0,0,0" ToolTip="{Binding StatusToolTip}" VerticalAlignment="Center">
-                                                        <TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource SourceStatusText}"><Setter Property="Foreground" Value="{DynamicResource OverlaySecondaryBrush}"/></Style></TextBlock.Style>
-                                                    </TextBlock>
-                                                <TextBlock Grid.Column="2" Text="{Binding ActualFps, StringFormat={}{0:0.0} FPS}" Foreground="{DynamicResource OverlayTextBrush}" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0"/>
-                                            </Grid>
-                                        </Button>
-                                    </Border>
-                                    <Border Background="{DynamicResource OverlaySurfaceBrush}" VerticalAlignment="Bottom" Padding="8,4">
-                                        <Grid>
-                                            <StackPanel Orientation="Horizontal">
-                                                <StackPanel.Style><Style TargetType="StackPanel"><Setter Property="HorizontalAlignment" Value="Right"/><Style.Triggers><DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=ContentPresenter}, Path=(local:CardGridPanel.IsPrimaryCard)}" Value="True"><Setter Property="HorizontalAlignment" Value="Left"/></DataTrigger></Style.Triggers></Style></StackPanel.Style>
-                                                <Button Content="启动" Command="{Binding StartCommand}" MinWidth="80" MinHeight="36" Padding="12,4" Margin="0,0,8,0">
-                                                    <Button.Style><Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}"><Style.Triggers><DataTrigger Binding="{Binding IsMonitoring}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Button.Style>
-                                                </Button>
-                                                <Button Content="停止" Command="{Binding StopCommand}" MinWidth="80" MinHeight="36" Padding="12,4" Margin="0,0,8,0">
-                                                    <Button.Style><Style TargetType="Button" BasedOn="{StaticResource DarkButton}"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding IsMonitoring}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Button.Style>
-                                                </Button>
-                                                <Button Style="{StaticResource CardIconButton}" Width="36" Height="36" MinWidth="36" MinHeight="36" Click="SourceMenu_OnClick" AutomationProperties.Name="来源更多操作" ToolTip="采集、遮罩与删除来源">
-                                                    <icons:LucideIcon Kind="ChevronDown" Width="20" Height="20"/>
-                                                    <Button.ContextMenu>
-                                                        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}" Background="{DynamicResource SurfaceDark}" Foreground="{DynamicResource TextPrimary}">
-                                                            <MenuItem Header="设为主画面" Command="{Binding SelectCommand}"/>
-                                                            <Separator/>
-                                                            <MenuItem Header="选择采集窗口" Command="{Binding PickWindowCommand}"/>
-                                                            <MenuItem Header="选择采集区域" Command="{Binding SelectRegionCommand}"/>
-                                                            <MenuItem Header="编辑遮罩" Command="{Binding EditMasksCommand}"/>
-                                                            <MenuItem Header="重置采集目标" Command="{Binding ResetTargetCommand}"/>
-                                                            <Separator/>
-                                                            <MenuItem Header="删除来源…" Command="{Binding RemoveSourceCommand}" Foreground="{DynamicResource DangerBrush}"/>
-                                                        </ContextMenu>
-                                                    </Button.ContextMenu>
-                                                </Button>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                    <TextBlock Text="{Binding LastFrameText, StringFormat={}已停止 · 保留最后画面 · {0}}" Foreground="{DynamicResource OverlaySecondaryBrush}" Background="{DynamicResource OverlaySurfaceBrush}" FontSize="12" Padding="8,4" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,48" ToolTip="{Binding LastFrameText}">
-                                        <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><MultiDataTrigger><MultiDataTrigger.Conditions><Condition Binding="{Binding IsMonitoring}" Value="False"/><Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=ContentPresenter}, Path=(local:CardGridPanel.IsPrimaryCard)}" Value="True"/></MultiDataTrigger.Conditions><Setter Property="Visibility" Value="Visible"/></MultiDataTrigger><DataTrigger Binding="{Binding PreviewImage}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
-                                    </TextBlock>
-                                </Grid>
-                            </Border>
+                            <local:SourcePreviewCard IsPrimary="{Binding RelativeSource={RelativeSource AncestorType=ContentPresenter}, Path=(local:CardGridPanel.IsPrimaryCard)}"/>
                         </DataTemplate></ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </ScrollViewer>
@@ -121,40 +53,17 @@
                     <ItemsControl Grid.Row="1" ItemsSource="{Binding MultiSourceVm.Sources}">
                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><local:GlobalSourcePanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate><DataTemplate>
-                            <Button Command="{Binding TogglePreviewCommand}" HorizontalContentAlignment="Stretch" Margin="4" Padding="12">
-                                <Button.Style><Style TargetType="Button" BasedOn="{StaticResource DarkButton}"><Style.Triggers><DataTrigger Binding="{Binding IsPreviewSelected}" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource Primary}"/><Setter Property="BorderThickness" Value="2"/></DataTrigger></Style.Triggers></Style></Button.Style>
-                                <StackPanel><TextBlock Text="{Binding SourceName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding PreviewStateText}" Style="{StaticResource CaptionText}" Margin="0,8,0,0"/><TextBlock Text="{Binding StatusText}" Style="{StaticResource SourceStatusText}" TextTrimming="CharacterEllipsis"/></StackPanel>
-                            </Button>
+                            <Border Margin="4" CornerRadius="8" Background="{DynamicResource SurfaceDark}">
+                                <Border.Style><Style TargetType="Border"><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Style.Triggers><DataTrigger Binding="{Binding IsSelected}" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource Primary}"/><Setter Property="BorderThickness" Value="2"/></DataTrigger></Style.Triggers></Style></Border.Style>
+                                <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="36"/></Grid.ColumnDefinitions>
+                                    <Button Command="{Binding SelectCommand}" Style="{StaticResource GhostButton}" HorizontalContentAlignment="Stretch" Padding="8,4" ToolTip="{Binding SourceName}" AutomationProperties.Name="{Binding SourceName, StringFormat={}查看来源：{0}}"><StackPanel><TextBlock Text="{Binding SourceName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding StatusText}" Style="{StaticResource SourceStatusText}" TextTrimming="CharacterEllipsis" Margin="0,4,0,0"/></StackPanel></Button>
+                                    <CheckBox Grid.Column="1" IsChecked="{Binding IsPreviewSelected, Mode=OneWay}" Command="{Binding TogglePreviewCommand}" Style="{StaticResource DarkCheckBox}" ToolTip="勾选进入预览；最多 4 路" AutomationProperties.Name="{Binding SourceName, StringFormat={}切换预览：{0}}" VerticalAlignment="Center"/>
+                                </Grid>
+                            </Border>
                         </DataTemplate></ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </Grid>
-                <StackPanel Grid.Row="1" Margin="0,12,0,0">
-                    <Grid Margin="0,0,0,8">
-                        <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="来源列表" FontWeight="SemiBold"/><TextBlock Text="{Binding MultiSourceVm.PreviewSelectionText}" Style="{StaticResource CaptionText}" Margin="8,0,0,0"/><TextBlock Text="{Binding MultiSourceVm.PreviewSelectionHint}" Foreground="{DynamicResource DangerBrush}" MaxWidth="240" TextTrimming="CharacterEllipsis" ToolTip="{Binding MultiSourceVm.PreviewSelectionHint}" Margin="8,0,0,0"/></StackPanel>
-                        <Button Grid.Column="1" Content="{Binding MultiSourceVm.GlobalViewToggleText}" Command="{Binding MultiSourceVm.ToggleGlobalViewCommand}" Style="{StaticResource GhostButton}" MinHeight="36" Padding="8,4" Margin="8,0"/>
-                        <Button Grid.Column="2" Command="{Binding MultiSourceVm.SelectedSource.AddSourceCommand}" Style="{StaticResource GhostButton}" MinHeight="36" Padding="8,4"><StackPanel Orientation="Horizontal"><icons:LucideIcon Kind="Plus" Width="16" Height="16" Margin="0,0,4,0"/><TextBlock Text="添加来源" VerticalAlignment="Center"/></StackPanel></Button>
-                    </Grid>
-                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" CanContentScroll="False">
-                        <ItemsControl ItemsSource="{Binding MultiSourceVm.Sources}">
-                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate><DataTemplate>
-                                <Border Margin="0,0,8,0" Width="176" CornerRadius="8" Background="{DynamicResource SurfaceDark}">
-                                    <Border.Style><Style TargetType="Border"><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Style.Triggers><DataTrigger Binding="{Binding IsSelected}" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource Primary}"/><Setter Property="BorderThickness" Value="2"/></DataTrigger></Style.Triggers></Style></Border.Style>
-                                    <Grid>
-                                        <Button Command="{Binding SelectCommand}" Style="{StaticResource GhostButton}" HorizontalContentAlignment="Stretch" Padding="6" ToolTip="{Binding SourceName}" AutomationProperties.Name="{Binding SourceName, StringFormat={}查看来源：{0}}">
-                                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="56"/><ColumnDefinition/></Grid.ColumnDefinitions>
-                                                <Border Background="{DynamicResource CanvasBrush}" CornerRadius="4" Height="52" ClipToBounds="True"><Image Source="{Binding PreviewImage}" Stretch="Uniform"/></Border>
-                                                <StackPanel Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center"><TextBlock Text="{Binding SourceName}" FontWeight="SemiBold" FontSize="12" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding ActualFps, StringFormat={}{0:0.0} FPS}" Style="{StaticResource CaptionText}" Margin="0,4,0,0"/></StackPanel>
-                                            </Grid>
-                                        </Button>
-                                        <CheckBox Style="{StaticResource DarkCheckBox}" Command="{Binding TogglePreviewCommand}" IsChecked="{Binding IsPreviewSelected, Mode=OneWay}" MinHeight="36" MinWidth="36" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="2" ToolTip="勾选进入预览；最多 4 路" AutomationProperties.Name="{Binding SourceName, StringFormat={}切换预览：{0}}"/>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate></ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
-                </StackPanel>
+                <local:SourceStrip Grid.Row="1" Margin="0,12,0,0" DataContext="{Binding MultiSourceVm}"/>
             </Grid>
             <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" Background="{DynamicResource BorderBrush}" Cursor="SizeWE" DragCompleted="CardsSplitter_OnDragCompleted" ToolTip="调整预览区与检查区宽度"/>
             <Border Grid.Column="2" Background="{DynamicResource SurfaceDark}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1,0,0,0">

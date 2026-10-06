@@ -1,0 +1,81 @@
+<UserControl x:Class="VisionGuard.Detector.Windows.Views.SourcePreviewCard"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:icons="clr-namespace:VisionGuard.Detector.Windows.Icons"
+    xmlns:local="clr-namespace:VisionGuard.Detector.Windows.Views">
+<UserControl.Resources>
+    <Style x:Key="PreviewStatus" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource OverlaySecondaryBrush}"/><Setter Property="FontSize" Value="12"/>
+        <Style.Triggers><DataTrigger Binding="{Binding IsReady}" Value="False"><Setter Property="Foreground" Value="{DynamicResource OverlayWarningBrush}"/></DataTrigger><DataTrigger Binding="{Binding IsMonitoring}" Value="True"><Setter Property="Foreground" Value="{DynamicResource OverlayAccentBrush}"/></DataTrigger><DataTrigger Binding="{Binding IsPerformanceInsufficient}" Value="True"><Setter Property="Foreground" Value="{DynamicResource OverlayWarningBrush}"/></DataTrigger><DataTrigger Binding="{Binding HasStatusError}" Value="True"><Setter Property="Foreground" Value="{DynamicResource OverlayDangerBrush}"/></DataTrigger></Style.Triggers>
+    </Style>
+</UserControl.Resources>
+<Border CornerRadius="8" ClipToBounds="True" Background="{DynamicResource CanvasBrush}">
+    <Border.Style><Style TargetType="Border"><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Style.Triggers><DataTrigger Binding="{Binding IsPrimary, RelativeSource={RelativeSource AncestorType=local:SourcePreviewCard}}" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource Primary}"/><Setter Property="BorderThickness" Value="2"/></DataTrigger></Style.Triggers></Style></Border.Style>
+    <Grid>
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="220" Margin="12,32,12,44">
+            <StackPanel.Style><Style TargetType="StackPanel"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding PreviewImage}" Value="{x:Null}"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></StackPanel.Style>
+            <icons:LucideIcon Kind="Camera" Foreground="{DynamicResource OverlaySecondaryBrush}" Width="24" Height="24" HorizontalAlignment="Center" Margin="0,0,0,8">
+                <icons:LucideIcon.Style><Style TargetType="icons:LucideIcon"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=local:SourcePreviewCard}, Path=IsPrimary}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></icons:LucideIcon.Style>
+            </icons:LucideIcon>
+            <TextBlock Text="暂无画面" Foreground="{DynamicResource OverlaySecondaryBrush}" FontSize="14" HorizontalAlignment="Center"/>
+            <TextBlock Text="{Binding TargetInfo}" Foreground="{DynamicResource OverlaySecondaryBrush}" TextWrapping="Wrap" TextAlignment="Center" FontSize="12" Margin="0,4,0,0">
+                <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=local:SourcePreviewCard}, Path=IsPrimary}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+            </TextBlock>
+        </StackPanel>
+        <local:UniformFramePresenter>
+            <Grid Width="{Binding FrameWidth}" Height="{Binding FrameHeight}">
+                <Image Source="{Binding PreviewImage}" Stretch="None"/>
+                <ItemsControl ItemsSource="{Binding Detections}">
+                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><Canvas IsItemsHost="True"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemContainerStyle><Style TargetType="ContentPresenter"><Setter Property="Canvas.Left" Value="{Binding Left}"/><Setter Property="Canvas.Top" Value="{Binding Top}"/></Style></ItemsControl.ItemContainerStyle>
+                    <ItemsControl.ItemTemplate><DataTemplate><Grid><Rectangle Width="{Binding Width}" Height="{Binding Height}" Stroke="{DynamicResource DetectionBrush}" StrokeThickness="2"/><local:FrameLabel Text="{Binding Label}" SourceLeft="{Binding Left}" SourceTop="{Binding Top}" FrameWidth="{Binding DataContext.FrameWidth, RelativeSource={RelativeSource AncestorType=local:SourcePreviewCard}}" Visibility="{Binding IsPrimary, RelativeSource={RelativeSource AncestorType=local:SourcePreviewCard}, Converter={StaticResource BoolToVis}}" ToolTip="{Binding Label}" Foreground="{DynamicResource OverlayTextBrush}" Background="{DynamicResource DetectionLabelBrush}" FontSize="12" Padding="4,1" VerticalAlignment="Top" Margin="0,-19,0,0"/></Grid></DataTemplate></ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+        </local:UniformFramePresenter>
+        <Border Background="{DynamicResource OverlaySurfaceBrush}" VerticalAlignment="Top">
+            <Button Command="{Binding SelectCommand}" HorizontalContentAlignment="Stretch" Padding="8,4" MinHeight="36" ToolTip="选择此路作为主画面">
+                <Button.Style><Style TargetType="Button" BasedOn="{StaticResource GhostButton}"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Foreground" Value="{DynamicResource OverlayTextBrush}"/></Style></Button.Style>
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBlock Text="{Binding SourceName}" Foreground="{DynamicResource OverlayTextBrush}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding SourceName}" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Column="1" Text="{Binding StatusText}" MaxWidth="84" TextTrimming="CharacterEllipsis" Margin="8,0,0,0" ToolTip="{Binding StatusToolTip}" VerticalAlignment="Center">
+                            <TextBlock.Style><Style TargetType="TextBlock" BasedOn="{StaticResource PreviewStatus}"/></TextBlock.Style>
+                        </TextBlock>
+                    <TextBlock Grid.Column="2" Text="{Binding FpsText}" Foreground="{DynamicResource OverlayTextBrush}" FontSize="12" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                </Grid>
+            </Button>
+        </Border>
+        <Border Background="Transparent" VerticalAlignment="Bottom" Padding="8">
+            <Grid>
+                <StackPanel Orientation="Horizontal">
+                    <StackPanel.Style><Style TargetType="StackPanel"><Setter Property="HorizontalAlignment" Value="Right"/><Style.Triggers><DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=local:SourcePreviewCard}, Path=IsPrimary}" Value="True"><Setter Property="HorizontalAlignment" Value="Left"/></DataTrigger></Style.Triggers></Style></StackPanel.Style>
+                    <Button Content="启动" Command="{Binding StartCommand}" ToolTip="{Binding StartActionHint}" ToolTipService.ShowOnDisabled="True" MinWidth="80" MinHeight="36" Padding="12,4" Margin="0,0,8,0">
+                        <Button.Style><Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}"><Style.Triggers><DataTrigger Binding="{Binding IsMonitoring}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Button.Style>
+                    </Button>
+                    <Button Content="停止" Command="{Binding StopCommand}" MinWidth="80" MinHeight="36" Padding="12,4" Margin="0,0,8,0">
+                        <Button.Style><Style TargetType="Button" BasedOn="{StaticResource DarkButton}"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding IsMonitoring}" Value="True"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></Button.Style>
+                    </Button>
+                    <Button Style="{StaticResource DarkButton}" Padding="0" Width="36" Height="36" MinWidth="36" MinHeight="36" Click="SourceMenu_OnClick" AutomationProperties.Name="来源更多操作" ToolTip="采集、遮罩与删除来源">
+                        <icons:LucideIcon Kind="Ellipsis" Width="20" Height="20"/>
+                        <Button.ContextMenu>
+                            <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}" Background="{DynamicResource SurfaceDark}" Foreground="{DynamicResource TextPrimary}">
+                                <MenuItem Header="设为主画面" Command="{Binding SelectCommand}"/>
+                                <Separator/>
+                                <MenuItem Header="选择采集窗口" Command="{Binding PickWindowCommand}"/>
+                                <MenuItem Header="选择采集区域" Command="{Binding SelectRegionCommand}"/>
+                                <MenuItem Header="编辑遮罩" Command="{Binding EditMasksCommand}"/>
+                                <MenuItem Header="重置采集目标" Command="{Binding ResetTargetCommand}"/>
+                                <Separator/>
+                                <MenuItem Header="删除来源…" Command="{Binding RemoveSourceCommand}" Foreground="{DynamicResource DangerBrush}"/>
+                            </ContextMenu>
+                        </Button.ContextMenu>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+        <TextBlock Text="{Binding LastFrameText, StringFormat={}已停止 · 保留最后画面 · {0}}" Foreground="{DynamicResource OverlaySecondaryBrush}" Background="{DynamicResource OverlaySurfaceBrush}" FontSize="12" Padding="8,4" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,56" ToolTip="{Binding LastFrameText}" MaxWidth="300" TextTrimming="CharacterEllipsis">
+            <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><MultiDataTrigger><MultiDataTrigger.Conditions><Condition Binding="{Binding IsMonitoring}" Value="False"/><Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=local:SourcePreviewCard}, Path=IsPrimary}" Value="True"/></MultiDataTrigger.Conditions><Setter Property="Visibility" Value="Visible"/></MultiDataTrigger><DataTrigger Binding="{Binding PreviewImage}" Value="{x:Null}"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+        </TextBlock>
+    </Grid>
+</Border>
+</UserControl>

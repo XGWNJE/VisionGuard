@@ -23,6 +23,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private readonly ServerPushService _server;
         private readonly SettingsViewModel _settings;
         private SourceViewModel? _selectedSource;
+        private SourceViewModel? _focusedPreviewSource;
         private string _sourceLimitWarning = "";
         private string _previewSelectionHint = "";
         private bool _isGlobalView;
@@ -46,7 +47,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public ObservableCollection<SourceViewModel> PreviewSources { get; } = new();
 
         public IReadOnlyList<MonitorSourceStatus> Statuses => _coordinator.Statuses;
-        public int FocusedPreviewIndex => Math.Max(0, SelectedSource == null ? 0 : PreviewSources.IndexOf(SelectedSource));
+        public int FocusedPreviewIndex => Math.Max(0, _focusedPreviewSource == null ? 0 : PreviewSources.IndexOf(_focusedPreviewSource));
         public SourceViewModel? SelectedSource
         {
             get => _selectedSource;
@@ -56,6 +57,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 if (_selectedSource != null) _selectedSource.IsSelected = false;
                 // 选中同步检查区与主画面；不改变预览勾选、采集或运行状态。
                 if (SetProperty(ref _selectedSource, value) && value != null) value.IsSelected = true;
+                if (value != null && PreviewSources.Contains(value)) _focusedPreviewSource = value;
                 OnPropertyChanged(nameof(FocusedPreviewIndex));
             }
         }
@@ -159,7 +161,12 @@ namespace VisionGuard.Detector.Windows.ViewModels
             _server = server;
             _settings = settings;
             _coordinator = new MultiSourceMonitorCoordinator();
-            PreviewSources.CollectionChanged += (_, __) => OnPropertyChanged(nameof(FocusedPreviewIndex));
+            PreviewSources.CollectionChanged += (_, __) =>
+            {
+                if (_focusedPreviewSource == null || !PreviewSources.Contains(_focusedPreviewSource))
+                    _focusedPreviewSource = PreviewSources.FirstOrDefault();
+                OnPropertyChanged(nameof(FocusedPreviewIndex));
+            };
             ToggleGlobalViewCommand = new RelayCommand(() => IsGlobalView = !IsGlobalView);
             EnsureLegacyBackupAndMigration();
             EnsureSourceKeyMigration();
@@ -840,7 +847,6 @@ namespace VisionGuard.Detector.Windows.ViewModels
         }
 
         public ObservableCollection<DetectionItem> Detections { get; } = new();
-        public ObservableCollection<SourceParameterViewModel> ParameterRows { get; } = new();
         public ObservableCollection<DetectionClassOption> TargetOptions { get; } = new();
         public List<RectangleF> MaskRegions { get; private set; } = new();
         public string SourceName { get => _sourceName; set { DisplayNamePolicy.Normalize(value); if (SetProperty(ref _sourceName, value)) MarkDirty(); } }
@@ -868,11 +874,23 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 return $"{string.Join("、", selected.Take(2).Select(option => option.ChineseName))}等 {selected.Count} 类";
             }
         }
-        public string ParameterSummary => $"{ModelKey} · {TargetSummary} · {TargetFps} FPS";
+        public string ParameterSummary
+        {
+            get
+            {
+                var selected = TargetOptions.Where(x => x.IsSelected).ToList();
+                string targets = string.Join("、", selected.Take(2).Select(x => x.ChineseName));
+                if (selected.Count > 2) targets += $"等 {selected.Count} 类";
+                return $"{SourceParametersEditorViewModel.ModelLabel(ModelKey)} · {targets} · {TargetFps} FPS";
+            }
+        }
+        public string ParameterDetails => $"置信度 {ThresholdPercent}% · 冷却 {Cooldown} 秒";
+        public string PreviewRoleText => IsPreviewSelected ? "已加入实时预览" : "仅检查此来源 · 主画面保持不变";
+        public string StartActionHint => CanStart ? "启动此来源" : !IsReady ? "请先选择有效采集目标" : NoModelHint;
         public int ThresholdPercent { get => _thresholdPercent; set { if (SetProperty(ref _thresholdPercent, Net472Compat.Clamp(value, 10, 95))) MarkDirty(); } }
         public int TargetFps { get => _targetFps; set { if (SetProperty(ref _targetFps, Net472Compat.Clamp(value, 1, 5))) MarkDirty(); } }
         public int Cooldown { get => _cooldown; set { if (SetProperty(ref _cooldown, Net472Compat.Clamp(value, 1, 300))) MarkDirty(); } }
-        public bool IsMonitoring { get => _isMonitoring; private set { if (SetProperty(ref _isMonitoring, value)) RaiseCommandStates(); } }
+        public bool IsMonitoring { get => _isMonitoring; private set { if (SetProperty(ref _isMonitoring, value)) { OnPropertyChanged(nameof(FpsText)); RaiseCommandStates(); } } }
         public bool IsSelected { get => _isSelected; internal set => SetProperty(ref _isSelected, value); }
 
         /// <summary>
@@ -886,6 +904,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             {
                 if (!SetProperty(ref _isPreviewSelected, value)) return;
                 OnPropertyChanged(nameof(PreviewStateText));
+                OnPropertyChanged(nameof(PreviewRoleText));
             }
         }
 
@@ -955,7 +974,8 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public string BackendText { get => _backendText; private set => SetProperty(ref _backendText, value); }
 
         /// <summary>实测推理帧率（10 秒滚动窗口），由协调器的状态推送。</summary>
-        public double ActualFps { get => _actualFps; private set => SetProperty(ref _actualFps, value); }
+        public double ActualFps { get => _actualFps; private set { if (SetProperty(ref _actualFps, value)) OnPropertyChanged(nameof(FpsText)); } }
+        public string FpsText => IsMonitoring ? $"{ActualFps:0.0} FPS" : "0.0 FPS";
 
         /// <summary>实测帧率已持续低于目标（看门狗确认）：卡片显示短提示，宿主据此弹窗。</summary>
         public bool IsPerformanceInsufficient
@@ -998,8 +1018,6 @@ namespace VisionGuard.Detector.Windows.ViewModels
             // 预览位是否还能再勾由宿主判断：满了要给提示，所以命令本身始终可执行。
             TogglePreviewCommand = new RelayCommand(() => _owner.TogglePreviewSelection(this));
             StatusText = IsReady ? "就绪" : (!string.IsNullOrWhiteSpace(_targetWindowTitle) ? (string.IsNullOrWhiteSpace(_windowResolutionError) ? "窗口未找到" : _windowResolutionError) : "未配置");
-            foreach (var field in new[] { ("modelKey", "推理模型"), ("targets", "检测目标"), ("confidence", "置信度（%）"), ("targetSamplingRate", "采样频率（FPS）"), ("cooldown", "报警冷却（秒）") })
-                ParameterRows.Add(new SourceParameterViewModel(this, field.Item1, field.Item2));
         }
 
         internal void RaiseSourceActionStates()
@@ -1240,6 +1258,25 @@ namespace VisionGuard.Detector.Windows.ViewModels
             }
         }
 
+        internal void CommitParameters(string model, string targets, int confidence, int fps, int cooldown)
+        {
+            if (!CanEdit) throw new InvalidOperationException("请先停止当前来源。");
+            if (!ModelManager.IsSupported(model) || !ModelManager.IsDownloaded(model)) throw new ArgumentException("模型不可用，请先下载。");
+            if (string.IsNullOrWhiteSpace(targets) || targets.Length > 4096 || targets.Split(',').Any(label => !CocoClassMap.EnglishNames.Contains(label))) throw new ArgumentException("至少选择一个当前模型中的目标。");
+            if (confidence < 10 || confidence > 95 || fps < 1 || fps > 5 || cooldown < 1 || cooldown > 300) throw new ArgumentException("参数范围无效。");
+            var previous = CaptureState(); var saved = _saved;
+            void Assign(string nextModel, string nextTargets, int nextConfidence, int nextFps, int nextCooldown)
+            { ModelKey = nextModel; Targets = nextTargets; ThresholdPercent = nextConfidence; TargetFps = nextFps; Cooldown = nextCooldown; }
+            try { Assign(model, targets, confidence, fps, cooldown); _autoSaveTimer.Stop(); ApplyAndPersist(); }
+            catch
+            {
+                Assign(previous.ModelKey, previous.Targets, previous.ThresholdPercent, previous.TargetFps, previous.Cooldown);
+                _autoSaveTimer.Stop(); _saved = saved; PersistCurrent(); RefreshPendingApply();
+                try { SettingsStore.Save(); _owner.Reconfigure(this); } catch (Exception error) { LogManager.StaticWarn("[Parameter] 还原失败：" + error.Message); }
+                throw;
+            }
+        }
+
         internal void CommitSourceNameEdit()
         {
             SourceName = DisplayNamePolicy.Normalize(SourceName);
@@ -1423,6 +1460,8 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private void MarkDirty()
         {
             OnPropertyChanged(nameof(ParameterSummary));
+            OnPropertyChanged(nameof(ParameterDetails));
+            OnPropertyChanged(nameof(StartActionHint));
             RefreshPendingApply();
             if (!IsMonitoring) StatusText = HasPendingApply ? PendingApplyText : (IsReady ? "就绪" : "未配置");
             _autoSaveTimer.Stop();
@@ -1439,6 +1478,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private void RaiseCommandStates()
         {
             OnPropertyChanged(nameof(CanEdit)); OnPropertyChanged(nameof(CanStart));
+            OnPropertyChanged(nameof(StartActionHint));
             PickWindowCommand?.RaiseCanExecuteChanged(); SelectRegionCommand?.RaiseCanExecuteChanged(); ResetTargetCommand?.RaiseCanExecuteChanged();
             EditMasksCommand?.RaiseCanExecuteChanged(); StartCommand?.RaiseCanExecuteChanged(); StopCommand?.RaiseCanExecuteChanged();
         }

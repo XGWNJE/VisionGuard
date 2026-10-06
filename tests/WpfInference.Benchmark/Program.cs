@@ -228,7 +228,7 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
         (Name: "900P 100%", Width: 1584d, Height: 844d),
         (Name: "900P 125%", Width: 1264d, Height: 664d),
         (Name: "900P 150%", Width: 1050d, Height: 544d),
-        (Name: "1420x720 default", Width: 1420d, Height: 720d),
+        (Name: "1420x800 default", Width: 1420d, Height: 800d),
         (Name: "1920x1080", Width: 1920d, Height: 1080d),
     };
     foreach (var window in layoutWindows)
@@ -327,6 +327,8 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
     Exception? presenterFailure = null;
     bool emptyFrameArranged = false;
     bool focusedPanelArranged = false;
+    bool globalNamesBounded = false;
+    bool globalRowsSeparated = true;
     WpfSize presenterDesired = WpfSize.Empty;
     WpfMatrix presenterMatrix = WpfMatrix.Identity;
     var presenterThread = new Thread(() =>
@@ -363,6 +365,31 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
                 && focusPanel.Children[1].RenderSize.Height == focusPlan.ContentHeight
                 && focusPlan.ContentHeight > focusPanel.ViewportHeight
                 && focusPanel.Children.Cast<System.Windows.UIElement>().All(child => child.Visibility == System.Windows.Visibility.Visible && child.RenderSize.Height >= CardLayoutPlanner.MinimumSecondaryHeight);
+            var globalPanel = new GlobalSourcePanel();
+            for (int index = 0; index < 16; index++)
+            {
+                var row = new Grid();
+                row.ColumnDefinitions.Add(new ColumnDefinition());
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new System.Windows.GridLength(36) });
+                row.Children.Add(new TextBlock { Text = new string('测', 64), TextTrimming = System.Windows.TextTrimming.CharacterEllipsis });
+                var toggle = new CheckBox(); Grid.SetColumn(toggle, 1); row.Children.Add(toggle);
+                globalPanel.Children.Add(new Border { Child = row });
+            }
+            globalPanel.Measure(new WpfSize(680, 270)); globalPanel.Arrange(new WpfRect(0, 0, 680, 270));
+            globalNamesBounded = globalPanel.Children.Cast<Border>().All(card => {
+                var row = (Grid)card.Child; var toggle = row.Children[1];
+                var position = toggle.TransformToAncestor(card).Transform(new System.Windows.Point());
+                return row.RenderSize.Width <= card.RenderSize.Width + .5 && position.X + toggle.RenderSize.Width <= card.RenderSize.Width + .5;
+            });
+            for (int count = 1; count <= 16; count++)
+            {
+                var panel = new GlobalSourcePanel();
+                for (int index = 0; index < count; index++) panel.Children.Add(new Border());
+                panel.Measure(new WpfSize(680, 270)); panel.Arrange(new WpfRect(0, 0, 680, 270));
+                var rectangles = panel.Children.Cast<Border>().Select(card => new WpfRect(card.TransformToAncestor(panel).Transform(new System.Windows.Point()), card.RenderSize)).ToArray();
+                globalRowsSeparated &= rectangles.All(rect => rect.X >= 0 && rect.Y >= 0 && rect.Right <= 680.5 && rect.Bottom <= 270.5)
+                    && !rectangles.Where((rect, index) => rectangles.Skip(index + 1).Any(other => rect.IntersectsWith(other))).Any();
+            }
         }
         catch (Exception ex)
         {
@@ -383,6 +410,10 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
         new { presenterDesired, presenterMatrix, emptyFrameArranged, error = presenterFailure?.Message });
     CheckLayout("WPF focus switch promotes selected card and retains all previews", focusedPanelArranged,
         new { focusedPanelArranged, error = presenterFailure?.Message });
+    CheckLayout("sixteen long source names retain preview controls within each card", globalNamesBounded,
+        new { globalNamesBounded, error = presenterFailure?.Message });
+    CheckLayout("one through sixteen global source cards never overlap", globalRowsSeparated,
+        new { globalRowsSeparated, error = presenterFailure?.Message });
 
     var layoutReport = new
     {
@@ -589,6 +620,9 @@ if (args.Length >= 2 && args[1].Equals("--source-autosave", StringComparison.Ord
     }
 
     var settingsPath = Path.GetFullPath(args[2]);
+    var probeAccountRoot = Path.Combine(Path.GetDirectoryName(settingsPath)!, "parameter-probe-" + Guid.NewGuid().ToString("N"));
+    Environment.SetEnvironmentVariable("VISIONGUARD_ACCOUNT_DIR", probeAccountRoot);
+    Environment.SetEnvironmentVariable("VISIONGUARD_LOG_DIR", Path.Combine(probeAccountRoot, "logs"));
     Environment.SetEnvironmentVariable("VISIONGUARD_SETTINGS_PATH", settingsPath);
     if (File.Exists(settingsPath)) File.Delete(settingsPath);
     // 种子文件先写到旁边再改名：确认探针读到的是完整内容，而不是写了一半的文件。
@@ -613,6 +647,9 @@ if (args.Length >= 2 && args[1].Equals("--source-autosave", StringComparison.Ord
         new System.Text.UTF8Encoding(false));
     File.Move(seedPath, settingsPath);
     Environment.SetEnvironmentVariable("VISIONGUARD_SETTINGS_PATH", settingsPath);
+    // 与真实启动入口一样先加载设置，避免未加载的共享存储跳过持久化。
+    typeof(MultiSourceViewModel).Assembly.GetType("VisionGuard.Detector.Windows.Utils.SettingsStore", true)!
+        .GetMethod("Load")!.Invoke(null, null);
 
     var autoSaveChecks = new List<object>();
     var stageLogPath = settingsPath + ".stages.log";
@@ -658,18 +695,51 @@ if (args.Length >= 2 && args[1].Equals("--source-autosave", StringComparison.Ord
 
         // 1) 打开时不应有「已保存待生效」的项：磁盘上的值就是已生效值。
         CheckAutoSave("no-pending-on-load", !source.HasPendingApply, source.PendingApplyText);
+        var applyStatus = typeof(SourceViewModel).GetMethod("ApplyStatus", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        using (var runningEditor = new SourceParametersEditorViewModel(source))
+        {
+            runningEditor.Confidence = 70;
+            applyStatus.Invoke(source, new object[] { new VisionGuard.Detector.Windows.Models.MonitorSourceStatus { IsMonitoring = true, ActualFps = 3 } });
+            CheckAutoSave("running-parameters-readonly", !runningEditor.CanEdit && !runningEditor.CanSave && !runningEditor.TrySave() && source.ThresholdPercent == 45);
+            CheckAutoSave("running-fps-shows-current-measurement", source.FpsText == "3.0 FPS");
+            applyStatus.Invoke(source, new object[] { new VisionGuard.Detector.Windows.Models.MonitorSourceStatus { IsMonitoring = false, ActualFps = 3 } });
+            CheckAutoSave("stopped-fps-does-not-show-stale-measurement", source.FpsText == "0.0 FPS" && source.ActualFps == 3);
+        }
 
-        var confidenceRow = source.ParameterRows.Single(row => row.Key == "confidence");
-        confidenceRow.EditCommand.Execute(null); confidenceRow.Draft = "70";
-        CheckAutoSave("parameter-draft-isolated", source.ThresholdPercent == 45 && ReadSetting("Source.1.Threshold") == "45", confidenceRow.Draft);
-        confidenceRow.Draft = "96";
-        CheckAutoSave("parameter-range-rejected", !confidenceRow.SaveCommand.CanExecute(null), confidenceRow.Draft);
-        confidenceRow.RestoreCommand.Execute(null);
-        CheckAutoSave("parameter-restore-current", confidenceRow.Draft == "45", confidenceRow.Draft);
-        confidenceRow.Draft = "70"; confidenceRow.SaveCommand.Execute(null);
-        CheckAutoSave("parameter-save-confirmed", source.ThresholdPercent == 70 && ReadSetting("Source.1.Threshold") == "70" && confidenceRow.Message == "已保存", confidenceRow.Message);
-        confidenceRow.EditCommand.Execute(null); confidenceRow.Draft = "80"; confidenceRow.CancelCommand.Execute(null);
-        CheckAutoSave("parameter-cancel-keeps-value", source.ThresholdPercent == 70 && !confidenceRow.IsEditing, confidenceRow.Draft);
+        using (var editor = new SourceParametersEditorViewModel(source))
+        {
+            editor.Confidence = 70; editor.Fps = 2; editor.Cooldown = 30;
+            CheckAutoSave("parameter-draft-isolated", source.ThresholdPercent == 45 && source.TargetFps == 3 && source.Cooldown == 5 && ReadSetting("Source.1.Threshold") == "45");
+            editor.Confidence = 96; editor.Fps = 0; editor.Cooldown = 301;
+            CheckAutoSave("parameter-selection-bounds", editor.Confidence == 95 && editor.Fps == 1 && editor.Cooldown == 300);
+            editor.RestoreCommand.Execute(null);
+            CheckAutoSave("parameter-restore-current", editor.Confidence == 45 && editor.Fps == 3 && editor.Cooldown == 5 && !editor.CanSave);
+            editor.Targets.Single(x => x.EnglishName == "person").IsSelected = false;
+            CheckAutoSave("parameter-last-target-protected", editor.Targets.Count(x => x.IsSelected) == 1 && editor.Message.Length > 0);
+            editor.Search = "car";
+            CheckAutoSave("parameter-target-search", editor.FilteredTargets.Any(x => x.EnglishName == "car") && editor.FilteredTargets.All(x => (x.EnglishName + x.ChineseName).IndexOf("car", StringComparison.OrdinalIgnoreCase) >= 0));
+            editor.Confidence = 70;
+            source.Cooldown = 6;
+            CheckAutoSave("parameter-stale-draft-blocked", editor.SourceChanged && !editor.CanSave && !editor.TrySave() && source.ThresholdPercent == 45);
+            editor.RestoreCommand.Execute(null);
+            CheckAutoSave("parameter-restore-refreshes-baseline", editor.Cooldown == 6 && !editor.SourceChanged);
+            editor.ModelKey = "unsupported-model";
+            CheckAutoSave("parameter-unavailable-model-blocked", !editor.CanSave && !editor.TrySave() && ReadSetting("Source.1.Threshold") == "45");
+            editor.RestoreCommand.Execute(null);
+            editor.Confidence = 70; editor.Fps = 3; editor.Cooldown = 5;
+            CheckAutoSave("parameter-batch-save-confirmed", editor.TrySave() && source.ThresholdPercent == 70 && source.TargetFps == 3 && source.Cooldown == 5 && ReadSetting("Source.1.Threshold") == "70" && ReadSetting("Source.1.Cooldown") == "5" && !source.HasPendingApply, editor.Message);
+        }
+        using (var canceled = new SourceParametersEditorViewModel(source)) { canceled.Confidence = 80; canceled.Cooldown = 300; }
+        CheckAutoSave("parameter-cancel-keeps-value", source.ThresholdPercent == 70 && source.Cooldown == 5 && ReadSetting("Source.1.Threshold") == "70");
+        using (var failedEditor = new SourceParametersEditorViewModel(source))
+        {
+            failedEditor.Confidence = 75; failedEditor.Fps = 4; failedEditor.Cooldown = 60;
+            using (var lockedSettings = new FileStream(settingsPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                CheckAutoSave("parameter-write-failure-rolls-back-all-fields", !failedEditor.TrySave()
+                    && source.ThresholdPercent == 70 && source.TargetFps == 3 && source.Cooldown == 5
+                    && ReadSetting("Source.1.Threshold") == "70" && ReadSetting("Source.1.Fps") == "3" && ReadSetting("Source.1.Cooldown") == "5"
+                    && failedEditor.Confidence == 75 && failedEditor.Fps == 4 && failedEditor.Cooldown == 60 && failedEditor.Message.Length > 0, failedEditor.Message);
+        }
 
         // 2) 改阈值：不需要任何保存动作，防抖到点后必须已经在磁盘上。
         source.ThresholdPercent = 61;
@@ -706,14 +776,14 @@ if (args.Length >= 2 && args[1].Equals("--source-autosave", StringComparison.Ord
                     Stage("reset-threw " + ex.GetType().FullName + ": " + ex.Message + " | " + ex.StackTrace);
                 }
                 Stage("after-reset hasTarget=" + source.HasAnyTarget);
-                CheckAutoSave("target-cleared", !source.HasAnyTarget, source.TargetInfo + " / " + source.MaskInfo);
-                CheckAutoSave("target-persisted", ReadSetting("Source.1.ScreenRegion") == "" && ReadSetting("Source.1.Masks") == "",
+                // 有遮罩时需要真实确认；无界面宿主不得默认为同意并清除采集配置。
+                CheckAutoSave("masked-target-reset-requires-confirmation", source.HasAnyTarget && source.MaskRegions.Count == 1, source.TargetInfo + " / " + source.MaskInfo);
+                CheckAutoSave("unconfirmed-target-reset-keeps-disk", ReadSetting("Source.1.ScreenRegion") == "10,20,320,240" && ReadSetting("Source.1.Masks") == "0.1,0.1,0.2,0.2",
                     "region=[" + ReadSetting("Source.1.ScreenRegion") + "] masks=[" + ReadSetting("Source.1.Masks") + "]");
                 CheckAutoSave("reset-survived-reconfigure", source.ResetTargetCommand.CanExecute(null) == false
                     || source.HasAnyTarget, "canExecute=" + source.ResetTargetCommand.CanExecute(null) + " hasTarget=" + source.HasAnyTarget);
                 Stage("after-persist-checks");
                 CheckAutoSave("pending-does-not-track-target", !source.PendingApplyText.Contains("窗口") && !source.PendingApplyText.Contains("遮罩"), source.PendingApplyText);
-                CheckAutoSave("individual-parameter-rows", source.ParameterRows.Count == 5, "rows=" + source.ParameterRows.Count);
                 Stage("checks-complete");
                 dispatcherDone.Set();
             };

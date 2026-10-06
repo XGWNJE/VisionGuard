@@ -144,6 +144,23 @@
         <Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource DangerSurfaceBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter Property="Background" Value="{DynamicResource SurfaceLight}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/></Trigger></Style.Triggers>
     </Style>
 
+    <Style TargetType="Button" x:Key="SelectionButton" BasedOn="{StaticResource DarkButton}">
+        <Setter Property="FontWeight" Value="Normal"/>
+        <Style.Triggers><DataTrigger Binding="{Binding IsSelected}" Value="True"><Setter Property="Background" Value="{DynamicResource SelectedBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource Primary}"/><Setter Property="Foreground" Value="{DynamicResource SelectedTextBrush}"/><Setter Property="FontWeight" Value="SemiBold"/></DataTrigger></Style.Triggers>
+    </Style>
+    <Style TargetType="Button" x:Key="InspectorAction" BasedOn="{StaticResource DarkButton}">
+        <Setter Property="Background" Value="{DynamicResource SelectedBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource SelectedTextBrush}"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+    </Style>
+    <DataTemplate x:Key="ParameterChoiceTemplate"><Button Content="{Binding Label}" Command="{Binding SelectCommand}" Style="{StaticResource SelectionButton}" Margin="0,0,8,0" Padding="8,4"/></DataTemplate>
+    <Style TargetType="CheckBox" x:Key="TargetChoice">
+        <Setter Property="MinHeight" Value="36"/><Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}"/>
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/><Setter Property="Background" Value="{DynamicResource SurfaceLight}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox"><Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,6"><StackPanel Orientation="Horizontal"><icons:LucideIcon x:Name="ChoiceMark" Kind="Check" Visibility="Hidden" Width="16" Height="16" Foreground="{TemplateBinding Foreground}" Margin="0,0,8,0"/><ContentPresenter VerticalAlignment="Center"/></StackPanel></Border><ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="ChoiceMark" Property="Visibility" Value="Visible"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+        <Style.Triggers><Trigger Property="IsChecked" Value="True"><Setter Property="Foreground" Value="{DynamicResource SelectedTextBrush}"/><Setter Property="Background" Value="{DynamicResource SelectedBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource Primary}"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource PrimaryHover}"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter Property="Foreground" Value="{DynamicResource TextSecondary}"/></Trigger></Style.Triggers>
+    </Style>
+
     <!-- 主操作按钮 -->
     <Style TargetType="Button" x:Key="PrimaryButton" BasedOn="{StaticResource DarkButton}">
         <Setter Property="Foreground" Value="{DynamicResource OnPrimaryBrush}"/>
@@ -404,6 +421,8 @@
                         <!-- 显示当前选中项（覆盖在 ToggleButton 之上，点击穿透） -->
                         <ContentPresenter Content="{TemplateBinding SelectionBoxItem}"
                                           ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                          ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                          ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
                                           VerticalAlignment="Center"
                                           Margin="8,0,24,0"
                                           IsHitTestVisible="False" TextElement.Foreground="{TemplateBinding Foreground}"/>

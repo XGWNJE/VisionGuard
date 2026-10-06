@@ -29,10 +29,20 @@ namespace VisionGuard.Detector.Windows.Views
             bool hasWidth = !double.IsInfinity(availableSize.Width) && !double.IsNaN(availableSize.Width);
             bool hasHeight = !double.IsInfinity(availableSize.Height) && !double.IsNaN(availableSize.Height);
 
-            foreach (UIElement child in InternalChildren)
+            int count = InternalChildren.Count;
+            if (hasWidth && hasHeight && count > 0)
             {
-                child.Measure(new Size(hasWidth ? availableSize.Width : 0, hasHeight ? availableSize.Height : 0));
+                var layout = ResolveLayout(count, availableSize.Width, availableSize.Height);
+                double height = Math.Max(0, (availableSize.Height - (layout.Rows - 1) * Spacing) / layout.Rows);
+                for (int index = 0; index < count; index++)
+                {
+                    int itemsInRow = Math.Min(layout.Columns, count - index / layout.Columns * layout.Columns);
+                    double width = Math.Max(0, (availableSize.Width - (itemsInRow - 1) * Spacing) / itemsInRow);
+                    InternalChildren[index].Measure(new Size(width, height));
+                }
             }
+            else foreach (UIElement child in InternalChildren)
+                child.Measure(new Size(hasWidth ? availableSize.Width : 0, hasHeight ? availableSize.Height : 0));
 
             return new Size(hasWidth ? availableSize.Width : 0, hasHeight ? availableSize.Height : 0);
         }
@@ -60,7 +70,7 @@ namespace VisionGuard.Detector.Windows.Views
 
                 child.Visibility = Visibility.Visible;
                 child.Arrange(new Rect(
-                    column * (cellWidth + Spacing),
+                    column * (width + Spacing),
                     row * (cellHeight + Spacing),
                     width,
                     cellHeight));
