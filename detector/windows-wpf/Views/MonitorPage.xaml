@@ -1,6 +1,6 @@
 <UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="VisionGuard.Detector.Windows.Views.MonitorPage">
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Visibility="{Binding HasSelectedSource, Converter={StaticResource BoolToVis}}">
-        <StackPanel Margin="16" DataContext="{Binding SelectedSource}">
+    <ScrollViewer Style="{StaticResource PaneScrollViewer}" Visibility="{Binding HasSelectedSource, Converter={StaticResource BoolToVis}}">
+        <StackPanel DataContext="{Binding SelectedSource}">
             <TextBlock Text="当前来源" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
             <Grid MinHeight="36">
                 <Button x:Name="SourceNameText" Style="{StaticResource PaneButton}" HorizontalContentAlignment="Left" Click="SourceNameText_OnClick" ToolTip="修改来源名称">

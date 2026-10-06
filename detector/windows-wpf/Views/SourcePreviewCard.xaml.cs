@@ -20,6 +20,11 @@ namespace VisionGuard.Detector.Windows.Views
 
         private SourceViewModel? _source;
 
+        private void CardContent_OnSizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            CardContentClip.Rect = new Rect(new Point(), e.NewSize);
+        }
+
         public SourcePreviewCard()
         {
             InitializeComponent();

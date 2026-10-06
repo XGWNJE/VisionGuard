@@ -312,6 +312,47 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
         CheckLayout("primary stretches after dependency property initialization", double.IsNaN(primary.Height) && primary.ActualHeight == 600);
         var secondary = new SourcePreviewCard(); secondary.Measure(new WpfSize(260,double.PositiveInfinity)); secondary.Arrange(new WpfRect(0,0,260,195)); secondary.UpdateLayout();
         CheckLayout("source card bounded height",secondary.Height>=156 && secondary.Height<=420);
+        // 高亮画面与标题都不能盖住描边；重排和渲染 DPI 改变后四角仍闭合。
+        var pixels = Enumerable.Repeat((byte)255, 256 * 176 * 4).ToArray();
+        var brightFrame = System.Windows.Media.Imaging.BitmapSource.Create(256,176,96,96,System.Windows.Media.PixelFormats.Bgra32,null,pixels,256*4);
+        var roundedCard = new SourcePreviewCard { IsPrimary=true, DataContext=new {
+            IsSelected=true, SourceName="圆角回归", StatusText="就绪", FpsText="0.0 FPS",
+            FrameWidth=256d, FrameHeight=176d, PreviewImage=brightFrame, IsMonitoring=true
+        }};
+        foreach (var size in new[] { new WpfSize(180,156),new WpfSize(420,300) }) {
+          roundedCard.Measure(size); roundedCard.Arrange(new WpfRect(new System.Windows.Point(),size)); roundedCard.UpdateLayout();
+          foreach (var dpi in new[] {96d,120d,144d}) {
+            var scale=dpi/96;
+            var bitmap=new System.Windows.Media.Imaging.RenderTargetBitmap((int)(size.Width*scale),(int)(size.Height*scale),dpi,dpi,System.Windows.Media.PixelFormats.Pbgra32);
+            bitmap.Render(roundedCard);
+            var stride=bitmap.PixelWidth*4; var rendered=new byte[stride*bitmap.PixelHeight]; bitmap.CopyPixels(rendered,stride,0);
+            bool Cyan(double x,double y) {
+              // 分数 DPI 下弧线跨像素，检查该弧段的 2×2 像素邻域。
+              for(var py=(int)(y*scale);py<=(int)(y*scale)+1;py++)
+                for(var px=(int)(x*scale);px<=(int)(x*scale)+1;px++) {
+                  var i=py*stride+px*4;
+                  if(rendered[i+3]>80 && rendered[i+1]>rendered[i+2]+30 && rendered[i]>rendered[i+2]+30)return true;
+                }
+              return false;
+            }
+            CheckLayout($"selected rounded outline complete {size} at {dpi} DPI",rendered[3]==0
+              && Cyan(2,3) && Cyan(size.Width-3,3) && Cyan(2,size.Height-4) && Cyan(size.Width-3,size.Height-4));
+          }
+        }
+        // 量测真实滚动模板：内容、轨道和外沿留白一致，短内容也保留相同可用宽度。
+        var body=new Border {Height=900};
+        var scroller=new ScrollViewer {Style=(System.Windows.Style)app.Resources["PaneScrollViewer"],Content=body};
+        void ArrangeScroll() {scroller.Measure(new WpfSize(320,400));scroller.Arrange(new WpfRect(0,0,320,400));scroller.UpdateLayout();}
+        ArrangeScroll();
+        var track=(System.Windows.Controls.Primitives.ScrollBar)scroller.Template.FindName("PART_VerticalScrollBar",scroller);
+        var bodyStart=body.TranslatePoint(new System.Windows.Point(),scroller).X;
+        var trackStart=track.TranslatePoint(new System.Windows.Point(),scroller).X;
+        var bodyWidth=body.ActualWidth;
+        CheckLayout("pane scrollbar leaves content and outer gutters",Math.Abs(trackStart-bodyStart-bodyWidth-12)<.01 && Math.Abs(320-trackStart-track.ActualWidth-8)<.01 && track.ActualWidth==10);
+        scroller.ScrollToVerticalOffset(120); scroller.UpdateLayout();
+        CheckLayout("custom pane scrollbar scrolls content",scroller.VerticalOffset==120 && body.TranslatePoint(new System.Windows.Point(),scroller).Y<0);
+        body.Height=30;ArrangeScroll();
+        CheckLayout("scrollbar appearance preserves content width",track.Visibility==System.Windows.Visibility.Collapsed && Math.Abs(body.ActualWidth-bodyWidth)<.01);
         var page = new GlobalSettingsPage(); page.Measure(new WpfSize(696,420)); page.Arrange(new WpfRect(0,0,696,420));
         CheckLayout("five settings categories",((System.Windows.Controls.ListBox)page.FindName("CategoryList")).Items.Count==5);
         var button = new System.Windows.Controls.Button { Style=(System.Windows.Style)app.Resources["PaneButton"] };

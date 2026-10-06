@@ -15,7 +15,7 @@
             <Grid>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <ScrollViewer.Style>
-                        <Style TargetType="ScrollViewer">
+                        <Style TargetType="ScrollViewer" BasedOn="{StaticResource PaneScrollViewer}">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding SelectedIndex, ElementName=CategoryList}" Value="0">
@@ -24,7 +24,7 @@
                             </Style.Triggers>
                         </Style>
                     </ScrollViewer.Style>
-                    <StackPanel Margin="24,12,24,24" MaxWidth="800" HorizontalAlignment="Stretch">
+                    <StackPanel MaxWidth="800" HorizontalAlignment="Stretch">
                         <TextBlock Text="账号与连接" Style="{StaticResource TitleText}" FontSize="16" Margin="0,0,0,16"/>
                         <StackPanel DataContext="{Binding Connection}">
                             <StackPanel Style="{StaticResource SettingsSection}" IsEnabled="{Binding CanEditAccount}">
@@ -134,7 +134,7 @@
                 </ScrollViewer>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <ScrollViewer.Style>
-                        <Style TargetType="ScrollViewer">
+                        <Style TargetType="ScrollViewer" BasedOn="{StaticResource PaneScrollViewer}">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding SelectedIndex, ElementName=CategoryList}" Value="1">
@@ -143,7 +143,7 @@
                             </Style.Triggers>
                         </Style>
                     </ScrollViewer.Style>
-                    <StackPanel Margin="24,12,24,24" MaxWidth="800" HorizontalAlignment="Stretch">
+                    <StackPanel MaxWidth="800" HorizontalAlignment="Stretch">
                         <TextBlock Text="推理与模型" Style="{StaticResource TitleText}" FontSize="16" Margin="0,0,0,16"/>
                         <StackPanel DataContext="{Binding Environment}">
                             <StackPanel Style="{StaticResource SettingsSection}">
@@ -186,7 +186,7 @@
                 </ScrollViewer>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <ScrollViewer.Style>
-                        <Style TargetType="ScrollViewer">
+                        <Style TargetType="ScrollViewer" BasedOn="{StaticResource PaneScrollViewer}">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding SelectedIndex, ElementName=CategoryList}" Value="2">
@@ -195,7 +195,7 @@
                             </Style.Triggers>
                         </Style>
                     </ScrollViewer.Style>
-                    <StackPanel Margin="24,12,24,24" MaxWidth="800" HorizontalAlignment="Stretch">
+                    <StackPanel MaxWidth="800" HorizontalAlignment="Stretch">
                         <TextBlock Text="外观" Style="{StaticResource TitleText}" FontSize="16" Margin="0,0,0,16"/>
                         <UniformGrid Columns="3" Margin="0,0,0,16">
                             <Button Content="跟随系统" Tag="0" Click="Appearance_OnClick" Margin="0,0,4,0">
@@ -255,7 +255,7 @@
                 </ScrollViewer>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <ScrollViewer.Style>
-                        <Style TargetType="ScrollViewer">
+                        <Style TargetType="ScrollViewer" BasedOn="{StaticResource PaneScrollViewer}">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding SelectedIndex, ElementName=CategoryList}" Value="3">
@@ -264,7 +264,7 @@
                             </Style.Triggers>
                         </Style>
                     </ScrollViewer.Style>
-                    <StackPanel Margin="24,12,24,24" MaxWidth="800" HorizontalAlignment="Stretch">
+                    <StackPanel MaxWidth="800" HorizontalAlignment="Stretch">
                         <TextBlock Text="后台运行" Style="{StaticResource TitleText}" FontSize="16" Margin="0,0,0,16"/>
                         <StackPanel DataContext="{Binding Connection}">
                             <Grid MinHeight="36" Margin="0,0,0,12">
@@ -287,7 +287,7 @@
                 </ScrollViewer>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <ScrollViewer.Style>
-                        <Style TargetType="ScrollViewer">
+                        <Style TargetType="ScrollViewer" BasedOn="{StaticResource PaneScrollViewer}">
                             <Setter Property="Visibility" Value="Collapsed"/>
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding SelectedIndex, ElementName=CategoryList}" Value="4">
@@ -296,7 +296,7 @@
                             </Style.Triggers>
                         </Style>
                     </ScrollViewer.Style>
-                    <StackPanel Margin="24,12,24,24" MaxWidth="800" HorizontalAlignment="Stretch">
+                    <StackPanel MaxWidth="800" HorizontalAlignment="Stretch">
                         <TextBlock Text="版本与维护" Style="{StaticResource TitleText}" FontSize="16" Margin="0,0,0,16"/>
                         <StackPanel DataContext="{Binding Connection}">
                             <Grid MinHeight="36" Margin="0,0,0,12">

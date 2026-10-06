@@ -51,16 +51,25 @@
                 </StackPanel>
             </Grid>
             <Thumb x:Name="SourcesSplitter" Grid.Column="1" Style="{StaticResource PaneResizeHandle}" DragStarted="PaneResize_OnDragStarted" DragDelta="PaneResize_OnDragDelta" DragCompleted="PaneResize_OnDragCompleted" KeyDown="PaneResize_OnKeyDown" AutomationProperties.Name="调整来源列表宽度" ToolTip="调整来源列表宽度 · 左右方向键细调"/>
-            <Border Grid.Column="2" Background="{DynamicResource SurfaceDark}" CornerRadius="8" Padding="8">
+            <Border Grid.Column="2" Background="{DynamicResource SurfaceDark}" CornerRadius="8">
                 <Grid>
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="36"/>
+                        <RowDefinition Height="44"/>
                         <RowDefinition/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <TextBlock Text="{Binding MultiSourceVm.SourceCountText}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="4,0"/>
+                    <TextBlock Text="{Binding MultiSourceVm.SourceCountText}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="16,0"/>
                     <ListBox x:Name="SourceList" Grid.Row="1" ItemsSource="{Binding MultiSourceVm.Sources}" SelectedItem="{Binding MultiSourceVm.SelectedSource}" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel">
+                        <ListBox.Template>
+                            <ControlTemplate TargetType="ListBox">
+                                <ScrollViewer x:Name="PART_ScrollViewer" Style="{StaticResource PaneScrollViewer}"
+                                    Padding="16,8,12,0" Focusable="False"
+                                    CanContentScroll="{TemplateBinding ScrollViewer.CanContentScroll}">
+                                    <ItemsPresenter/>
+                                </ScrollViewer>
+                            </ControlTemplate>
+                        </ListBox.Template>
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -81,8 +90,8 @@
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
-                    <TextBlock Grid.Row="2" Text="{Binding MultiSourceVm.SourceNotice}" Foreground="{DynamicResource WarningBrush}" TextWrapping="Wrap" Margin="4,8" Visibility="{Binding MultiSourceVm.HasSourceNotice, Converter={StaticResource BoolToVis}}"/>
-                    <UniformGrid x:Name="SourceFooter" Grid.Row="3" Columns="1" Margin="0,8,0,0">
+                    <TextBlock Grid.Row="2" Text="{Binding MultiSourceVm.SourceNotice}" Foreground="{DynamicResource WarningBrush}" TextWrapping="Wrap" Margin="16,8" Visibility="{Binding MultiSourceVm.HasSourceNotice, Converter={StaticResource BoolToVis}}"/>
+                    <UniformGrid x:Name="SourceFooter" Grid.Row="3" Columns="1" Margin="16,12,16,12">
                         <Button Content="添加来源" Style="{StaticResource PaneButton}" Command="{Binding MultiSourceVm.AddSourceCommand}" ToolTip="{Binding MultiSourceVm.SourceLimitText}" ToolTipService.ShowOnDisabled="True" Margin="0,0,4,0"/>
                         <Button x:Name="InspectorToggle" Content="来源检查" Style="{StaticResource PaneButton}" Click="ToggleInspector_OnClick" Margin="4,0,0,0" Visibility="Collapsed"/>
                     </UniformGrid>

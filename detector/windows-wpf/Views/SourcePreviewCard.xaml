@@ -1,16 +1,10 @@
 <UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:VisionGuard.Detector.Windows.Views" x:Class="VisionGuard.Detector.Windows.Views.SourcePreviewCard">
-    <Border Background="{DynamicResource CanvasBrush}" CornerRadius="8" ClipToBounds="True" BorderThickness="2">
-        <Border.Style>
-            <Style TargetType="Border">
-                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
-                <Style.Triggers>
-                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                        <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
-                    </DataTrigger>
-                </Style.Triggers>
-            </Style>
-        </Border.Style>
-        <Grid>
+    <Grid>
+        <Border Background="{DynamicResource CanvasBrush}" CornerRadius="8"/>
+        <Grid x:Name="CardContent" Margin="2" SizeChanged="CardContent_OnSizeChanged">
+            <Grid.Clip>
+                <RectangleGeometry x:Name="CardContentClip" RadiusX="6" RadiusY="6"/>
+            </Grid.Clip>
             <local:UniformFramePresenter>
                 <Grid Width="{Binding FrameWidth}" Height="{Binding FrameHeight}">
                     <Image Source="{Binding PreviewImage}" Stretch="None"/>
@@ -84,5 +78,18 @@
                 </TextBlock.Style>
             </TextBlock>
         </Grid>
-    </Border>
+        <!-- 边框最后绘制，画面和标题不能覆盖圆角或选中描边。 -->
+        <Border CornerRadius="8" BorderThickness="2" IsHitTestVisible="False">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                            <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+        </Border>
+    </Grid>
 </UserControl>
