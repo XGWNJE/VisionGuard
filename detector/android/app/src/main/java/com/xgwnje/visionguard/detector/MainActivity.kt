@@ -3,12 +3,17 @@ package com.xgwnje.visionguard.detector
 import android.Manifest
 import android.app.KeyguardManager
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
+import android.hardware.display.DisplayManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Size
+import android.view.Surface
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -48,6 +53,14 @@ class MainActivity : ComponentActivity() {
     private val executor = Executors.newSingleThreadExecutor()
     private val policy = ForegroundStreamPolicy()
     private var cameraProvider: ProcessCameraProvider? = null
+    private var imageAnalysis: ImageAnalysis? = null
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) = Unit
+        override fun onDisplayRemoved(displayId: Int) = Unit
+        override fun onDisplayChanged(displayId: Int) {
+            if (window.decorView.display?.displayId == displayId) updateCameraRotation()
+        }
+    }
     private var publisher: CameraPublisher? = null
     @Volatile private var cameraGeneration = 0
     private var streaming by mutableStateOf(false)
@@ -137,6 +150,19 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+    override fun onStart() {
+        super.onStart()
+        getSystemService(DisplayManager::class.java).registerDisplayListener(displayListener, Handler(Looper.getMainLooper()))
+    }
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        // Keep Compose's configuration current without disposing the camera or publisher.
+        super.onConfigurationChanged(newConfig)
+        updateCameraRotation()
+    }
+    private fun updateCameraRotation() {
+        // Display changes also cover 180-degree turns that don't change portrait/landscape.
+        window.decorView.display?.let { imageAnalysis?.targetRotation = it.rotation }
+    }
     override fun onResume() {
         super.onResume(); policy.resumed()
         if (policy.permissionStartPending && ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startCamera()
@@ -146,7 +172,10 @@ class MainActivity : ComponentActivity() {
         if (streaming) stopCamera(if (getSystemService(KeyguardManager::class.java).isKeyguardLocked) "locked" else "background")
         super.onPause()
     }
-    override fun onStop() { policy.cancelPermissionRequest(); super.onStop() }
+    override fun onStop() {
+        getSystemService(DisplayManager::class.java).unregisterDisplayListener(displayListener)
+        policy.cancelPermissionRequest(); super.onStop()
+    }
     private fun startCamera(completed: ((Boolean, String) -> Unit)? = null) {
         val state = publisher?.state?.value
         if (!policy.foreground) { completed?.invoke(false, "请先在设备上打开相机应用并保持前台"); return }
@@ -163,6 +192,7 @@ class MainActivity : ComponentActivity() {
                 val provider = future.get(); cameraProvider = provider
                 val target = if (highResolution) Size(1280, 720) else Size(640, 480)
                 val analysis = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .setTargetRotation(window.decorView.display?.rotation ?: Surface.ROTATION_0)
                     .setResolutionSelector(ResolutionSelector.Builder()
                         .setAspectRatioStrategy(if (highResolution) AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY else AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
                         .setResolutionStrategy(ResolutionStrategy(target, ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER)).build()).build()
@@ -197,12 +227,15 @@ class MainActivity : ComponentActivity() {
                     } finally { image.close() }
                 }
                 provider.unbindAll(); provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, analysis)
+                imageAnalysis = analysis
+                updateCameraRotation()
                 completed?.invoke(true, "摄像头已启动，等待画面通道；收帧状态请查看推流统计")
             }.onFailure { stopCamera("user"); completed?.invoke(false, "无法启动摄像头"); Toast.makeText(this, "无法启动摄像头", Toast.LENGTH_LONG).show() }
         }, ContextCompat.getMainExecutor(this))
     }
     private fun stopCamera(reason: String) {
         ++cameraGeneration; policy.stop(); streaming = false
+        imageAnalysis = null
         cameraProvider?.unbindAll(); publisher?.stop(reason); preview = null; captureSize = null; sentSize = null; applyScreen()
     }
     private fun applyScreen() {
