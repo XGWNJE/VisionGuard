@@ -14,6 +14,10 @@ namespace VisionGuard.Detector.Windows.Views
         private bool _resourcesDisposed;
         private bool _isClosing;
         private double _inspectorWidth = 320;
+        private double _sourcesWidth = 280;
+        private bool _compact;
+        private double _paneDragOrigin;
+        private double _paneDragWidth;
         private System.Windows.Controls.Control? _settingsReturnControl;
 
         public MainWindow()
@@ -21,7 +25,7 @@ namespace VisionGuard.Detector.Windows.Views
             InitializeComponent();
             SourceInitialized += (s, e) => Themes.ThemeManager.ApplyTitleBar(this);
             Loaded += (s, e) => { FitWorkArea(); AdaptPanes(); };
-            SizeChanged += (s, e) => AdaptPanes();
+            MainLayout.SizeChanged += (_, e) => { if (e.WidthChanged) AdaptPanes(); };
             SourceList.SelectionChanged += (_, e) =>
             {
                 if (e.AddedItems.Count > 0) SourceList.ScrollIntoView(e.AddedItems[0]);
@@ -116,20 +120,62 @@ namespace VisionGuard.Detector.Windows.Views
             }
         }
 
-        /// <summary>
-        /// 限制两列侧栏的可用宽度，让主画面继续随窗口伸缩。
-        /// </summary>
-        private void CardsSplitter_OnDragCompleted(object sender, DragCompletedEventArgs e)
+        // 两个侧栏只调整各自宽度，主画面始终使用剩余空间。
+        // 在每次移动中限制宽度，不让默认 GridSplitter 先挤压相邻侧栏、松手再回跳。
+        internal static double LimitSidePaneWidth(double requested, double otherWidth,
+            double layoutWidth, double minimum, double maximum, bool compact)
         {
-            InspectorColumn.Width = new GridLength(Math.Max(300, Math.Min(420, InspectorColumn.ActualWidth)));
-            _inspectorWidth = InspectorColumn.Width.Value;
-            SourcesColumn.Width = new GridLength(Math.Max(240, Math.Min(380, SourcesColumn.ActualWidth)));
-            CardsColumn.Width = new GridLength(1, GridUnitType.Star);
+            double available = layoutWidth - otherWidth - 240 - (compact ? 8 : 16);
+            return Math.Max(minimum, Math.Min(requested, Math.Min(maximum, available)));
         }
-        private void SourcesSplitter_OnDragCompleted(object sender, DragCompletedEventArgs e)
+
+        private void SetSidePaneWidth(object handle, double requested)
         {
-            SourcesColumn.Width = new GridLength(Math.Max(240, Math.Min(380, SourcesColumn.ActualWidth)));
-            CardsColumn.Width = new GridLength(1, GridUnitType.Star);
+            if (ReferenceEquals(handle, SourcesSplitter))
+            {
+                _sourcesWidth = LimitSidePaneWidth(requested, InspectorColumn.ActualWidth,
+                    MainLayout.ActualWidth, 240, 380, _compact);
+                SourcesColumn.Width = new GridLength(_sourcesWidth);
+            }
+            else if (!_compact)
+            {
+                _inspectorWidth = LimitSidePaneWidth(requested, SourcesColumn.ActualWidth,
+                    MainLayout.ActualWidth, 300, 420, false);
+                InspectorColumn.Width = new GridLength(_inspectorWidth);
+            }
+        }
+
+        private void PaneResize_OnDragStarted(object sender, DragStartedEventArgs e)
+        {
+            _paneDragOrigin = System.Windows.Input.Mouse.GetPosition(MainLayout).X;
+            _paneDragWidth = ReferenceEquals(sender, SourcesSplitter)
+                ? SourcesColumn.ActualWidth : InspectorColumn.ActualWidth;
+        }
+
+        private void PaneResize_OnDragDelta(object sender, DragDeltaEventArgs e)
+            => SetSidePaneWidth(sender, _paneDragWidth
+                - (System.Windows.Input.Mouse.GetPosition(MainLayout).X - _paneDragOrigin));
+
+        private void PaneResize_OnDragCompleted(object sender, DragCompletedEventArgs e)
+        {
+            if (e.Canceled) SetSidePaneWidth(sender, _paneDragWidth);
+        }
+
+        private void PaneResize_OnKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            double width = ReferenceEquals(sender, SourcesSplitter)
+                ? SourcesColumn.ActualWidth : InspectorColumn.ActualWidth;
+            double step = (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Shift) != 0 ? 40 : 10;
+            switch (e.Key)
+            {
+                case System.Windows.Input.Key.Left: width += step; break;
+                case System.Windows.Input.Key.Right: width -= step; break;
+                case System.Windows.Input.Key.Home: width = 0; break;
+                case System.Windows.Input.Key.End: width = double.MaxValue; break;
+                default: return;
+            }
+            SetSidePaneWidth(sender, width);
+            e.Handled = true;
         }
         private void OpenGlobalSettings_OnClick(object sender, RoutedEventArgs e) { _settingsReturnControl = sender as System.Windows.Controls.Control; InspectorDrawer.Visibility = Visibility.Collapsed; GlobalHost.Visibility = Visibility.Visible; MainLayout.Visibility = Visibility.Collapsed; }
         private void CloseGlobalSettings_OnClick(object sender, RoutedEventArgs e)
@@ -146,12 +192,18 @@ namespace VisionGuard.Detector.Windows.Views
         {
             if (MainLayout == null) return;
             bool compact = ActualWidth < 1080;
+            _compact = compact;
             InspectorHost.Visibility = InspectorSplitter.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
             InspectorToggle.Visibility = CompactActions.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
-            InspectorColumn.Width = compact ? new GridLength(0) : new GridLength(_inspectorWidth);
             SourceFooter.Columns = compact ? 2 : 1;
             InspectorGap.Width = new GridLength(compact ? 0 : 8);
             if (!compact) InspectorDrawer.Visibility = Visibility.Collapsed;
+            if (MainLayout.ActualWidth <= 0) return;
+            double inspectorWidth = compact ? 0 : LimitSidePaneWidth(_inspectorWidth, 240,
+                MainLayout.ActualWidth, 300, 420, false);
+            InspectorColumn.Width = new GridLength(inspectorWidth);
+            SourcesColumn.Width = new GridLength(LimitSidePaneWidth(_sourcesWidth, inspectorWidth,
+                MainLayout.ActualWidth, 240, 380, compact));
         }
 
         private void DisposeResourcesOnce()

@@ -1,23 +1,30 @@
 <UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="VisionGuard.Detector.Windows.Views.MonitorPage">
     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Visibility="{Binding HasSelectedSource, Converter={StaticResource BoolToVis}}">
         <StackPanel Margin="16" DataContext="{Binding SelectedSource}">
-            <TextBlock Text="来源检查" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+            <TextBlock Text="当前来源" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
             <Grid MinHeight="36">
                 <Button x:Name="SourceNameText" Style="{StaticResource PaneButton}" HorizontalContentAlignment="Left" Click="SourceNameText_OnClick" ToolTip="修改来源名称">
                     <TextBlock Text="{Binding SourceName}" TextTrimming="CharacterEllipsis" ToolTip="{Binding SourceName}"/>
                 </Button>
                 <TextBox x:Name="SourceNameEditor" Style="{StaticResource PaneTextBox}" Text="{Binding SourceName, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}" MaxLength="64" DataObject.Pasting="SourceName_OnPasting" Visibility="Collapsed" LostKeyboardFocus="SourceNameEditor_OnLostKeyboardFocus" KeyDown="SourceNameEditor_OnKeyDown"/>
             </Grid>
-            <Grid Margin="0,8,0,16">
+            <TextBlock Text="{Binding SourceTypeText}" Style="{StaticResource CaptionText}" Margin="0,8,0,24"/>
+            <TextBlock Text="运行状态" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+            <Grid>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72"/>
                     <ColumnDefinition/>
-                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="{Binding SourceTypeText}" Style="{StaticResource CaptionText}"/>
-                <TextBlock Grid.Column="1" Text="{Binding FpsText}" Style="{StaticResource CaptionText}"/>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" MinHeight="32"/>
+                    <RowDefinition Height="32"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="状态" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="{Binding StatusText}" Style="{StaticResource SourceStatusText}" TextWrapping="Wrap" VerticalAlignment="Center" ToolTip="{Binding StatusToolTip}"/>
+                <TextBlock Grid.Row="1" Text="实际帧率" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding FpsText}" VerticalAlignment="Center"/>
             </Grid>
-            <TextBlock Text="{Binding StatusText}" Style="{StaticResource SourceStatusText}" Height="40" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding StatusToolTip}" Margin="0,0,0,8"/>
-            <Grid Margin="0,0,0,24">
+            <Grid Margin="0,8,0,24">
                 <Button Content="开始检测" Style="{StaticResource PanePrimaryButton}" Command="{Binding StartCommand}" ToolTip="{Binding StartActionHint}" ToolTipService.ShowOnDisabled="True">
                     <Button.Visibility>
                         <Binding Path="CanEdit" Converter="{StaticResource BoolToVis}"/>
@@ -25,8 +32,43 @@
                 </Button>
                 <Button Content="停止检测" Style="{StaticResource PaneButton}" Command="{Binding StopCommand}" Visibility="{Binding IsMonitoring, Converter={StaticResource BoolToVis}}"/>
             </Grid>
-            <TextBlock Text="采集配置" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+            <TextBlock Text="检测规则" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72"/>
+                    <ColumnDefinition/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" MinHeight="32"/>
+                    <RowDefinition Height="32"/>
+                    <RowDefinition Height="32"/>
+                    <RowDefinition Height="32"/>
+                    <RowDefinition Height="32"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="模型" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="{Binding ModelDisplayText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="1" Text="检测目标" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TargetsDisplayText}" TextTrimming="CharacterEllipsis" ToolTip="{Binding TargetsDisplayText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="2" Text="置信度" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ThresholdPercent, StringFormat={}{0}%}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="3" Text="目标帧率" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding TargetFps, StringFormat={}{0} FPS}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="4" Text="报警冷却" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Cooldown, StringFormat={}{0} 秒}" VerticalAlignment="Center"/>
+            </Grid>
+            <Button x:Name="AdjustParametersButton" Content="调整规则" Style="{StaticResource PaneButton}" Click="AdjustParameters_OnClick" IsEnabled="{Binding CanEdit}" ToolTip="{Binding EditActionHint}" ToolTipService.ShowOnDisabled="True" Margin="0,8,0,0"/>
+            <TextBlock Text="{Binding NoModelHint}" Foreground="{DynamicResource WarningBrush}" TextWrapping="Wrap" Margin="0,8,0,0">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding NoModelHint}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+            <TextBlock Text="采集范围" Style="{StaticResource SectionLabel}" Margin="0,24,0,12"/>
             <TextBlock Text="{Binding TargetInfo}" TextWrapping="Wrap" ToolTip="{Binding TargetInfo}" Margin="0,0,0,12"/>
+            <TextBlock Text="{Binding AspectRatioWarning}" TextWrapping="Wrap" Foreground="{DynamicResource WarningBrush}" Margin="0,0,0,8" Visibility="{Binding HasAspectRatioWarning, Converter={StaticResource BoolToVis}}"/>
             <StackPanel>
                 <StackPanel.Style>
                     <Style TargetType="StackPanel">
@@ -42,50 +84,27 @@
                     <Button Content="调整选区" Style="{StaticResource PaneButton}" Command="{Binding SelectRegionCommand}" ToolTip="{Binding EditActionHint}" ToolTipService.ShowOnDisabled="True" Margin="4,0,0,0"/>
                 </UniformGrid>
             </StackPanel>
-            <Grid Margin="0,0,0,24">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition/>
-                    <ColumnDefinition Width="112"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Text="{Binding MaskInfo}" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
-                <Button Grid.Column="1" Content="编辑遮罩" Style="{StaticResource PaneButton}" Command="{Binding EditMasksCommand}" ToolTip="{Binding EditActionHint}" ToolTipService.ShowOnDisabled="True"/>
-            </Grid>
-            <TextBlock Text="检测参数" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
-            <Grid>
+            <Grid MinHeight="32">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="72"/>
                     <ColumnDefinition/>
                 </Grid.ColumnDefinitions>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="32"/>
-                    <RowDefinition Height="32"/>
-                    <RowDefinition Height="32"/>
-                </Grid.RowDefinitions>
-                <TextBlock Text="模型" Style="{StaticResource CaptionText}"/>
-                <TextBlock Grid.Column="1" Text="{Binding ModelDisplayText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                <TextBlock Grid.Row="1" Text="检测目标" Style="{StaticResource CaptionText}"/>
-                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TargetsDisplayText}" TextTrimming="CharacterEllipsis" ToolTip="{Binding TargetsDisplayText}" Margin="0,0,0,8"/>
-                <TextBlock Grid.Row="2" Text="置信度" Style="{StaticResource CaptionText}"/>
-                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ThresholdPercent, StringFormat={}{0}%}"/>
-                <TextBlock Grid.Row="3" Text="采样率" Style="{StaticResource CaptionText}"/>
-                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding TargetFps, StringFormat={}{0} FPS}"/>
-                <TextBlock Grid.Row="4" Text="冷却" Style="{StaticResource CaptionText}"/>
-                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Cooldown, StringFormat={}{0} 秒}"/>
+                <TextBlock Text="遮罩" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="{Binding MaskInfo}" TextWrapping="Wrap" VerticalAlignment="Center"/>
             </Grid>
-            <Button x:Name="AdjustParametersButton" Content="调整参数" Style="{StaticResource PaneButton}" Click="AdjustParameters_OnClick" Margin="0,4,0,0"/>
-            <TextBlock Text="{Binding NoModelHint}" Foreground="{DynamicResource WarningBrush}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+            <Button Content="编辑遮罩" Style="{StaticResource PaneButton}" Command="{Binding EditMasksCommand}" ToolTip="{Binding EditActionHint}" ToolTipService.ShowOnDisabled="True" Margin="0,8,0,0"/>
             <Expander Header="运行详情" Margin="0,24,0,0">
                 <StackPanel Margin="0,12,0,0">
                     <TextBlock Text="{Binding BackendText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
                     <TextBlock Text="{Binding InferenceText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
                     <TextBlock Text="{Binding LastAlertText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                    <TextBlock Text="{Binding AspectRatioWarning}" TextWrapping="Wrap" Foreground="{DynamicResource WarningBrush}" Visibility="{Binding HasAspectRatioWarning, Converter={StaticResource BoolToVis}}"/>
                 </StackPanel>
             </Expander>
             <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Margin="0,24,0,0" Padding="0,16,0,0">
-                <Button Content="删除来源" Command="{Binding RemoveSourceCommand}" Style="{StaticResource PaneDangerButton}" ToolTip="{Binding DeleteActionHint}" ToolTipService.ShowOnDisabled="True"/>
+                <StackPanel>
+                    <TextBlock Text="来源管理" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+                    <Button Content="删除来源" Command="{Binding RemoveSourceCommand}" Style="{StaticResource PaneDangerButton}" ToolTip="{Binding DeleteActionHint}" ToolTipService.ShowOnDisabled="True"/>
+                </StackPanel>
             </Border>
         </StackPanel>
     </ScrollViewer>

@@ -318,6 +318,30 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
         var box = new System.Windows.Controls.TextBox { Style=(System.Windows.Style)app.Resources["PaneTextBox"] };
         var combo = new System.Windows.Controls.ComboBox { Style=(System.Windows.Style)app.Resources["PaneComboBox"] };
         CheckLayout("menu controls share height",button.Height==36 && box.Height==36 && combo.Height==36);
+        // 回归分隔条边界：调用真实窗口使用的限制函数，再量测 WPF 三列。
+        var limitMethod = typeof(MainWindow).GetMethod("LimitSidePaneWidth", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)!;
+        double Limit(double request, double other, double area, double min, double max, bool compact = false)
+          => (double)limitMethod.Invoke(null, new object[] {request,other,area,min,max,compact})!;
+        var panes = new Grid();
+        var mainColumn = new ColumnDefinition { Width = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star), MinWidth = 240 };
+        var sourcesColumn = new ColumnDefinition { Width = new System.Windows.GridLength(280) };
+        var inspectorColumn = new ColumnDefinition { Width = new System.Windows.GridLength(320) };
+        panes.ColumnDefinitions.Add(mainColumn);
+        panes.ColumnDefinitions.Add(new ColumnDefinition { Width = new System.Windows.GridLength(8) });
+        panes.ColumnDefinitions.Add(sourcesColumn);
+        panes.ColumnDefinitions.Add(new ColumnDefinition { Width = new System.Windows.GridLength(8) });
+        panes.ColumnDefinitions.Add(inspectorColumn);
+        void ArrangePanes() { panes.Measure(new WpfSize(1100,600)); panes.Arrange(new WpfRect(0,0,1100,600)); panes.UpdateLayout(); }
+        ArrangePanes();
+        sourcesColumn.Width = new System.Windows.GridLength(Limit(900,inspectorColumn.ActualWidth,1100,240,380)); ArrangePanes();
+        CheckLayout("source drag clamps live without resizing inspector", sourcesColumn.ActualWidth==380 && inspectorColumn.ActualWidth==320 && mainColumn.ActualWidth>=240);
+        inspectorColumn.Width = new System.Windows.GridLength(Limit(900,sourcesColumn.ActualWidth,1100,300,420)); ArrangePanes();
+        CheckLayout("inspector can widen without resizing sources", inspectorColumn.ActualWidth==420 && sourcesColumn.ActualWidth==380 && mainColumn.ActualWidth>=240);
+        CheckLayout("inspector stops at lower bound",Limit(-100,380,1100,300,420)==300);
+        CheckLayout("sources stop at lower bound",Limit(-100,320,1100,240,380)==240);
+        CheckLayout("reverse from upper bound follows pointer",Limit(410,380,1100,300,420)==410);
+        CheckLayout("narrow wide mode reserves main preview",Limit(380,420,1042,240,380)==366);
+        CheckLayout("compact resize uses one separator",Limit(900,0,682,240,380,true)==380);
       } catch(Exception error) { failure=error; }
     }); thread.SetApartmentState(ApartmentState.STA); thread.Start(); thread.Join();
     CheckLayout("component layout succeeds",failure==null,failure?.ToString());

@@ -1,4 +1,25 @@
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="clr-namespace:VisionGuard.Detector.Windows.ViewModels" xmlns:local="clr-namespace:VisionGuard.Detector.Windows.Views" x:Class="VisionGuard.Detector.Windows.Views.MainWindow" Title="视觉节点" Width="1420" Height="800" MinWidth="720" MinHeight="480" Background="{DynamicResource BackgroundDark}" WindowStartupLocation="CenterScreen" ResizeMode="CanResizeWithGrip">
+    <Window.Resources>
+        <Style x:Key="PaneResizeHandle" TargetType="Thumb">
+            <Setter Property="Width" Value="8"/>
+            <Setter Property="Cursor" Value="SizeWE"/>
+            <Setter Property="Focusable" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Grid Background="Transparent">
+                            <Border x:Name="ResizeLine" Width="2" Background="{DynamicResource BorderBrush}" Opacity="0"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ResizeLine" Property="Opacity" Value="1"/></Trigger>
+                            <Trigger Property="IsDragging" Value="True"><Setter TargetName="ResizeLine" Property="Opacity" Value="1"/><Setter TargetName="ResizeLine" Property="Background" Value="{DynamicResource Primary}"/></Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ResizeLine" Property="Opacity" Value="1"/><Setter TargetName="ResizeLine" Property="Background" Value="{DynamicResource Primary}"/></Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
     <Window.DataContext>
         <vm:MainViewModel/>
     </Window.DataContext>
@@ -7,9 +28,9 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="CardsColumn" Width="*" MinWidth="240"/>
                 <ColumnDefinition Width="8"/>
-                <ColumnDefinition x:Name="SourcesColumn" Width="280" MinWidth="240"/>
+                <ColumnDefinition x:Name="SourcesColumn" Width="280" MinWidth="240" MaxWidth="380"/>
                 <ColumnDefinition x:Name="InspectorGap" Width="8"/>
-                <ColumnDefinition x:Name="InspectorColumn" Width="320"/>
+                <ColumnDefinition x:Name="InspectorColumn" Width="320" MaxWidth="420"/>
             </Grid.ColumnDefinitions>
             <Grid>
                 <local:SourcePreviewCard IsPrimary="True" DataContext="{Binding MultiSourceVm.SelectedSource}" Visibility="{Binding MultiSourceVm.HasSelectedSource, Converter={StaticResource BoolToVis}}"/>
@@ -29,7 +50,7 @@
                     <Button Content="添加来源" Style="{StaticResource PanePrimaryButton}" Command="{Binding MultiSourceVm.AddSourceCommand}"/>
                 </StackPanel>
             </Grid>
-            <GridSplitter Grid.Column="1" Width="8" Background="Transparent" HorizontalAlignment="Stretch" ResizeBehavior="PreviousAndNext" DragCompleted="SourcesSplitter_OnDragCompleted" ToolTip="调整主画面与来源列表宽度"/>
+            <Thumb x:Name="SourcesSplitter" Grid.Column="1" Style="{StaticResource PaneResizeHandle}" DragStarted="PaneResize_OnDragStarted" DragDelta="PaneResize_OnDragDelta" DragCompleted="PaneResize_OnDragCompleted" KeyDown="PaneResize_OnKeyDown" AutomationProperties.Name="调整来源列表宽度" ToolTip="调整来源列表宽度 · 左右方向键细调"/>
             <Border Grid.Column="2" Background="{DynamicResource SurfaceDark}" CornerRadius="8" Padding="8">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -67,7 +88,7 @@
                     </UniformGrid>
                 </Grid>
             </Border>
-            <GridSplitter x:Name="InspectorSplitter" Grid.Column="3" Width="8" Background="Transparent" HorizontalAlignment="Stretch" ResizeBehavior="PreviousAndNext" DragCompleted="CardsSplitter_OnDragCompleted" ToolTip="调整来源检查区宽度"/>
+            <Thumb x:Name="InspectorSplitter" Grid.Column="3" Style="{StaticResource PaneResizeHandle}" DragStarted="PaneResize_OnDragStarted" DragDelta="PaneResize_OnDragDelta" DragCompleted="PaneResize_OnDragCompleted" KeyDown="PaneResize_OnKeyDown" AutomationProperties.Name="调整来源检查区宽度" ToolTip="调整检查区宽度 · 左右方向键细调"/>
             <Border x:Name="InspectorHost" Grid.Column="4" Background="{DynamicResource SurfaceDark}" CornerRadius="8">
                 <Grid>
                     <Grid.RowDefinitions>
