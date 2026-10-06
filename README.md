@@ -28,7 +28,7 @@ Windows 发行包使用统一目录：从目录根启动 `VisionGuard.Detector.W
 
 ## 快速开始
 
-[客户端发行包](https://github.com/XGWNJE/VisionGuard/releases) · [线上控制台](https://visionguard.xgwnje.cn/console/) · [发行说明](./docs/107-发行说明v0.6.3.md)
+[客户端发行包](https://github.com/XGWNJE/VisionGuard/releases/tag/v0.6.3) · [线上控制台](https://visionguard.xgwnje.cn/console/) · [发行说明](./docs/107-发行说明v0.6.3.md)
 
 各组件的发行版内置正式服务地址，只需登录同一账号；进入程序后可修改自动生成的本机名称。初始管理员为 `xgwnje`，已有账号沿用密码；全新服务的随机初始密码仅存私有数据目录，见[账号管理](./docs/60-构建验证与发布.md#基础账号与客户端登录)。管理员可在控制台创建账号、禁用账号、重置密码及设置权限。开发验收使用[隔离测试入口](./docs/60-构建验证与发布.md#本机隔离测试)。
 
