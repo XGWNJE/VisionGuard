@@ -16,6 +16,7 @@
     [switch]$PreflightOnly,
     [switch]$DryRun,
     [switch]$GitHubOnly,
+    [switch]$FinishRelease,
 
     [string]$ServerEnvPath,
     [string]$RemoteRoot = '/opt/visionguard-server',
@@ -939,11 +940,16 @@ finally:
 }
 
 function Invoke-ServerBackup {
-    param([ValidateSet('prepare', 'finalize')][string]$Action)
+    param([ValidateSet('prepare', 'finalize', 'verify-deployed')][string]$Action)
     $env:VG_BACKUP_ACTION = $Action
     $env:VG_SERVER_ENV_PATH = $ServerEnvPath
     $env:VG_REMOTE_ROOT = $RemoteRoot
     $env:VG_BACKUP_HELPER = Join-Path $repoRoot 'scripts/server-resource-maintenance.py'
+    if ($Action -eq 'verify-deployed') {
+        $env:VG_VERIFY_VERSION = $Version
+        $env:VG_VERIFY_DIST_SHA256 = Get-Sha256 -Path (Join-Path $repoRoot 'server/dist/index.js')
+        $env:VG_VERIFY_METADATA_SHA256 = Get-Sha256 -Path $releasesJsonPath
+    }
     $python = @'
 import os, shlex, uuid
 import paramiko
@@ -970,6 +976,8 @@ try:
         args += " --config /etc/systemd/system/visionguard.service --config /etc/systemd/system/visionguard.service.d --config /etc/visionguard --config /etc/nginx/conf.d/novix-visionguard-9443.conf"
         command = "set -e; systemctl is-active --quiet visionguard; systemctl stop visionguard; trap 'systemctl start visionguard' EXIT; " + args
     else:
+        if os.environ["VG_BACKUP_ACTION"] == "verify-deployed":
+            args += " --version " + q(os.environ["VG_VERIFY_VERSION"]) + " --dist-sha256 " + q(os.environ["VG_VERIFY_DIST_SHA256"]) + " --metadata-sha256 " + q(os.environ["VG_VERIFY_METADATA_SHA256"])
         command = "set -e; systemctl is-active --quiet visionguard; " + args
     stdin, stdout, stderr = client.exec_command(command, timeout=300)
     out = stdout.read().decode("utf8", "replace")
@@ -988,6 +996,7 @@ finally:
     }
     finally {
         Remove-Item Env:\VG_BACKUP_ACTION, Env:\VG_SERVER_ENV_PATH, Env:\VG_REMOTE_ROOT, Env:\VG_BACKUP_HELPER -ErrorAction SilentlyContinue
+        Remove-Item Env:\VG_VERIFY_VERSION, Env:\VG_VERIFY_DIST_SHA256, Env:\VG_VERIFY_METADATA_SHA256 -ErrorAction SilentlyContinue
     }
 }
 
@@ -1336,6 +1345,28 @@ if ($GitHubOnly) {
 
 Set-Location $repoRoot
 $serverDeployPlanned = (($UploadVps -and (Test-TargetEnabled @('Server')) -and -not $SkipServerDeploy) -or $DeployServer)
+
+if ($FinishRelease) {
+    if (-not $CreateTag -or -not $CreateGitHubRelease) {
+        throw '-FinishRelease requires -CreateTag and -CreateGitHubRelease.'
+    }
+    if ($Target -ne 'All' -or $UploadVps -or $DeployServer -or $SkipServerDeploy -or $SkipBuild -or $GitHubOnly -or $DraftOnly -or $PushGitHub) {
+        throw '-FinishRelease requires Target All and cannot upload, deploy, build, push source, or retain a draft.'
+    }
+    Write-Step 'Validate already deployed release and pending rollback'
+    Invoke-ReleasePreflight -ServerDeployPlanned $true
+    $finishedArtifacts = @(Get-GitHubOnlyArtifacts)
+    if ($DryRun) { Write-Host "Dry run: verify and finish deployed v$Version without rebuilding or redeploying."; return }
+    Invoke-ServerBackup -Action verify-deployed
+    if ($PreflightOnly) { Write-Host 'Deployed release recovery preflight passed.'; return }
+    Verify-OnlineServer
+    Verify-OnlineRelease -Platforms @($finishedArtifacts | ForEach-Object { $_.Platform })
+    Verify-OnlineWebSockets
+    Invoke-ServerBackup -Action finalize
+    Invoke-GitHubSteps -Artifacts $finishedArtifacts
+    Write-Host "Release finished: v$Version; existing deployment and original rollback snapshot retained."
+    return
+}
 
 if ($GitHubOnly) {
     Write-Step "Validate existing GitHub release assets"

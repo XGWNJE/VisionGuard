@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -69,6 +70,72 @@ class BackupTests(unittest.TestCase):
         (snapshot / 'app/data/accounts.json').chmod(0o400)
         with self.assertRaises(ValueError):
             maintenance.verify(snapshot)
+
+    def deployed_pending_release(self):
+        old = maintenance.prepare(self.root, [])
+        maintenance.finalize(self.root)
+        (self.root / 'package.json').write_text('{"version":"0.6.5"}')
+        pending = maintenance.prepare(self.root, [])
+        (self.root / 'package.json').write_text('{"version":"0.6.6"}')
+        (self.root / 'dist/index.js').write_text('new-code')
+        (self.root / 'data/releases/new.apk').write_bytes(b'new-package')
+        (self.root / 'data/releases.json').write_text(json.dumps({'camera': {
+            'version': '0.6.6', 'url': '/releases/new.apk', 'size': 11,
+            'sha256': hashlib.sha256(b'new-package').hexdigest()
+        }}))
+        return old, pending, maintenance.digest(self.root / 'dist/index.js'), maintenance.digest(self.root / 'data/releases.json')
+
+    def test_recovery_verification_retains_original_pending_and_previous_snapshots(self):
+        old, pending, code, metadata = self.deployed_pending_release()
+        self.assertEqual(pending, maintenance.verify_deployed(self.root, '0.6.6', code, metadata))
+        self.assertEqual({'snapshot': old}, json.loads((self.root / 'backups/previous.json').read_text()))
+        self.assertEqual({'snapshot': pending}, json.loads((self.root / 'backups/transaction.json').read_text()))
+        self.assertEqual('0.6.5', maintenance.verify(self.root / 'backups' / pending)['version'])
+        self.assertTrue((self.root / 'backups' / old).exists())
+
+    def test_recovery_refuses_a_different_or_not_yet_deployed_version(self):
+        old, pending, code, metadata = self.deployed_pending_release()
+        for version in ['0.6.7', '0.6.5']:
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                maintenance.verify_deployed(self.root, version, code, metadata)
+        (self.root / 'package.json').write_text('{"version":"0.6.5"}')
+        with self.assertRaises(ValueError):
+            maintenance.verify_deployed(self.root, '0.6.5', code, metadata)
+        self.assertTrue((self.root / 'backups' / old).exists())
+        self.assertTrue((self.root / 'backups' / pending).exists())
+
+    def test_recovery_rejects_code_or_metadata_drift_without_finishing_transaction(self):
+        _, pending, code, metadata = self.deployed_pending_release()
+        for name in ['dist/index.js', 'data/releases.json']:
+            file = self.root / name
+            original = file.read_bytes()
+            file.write_bytes(original + b' ')
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                maintenance.verify_deployed(self.root, '0.6.6', code, metadata)
+            file.write_bytes(original)
+        self.assertEqual({'snapshot': pending}, json.loads((self.root / 'backups/transaction.json').read_text()))
+
+    def test_recovery_checks_uploaded_bytes_not_only_package_size(self):
+        _, pending, code, metadata = self.deployed_pending_release()
+        (self.root / 'data/releases/new.apk').write_bytes(b'bad-package')
+        with self.assertRaises(ValueError):
+            maintenance.verify_deployed(self.root, '0.6.6', code, metadata)
+        self.assertTrue((self.root / 'backups' / pending).exists())
+
+    def test_recovery_preserves_both_backups_when_pending_snapshot_is_corrupt(self):
+        old, pending, code, metadata = self.deployed_pending_release()
+        (self.root / 'backups' / pending / 'app/dist/index.js').write_text('corrupt')
+        with self.assertRaises(ValueError):
+            maintenance.verify_deployed(self.root, '0.6.6', code, metadata)
+        self.assertTrue((self.root / 'backups' / old).exists())
+        self.assertTrue((self.root / 'backups/transaction.json').exists())
+
+    def test_recovery_refuses_transaction_paths_outside_backup_root(self):
+        _, pending, code, metadata = self.deployed_pending_release()
+        (self.root / 'backups/transaction.json').write_text('{"snapshot":"../outside"}')
+        with self.assertRaises(ValueError):
+            maintenance.verify_deployed(self.root, '0.6.6', code, metadata)
+        self.assertTrue((self.root / 'backups' / pending).exists())
 
     @unittest.skipIf(os.name == 'nt', 'Linux process references are verified on Linux CI')
     def test_another_task_using_the_old_snapshot_blocks_reclamation(self):

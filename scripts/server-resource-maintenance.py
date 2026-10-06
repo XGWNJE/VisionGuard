@@ -217,10 +217,43 @@ def finalize(root):
     return name
 
 
+def verify_deployed(root, version, dist_sha256, metadata_sha256):
+    """Read-only recovery gate; never replace the pending rollback snapshot."""
+    import re
+    root = checked(root)
+    transaction = json.loads(checked(root / 'backups/transaction.json').read_text())
+    name = transaction['snapshot']
+    if not re.fullmatch(r'snapshot-[0-9a-f]{32}', name):
+        raise ValueError('Invalid transaction')
+    backup = verify(root / 'backups' / name)
+    if json.loads(checked(root / 'package.json').read_text())['version'] != version or backup['version'] == version:
+        raise ValueError('Deployed version or rollback version mismatch')
+    if digest(checked(root / 'dist/index.js')) != dist_sha256 or digest(checked(root / 'data/releases.json')) != metadata_sha256:
+        raise ValueError('Deployed code or release metadata mismatch')
+    metadata = json.loads((root / 'data/releases.json').read_text())
+    release_names(root / 'data/releases.json')
+    current = [row for row in metadata.values() if row.get('version') == version and not row.get('heldBack')]
+    if not current:
+        raise ValueError('No deployed release assets match the version')
+    for row in current:
+        file = checked(root / 'data/releases' / Path(row['url']).name)
+        if not file.is_file() or file.stat().st_size != row['size'] or digest(file).lower() != row['sha256'].lower():
+            raise ValueError('Deployed release asset mismatch')
+    return name
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["prepare", "finalize", "verify"])
+    parser.add_argument("action", choices=["prepare", "finalize", "verify", "verify-deployed"])
     parser.add_argument("root")
     parser.add_argument("--config", action="append", default=[])
+    parser.add_argument('--version')
+    parser.add_argument('--dist-sha256')
+    parser.add_argument('--metadata-sha256')
     args = parser.parse_args()
-    print(prepare(args.root, args.config) if args.action == "prepare" else finalize(args.root) if args.action == "finalize" else json.dumps({"version": verify(Path(args.root))["version"]}))
+    if args.action == 'verify-deployed':
+        if not all([args.version, args.dist_sha256, args.metadata_sha256]):
+            parser.error('verify-deployed requires version and expected code / metadata digests')
+        print(verify_deployed(args.root, args.version, args.dist_sha256, args.metadata_sha256))
+    else:
+        print(prepare(args.root, args.config) if args.action == "prepare" else finalize(args.root) if args.action == "finalize" else json.dumps({"version": verify(Path(args.root))["version"]}))

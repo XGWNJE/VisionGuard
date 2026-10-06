@@ -20,6 +20,7 @@ It performs preflight before version sync, builds selected targets, prepares sig
 - `-PreflightOnly` is read-only with respect to versions and publication. Use it to validate release prerequisites.
 - GitHub publication is disabled by default and remains opt-in through `-PushGitHub`, `-CreateTag`, and `-CreateGitHubRelease`.
 - `-DraftOnly -CreateGitHubRelease` uploads and verifies a private draft without publishing; it refuses VPS upload or Server deployment. A later authorized run without `-DraftOnly` publishes the verified release.
+- After an All deployment succeeds but public verification fails, use `-FinishRelease -Target All -CreateTag -CreateGitHubRelease` with the original `-GitHubTagTarget` and current `-ServerEnvPath`. It verifies deployed version/code/metadata/assets and the pending rollback before repeating public gates, finalizing backup retention, and publishing; never rebuild, redeploy, or delete the pending transaction to retry.
 - Use `-SkipServerDeploy` only for an explicitly client-only release.
 
 ## Non-negotiable gates
