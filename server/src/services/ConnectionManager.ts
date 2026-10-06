@@ -491,8 +491,12 @@ function handleConnection(ws: WebSocket): void {
           if (!isSafeAlertId(alert.alertId)) break;
           const client = findDetector(authenticatedDeviceId);
           const event = identity && validateEvent(alert, identity);
-          if (!event) { sendJson(ws, { type: 'alert-ack', alertId: alert.alertId, accepted: false, reason: 'invalid-or-expired-event' }); break; }
+          if (!event) {
+            console.warn(`[ws] alert rejected: alertId=${alert.alertId} reason=invalid-or-expired-event clockSkewMs=${Date.parse(alert.timestamp) - Date.now()}`);
+            sendJson(ws, { type: 'alert-ack', alertId: alert.alertId, accepted: false, reason: 'invalid-or-expired-event' }); break;
+          }
           if (identity?.nodeType === 'visual' && !client?.sources.some(source => source.sourceId === alert.sourceId)) {
+            console.warn(`[ws] alert rejected: alertId=${alert.alertId} reason=unknown-source`);
             sendJson(ws, { type: 'alert-ack', alertId: alert.alertId, accepted: false, reason: 'unknown-source' }); break;
           }
           const metaResult = validateAlertMeta({

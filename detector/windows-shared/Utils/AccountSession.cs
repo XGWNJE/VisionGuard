@@ -91,6 +91,8 @@ namespace VisionGuard.Detector.Windows.Utils
         }
         private static void Publish() { Volatile.Write(ref _published, new PublishedSession(_current, _serviceUrl)); }
         private static DateTime _lastValidated = DateTime.MinValue;
+        private static DateTime _nextMaintenanceAttempt = DateTime.MinValue;
+        private static string _maintenanceError = "";
         public static event EventHandler Changed;
         public static AccountSnapshot Current { get { return Published.Current; } }
         public static string ServiceUrl { get { return Published.ServiceUrl; } }
@@ -188,7 +190,7 @@ namespace VisionGuard.Detector.Windows.Utils
             Environment.SetEnvironmentVariable("VISIONGUARD_SETTINGS_PATH", values["settingsPath"]);
             Environment.SetEnvironmentVariable("VISIONGUARD_MODELS_DIR", values["modelsDirectory"]);
             Environment.SetEnvironmentVariable("VISIONGUARD_LOG_DIR", values["logDirectory"]);
-            lock (Sync) { _current = null; _lastValidated = DateTime.MinValue; Volatile.Write(ref _published, null); }
+            lock (Sync) { _current = null; _lastValidated = DateTime.MinValue; _nextMaintenanceAttempt = DateTime.MinValue; _maintenanceError = ""; Volatile.Write(ref _published, null); }
         }
         public static void Load()
         {
@@ -235,6 +237,24 @@ namespace VisionGuard.Detector.Windows.Utils
             if (!string.IsNullOrEmpty(token)) client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
             return client;
         }
+        private sealed class AccountRateLimitException : InvalidOperationException
+        {
+            public readonly TimeSpan RetryDelay;
+            public AccountRateLimitException(TimeSpan delay)
+                : base("服务请求过于频繁，请等待 " + (int)Math.Ceiling(delay.TotalSeconds) + " 秒后重试。") { RetryDelay = delay; }
+        }
+        private static void RequireSuccess(HttpResponseMessage response)
+        {
+            if ((int)response.StatusCode == 429)
+            {
+                var retry = response.Headers.RetryAfter;
+                var delay = retry == null ? TimeSpan.FromSeconds(30)
+                    : retry.Delta ?? (retry.Date.HasValue ? retry.Date.Value - DateTimeOffset.UtcNow : TimeSpan.FromSeconds(30));
+                delay = TimeSpan.FromSeconds(Math.Max(1, Math.Min(86400, delay.TotalSeconds)));
+                throw new AccountRateLimitException(delay);
+            }
+            response.EnsureSuccessStatusCode();
+        }
         private static AccountSnapshot RequestSession(string endpoint, object body, string token)
         {
             using (var client = Client(token))
@@ -243,6 +263,7 @@ namespace VisionGuard.Detector.Windows.Utils
             {
                 if (response.StatusCode == HttpStatusCode.Forbidden) throw new DeviceRegistrationRejectedException();
                 if (response.StatusCode == HttpStatusCode.Unauthorized) throw new UnauthorizedAccessException("账号或密码无效，或登录已失效。");
+                if ((int)response.StatusCode == 429) RequireSuccess(response);
                 if (!response.IsSuccessStatusCode) throw new InvalidOperationException("服务请求失败（" + (int)response.StatusCode + "）。");
                 var value = Json.Deserialize<AccountSnapshot>(response.Content.ReadAsStringAsync().GetAwaiter().GetResult());
                 if (value == null || !value.ok || value.account == null || value.device == null || string.IsNullOrEmpty(value.token) || value.resident == null) throw new InvalidDataException("服务登录响应不完整。");
@@ -274,6 +295,7 @@ namespace VisionGuard.Detector.Windows.Utils
                         }
                         RememberDevice(normalizedUser, _current.device.deviceId);
                         Write(_current); _lastValidated = DateTime.UtcNow;
+                        _nextMaintenanceAttempt = DateTime.MinValue; _maintenanceError = "";
                         File.WriteAllText(Path.Combine(Root, "endpoint.txt"), _serviceUrl, new UTF8Encoding(false));
                         Publish();
                     }
@@ -292,12 +314,16 @@ namespace VisionGuard.Detector.Windows.Utils
                 try
                 {
                     var disk = Read();
-                    if ((_current == null) != (disk == null) || (_current != null && disk != null && _current.token != disk.token)) changed = true;
+                    if ((_current == null) != (disk == null) || (_current != null && disk != null && _current.token != disk.token))
+                    {
+                        changed = true; _nextMaintenanceAttempt = DateTime.MinValue; _maintenanceError = ""; _lastValidated = DateTime.MinValue;
+                    }
 #pragma warning disable CS8601 // Shared with C# 7.3 projects; null represents a signed-out session.
                     _current = disk;
 #pragma warning restore CS8601
                     if (_current != null)
                     {
+                        if (DateTime.UtcNow < _nextMaintenanceAttempt) throw new InvalidOperationException(_maintenanceError);
                         DateTimeOffset expires;
                         if (!DateTimeOffset.TryParse(_current.expiresAt, out expires) || expires <= DateTimeOffset.UtcNow.AddMinutes(5))
                         {
@@ -310,11 +336,22 @@ namespace VisionGuard.Detector.Windows.Utils
                             using (var response = client.GetAsync(_serviceUrl + "/api/account/session").GetAwaiter().GetResult())
                             {
                                 if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden) { _current = null; Write(null); changed = true; }
-                                else response.EnsureSuccessStatusCode();
+                                else RequireSuccess(response);
                                 _lastValidated = DateTime.UtcNow;
                             }
                         }
                     }
+                    _nextMaintenanceAttempt = DateTime.MinValue; _maintenanceError = "";
+                }
+                catch (Exception error)
+                {
+                    // Keep the valid login and stop retrying every maintenance tick.
+                    if (DateTime.UtcNow >= _nextMaintenanceAttempt)
+                    {
+                        _nextMaintenanceAttempt = DateTime.UtcNow.Add(error is AccountRateLimitException limited ? limited.RetryDelay : TimeSpan.FromSeconds(30));
+                        _maintenanceError = error.Message;
+                    }
+                    throw;
                 }
                 finally { Publish(); }
             }

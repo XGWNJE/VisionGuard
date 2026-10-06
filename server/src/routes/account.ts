@@ -18,7 +18,7 @@ export function accountFailure(res: Response, error: unknown): void {
 const router = Router();
 router.use('/api/account', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 const loginLimiter = rateLimit({ windowMs: 60_000, max: 20, standardHeaders: true, legacyHeaders: false,
-  keyGenerator: req => ipKeyGenerator(req.socket.remoteAddress || 'unknown'),
+  keyGenerator: req => ipKeyGenerator(req.ip || req.socket.remoteAddress || 'unknown'),
   message: { ok: false, error: 'Too many login attempts' } });
 router.post('/api/account/login', loginLimiter, async (req, res) => {
   try { res.json(sessionResponse(await accountStore.login(req.body))); } catch (error) { accountFailure(res, error); }

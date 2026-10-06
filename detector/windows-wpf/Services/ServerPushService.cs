@@ -79,6 +79,7 @@ namespace VisionGuard.Detector.Windows.Services
         private object[] _hbSources = Array.Empty<object>();
 
         private bool _disposed;
+        private static readonly object AlertLogLock = new object();
 
         // 网络变化防抖：30 秒内只处理一次，且只在从"无网络"变为"有网络"时才重连
         private DateTime _lastNetworkChangeHandled = DateTime.MinValue;
@@ -208,7 +209,7 @@ namespace VisionGuard.Detector.Windows.Services
         private void FlushAlertOutbox()
         {
             var session = _session;
-            if (_state != WsState.Connected || session == null) return;
+            if (_state != WsState.Connected || session == null || !session.SourcesRegistered) return;
             foreach (var entry in _alertOutbox.Snapshot())
                 if (!session.SendRawJson(entry.PayloadJson)) break;
         }
@@ -218,10 +219,11 @@ namespace VisionGuard.Detector.Windows.Services
             if (session != _session || string.IsNullOrWhiteSpace(alertId)) return;
             if (!accepted)
             {
-                if (reason == "alert-id-conflict" || reason == "invalid-or-expired-event" || reason == "unknown-source")
+                RecordAlertRejection(alertId, reason);
+                if (reason == "alert-id-conflict" || reason == "invalid-or-expired-event")
                 {
                     _alertOutbox.Acknowledge(alertId);
-                    LogManager.StaticWarn($"[Server] 报警 ID 冲突并移出发件箱: alertId={alertId}");
+                    LogManager.StaticWarn($"[Server] 报警被拒收并移出发件箱: alertId={alertId}, reason={reason}");
                 }
                 else LogManager.StaticWarn($"[Server] 报警暂未持久化，将继续重试: alertId={alertId}, reason={reason}");
                 return;
@@ -231,6 +233,29 @@ namespace VisionGuard.Detector.Windows.Services
                 LogManager.StaticInfo($"[Server] 报警持久化已确认: alertId={alertId}, duplicate={duplicate}");
                 Task.Run(() => SendScreenshotData(alertId));
             }
+        }
+
+        private static void RecordAlertRejection(string alertId, string reason)
+        {
+            // Debug.WriteLine is omitted in Release; retain bounded delivery diagnostics without credentials or pictures.
+            if (!Guid.TryParse(alertId, out var id)) return;
+            var safeReason = new[] { "alert-id-conflict", "invalid-or-expired-event", "unknown-source", "storage-failed" }.Contains(reason) ? reason : "other";
+            try
+            {
+                lock (AlertLogLock)
+                {
+                    Directory.CreateDirectory(AccountSession.LogRoot);
+                    var path = Path.Combine(AccountSession.LogRoot, "alert-delivery.log");
+                    var line = $"{NtpSync.UtcNow:o} alertId={id} reason={safeReason} ntpOffsetMs={NtpSync.OffsetMs}{Environment.NewLine}";
+                    if (File.Exists(path) && new FileInfo(path).Length >= 1024 * 1024)
+                    {
+                        File.Copy(path, path + ".previous", true);
+                        File.WriteAllText(path, line);
+                    }
+                    else File.AppendAllText(path, line);
+                }
+            }
+            catch { /* Diagnostics must not interrupt acknowledgement/retry processing. */ }
         }
 
         public void SendCommandAck(string command, bool success, string reason = "", string requestId = "", string targetSourceId = "")
@@ -468,7 +493,8 @@ namespace VisionGuard.Detector.Windows.Services
                 if (maxSources > 0) SourceLimitReceived?.Invoke(this, Net472Compat.Clamp(maxSources, 1, 16));
                 s.StartHeartbeat();
                 _media?.Dispose(); _media = new RemoteMediaService(_serverUrl, _apiKey, _deviceId);
-                FlushAlertOutbox();
+                // Register sources on this connection before sending queued events.
+                SendHeartbeatNow();
             }
             else
             {
@@ -595,6 +621,7 @@ namespace VisionGuard.Detector.Windows.Services
             private long _lastMessageAtTicks = DateTime.UtcNow.Ticks;
             private volatile bool _shutdown;
             private volatile bool _failReported;
+            public bool SourcesRegistered { get; set; } // Only accessed by the parent's event loop.
 
             public Session(ServerPushService parent, string wsUrl)
             {
@@ -803,7 +830,11 @@ namespace VisionGuard.Detector.Windows.Services
                                 int limit = Convert.ToInt32(heartbeatMaxSources);
                                 _parent.Post(() => _parent.SourceLimitReceived?.Invoke(_parent, Net472Compat.Clamp(limit, 1, 16)));
                             }
-                            _parent.Post(_parent.FlushAlertOutbox);
+                            _parent.Post(() => {
+                                if (_parent._session != this) return;
+                                SourcesRegistered = true;
+                                _parent.FlushAlertOutbox();
+                            });
                             break;
                     }
                 }

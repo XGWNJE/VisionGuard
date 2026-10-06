@@ -12,7 +12,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public event EventHandler AccountChanging;
         public event EventHandler AccountChanged;
         private string _serviceAddress = AccountSession.ServiceUrl, _username = "", _password = "", _loginMessage = "";
-        private bool _isChangingAccount, _isRefreshing, _isLoginError;
+        private bool _isChangingAccount, _isRefreshing, _isLoginError, _hasSessionMaintenanceError;
         public bool CanEditAccount => !_isChangingAccount;
         public bool AllowsTestEndpoint => AccountSession.AllowsTestEndpoint;
         public bool CanEditDeviceName => AccountSession.Current != null && !_isChangingAccount;
@@ -256,13 +256,15 @@ namespace VisionGuard.Detector.Windows.ViewModels
             {
                 var old = AccountSession.Current;
                 var current = await Task.Run(AccountSession.EnsureFresh);
+                if (_hasSessionMaintenanceError && current != null) { LoginMessage = ""; IsLoginError = false; }
+                _hasSessionMaintenanceError = false;
                 if (old?.token != current?.token)
                 {
                     AccountChanged?.Invoke(this, EventArgs.Empty);
                     if (current == null) SetLoginError("登录已失效，请重新登录。");
                 }
             }
-            catch (Exception ex) { SetLoginError(ex.Message); }
+            catch (Exception ex) { _hasSessionMaintenanceError = true; SetLoginError(ex.Message); }
             finally { _isRefreshing = false; }
         }
 

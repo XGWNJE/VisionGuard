@@ -29,7 +29,8 @@ namespace VisionGuard.Detector.Windows.Services
         {
             lock (_sync)
             {
-                var removed = _entries.RemoveAll(entry => !IsLive(entry.PayloadJson, DateTime.UtcNow));
+                // Event deadlines use the corrected clock, just like AlertEvent.Timestamp.
+                var removed = _entries.RemoveAll(entry => !IsLive(entry.PayloadJson, Utils.NtpSync.UtcNow));
                 if (removed > 0) Save();
                 return _entries.Select(entry => entry with { }).ToArray();
             }

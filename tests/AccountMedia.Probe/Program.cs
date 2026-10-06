@@ -84,6 +84,10 @@ internal static class Program
             WebSocketMessageProbe();
             RemoteFrameProbe();
             AccountProbe();
+            AccountThrottleProbe(false);
+            AccountThrottleProbe(true);
+            AlertClockProbe();
+            AlertRegistrationProbe();
             DeviceIdentityMemoryProbe();
             AlertTimingsProbe();
             CrossProcessSessionProbe();
@@ -370,6 +374,148 @@ internal static class Program
         Require(emitted!.Timings["captureMs"] == 1 && emitted.Timings["preprocessMs"] == 2 && emitted.Timings["inferMs"] == 3 && emitted.Timings["parseMs"] == 4 && emitted.Timings["processMs"] >= 10 && input["processMs"] == -1, "Process timing is wrong or the caller's dictionary was mutated");
         emitted.Snapshot?.Dispose();
     }
+    static void AccountThrottleProbe(bool refresh)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "VisionGuard-Throttle-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        Environment.SetEnvironmentVariable("VISIONGUARD_ACCOUNT_DIR", directory);
+        var tcp = new TcpListener(IPAddress.Loopback, 0); tcp.Start(); int port = ((IPEndPoint)tcp.LocalEndpoint).Port; tcp.Stop();
+        string url = "http://127.0.0.1:" + port; Environment.SetEnvironmentVariable("VISIONGUARD_SERVER_URL", url);
+        using var listener = new HttpListener(); listener.Prefixes.Add(url + "/"); listener.Start();
+        int calls = 0;
+        var fixture = Task.Run(() => {
+            for (int index = 0; index < 4; index++)
+            {
+                var request = listener.GetContext(); Interlocked.Increment(ref calls);
+                if (index == 1 || index == 2) Require(request.Request.Url!.AbsolutePath.EndsWith(refresh ? "refresh" : "session"), "Wrong maintenance endpoint");
+                object body;
+                if (index == 1) { request.Response.StatusCode = 429; request.Response.Headers["Retry-After"] = refresh ? DateTime.UtcNow.AddMinutes(2).ToString("R") : "120"; body = new { ok = false }; }
+                else if (index == 3) { request.Response.StatusCode = 401; body = new { ok = false }; }
+                else body = new AccountSnapshot { ok = true, token = index == 0 ? "throttle-initial" : "throttle-rotated", expiresAt = DateTimeOffset.UtcNow.AddMinutes(index == 0 && refresh ? 1 : 60).ToString("o"),
+                    account = new AccountIdentity { accountId = "throttle-owner", username = "throttle" }, device = new AccountDevice { deviceId = "throttle-node", component = "windows-inference" }, resident = new ResidentAccount { token = "throttle-resident" } };
+                byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(body)); request.Response.ContentType = "application/json";
+                request.Response.OutputStream.Write(bytes, 0, bytes.Length); request.Response.Close();
+            }
+        });
+        try
+        {
+            AccountSession.Load(); AccountSession.Login(url, "throttle", "synthetic-throttle-password", "Throttle probe");
+            void SetField(string name, DateTime value) => typeof(AccountSession).GetField(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, value);
+            SetField("_lastValidated", DateTime.MinValue);
+            var original = AccountSession.Current!.token;
+            for (int index = 0; index < 5; index++)
+            {
+                bool failed = false;
+                try { AccountSession.EnsureFresh(); }
+                catch (InvalidOperationException error) { failed = error.Message.Contains("秒后重试") && (refresh || error.Message.Contains("120")); }
+                Require(failed && AccountSession.Current!.token == original, "429 revoked a valid login or lost the readable wait time");
+            }
+            Require(Volatile.Read(ref calls) == 2, "Maintenance ignored Retry-After and retried during the cooldown");
+            var retryAt = (DateTime)typeof(AccountSession).GetField("_nextMaintenanceAttempt", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.GetValue(null)!;
+            Require(retryAt > DateTime.UtcNow.AddSeconds(110), "Server retry delay was not retained");
+            SetField("_nextMaintenanceAttempt", DateTime.MinValue);
+            Require(AccountSession.EnsureFresh() != null && Volatile.Read(ref calls) == 3, "Maintenance did not recover after the retry deadline");
+            SetField("_lastValidated", DateTime.MinValue);
+            Require(AccountSession.EnsureFresh() == null, "Actual session revocation must still sign out");
+            Require(fixture.Wait(5000), "Throttle fixture did not finish"); fixture.GetAwaiter().GetResult();
+            Console.WriteLine("PASS account " + (refresh ? "refresh" : "validation") + " 429 backoff, recovery and revocation");
+        }
+        finally { listener.Stop(); Directory.Delete(directory, true); }
+    }
+
+    static JsonDocument ReadClientMessage(NetworkStream stream)
+    {
+        int first = stream.ReadByte(), second = stream.ReadByte();
+        Require(first >= 0 && second >= 0 && (first & 15) == 1, "Expected a text frame");
+        int length = second & 127;
+        if (length == 126) length = (stream.ReadByte() << 8) | stream.ReadByte();
+        Require(length < 65536 && (second & 128) != 0, "Unexpected client frame size or mask");
+        byte[] Read(int count) { byte[] bytes = new byte[count]; int read = 0; while (read < count) { int got = stream.Read(bytes, read, count - read); if (got == 0) throw new EndOfStreamException(); read += got; } return bytes; }
+        var mask = Read(4); var body = Read(length);
+        for (int index = 0; index < body.Length; index++) body[index] ^= mask[index % 4];
+        return JsonDocument.Parse(body);
+    }
+
+    static void AlertRegistrationProbe()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "VisionGuard-AlertRegistration-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
+        string? previousLogRoot = Environment.GetEnvironmentVariable("VISIONGUARD_LOG_DIR");
+        Environment.SetEnvironmentVariable("VISIONGUARD_LOG_DIR", Path.Combine(directory, "logs"));
+        Environment.SetEnvironmentVariable("VISIONGUARD_ACCOUNT_DIR", directory);
+        var tcp = new TcpListener(IPAddress.Loopback, 0); tcp.Start(); int loginPort = ((IPEndPoint)tcp.LocalEndpoint).Port; tcp.Stop();
+        string loginUrl = "http://127.0.0.1:" + loginPort; Environment.SetEnvironmentVariable("VISIONGUARD_SERVER_URL", loginUrl);
+        using var loginServer = new HttpListener(); loginServer.Prefixes.Add(loginUrl + "/"); loginServer.Start();
+        var login = Task.Run(() => {
+            var request = loginServer.GetContext(); var snapshot = new AccountSnapshot { ok = true, token = "registration-fixture-token", expiresAt = DateTimeOffset.UtcNow.AddHours(1).ToString("o"),
+                account = new AccountIdentity { accountId = "registration-owner", username = "registration" }, device = new AccountDevice { deviceId = "registration-node", component = "windows-inference" }, resident = new ResidentAccount { token = "registration-resident" } };
+            byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(snapshot)); request.Response.OutputStream.Write(bytes, 0, bytes.Length); request.Response.Close();
+        });
+        AccountSession.Load(); var account = AccountSession.Login(loginUrl, "registration", "synthetic-registration-password", "Registration probe"); login.GetAwaiter().GetResult(); loginServer.Stop();
+        string scopeDirectory = Path.GetDirectoryName(AlertService.GetSnapshotPath("unused"))!;
+        scopeDirectory = Path.GetDirectoryName(scopeDirectory)!;
+        Require(!Directory.Exists(scopeDirectory), "Registration probe must use a fresh isolated account scope");
+        string outboxPath = Path.Combine(scopeDirectory, "alert-outbox.json"), alertId = Guid.NewGuid().ToString();
+        new AlertOutbox(outboxPath).Enqueue(alertId, JsonSerializer.Serialize(new { type = "alert", alertId, sourceId = "probe-source", expiresAt = NtpSync.UtcNow.AddSeconds(30) }));
+        var control = new TcpListener(IPAddress.Loopback, 0); control.Start(); int port = ((IPEndPoint)control.LocalEndpoint).Port;
+        var fixture = Task.Run(() => {
+            using var peer = control.AcceptTcpClient(); using var stream = peer.GetStream(); stream.ReadTimeout = 10000;
+            Handshake(stream);
+            using (var auth = ReadClientMessage(stream)) Require(auth.RootElement.GetProperty("type").GetString() == "auth", "Missing authentication");
+            void Send(object value) => SendFrame(stream, 1, Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value)));
+            Send(new { type = "auth-result", success = true, maxSources = 16 });
+            using (var heartbeat = ReadClientMessage(stream)) {
+                Require(heartbeat.RootElement.GetProperty("type").GetString() == "heartbeat", "Queued alert was sent before source registration");
+                Require(heartbeat.RootElement.GetProperty("sources")[0].GetProperty("sourceId").GetString() == "probe-source", "Source missing from initial registration");
+            }
+            Thread.Sleep(100); Require(!stream.DataAvailable, "Alert was sent before the first heartbeat acknowledgement");
+            Send(new { type = "heartbeat-ack", maxSources = 16 });
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                using (var alert = ReadClientMessage(stream)) {
+                    Require(alert.RootElement.GetProperty("type").GetString() == "alert" && alert.RootElement.GetProperty("alertId").GetString() == alertId, "Retry lost the stable alert identity");
+                }
+                Send(new { type = "alert-ack", alertId, accepted = attempt == 2, reason = attempt == 0 ? "unknown-source" : attempt == 1 ? "storage-failed" : "stored" });
+                if (attempt < 2) {
+                    using var heartbeat = ReadClientMessage(stream); Require(heartbeat.RootElement.GetProperty("type").GetString() == "heartbeat", "Retry was not paced by the heartbeat");
+                    Send(new { type = "heartbeat-ack", maxSources = 16 });
+                }
+            }
+            Thread.Sleep(200);
+        });
+        try
+        {
+            using var service = new ServerPushService();
+            service.UpdateHeartbeatParams(true, true, 5, .5f, "person", sources: new object[] { new { sourceId = "probe-source", sourceName = "probe" } });
+            service.Configure("http://127.0.0.1:" + port, account.token, account.device.deviceId, "Registration probe");
+            Require(fixture.Wait(15000), "Source registration contract timed out"); fixture.GetAwaiter().GetResult();
+            Require(new AlertOutbox(outboxPath).Snapshot().Count == 0, "Accepted alert remained in the outbox");
+            string deliveryLog = File.ReadAllText(Path.Combine(directory, "logs", "alert-delivery.log"));
+            Require(deliveryLog.Contains("reason=unknown-source") && deliveryLog.Contains("reason=storage-failed") && !deliveryLog.Contains(account.token), "Release rejection evidence missing or exposed credentials");
+            Console.WriteLine("PASS initial source registration before queued alert, unknown-source/storage retry, stable ID and persistence ack");
+        }
+        finally { control.Stop(); Environment.SetEnvironmentVariable("VISIONGUARD_LOG_DIR", previousLogRoot); Directory.Delete(directory, true); Directory.Delete(scopeDirectory, true); }
+    }
+
+    static void AlertClockProbe()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "VisionGuard-AlertClock-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
+        var offset = typeof(NtpSync).GetField("_offsetMs", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        long original = (long)offset.GetValue(null)!;
+        try
+        {
+            // The PC is one minute ahead; NTP corrects event time without altering the system clock.
+            offset.SetValue(null, -60_000L);
+            var queue = new AlertOutbox(Path.Combine(directory, "outbox.json"));
+            queue.Enqueue("live", JsonSerializer.Serialize(new { expiresAt = NtpSync.UtcNow.AddSeconds(30) }));
+            queue.Enqueue("expired", JsonSerializer.Serialize(new { expiresAt = NtpSync.UtcNow.AddSeconds(-1) }));
+            Require(queue.Snapshot().Count == 1 && queue.Snapshot()[0].AlertId == "live", "Clock correction discarded a newly created live alert");
+            offset.SetValue(null, 60_000L);
+            Require(queue.Snapshot().Count == 0, "Corrected expiry must prune events when the PC is behind");
+            Console.WriteLine("PASS corrected alert clock with PC ahead/behind by one minute");
+        }
+        finally { offset.SetValue(null, original); Directory.Delete(directory, true); }
+    }
+
     static void CrossProcessSessionProbe()
     {
         string directory = Path.Combine(Path.GetTempPath(), "VisionGuard-SessionRace-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
