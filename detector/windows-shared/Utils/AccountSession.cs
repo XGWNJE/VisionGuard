@@ -36,6 +36,36 @@ namespace VisionGuard.Detector.Windows.Utils
 
     // The current Windows user owns this encrypted login; passwords are never saved.
     // Resident and launcher read the same store, so neither asks for another credential.
+    public static class DisplayNamePolicy
+    {
+        public const int MaximumLength = 64;
+        public const int DeviceCodeLength = 40;
+        public const string Hint = "名称须为 1–64 个字符，不能包含换行或控制字符。";
+        public static string Normalize(string value)
+        {
+            if (value == null) throw new ArgumentException(Hint);
+            foreach (char c in value) if (c < 32) throw new ArgumentException(Hint);
+            string name = value.Trim();
+            if (name.Length == 0 || name.Length > MaximumLength) throw new ArgumentException(Hint);
+            return name;
+        }
+        public static bool IsValid(string value)
+        {
+            try { Normalize(value); return true; } catch (ArgumentException) { return false; }
+        }
+        public static string DeviceCode(string value)
+        {
+            var result = new StringBuilder();
+            foreach (char c in value ?? "")
+            {
+                if (result.Length == DeviceCodeLength) break;
+                result.Append(char.IsLetterOrDigit(c) || "._ -".IndexOf(c) >= 0 ? c : '_');
+            }
+            string code = result.ToString().Trim();
+            return code.Length == 0 ? "windows" : code;
+        }
+    }
+
     public static class AccountSession
     {
         private const string ProductionUrl = "https://visionguard.xgwnje.cn";
@@ -217,7 +247,7 @@ namespace VisionGuard.Detector.Windows.Utils
                         string rememberedId;
                         RememberedDevices().TryGetValue(normalizedUser, out rememberedId);
                         if (string.IsNullOrWhiteSpace(rememberedId) && previous != null && string.Equals(previous.account.username, normalizedUser, StringComparison.OrdinalIgnoreCase)) rememberedId = previous.device.deviceId;
-                        var body = new Dictionary<string, object> { ["username"] = normalizedUser, ["password"] = password, ["component"] = "windows-inference", ["deviceCode"] = deviceCode };
+                        var body = new Dictionary<string, object> { ["username"] = normalizedUser, ["password"] = password, ["component"] = "windows-inference", ["deviceCode"] = DisplayNamePolicy.DeviceCode(deviceCode) };
                         if (!string.IsNullOrWhiteSpace(rememberedId)) body["deviceId"] = rememberedId;
                         try { _current = RequestSession("/api/account/login", body, null); }
                         catch (DeviceRegistrationRejectedException) when (body.ContainsKey("deviceId"))
@@ -288,6 +318,7 @@ namespace VisionGuard.Detector.Windows.Utils
         }
         public static void RenameDevice(string name)
         {
+            name = DisplayNamePolicy.Normalize(name);
             var s = Current;
             if (s == null) throw new InvalidOperationException("请先登录。");
             using (var client = Client(s.token))

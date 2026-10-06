@@ -127,7 +127,7 @@
                     <Grid>
                         <Grid.ColumnDefinitions><ColumnDefinition Width="64"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                         <TextBlock Text="名称" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
-                        <TextBox Grid.Column="1" Style="{StaticResource DarkTextBox}" Text="{Binding DeviceName, UpdateSourceTrigger=PropertyChanged}"/>
+                        <TextBox Grid.Column="1" Style="{StaticResource DarkTextBox}" MaxLength="64" DataObject.Pasting="DeviceName_OnPasting" ToolTip="名称须为 1–64 个字符，不能包含换行或控制字符" Text="{Binding DeviceName, UpdateSourceTrigger=PropertyChanged}"/>
                         <Button Grid.Column="2" Content="应用" Style="{StaticResource PrimaryButton}" Command="{Binding ApplyNameCommand}" MinWidth="64" Margin="8,0,0,0"/>
                     </Grid>
                 </StackPanel>

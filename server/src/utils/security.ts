@@ -64,13 +64,13 @@ export function validateAlertMeta(input: unknown): ValidationResult<AlertMeta> {
   if (typeof meta.deviceId !== 'string' || meta.deviceId.length === 0 || meta.deviceId.length > 128) {
     return { ok: false, error: 'invalid deviceId' };
   }
-  if (typeof meta.deviceName !== 'string' || meta.deviceName.length === 0 || meta.deviceName.length > 64) {
+  if (typeof meta.deviceName !== 'string' || meta.deviceName.trim().length === 0 || meta.deviceName.length > 64 || /[\x00-\x1f]/.test(meta.deviceName)) {
     return { ok: false, error: 'invalid deviceName' };
   }
   if (meta.sourceId !== undefined && (typeof meta.sourceId !== 'string' || meta.sourceId.length === 0 || meta.sourceId.length > 128)) {
     return { ok: false, error: 'invalid sourceId' };
   }
-  if (meta.sourceName !== undefined && (typeof meta.sourceName !== 'string' || meta.sourceName.length === 0 || meta.sourceName.length > 64)) {
+  if (meta.sourceName !== undefined && (typeof meta.sourceName !== 'string' || meta.sourceName.trim().length === 0 || meta.sourceName.length > 64 || /[\x00-\x1f]/.test(meta.sourceName))) {
     return { ok: false, error: 'invalid sourceName' };
   }
   if (typeof meta.timestamp !== 'string' || meta.timestamp.length === 0 || meta.timestamp.length > 64) {

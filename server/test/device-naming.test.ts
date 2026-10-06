@@ -4,6 +4,22 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { AccountStore } from '../src/services/AccountStore';
+import { validateAlertMeta } from '../src/utils/security';
+
+test('custom names and event snapshots share the UTF-16 boundary and reject invalid edits without changing identity', async t => {
+  const {store,credentials}=fixture(t);
+  const session=await store.login({...credentials,component:'windows-inference',deviceCode:'门'.repeat(40)});
+  assert.ok(session.device.deviceName.length<=64);
+  const meta={deviceId:session.device.deviceId,deviceName:'门'.repeat(64),sourceName:'😀'.repeat(32),sourceId:'front',timestamp:new Date().toISOString(),detections:[{label:'person',confidence:0.9,bbox:{x:0,y:0,w:1,h:1}}]};
+  assert.equal(validateAlertMeta(meta).ok,true);
+  for(const name of ['门'.repeat(64),'A'.repeat(64),'😀'.repeat(32)]) {store.rename(session.account.accountId,session.device.deviceId,name);assert.equal(store.device(session.account.accountId,session.device.deviceId)!.deviceName,name);}
+  for(const name of ['门'.repeat(65),'😀'.repeat(33),'  ','门\n','a\0b']) {
+    assert.throws(()=>store.rename(session.account.accountId,session.device.deviceId,name),/Invalid device name/);
+    assert.equal(store.device(session.account.accountId,session.device.deviceId)!.deviceName,'😀'.repeat(32));
+    assert.equal(validateAlertMeta({...meta,deviceName:name}).ok,false);
+    assert.equal(validateAlertMeta({...meta,sourceName:name}).ok,false);
+  }
+});
 
 function fixture(t: test.TestContext) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vg-naming-'));

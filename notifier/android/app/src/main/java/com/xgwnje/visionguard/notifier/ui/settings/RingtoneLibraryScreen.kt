@@ -270,22 +270,23 @@ private fun PreviewButton(isPreviewing: Boolean, onClick: () -> Unit, modifier: 
 @Composable
 private fun RenameRingtoneDialog(oldName: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     var input by remember { mutableStateOf(oldName) }
+    var rejectedInput by remember { mutableStateOf(false) }
     NotifierDialog(
         title = "重命名铃声",
         onDismiss = onDismiss,
         confirmButton = {
-            TextButton({ onConfirm(input) }, Modifier.heightIn(min = 48.dp), enabled = input.isNotBlank(), colors = VisionGuardControlColors.textButton(), shape = MaterialTheme.shapes.small) { Text("保存") }
+            TextButton({ onConfirm(input) }, Modifier.heightIn(min = 48.dp), enabled = !rejectedInput && com.xgwnje.visionguard.account.DisplayNamePolicy.error(input) == null, colors = VisionGuardControlColors.textButton(), shape = MaterialTheme.shapes.small) { Text("保存") }
         },
         dismissButton = { TextButton(onDismiss, Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("取消") } }
     ) {
         OutlinedTextField(
             value = input,
-            onValueChange = { input = it },
+            onValueChange = { rejectedInput = !com.xgwnje.visionguard.account.DisplayNamePolicy.acceptsDraft(it); if (!rejectedInput) input = it },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            isError = input.isBlank(),
+            isError = rejectedInput || com.xgwnje.visionguard.account.DisplayNamePolicy.error(input) != null,
             label = { Text("铃声名称") },
-            supportingText = { if (input.isBlank()) Text("请输入名称") },
+            supportingText = { Text(if (rejectedInput) com.xgwnje.visionguard.account.DisplayNamePolicy.HINT else com.xgwnje.visionguard.account.DisplayNamePolicy.error(input) ?: "最多 64 个字符") },
             textStyle = MaterialTheme.typography.bodyLarge,
             shape = MaterialTheme.shapes.small
         )

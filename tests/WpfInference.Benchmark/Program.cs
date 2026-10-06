@@ -26,6 +26,9 @@ var modelPath = Path.GetFullPath(args[0]);
 if (args.Length >= 2 && args[1].Equals("--settings-persistence", StringComparison.OrdinalIgnoreCase))
     return SettingsPersistenceProbe.Run();
 
+if (args.Length >= 2 && args[1].Equals("--display-name-boundaries", StringComparison.OrdinalIgnoreCase))
+    return DisplayNameProbe.Run();
+
 // 与生产程序同一路径：先按档位预加载原生 ONNX Runtime（绝对路径），再建任何推理会话。
 // 不做这一步时 DllImport 会按默认搜索顺序找根目录的 onnxruntime.dll，而它按设计已被移走，
 // legacy 档会以无诊断信息的进程终止失败。

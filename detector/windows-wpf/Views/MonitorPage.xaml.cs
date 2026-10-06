@@ -48,15 +48,32 @@ namespace VisionGuard.Detector.Windows.Views
             }
         }
 
+        private void SourceName_OnPasting(object sender, DataObjectPastingEventArgs e) => GlobalSettingsPage.ValidateNamePaste(sender,e);
+
         private void CommitSourceName()
         {
             if (SourceNameEditor.Visibility != Visibility.Visible) return;
-            if (SourceNameEditor.DataContext is SourceViewModel source) source.CommitSourceNameEdit();
+            if (Validation.GetHasError(SourceNameEditor)) return;
+            if (SourceNameEditor.DataContext is SourceViewModel source)
+            {
+                if (!Utils.DisplayNamePolicy.IsValid(source.SourceName))
+                {
+                    SourceNameEditor.ToolTip = Utils.DisplayNamePolicy.Hint;
+                    var binding = SourceNameEditor.GetBindingExpression(TextBox.TextProperty);
+                    if (binding != null) Validation.MarkInvalid(binding, new ValidationError(new ExceptionValidationRule(), binding, Utils.DisplayNamePolicy.Hint, null));
+                    return;
+                }
+                var currentBinding = SourceNameEditor.GetBindingExpression(TextBox.TextProperty);
+                if (currentBinding != null) Validation.ClearInvalid(currentBinding);
+                source.CommitSourceNameEdit();
+            }
             EndSourceNameEdit();
         }
 
         private void EndSourceNameEdit()
         {
+            var binding = SourceNameEditor.GetBindingExpression(TextBox.TextProperty);
+            if (binding != null) Validation.ClearInvalid(binding);
             bool restoreFocus = SourceNameEditor.IsKeyboardFocusWithin;
             SourceNameEditor.Visibility = Visibility.Collapsed;
             SourceNameText.Visibility = Visibility.Visible;

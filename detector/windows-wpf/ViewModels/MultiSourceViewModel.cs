@@ -840,7 +840,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public ObservableCollection<SourceParameterViewModel> ParameterRows { get; } = new();
         public ObservableCollection<DetectionClassOption> TargetOptions { get; } = new();
         public List<RectangleF> MaskRegions { get; private set; } = new();
-        public string SourceName { get => _sourceName; set { if (SetProperty(ref _sourceName, value)) MarkDirty(); } }
+        public string SourceName { get => _sourceName; set { DisplayNamePolicy.Normalize(value); if (SetProperty(ref _sourceName, value)) MarkDirty(); } }
         public string ModelKey { get => _modelKey; set { if (SetProperty(ref _modelKey, value)) MarkDirty(); } }
         public string Targets
         {
@@ -1207,7 +1207,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         internal void ApplyAndPersist()
         {
             if (IsMonitoring) throw new InvalidOperationException("请先停止该来源再修改配置。");
-            SourceName = string.IsNullOrWhiteSpace(SourceName) ? DisplayIndex : SourceName.Trim();
+            SourceName = DisplayNamePolicy.Normalize(SourceName);
             PersistCurrent(); SettingsStore.Save(); _saved = CaptureState(); RefreshPendingApply(); _owner.Reconfigure(this);
         }
 
@@ -1238,7 +1238,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
         internal void CommitSourceNameEdit()
         {
-            SourceName = string.IsNullOrWhiteSpace(SourceName) ? DisplayIndex : SourceName.Trim();
+            SourceName = DisplayNamePolicy.Normalize(SourceName);
             SettingsStore.Set(Prefix + "Name", SourceName);
             SettingsStore.Save();
             _saved = _saved with { SourceName = SourceName };
@@ -1259,7 +1259,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             SettingsStore.Set(Prefix + "SourceId", SourceId);
             SettingsStore.Set(Prefix + "RemoteStreamId", _remoteStreamId);
             SettingsStore.Set(Prefix + "RemotePublisherName", _remotePublisherName);
-            SettingsStore.Set(Prefix + "Initialized", true); SettingsStore.Set(Prefix + "Name", SourceName);
+            SettingsStore.Set(Prefix + "Initialized", true); SettingsStore.Set(Prefix + "Name", DisplayNamePolicy.IsValid(SourceName) ? SourceName.Trim() : _saved?.SourceName ?? DisplayIndex);
             SettingsStore.Set(Prefix + "CaptureMode", _captureMode.ToString()); SettingsStore.Set(Prefix + "TargetWindowTitle", _targetWindowTitle);
             SettingsStore.Set(Prefix + "TargetWindowClassName", _targetWindowClassName); SettingsStore.Set(Prefix + "TargetWindowProcessName", _targetWindowProcessName);
             SettingsStore.Set(Prefix + "WindowSubRegion", FormatRectangle(_windowSubRegion)); SettingsStore.Set(Prefix + "ScreenRegion", FormatRectangle(_screenRegion));

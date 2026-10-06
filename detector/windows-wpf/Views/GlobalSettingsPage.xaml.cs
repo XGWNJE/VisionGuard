@@ -13,6 +13,19 @@ namespace VisionGuard.Detector.Windows.Views
         {
             InitializeComponent();
         }
+        internal static void ValidateNamePaste(object sender, System.Windows.DataObjectPastingEventArgs e)
+        {
+            if (sender is not TextBox box) return;
+            if (!e.DataObject.GetDataPresent(System.Windows.DataFormats.UnicodeText)) { e.CancelCommand(); return; }
+            var text = e.DataObject.GetData(System.Windows.DataFormats.UnicodeText) as string ?? "";
+            var draft = box.Text.Remove(box.SelectionStart, box.SelectionLength).Insert(box.SelectionStart, text);
+            if (draft.Length > Utils.DisplayNamePolicy.MaximumLength || !Utils.DisplayNamePolicy.IsValid(draft))
+            {
+                e.CancelCommand();
+                box.ToolTip = "粘贴内容未修改名称。" + Utils.DisplayNamePolicy.Hint;
+            }
+        }
+        private void DeviceName_OnPasting(object sender, System.Windows.DataObjectPastingEventArgs e) => ValidateNamePaste(sender,e);
         private void AccountPasswordChanged(object sender, System.Windows.RoutedEventArgs e)
         {
             if (sender is PasswordBox box && box.DataContext is ViewModels.ServerViewModel vm)

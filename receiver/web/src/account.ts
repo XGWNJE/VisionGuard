@@ -8,6 +8,14 @@ export type Login = {
   device: Identity & { deviceName: string; component: string };
 };
 
+export const MAX_DISPLAY_NAME_LENGTH = 64;
+export function normalizeDisplayName(value: unknown): string {
+  if (typeof value !== 'string') throw new Error('请输入有效名称');
+  const name = value.trim();
+  if (!name || name.length > MAX_DISPLAY_NAME_LENGTH || /[\x00-\x1f]/.test(value)) throw new Error('名称须为 1–64 个字符，不能包含换行或控制字符');
+  return name;
+}
+
 export class AccountRequestError extends Error {
   readonly status: number;
   constructor(status: number, message: string) { super(message); this.status = status; }
@@ -26,6 +34,9 @@ export function parseLogin(value: unknown): Login {
 }
 
 export async function accountRequest<T>(path: string, token?: string, body?: unknown, method?: string): Promise<T> {
+  if (method === 'PATCH' && path.startsWith('/api/devices/') && body && typeof body === 'object' && 'deviceName' in body) {
+    body = { ...body, deviceName: normalizeDisplayName((body as {deviceName: unknown}).deviceName) };
+  }
   const response = await fetch(path, {
     method: method ?? (body === undefined ? 'GET' : 'POST'),
     headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },

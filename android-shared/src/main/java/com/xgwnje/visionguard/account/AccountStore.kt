@@ -129,7 +129,7 @@ class AccountStore private constructor(private val prefs: android.content.Shared
             require(user.isNotBlank() && password.isNotBlank()) { "请输入账号和密码" }
             val idKey = deviceKey(base, user, component)
             val existingId = prefs.getString(idKey, null)
-            val body = JSONObject().put("username", user).put("password", password).put("component", component).put("deviceCode", android.os.Build.DEVICE)
+            val body = JSONObject().put("username", user).put("password", password).put("component", component).put("deviceCode", DisplayNamePolicy.deviceCode(android.os.Build.DEVICE))
             if (existingId != null) body.put("deviceId", existingId)
             val response = try { call(base, "/api/account/login", "POST", body) }
                 catch (e: AccountHttpException) {
@@ -164,8 +164,7 @@ class AccountStore private constructor(private val prefs: android.content.Shared
     } }
     suspend fun renameDevice(name: String) = lock.withLock { withContext(Dispatchers.IO) {
         val current = mutableSession.value ?: error("登录已失效，请重新登录")
-        val trimmed = name.trim()
-        require(trimmed.isNotEmpty() && trimmed.length <= 64 && trimmed.none { it.code < 32 }) { "名称须为 1–64 个字符" }
+        val trimmed = DisplayNamePolicy.normalize(name)
         call(current.endpoint, "/api/devices/${current.deviceId}", "PATCH", JSONObject().put("deviceName", trimmed), current.token)
         val body = call(current.endpoint, "/api/account/session", "GET", null, current.token).put("token", current.token)
         saveIfCurrent(body, current)
@@ -318,14 +317,14 @@ fun AccountHeader(store: AccountStore, session: AccountSession, beforeLogout: su
         containerColor = MaterialTheme.colorScheme.surface,
         title = { Text("本机名称", style = MaterialTheme.typography.titleMedium) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(deviceName, { deviceName = it }, label = { Text("设备名称") }, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField())
+            OutlinedTextField(deviceName, { if (DisplayNamePolicy.acceptsDraft(it)) { deviceName = it; error = null } else error = DisplayNamePolicy.HINT }, label = { Text("设备名称") }, supportingText = { Text("最多 ${DisplayNamePolicy.MAX_LENGTH} 个字符") }, isError = DisplayNamePolicy.error(deviceName) != null, singleLine = true, enabled = !busy, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField())
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         } },
         confirmButton = { TextButton({ busy = true; error = null; scope.launchAccount {
             try { store.renameDevice(deviceName); renaming = false }
             catch (e: Exception) { error = e.message?.take(160) ?: "名称保存失败" }
             finally { busy = false }
-        } }, enabled = !busy && deviceName.isNotBlank(), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton()) { Text(if (busy) "保存中…" else "保存") } },
+        } }, enabled = !busy && error == null && DisplayNamePolicy.error(deviceName) == null, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton()) { Text(if (busy) "保存中…" else "保存") } },
         dismissButton = { TextButton({ renaming = false; deviceName = session.deviceName }, enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton()) { Text("取消") } }
     )
     if (editing) Dialog(

@@ -16,7 +16,7 @@ namespace VisionGuard.Detector.Windows.Models
         {
             if (string.IsNullOrWhiteSpace(sourceId)) throw new ArgumentException("Source ID is required.", nameof(sourceId));
             SourceId = sourceId;
-            SourceName = string.IsNullOrWhiteSpace(sourceName) ? sourceId : sourceName;
+            SourceName = Utils.DisplayNamePolicy.Normalize(sourceName);
             ModelKey = modelKey;
             Config = config ?? throw new ArgumentNullException(nameof(config));
             PreferredBackend = preferredBackend;

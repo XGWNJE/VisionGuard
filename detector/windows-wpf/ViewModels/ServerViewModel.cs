@@ -125,7 +125,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
         public void Save()
         {
-            SettingsStore.Set("DeviceName", DeviceName);
+            SettingsStore.Set("DeviceName", DisplayNamePolicy.Normalize(DeviceName));
             SettingsStore.Save();
         }
 
@@ -215,6 +215,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 try
                 {
                 await Task.Run(() => AccountSession.RenameDevice(DeviceName));
+                DeviceName = AccountSession.Current.device.deviceName;
                 // 先持久化，再刷新驻留配置；主检测端和驻留始终使用同一个名称。
                 Save();
                 _serverPushService.Configure(

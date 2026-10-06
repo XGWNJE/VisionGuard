@@ -15,8 +15,9 @@
                         Click="SourceNameText_OnClick">
                     <TextBlock Text="{Binding SourceName}" Style="{StaticResource TitleText}" FontSize="16" LineHeight="24" TextWrapping="Wrap"/>
                 </Button>
-                <TextBox Grid.Column="1" x:Name="SourceNameEditor"
-                         Text="{Binding SourceName, UpdateSourceTrigger=PropertyChanged}"
+                <TextBox Grid.Column="1" x:Name="SourceNameEditor" DataObject.Pasting="SourceName_OnPasting"
+                         MaxLength="64" ToolTip="名称须为 1–64 个字符，不能包含换行或控制字符"
+                         Text="{Binding SourceName, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}"
                          Style="{StaticResource DarkTextBox}"
                          Visibility="Collapsed"
                          VerticalAlignment="Center"
