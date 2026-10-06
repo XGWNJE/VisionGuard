@@ -269,7 +269,7 @@ private fun kotlinx.coroutines.CoroutineScope.launchAccount(block: suspend () ->
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("DEPRECATION")
 @Composable
-fun AccountHeader(store: AccountStore, session: AccountSession, beforeLogout: suspend () -> Unit = {}) {
+fun AccountHeader(store: AccountStore, session: AccountSession, actions: @Composable () -> Unit = {}, beforeLogout: suspend () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf(false) }
     var oldPassword by remember { mutableStateOf("") }
@@ -285,10 +285,8 @@ fun AccountHeader(store: AccountStore, session: AccountSession, beforeLogout: su
     }
     Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 0.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(session.username, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(session.deviceName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
+            Text(session.deviceName, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            actions()
             Box {
                 TextButton({ menuOpen = true }, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text("账号") }
             }

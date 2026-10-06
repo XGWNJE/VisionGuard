@@ -35,7 +35,8 @@ namespace VisionGuard.Detector.Windows.Views
                 // 与 RegionSelectorWindow 保持一致的窗口缩放策略：
                 // 按比例缩放至屏幕工作区 90%，图像 Uniform 居中
                 double maxW = SystemParameters.WorkArea.Width * 0.9;
-                double maxH = SystemParameters.WorkArea.Height * 0.9;
+                // Reserve the toolbar before scaling so 900P at high DPI still fits the work area.
+                double maxH = Math.Max(1, SystemParameters.WorkArea.Height * 0.9 - 64);
                 double scale = Math.Min(1.0, Math.Min(maxW / background.Width, maxH / background.Height));
 
                 Width = Math.Max(MinWidth, background.Width * scale);

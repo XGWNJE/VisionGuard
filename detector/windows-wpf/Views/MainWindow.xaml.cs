@@ -18,7 +18,7 @@ namespace VisionGuard.Detector.Windows.Views
         {
             InitializeComponent();
             SourceInitialized += (s, e) => Themes.ThemeManager.ApplyTitleBar(this);
-            Loaded += (s, e) => ConstrainInspectorWidth();
+            Loaded += (s, e) => { FitWorkArea(); ConstrainInspectorWidth(); };
             SizeChanged += (s, e) => ConstrainInspectorWidth();
             SetupTrayIcon();
         }
@@ -43,6 +43,16 @@ namespace VisionGuard.Detector.Windows.Views
             menu.Items.Add("退出主体（保留驻留）", null, (s, e) => ExitApp());
             menu.Items.Add("完整退出（同时关闭驻留）", null, (s, e) => CompleteExitApp());
             _notifyIcon.ContextMenuStrip = menu;
+        }
+
+        private void FitWorkArea()
+        {
+            // WPF uses logical pixels: retain usable space at 900P with 125%/150% DPI.
+            var workArea = SystemParameters.WorkArea;
+            Width = Math.Min(Width, Math.Max(MinWidth, workArea.Width - 16));
+            Height = Math.Min(Height, Math.Max(MinHeight, workArea.Height - 16));
+            Left = Math.Max(workArea.Left, Math.Min(Left, workArea.Right - Width));
+            Top = Math.Max(workArea.Top, Math.Min(Top, workArea.Bottom - Height));
         }
 
         protected override void OnStateChanged(EventArgs e)

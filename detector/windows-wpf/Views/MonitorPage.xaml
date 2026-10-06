@@ -50,7 +50,8 @@
                 <Button Content="编辑遮罩区域" Style="{StaticResource DarkButton}" Command="{Binding EditMasksCommand}"/>
             </StackPanel>
 
-            <TextBlock Text="参数" Style="{StaticResource SectionLabel}" Margin="0,0,0,8"/>
+            <Expander Header="检测参数 · 按需调整" IsExpanded="False" Foreground="{DynamicResource TextPrimary}" Margin="0,0,0,8">
+            <StackPanel>
             <TextBlock Text="{Binding NoModelHint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
             <ItemsControl ItemsSource="{Binding ParameterRows}">
                 <ItemsControl.ItemTemplate><DataTemplate>
@@ -62,8 +63,17 @@
                                 <Button Grid.Column="2" Content="编辑" Style="{StaticResource GhostButton}" Command="{Binding EditCommand}" Padding="8,4" MinHeight="36"/>
                             </Grid>
                             <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}" Margin="0,8,0,0">
+                                <StackPanel IsEnabled="{Binding CanEdit}">
                                 <ComboBox ItemsSource="{Binding ModelOptions}" SelectedItem="{Binding Draft}" Style="{StaticResource DarkComboBox}" Visibility="{Binding IsModel, Converter={StaticResource BoolToVis}}"/>
-                                <TextBox Text="{Binding Draft, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}" Visibility="{Binding IsNumeric, Converter={StaticResource BoolToVis}}"/>
+                                <ComboBox ItemsSource="{Binding NumericOptions}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding Draft, Mode=TwoWay}" Style="{StaticResource DarkComboBox}" Visibility="{Binding IsDiscrete, Converter={StaticResource BoolToVis}}" AutomationProperties.Name="选择参数值"/>
+                                <StackPanel Visibility="{Binding IsConfidence, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="{Binding Draft, StringFormat={}{0}%}" Style="{StaticResource TitleText}"/>
+                                    <Grid Margin="0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="64"/><ColumnDefinition/><ColumnDefinition Width="64"/></Grid.ColumnDefinitions>
+                                        <Button Content="降低" Style="{StaticResource DarkButton}" Padding="0" Command="{Binding DecreaseCommand}" AutomationProperties.Name="降低置信度"/>
+                                        <Slider Grid.Column="1" Margin="8,0" Minimum="10" Maximum="95" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding NumericDraft, Mode=TwoWay}" VerticalAlignment="Center" AutomationProperties.Name="置信度阈值"/>
+                                        <Button Grid.Column="2" Content="提高" Style="{StaticResource DarkButton}" Padding="0" Command="{Binding IncreaseCommand}" AutomationProperties.Name="提高置信度"/>
+                                    </Grid>
+                                </StackPanel>
                                 <StackPanel Visibility="{Binding IsTargets, Converter={StaticResource BoolToVis}}">
                                     <TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource DarkTextBox}" AutomationProperties.Name="搜索检测目标" ToolTip="搜索中文或模型标签"/>
                                     <ScrollViewer MaxHeight="240" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
@@ -71,6 +81,7 @@
                                             <CheckBox Content="{Binding DisplayName}" IsChecked="{Binding IsSelected, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" Margin="0,4"><CheckBox.ContentTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap"/></DataTemplate></CheckBox.ContentTemplate></CheckBox>
                                         </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
                                     </ScrollViewer>
+                                </StackPanel>
                                 </StackPanel>
                                 <TextBlock Text="{Binding Hint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
@@ -84,6 +95,7 @@
                     </Border>
                 </DataTemplate></ItemsControl.ItemTemplate>
             </ItemsControl>
+            </StackPanel></Expander>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

@@ -34,6 +34,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -78,7 +80,7 @@ class MainActivity : ComponentActivity() {
             }
             VisionguardTheme(darkTheme = darkTheme) {
                 Column(Modifier.fillMaxSize().statusBarsPadding()) {
-                ApplicationOptions(appearance, BuildConfig.VERSION_NAME, "android-camera")
+                if (session == null) ApplicationOptions(appearance, BuildConfig.VERSION_NAME, "android-camera")
                 Box(Modifier.weight(1f)) {
                 if (session == null) AccountLogin(account, "相机推流节点", "android-camera")
                 else key(session!!.scope) {
@@ -93,7 +95,7 @@ class MainActivity : ComponentActivity() {
                     }
                     val state by connection.state.collectAsState()
                     Column(Modifier.fillMaxSize().navigationBarsPadding()) {
-                        AccountHeader(account, session!!, beforeLogout = {
+                        AccountHeader(account, session!!, actions = { ApplicationOptions(appearance, BuildConfig.VERSION_NAME, "android-camera", Modifier) }, beforeLogout = {
                             stopCamera("user"); connection.close(); prefs.edit().clear().commit()
                         })
                         CameraHome(state, preview, streaming, highResolution, dimScreen, hidePreview, captureSize, sentSize,
@@ -180,14 +182,21 @@ private fun CameraHome(state: PublisherState, preview: Bitmap?, streaming: Boole
         else -> colors.onSurface
     }
     var choosingTarget by remember { mutableStateOf(false) }
+    var statisticsOpen by remember { mutableStateOf(false) }
+    val configuration = LocalConfiguration.current
+    val landscape = configuration.screenWidthDp > configuration.screenHeightDp
+    val fontScale = LocalDensity.current.fontScale
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    // Use the space remaining after account header and system insets; keep start/stop visible.
+    val landscapePreviewHeight = (maxHeight - (180 * fontScale).dp).coerceAtLeast(96.dp)
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("相机推流节点", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
             Text(state.status, color = statusColor, style = MaterialTheme.typography.bodySmall)
         }
-        Text("保持应用在前台；离开应用或锁屏后停止推流。", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-        VisionGuardColumns(primary = {
-            if (!hidden) OutlinedCard(Modifier.fillMaxWidth().aspectRatio(4f / 3f), shape = MaterialTheme.shapes.medium, colors = CardDefaults.outlinedCardColors(containerColor = colors.surfaceVariant), border = BorderStroke(1.dp, colors.outlineVariant)) {
+        VisionGuardColumns(primaryWeight = 1.5f, primary = {
+            val previewModifier = if (landscape) Modifier.height(landscapePreviewHeight) else Modifier.aspectRatio(4f / 3f)
+            if (!hidden) OutlinedCard(Modifier.fillMaxWidth().then(previewModifier), shape = MaterialTheme.shapes.medium, colors = CardDefaults.outlinedCardColors(containerColor = colors.surfaceVariant), border = BorderStroke(1.dp, colors.outlineVariant)) {
                 if (preview != null) Image(preview.asImageBitmap(), "实时摄像头画面", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(if (streaming) "等待实时画面" else "开始后显示实时画面", Modifier.padding(16.dp), color = colors.onSurfaceVariant) }
             }
@@ -216,7 +225,13 @@ private fun CameraHome(state: PublisherState, preview: Bitmap?, streaming: Boole
                     state.stream?.sourceName?.takeIf { it.isNotBlank() }?.let { Text("推理来源：$it") }
                 }
             }
-            CameraSetting(if (highResolution) "最高 720P · 5 帧/秒" else "最高 640×480 · 5 帧/秒", "推流时保持画面规格；停止后可调整。", highResolution, !streaming, onResolution)
+            Text("推流规格", style = MaterialTheme.typography.titleMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(false to "640×480", true to "720P").forEach { (selectedResolution, title) ->
+                    FilterChip(selected = highResolution == selectedResolution, onClick = { onResolution(selectedResolution) }, enabled = !streaming, label = { Text(title) }, modifier = Modifier.heightIn(min = 48.dp))
+                }
+            }
+            Text(if (streaming) "最高 5 帧/秒 · 停止后可调整" else "最高 5 帧/秒", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
             if (captureSize != null && sentSize != null) {
                 Text("实际采集 ${captureSize.first}×${captureSize.second} · 发送 ${sentSize.first}×${sentSize.second}", style = MaterialTheme.typography.bodySmall)
                 if (highResolution && (maxOf(captureSize.first, captureSize.second) < 1280 || minOf(captureSize.first, captureSize.second) < 720))
@@ -224,15 +239,18 @@ private fun CameraHome(state: PublisherState, preview: Bitmap?, streaming: Boole
             }
             CameraSetting("推流时降低亮度", "只调整当前窗口亮度，外观独立选择。", dim, true, onDim)
             CameraSetting("收起画面预览", "推流继续进行，隐藏本机预览。", hidden, true, onHidePreview)
-            OutlinedCard(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, border = BorderStroke(1.dp, colors.outlineVariant), colors = CardDefaults.outlinedCardColors(containerColor = colors.surface)) {
+            TextButton({ statisticsOpen = !statisticsOpen }, Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (statisticsOpen) "收起推流统计" else "推流统计") }
+            if (statisticsOpen) OutlinedCard(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium, border = BorderStroke(1.dp, colors.outlineVariant), colors = CardDefaults.outlinedCardColors(containerColor = colors.surface)) {
                 FlowRow(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("本机入队 ${state.sentFrames}", style = MaterialTheme.typography.labelLarge)
                     Text("服务收帧 ${state.acknowledgedFrames}", style = MaterialTheme.typography.labelLarge)
                     Text("本机丢弃 ${state.droppedFrames} · 服务丢弃 ${state.relayDroppedFrames}", style = MaterialTheme.typography.labelLarge)
                 }
             }
-            Text("主动未采样 ${state.sampledOutFrames} 帧；服务收帧不代表 Windows 已接收。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (statisticsOpen) Text("主动未采样 ${state.sampledOutFrames} 帧；服务收帧不代表 Windows 已接收。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("离开应用或锁屏后停止推流。", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
         })
+    }
     }
     if (choosingTarget) AlertDialog(
         onDismissRequest = { choosingTarget = false },

@@ -67,6 +67,7 @@ fun NotificationDashboard(viewModel: SettingsViewModel, onHistory: () -> Unit, o
     val connection = remember { settings.read() }
     var loopDialog by remember { mutableStateOf(false) }
     var ringtoneDialog by remember { mutableStateOf(false) }
+    var soundSettingsOpen by remember { mutableStateOf(false) }
     var ringtoneError by remember { mutableStateOf<String?>(null) }
     val loops by viewModel.defaultLoopCount
     val ringtone by viewModel.selectedRingtoneName
@@ -146,15 +147,6 @@ fun NotificationDashboard(viewModel: SettingsViewModel, onHistory: () -> Unit, o
                     ) { Text("重新连接") }
                 }
                 NotifierPanel {
-                    Text("声音策略", style = MaterialTheme.typography.titleMedium)
-                    SettingAction("默认铃声", ringtone) { viewModel.loadRingtoneLibrary(); ringtoneError = null; ringtoneDialog = true }
-                    SettingAction("循环次数", "$loops 次") { loopDialog = true }
-                    OutlinedButton(onLibrary, Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("管理铃声库") }
-                    TextButton({ viewModel.onRingtoneValueSelected(null) }, Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("恢复系统默认铃声") }
-                    Text("确认后停止；达到次数自动结束。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }, secondary = {
-                NotifierPanel {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("最近报警", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                         TextButton(onHistory, Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("查看全部") }
@@ -162,9 +154,21 @@ fun NotificationDashboard(viewModel: SettingsViewModel, onHistory: () -> Unit, o
                     if (records.isEmpty()) NotifierEmptyState("暂无报警记录", "报警结束后，可在这里查看来源、时间和结束方式。")
                     records.take(4).forEach { record ->
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        Text(record.keyword, style = MaterialTheme.typography.titleSmall)
+                        Text(record.keyword, style = MaterialTheme.typography.titleMedium)
                         Text(record.sourceApp ?: "VG 节点", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(formatAlarmTime(record.timestamp, "yyyy-MM-dd HH:mm:ss", timeZone), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }, secondary = {
+                NotifierPanel {
+                    SettingAction("声音设置", "$ringtone · $loops 次") { soundSettingsOpen = !soundSettingsOpen }
+                    if (soundSettingsOpen) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        SettingAction("默认铃声", ringtone) { viewModel.loadRingtoneLibrary(); ringtoneError = null; ringtoneDialog = true }
+                        SettingAction("循环次数", "$loops 次") { loopDialog = true }
+                        OutlinedButton(onLibrary, Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("管理铃声库") }
+                        TextButton({ viewModel.onRingtoneValueSelected(null) }, Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("恢复系统默认铃声") }
+                        Text("确认后停止；达到次数自动结束。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 TextButton({ (context as? Activity)?.let(PermissionUtils::openAppDetailsSettings) }, Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small,

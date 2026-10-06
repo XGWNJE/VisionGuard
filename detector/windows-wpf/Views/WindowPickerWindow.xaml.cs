@@ -22,6 +22,11 @@ namespace VisionGuard.Detector.Windows.Views
 
         private async void OnLoaded(object sender, RoutedEventArgs e)
         {
+            var workArea = SystemParameters.WorkArea;
+            Width = Math.Min(Width, Math.Max(MinWidth, workArea.Width - 24));
+            Height = Math.Min(Height, Math.Max(MinHeight, workArea.Height - 24));
+            Left = Math.Max(workArea.Left, Math.Min(Left, workArea.Right - Width));
+            Top = Math.Max(workArea.Top, Math.Min(Top, workArea.Bottom - Height));
             await LoadWindowsAsync();
         }
 

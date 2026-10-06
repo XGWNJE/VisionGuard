@@ -8,7 +8,7 @@
         xmlns:local="clr-namespace:VisionGuard.Detector.Windows.Views"
         mc:Ignorable="d"
         Title="视觉节点"
-        Width="1420" Height="880" MinWidth="1200" MinHeight="880"
+        Width="1420" Height="820" MinWidth="1040" MinHeight="540"
         Background="{DynamicResource BackgroundDark}"
         WindowStartupLocation="CenterScreen">
     <!--
@@ -56,7 +56,7 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Margin="4" Padding="8" CornerRadius="12" Background="{DynamicResource SurfaceDark}">
+                            <Border Margin="4" Padding="8" CornerRadius="8" Background="{DynamicResource SurfaceDark}">
                                 <Border.Style>
                                     <Style TargetType="Border">
                                         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>

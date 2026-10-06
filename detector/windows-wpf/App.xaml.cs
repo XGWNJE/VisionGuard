@@ -56,7 +56,8 @@ namespace VisionGuard.Detector.Windows
 
             // 主窗口显式创建（App.xaml 不再声明 StartupUri）：这样“已有实例在运行”的分支
             // 能真正在创建窗口之前退出，也让启动顺序集中在这一处。
-            var mainWindow = new Views.MainWindow();
+            // Keep isolated previews visible without taking focus from concurrent work.
+            var mainWindow = new Views.MainWindow { ShowActivated = !Utils.AccountSession.IsIsolated };
             MainWindow = mainWindow;
             int markerIndex = Array.IndexOf(e.Args, "--post-update-marker");
             if (markerIndex >= 0 && markerIndex + 1 < e.Args.Length)

@@ -18,6 +18,14 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public bool IsModel => Key == "modelKey";
         public bool IsTargets => Key == "targets";
         public bool IsNumeric => !IsModel && !IsTargets;
+        public bool IsConfidence => Key == "confidence";
+        public bool IsDiscrete => IsNumeric && !IsConfidence;
+        public double NumericMinimum => IsConfidence ? 10 : 1;
+        public double NumericMaximum => IsConfidence ? 95 : Key == "cooldown" ? 300 : 5;
+        public double NumericDraft { get => double.TryParse(Draft, out var number) ? number : NumericMinimum; set => Draft = Math.Round(value).ToString(CultureInfo.InvariantCulture); }
+        public IEnumerable<NumericParameterOption> NumericOptions => Enumerable.Range(1, Key == "cooldown" ? 300 : 5).Select(value => new NumericParameterOption(value.ToString(CultureInfo.InvariantCulture), value + (Key == "cooldown" ? " 秒" : " FPS")));
+        public RelayCommand IncreaseCommand { get; }
+        public RelayCommand DecreaseCommand { get; }
         public string[] ModelOptions => _source.ModelOptions;
         public ObservableCollection<DetectionClassOption> TargetOptions { get; } = new();
         public IEnumerable<DetectionClassOption> FilteredTargets => TargetOptions.Where(item => (item.ChineseName + " " + item.EnglishName).IndexOf(Search.Trim(), StringComparison.OrdinalIgnoreCase) >= 0);
@@ -26,7 +34,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public string ValueText => IsTargets && ModelManager.IsSupported(_source.ModelKey) ? Raw.Split(',').Length > 3 ? $"{Raw.Split(',').Length} 项 · " + string.Join("、", Raw.Split(',').Take(3).Select(label => CocoClassMap.EnZh.TryGetValue(label, out var title) ? title : label)) + "…" : string.Join("、", Raw.Split(',').Select(label => CocoClassMap.EnZh.TryGetValue(label, out var title) ? title : label)) : Raw;
         public bool CanEdit => _source.CanEdit && (!IsModel || ModelOptions.Length > 0) && (!IsTargets || ModelManager.IsSupported(_source.ModelKey) && ModelManager.IsDownloaded(_source.ModelKey));
         public bool IsEditing { get => _editing; private set => SetProperty(ref _editing, value); }
-        public string Draft { get => _draft; set { if (SetProperty(ref _draft, value ?? "")) { SyncTargets(); Message = ""; SaveCommand?.RaiseCanExecuteChanged(); } } }
+        public string Draft { get => _draft; set { if (SetProperty(ref _draft, value ?? "")) { OnPropertyChanged(nameof(NumericDraft)); SyncTargets(); Message = ""; SaveCommand?.RaiseCanExecuteChanged(); IncreaseCommand?.RaiseCanExecuteChanged(); DecreaseCommand?.RaiseCanExecuteChanged(); } } }
         public string Message { get => _message; private set => SetProperty(ref _message, value); }
         public string Hint => IsTargets && !CanEdit ? "当前模型不可用或标签未知" : IsNumeric ? Key == "confidence" ? "10–95%，整数" : Key == "cooldown" ? "1–300 秒，整数" : "1–5 FPS，整数" : IsModel && !CanEdit ? "先在全局设置下载模型" : "";
         public RelayCommand EditCommand { get; }
@@ -40,7 +48,9 @@ namespace VisionGuard.Detector.Windows.ViewModels
             RestoreCommand = new RelayCommand(() => { Draft = Raw; Message = ""; });
             CancelCommand = new RelayCommand(() => { Draft = Raw; IsEditing = false; Message = ""; });
             SaveCommand = new RelayCommand(Save, () => CanEdit && Valid());
-            source.PropertyChanged += (s, e) => { OnPropertyChanged(nameof(ValueText)); OnPropertyChanged(nameof(CanEdit)); OnPropertyChanged(nameof(Hint)); OnPropertyChanged(nameof(ModelOptions)); if (e.PropertyName == nameof(SourceViewModel.ModelKey)) BuildTargets(); EditCommand.RaiseCanExecuteChanged(); SaveCommand.RaiseCanExecuteChanged(); };
+            IncreaseCommand = new RelayCommand(() => NumericDraft++, () => CanEdit && NumericDraft < NumericMaximum);
+            DecreaseCommand = new RelayCommand(() => NumericDraft--, () => CanEdit && NumericDraft > NumericMinimum);
+            source.PropertyChanged += (s, e) => { OnPropertyChanged(nameof(ValueText)); OnPropertyChanged(nameof(CanEdit)); OnPropertyChanged(nameof(Hint)); OnPropertyChanged(nameof(ModelOptions)); if (e.PropertyName == nameof(SourceViewModel.ModelKey)) BuildTargets(); EditCommand.RaiseCanExecuteChanged(); SaveCommand.RaiseCanExecuteChanged(); IncreaseCommand.RaiseCanExecuteChanged(); DecreaseCommand.RaiseCanExecuteChanged(); };
             BuildTargets();
         }
         private void BuildTargets()
@@ -78,5 +88,11 @@ namespace VisionGuard.Detector.Windows.ViewModels
             try { _source.CommitParameter(Key, Draft); IsEditing = false; Message = "已保存"; }
             catch (Exception error) { Message = "保存失败：" + error.Message; }
         }
+    }
+    public sealed class NumericParameterOption
+    {
+        public string Value { get; }
+        public string Label { get; }
+        public NumericParameterOption(string value, string label) { Value = value; Label = label; }
     }
 }

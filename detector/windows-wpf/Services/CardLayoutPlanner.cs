@@ -83,7 +83,7 @@ namespace VisionGuard.Detector.Windows.Services
     /// ① 卡片必须是接近方形的，宽高比限制在 1:1.2 ~ 1.2:1（最多偏 20%）；超出时把格子收窄、
     ///    多出来的空间留成间隔——宁可卡片之间有空白，也不把卡片拉成宽扁条。
     /// ② 卡片内**画面区域**的较短边不得低于 320 DIP；这条由滚动内容最小尺寸兜底（窗口最小尺寸见
-    ///    <see cref="MinimumWindowWidth"/> / <see cref="MinimumWindowHeight"/> 的推导），
+    ///    <see cref="MinimumWindowWidth"/> / <see cref="MinimumWindowHeight"/>），
     ///    求解器负责把实际值算出来并给出 <see cref="CardLayoutPlan.PictureMeetsMinimumEdge"/>。
     /// ③ 不再分页：超出 4 个的来源不在这一屏排布，由「全局来源」的编号卡片展示与勾选。
     /// ④ 网格是确定性的：1 张 = 1×1、2 张 = 1×2 或 2×1（按可用空间取更宽的一边）、3–4 张 = 2×2。
@@ -138,8 +138,8 @@ namespace VisionGuard.Detector.Windows.Services
         /// 窗口最小尺寸与 MainWindow 一致。预览区空间不足时扩展滚动内容，
         /// 不提高窗口最小高度；四路的 1:1 画面短边仍至少 320 DIP。
         /// </summary>
-        public const double MinimumWindowWidth = 1200;
-        public const double MinimumWindowHeight = 880;
+        public const double MinimumWindowWidth = 1040;
+        public const double MinimumWindowHeight = 540;
 
         /// <summary>
         /// 右侧检查区宽度的默认值与上下限。默认取最窄：卡片区因此占满其余空间，

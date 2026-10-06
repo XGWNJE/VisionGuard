@@ -236,7 +236,10 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
 
     var layoutWindows = new[]
     {
-        (Name: "最小窗口 1200x880", Width: CardLayoutPlanner.MinimumWindowWidth, Height: CardLayoutPlanner.MinimumWindowHeight),
+        (Name: "最小窗口 1040x540", Width: CardLayoutPlanner.MinimumWindowWidth, Height: CardLayoutPlanner.MinimumWindowHeight),
+        (Name: "900P 100% 工作区", Width: 1584d, Height: 844d),
+        (Name: "900P 125% 工作区", Width: 1264d, Height: 664d),
+        (Name: "900P 150% 工作区", Width: 1050d, Height: 544d),
         (Name: "1420x880", Width: 1420d, Height: 880d),
         (Name: "1920x1080", Width: 1920d, Height: 1080d),
     };
@@ -283,12 +286,12 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
 
     // 3) 40 DIP 按钮与完整内边距下，最小窗口的四路预览通过滚动保持 320 DIP 画面短边。
     var minSingle = PlanFor(1, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight);
-    CheckLayout("最小窗口 1 张 1:1 画面短边 >= 500",
-        minSingle.IsValid && minSingle.MinimumPictureEdge >= 500,
+    CheckLayout("最小窗口 1 张 1:1 画面短边 >= 320",
+        minSingle.IsValid && minSingle.MinimumPictureEdge >= CardLayoutPlanner.MinimumPictureEdge - 0.5,
         new { minSingle.CellWidth, minSingle.CellHeight, minSingle.PictureWidth, minSingle.PictureHeight });
     var minPair = PlanFor(2, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight);
-    CheckLayout("最小窗口 2 张 1:1 画面短边 >= 380",
-        minPair.IsValid && minPair.MinimumPictureEdge >= 380,
+    CheckLayout("最小窗口 2 张 1:1 画面短边 >= 320",
+        minPair.IsValid && minPair.MinimumPictureEdge >= CardLayoutPlanner.MinimumPictureEdge - 0.5,
         new { minPair.CellWidth, minPair.CellHeight, minPair.PictureWidth, minPair.PictureHeight });
     var minFour = PlanFor(4, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight);
     CheckLayout("最小窗口 4 张 1:1 画面短边 >= 320",
@@ -465,9 +468,9 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
         },
         samples = new[]
         {
-            new { visible = 1, window = "最小窗口 1200x880", plan = PlanFor(1, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight) },
-            new { visible = 2, window = "最小窗口 1200x880", plan = PlanFor(2, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight) },
-            new { visible = 4, window = "最小窗口 1200x880", plan = PlanFor(4, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight) },
+            new { visible = 1, window = "最小窗口 1040x540", plan = PlanFor(1, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight) },
+            new { visible = 2, window = "最小窗口 1040x540", plan = PlanFor(2, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight) },
+            new { visible = 4, window = "最小窗口 1040x540", plan = PlanFor(4, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight) },
             new { visible = 4, window = "1420x880", plan = PlanFor(4, 1420d, 880d) },
             new { visible = 4, window = "1920x1080", plan = PlanFor(4, 1920d, 1080d) },
         },
