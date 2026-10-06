@@ -1179,6 +1179,10 @@ for platform in platforms:
     }
 }
 
+function Verify-OnlineWebSockets {
+    Invoke-Native -FilePath 'node' -Arguments @((Join-Path $repoRoot 'scripts/check-websocket-entrypoints.js'), '--base-url', $BaseUrl)
+}
+
 function Invoke-GitHubSteps {
     param(
         [object[]]$Artifacts,
@@ -1232,6 +1236,7 @@ function Invoke-GitHubSteps {
             Write-Host "Draft retained: $tagName assets verified; publication requires a separate authorized run."
         }
         else {
+            Verify-OnlineWebSockets
             Invoke-Native -FilePath 'gh' -Arguments @('release', 'edit', $tagName, '--repo', $GitHubRepository, '--draft=false', '--prerelease=false', '--latest')
         }
     }
@@ -1438,6 +1443,11 @@ if ($serverDeployPlanned) {
 if ($UploadVps -and $artifacts.Count -gt 0) {
     Write-Step "Verify online release"
     Verify-OnlineRelease -Platforms $platforms.ToArray()
+}
+
+if ($UploadVps -or $serverDeployPlanned) {
+    Write-Step "Verify public WebSocket entrypoints"
+    Verify-OnlineWebSockets
 }
 
 Invoke-GitHubSteps -Artifacts $artifacts.ToArray()

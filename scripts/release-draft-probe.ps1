@@ -20,6 +20,10 @@ try {
     function Assert-GitHubReleaseNotes { return 'fixture-notes.md' }
     function Test-NativeSuccess { return $script:alreadyExists }
     function Invoke-Native { param($FilePath, $Arguments) [void]$script:calls.Add(($Arguments -join ' ')) }
+    function Verify-OnlineWebSockets {
+        if ($script:case -eq 'media-ingress-failure') { throw 'media ingress HTTP 404' }
+        [void]$script:calls.Add('websocket entrypoints verified')
+    }
     function Invoke-NativeCapture {
         param($FilePath, $Arguments)
         if ($Arguments[0] -eq 'release' -and $Arguments[1] -eq 'view') {
@@ -29,7 +33,7 @@ try {
         if ($Arguments[0] -eq 'api' -and $Arguments[1] -eq 'repos/fixture/repository/releases/23') { return ($script:release | ConvertTo-Json -Depth 8) }
         throw 'Drafts are unavailable through the published-release tag endpoint.'
     }
-    foreach ($script:case in @('valid', 'existing-draft', 'draft-only', 'draft-only-wrong-digest', 'wrong-digest', 'extra-asset', 'already-public', 'wrong-tag', 'invalid-id')) {
+    foreach ($script:case in @('valid', 'existing-draft', 'draft-only', 'draft-only-wrong-digest', 'wrong-digest', 'extra-asset', 'already-public', 'wrong-tag', 'invalid-id', 'media-ingress-failure')) {
         $DraftOnly = $case -like 'draft-only*'
         $script:calls = New-Object 'System.Collections.Generic.List[string]'
         $script:alreadyExists = $case -in @('existing-draft', 'already-public')
@@ -42,6 +46,7 @@ try {
         $published = @($script:calls | Where-Object { $_ -match '--draft=false' }).Count -gt 0
         if ($case -in @('valid', 'existing-draft')) {
             if ($failed -or -not $published -or $script:calls[0] -notmatch '--draft' -or $script:calls[1] -notmatch 'release upload') { throw 'Valid upload order failed.' }
+            if ($script:calls[2] -ne 'websocket entrypoints verified' -or $script:calls[3] -notmatch '--draft=false') { throw 'Published before verifying WebSocket ingress.' }
         } elseif ($case -eq 'draft-only') {
             if ($failed -or $published -or $script:calls.Count -ne 2 -or $script:calls[1] -notmatch 'release upload') { throw 'Draft-only upload was not retained.' }
         } elseif (-not $failed -or $published) { throw "Failed validation was published: $case" }

@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { checkWebSocketEntrypoints } = require('./check-websocket-entrypoints');
 
 const ROOT = path.resolve(__dirname, '..');
 const DEFAULT_BASE_URL = 'https://visionguard.xgwnje.cn';
@@ -61,6 +62,7 @@ async function checkOnlineReleaseContract({ baseUrl, releases, fetchImpl = fetch
 }
 
 async function main() {
+  console.log((await checkWebSocketEntrypoints(parseBaseUrl(process.argv.slice(2)))).join(', '));
   const releases = JSON.parse(fs.readFileSync(path.join(ROOT, 'server', 'data', 'releases.json'), 'utf8'));
   const results = await checkOnlineReleaseContract({ baseUrl: parseBaseUrl(process.argv.slice(2)), releases });
   console.log(`Online release contract passed: ${results.join(', ')}`);

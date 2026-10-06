@@ -37,7 +37,7 @@ jobs:
         run: |
           node scripts/check-docs.js
           node scripts/check-ui-theme.js
-          node --test scripts/check-docs.test.js scripts/check-powershell-encoding.test.js scripts/release-workflow.test.js scripts/release-notes.test.js scripts/version-sync.test.js scripts/provision-account.test.js
+          node --test scripts/check-docs.test.js scripts/check-powershell-encoding.test.js scripts/release-workflow.test.js scripts/release-notes.test.js scripts/version-sync.test.js scripts/provision-account.test.js scripts/websocket-entrypoints.test.js
 
   android:
     runs-on: ubuntu-latest

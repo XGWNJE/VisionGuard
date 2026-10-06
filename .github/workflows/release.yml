@@ -20,6 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
 
       - name: Validate version and download published assets
         env:
@@ -108,4 +111,5 @@ jobs:
               '[.assets[] | select(.name == $name)] | length == 1 and .[0].state == "uploaded" and .[0].size == $size and .[0].digest == $digest' uploaded-release.json
           done
           test "$(jq '.assets | length' uploaded-release.json)" = "$(find release-assets -type f | wc -l)"
+          node scripts/check-websocket-entrypoints.js
           gh release edit "v$VERSION" --draft=false --prerelease=false --latest

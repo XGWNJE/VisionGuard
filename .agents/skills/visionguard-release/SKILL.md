@@ -29,7 +29,7 @@ It performs preflight before version sync, builds selected targets, prepares sig
 - Windows ZIPs must include the Resident runtime and exclude `.pdb`, `.lib`, `.dll.config`, `.onnx`, `Assets/`, and `alerts/`.
 - The build machine must hold all 12 model files in `detector\windows-wpf\Assets\` before a Windows release. Models are not tracked in git, and the server's copy is produced only by collecting that directory, so a missing model is served to nobody and the affected inference profile cannot run. Preflight enforces this and aborts with the missing file names.
 - Release metadata size must match local assets and be replaced atomically.
-- Public `/health`, `/api/update`, package `HEAD 200`, and byte-range `206` checks must pass for the released scope.
+- Public `/health`, `/api/update`, package `HEAD 200`, and byte-range `206` checks must pass for the released scope. Both `/ws` and `/media/ws` must also pass unauthenticated WebSocket upgrade checks after deployment and before publishing a draft.
 - If 统一服务 code was deployed, verify the VPS runtime version and active service before reporting success.
 
 Detailed target switches and implementation logic belong to `scripts/publish-release.ps1`; do not duplicate them here. Report exact published targets, version, verification evidence, and anything skipped.

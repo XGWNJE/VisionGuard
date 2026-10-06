@@ -105,8 +105,8 @@ android {
         applicationId = "com.xgwnje.visionguard.receiver"
         minSdk = 28
         targetSdk = 36
-        versionCode = 604
-        versionName = "0.6.4"
+        versionCode = 605
+        versionName = "0.6.5"
 
         buildConfigField("String", "SERVER_URL", quotedBuildConfigString(visionguardServerUrl))
     }
