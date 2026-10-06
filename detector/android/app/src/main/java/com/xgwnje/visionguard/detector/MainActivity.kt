@@ -56,7 +56,6 @@ class MainActivity : ComponentActivity() {
     private var dimScreen by mutableStateOf(false)
     private var hidePreview by mutableStateOf(false)
     private var priorBrightness = -1f
-    private var nextFrameAt = 0L
     private var analyzedFrames = 0L
     private var creditBlockedFrames = 0L
     private var diagnosticAt = 0L
@@ -123,7 +122,7 @@ class MainActivity : ComponentActivity() {
     private fun startCamera() {
         if (!policy.start() || publisher?.state?.value?.connected != true) return
         if (publisher?.state?.value?.stream?.targetDeviceId == null) { policy.stop(); return }
-        streaming = true; nextFrameAt = 0; captureSize = null; sentSize = null; applyScreen(); publisher?.start()
+        streaming = true; captureSize = null; sentSize = null; applyScreen(); publisher?.start()
         val own = ++cameraGeneration
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
@@ -135,6 +134,7 @@ class MainActivity : ComponentActivity() {
                     .setResolutionSelector(ResolutionSelector.Builder()
                         .setAspectRatioStrategy(if (highResolution) AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY else AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
                         .setResolutionStrategy(ResolutionStrategy(target, ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER)).build()).build()
+                val framePacer = com.xgwnje.visionguard.detector.stream.FramePacer()
                 analysis.setAnalyzer(executor) { image ->
                     try {
                         val now = SystemClock.elapsedRealtime()
@@ -145,10 +145,10 @@ class MainActivity : ComponentActivity() {
                         }
                         val active = publisher
                         if (own != cameraGeneration || !streaming || active == null) return@setAnalyzer
-                        if (now < nextFrameAt) { active.sampledOut(); return@setAnalyzer }
+                        if (!framePacer.due(now, active.framesPerSecond)) { active.sampledOut(); return@setAnalyzer }
                         if (!active.canPublish()) { creditBlockedFrames++; active.dropped(); return@setAnalyzer }
-                        // Pace actual samples; waiting for credit must not consume the next sampling interval.
-                        nextFrameAt = now + 200
+                        // Skip before conversion/compression; callback jitter must not lower the requested cadence.
+                        framePacer.sampled(now)
                         val frame = CameraFrameCodec.encode(image, if (highResolution) 1280 else 640, if (highResolution) 720 else 480)
                         val captured = image.width to image.height
                         runOnUiThread { if (own == cameraGeneration && streaming) { captureSize = captured; sentSize = frame.width to frame.height } }

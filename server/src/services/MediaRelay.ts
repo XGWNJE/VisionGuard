@@ -14,13 +14,16 @@ export interface FrameHeader {
   streamId: string; sessionId: string; sequence: number; capturedAt: number; width: number; height: number; rotation: number;
   receivedAt?: number;
 }
-interface Publisher { ws: WebSocket; token: string; session: AccountSession; sessionId: string; sequence: number; capturedAt: number; offset?: number; lastFrame: number; lastSeen: number; credit: boolean; stopped: boolean }
+interface Publisher { ws: WebSocket; token: string; session: AccountSession; sessionId: string; sequence: number; capturedAt: number; offset?: number; lastFrame: number; lastSeen: number; stopped: boolean }
 interface BufferedFrame { packet: Buffer; receivedAt: number }
-interface Subscriber { ws: WebSocket; token: string; session: AccountSession; lastSeen: number; inflight: Map<string, { sessionId: string; sequence: number; sentAt: number }>; latest: Map<string, BufferedFrame> }
+interface SentFrame { sessionId: string; sequence: number; sentAt: number; bytes: number }
+interface Subscriber { ws: WebSocket; token: string; session: AccountSession; lastSeen: number; inflight: Map<string, SentFrame[]>; latest: Map<string, BufferedFrame> }
 const FRAME_BYTES = 2 * 1024 * 1024;
 const FRAME_AGE_MS = 2500;
 const SUBSCRIBER_TIMEOUT_MS = 5000;
 const BINDING_LIMIT = 16;
+const WINDOW_FRAMES = 8;
+const WINDOW_BYTES = FRAME_BYTES + 4100;
 function mediaDiagnostic(message: () => string): void {
   if (process.env.VISIONGUARD_MEDIA_DIAGNOSTICS === '1') console.log(`[MediaPerf] ${message()}`);
 }
@@ -76,6 +79,22 @@ export class MediaRelay {
   private readonly subscribers = new Map<string, Subscriber>();
   private readonly listeners = new Set<(accountId: string) => void>();
   private readonly statsDirty = new Set<string>();
+  private readonly samplingRates = new Map<string, Map<string, number>>();
+  private samplingRate(stream: Stream): number {
+    const rates = stream.targetDeviceId && this.samplingRates.get(stream.targetDeviceId);
+    return rates ? rates.get(stream.sourceId ?? '') ?? 1 : 5;
+  }
+  updateSamplingRates(accountId: string, deviceId: string, sources: { sourceId: string; isMonitoring: boolean; targetSamplingRate?: number }[]): void {
+    if (accountStore.device(accountId, deviceId)?.component !== 'windows-inference') return;
+    const rates = new Map(sources.map(source => [source.sourceId, source.isMonitoring ? Math.max(1, Math.min(5, source.targetSamplingRate ?? 3)) : 1]));
+    const streams = this.streams(accountId).filter(stream => stream.targetDeviceId === deviceId);
+    const previous = new Map(streams.map(stream => [stream.streamId, this.samplingRate(stream)]));
+    this.samplingRates.set(deviceId, rates);
+    for (const stream of streams) {
+      const rate = this.samplingRate(stream), publisher = this.publishers.get(stream.publisherDeviceId);
+      if (publisher && rate !== previous.get(stream.streamId)) send(publisher.ws, { type: 'media-rate', streamId: stream.streamId, sessionId: publisher.sessionId, targetSamplingRate: rate });
+    }
+  }
   private stats(accountId: string, streamId: string): FrameStats | undefined {
     const stream = this.accounts.get(accountId)?.find(item => item.streamId === streamId);
     if (!stream) return;
@@ -141,7 +160,7 @@ export class MediaRelay {
     this.save(accountId, next); this.clearChangedBindings(previous, next); this.changed(accountId);
     const stream = next.find(item => item.publisherDeviceId === publisherDeviceId)!;
     const live = this.publishers.get(publisherDeviceId);
-    if (live) send(live.ws, { type: 'media-ready', sessionId: live.sessionId, streamId: stream.streamId, targetDeviceId, sourceId: stream.sourceId });
+    if (live) send(live.ws, { type: 'media-ready', sessionId: live.sessionId, streamId: stream.streamId, targetDeviceId, sourceId: stream.sourceId, targetSamplingRate: this.samplingRate(stream) });
     return { ...stream };
   }
   private clearChangedBindings(previous: Stream[], next: Stream[]): void {
@@ -168,10 +187,10 @@ export class MediaRelay {
           clearTimeout(timer); this.ensureAccount(session.account.accountId);
           if (message.direction === 'publish') {
             this.publishers.get(session.device.deviceId)?.ws.close(4000, 'publisher replaced');
-            publisher = { ws, session, token: message.token, sessionId: crypto.randomUUID(), sequence: -1, capturedAt: -1, lastFrame: 0, lastSeen: performance.now(), credit: true, stopped: false };
+            publisher = { ws, session, token: message.token, sessionId: crypto.randomUUID(), sequence: -1, capturedAt: -1, lastFrame: 0, lastSeen: performance.now(), stopped: false };
             this.publishers.set(session.device.deviceId, publisher);
             const stream = this.streams(session.account.accountId).find(item => item.publisherDeviceId === session.device.deviceId)!;
-            send(ws, { type: 'media-ready', sessionId: publisher.sessionId, streamId: stream.streamId, targetDeviceId: stream.targetDeviceId, sourceId: stream.sourceId });
+            send(ws, { type: 'media-ready', sessionId: publisher.sessionId, streamId: stream.streamId, targetDeviceId: stream.targetDeviceId, sourceId: stream.sourceId, targetSamplingRate: this.samplingRate(stream) });
           } else {
             const old = this.subscribers.get(session.device.deviceId);
             if (old) { this.discardConsumer(old); old.ws.close(4000, 'subscriber replaced'); }
@@ -198,7 +217,8 @@ export class MediaRelay {
             if (message.type === 'stream-stop' && ['user', 'background', 'locked'].includes(message.reason)) { publisher.stopped = true; this.stopPublisher(publisher, message.reason); ws.close(1000, 'expected stream stop'); }
             return;
           }
-          if (!publisher.credit || publisher.stopped) { ws.close(4002, 'frame credit required'); return; }
+          if (publisher.stopped) { ws.close(4002, 'stream stopped'); return; }
+          if (ws.bufferedAmount > 64 * 1024) { ws.terminate(); return; }
           const packet = Buffer.isBuffer(raw) ? raw : Buffer.concat(Array.isArray(raw) ? raw : [Buffer.from(raw as ArrayBuffer)]);
           const parsingAt = performance.now();
           const frame = parseFrame(packet);
@@ -209,13 +229,13 @@ export class MediaRelay {
           publisher.offset ??= monotonicNow - frame.header.capturedAt;
           const age = monotonicNow - (frame.header.capturedAt + publisher.offset);
           if (age < -FRAME_AGE_MS) { ws.close(4002, 'capture clock changed'); return; }
-          publisher.sequence = frame.header.sequence; publisher.capturedAt = frame.header.capturedAt; publisher.credit = false;
+          publisher.sequence = frame.header.sequence; publisher.capturedAt = frame.header.capturedAt;
           this.stats(publisher.session.account.accountId, stream.streamId)!.received++;
           const fresh = age <= FRAME_AGE_MS && age >= -FRAME_AGE_MS;
           const acknowledge = (accepted: boolean, dropReason?: string) => ws.send(JSON.stringify({ type: 'frame-ack', streamId: stream.streamId,
             sessionId: publisher!.sessionId, sequence: frame.header.sequence, accepted, dropReason, stats: stream.stats }), error => {
               if (this.publishers.get(publisher!.session.device.deviceId) !== publisher) return;
-              if (error) ws.terminate(); else publisher!.credit = true;
+              if (error) ws.terminate();
             });
           // Offset is established per connection, never treated as a synchronized capture clock.
           if (!fresh) { this.dropped(publisher.session.account.accountId, stream.streamId, 'stale'); acknowledge(false, 'stale'); return; }
@@ -227,8 +247,8 @@ export class MediaRelay {
           const consumer = this.subscribers.get(stream.targetDeviceId);
           if (!consumer || consumer.session.account.accountId !== publisher.session.account.accountId) { this.dropped(publisher.session.account.accountId, stream.streamId, 'unavailable'); acknowledge(false, 'consumer-unavailable'); return; }
           const forwarded = { packet: framePacket({ ...frame.header, receivedAt: now }, frame.image), receivedAt: monotonicNow };
-          if (consumer.inflight.has(stream.streamId)) {
-            if (consumer.latest.has(stream.streamId)) this.dropped(publisher.session.account.accountId, stream.streamId, 'replaced');
+          if (consumer.latest.delete(stream.streamId)) this.dropped(publisher.session.account.accountId, stream.streamId, 'replaced');
+          if (!this.canDeliver(consumer, stream.streamId, forwarded)) {
             consumer.latest.set(stream.streamId, forwarded);
           }
           else this.deliver(consumer, stream.streamId, forwarded);
@@ -237,13 +257,19 @@ export class MediaRelay {
           if (binary || this.subscribers.get(subscriber.session.device.deviceId) !== subscriber) { if (binary) ws.close(4002, 'consumer cannot publish'); return; }
           const message = JSON.parse(raw.toString());
           if (message.type !== 'frame-received') return;
-          const sent = subscriber.inflight.get(message.streamId);
-          if (!sent || sent.sessionId !== message.sessionId || sent.sequence !== message.sequence) return;
+          const pending = subscriber.inflight.get(message.streamId);
+          const index = pending?.findIndex(frame => frame.sessionId === message.sessionId && frame.sequence === message.sequence) ?? -1;
+          if (!pending || index < 0) return;
+          const sent = pending[index];
           mediaDiagnostic(() => `event=consumerAck sequence=${message.sequence} roundTripMs=${(performance.now()-sent.sentAt).toFixed(3)} socketQueueBytes=${subscriber!.ws.bufferedAmount}`);
-          const stats = this.stats(subscriber.session.account.accountId, message.streamId); if (stats) stats.confirmed++;
-          subscriber.inflight.delete(message.streamId);
-          const latest = subscriber.latest.get(message.streamId); subscriber.latest.delete(message.streamId);
-          if (latest) this.deliver(subscriber, message.streamId, latest);
+          const stats = this.stats(subscriber.session.account.accountId, message.streamId); if (stats) stats.confirmed += index + 1;
+          pending.splice(0, index + 1);
+          if (!pending.length) subscriber.inflight.delete(message.streamId);
+          // Receipts can lag or skip sequence numbers. Flush fair, bounded latest slots after progress.
+          for (const [streamId, latest] of subscriber.latest) {
+            if (!this.canDeliver(subscriber, streamId, latest)) continue;
+            subscriber.latest.delete(streamId); this.deliver(subscriber, streamId, latest);
+          }
         }
       } catch { ws.close(4002, 'invalid media message'); }
     });
@@ -275,12 +301,19 @@ export class MediaRelay {
     if (!stream || !producer || producer.sessionId !== parsed.header.sessionId) return;
     if (performance.now() - frame.receivedAt > FRAME_AGE_MS) { this.dropped(consumer.session.account.accountId, streamId, 'stale'); return; }
     if (consumer.ws.readyState !== WebSocket.OPEN || consumer.ws.bufferedAmount > FRAME_BYTES) { this.dropped(consumer.session.account.accountId, streamId, 'sendFailed'); consumer.ws.terminate(); return; }
-    consumer.inflight.set(streamId, { sessionId: parsed.header.sessionId, sequence: parsed.header.sequence, sentAt: performance.now() });
+    const pending = consumer.inflight.get(streamId) ?? [];
+    pending.push({ sessionId: parsed.header.sessionId, sequence: parsed.header.sequence, sentAt: performance.now(), bytes: frame.packet.length });
+    consumer.inflight.set(streamId, pending);
     mediaDiagnostic(() => `event=deliver sequence=${parsed.header.sequence} queueAgeMs=${(performance.now()-frame.receivedAt).toFixed(3)} packetBytes=${frame.packet.length} socketQueueBytes=${consumer.ws.bufferedAmount}`);
     consumer.ws.send(frame.packet, { binary: true }, error => {
       if (error) { this.dropped(consumer.session.account.accountId, streamId, 'sendFailed'); consumer.ws.terminate(); }
       else { const stats = this.stats(consumer.session.account.accountId, streamId); if (stats) stats.forwarded++; }
     });
+  }
+  private canDeliver(consumer: Subscriber, streamId: string, frame: BufferedFrame): boolean {
+    const pending = consumer.inflight.get(streamId) ?? [];
+    const bytes = [...consumer.inflight.values()].reduce((sum, frames) => sum + frames.reduce((n, sent) => n + sent.bytes, 0), 0);
+    return pending.length < WINDOW_FRAMES && bytes + frame.packet.length <= WINDOW_BYTES && consumer.ws.bufferedAmount + frame.packet.length <= WINDOW_BYTES;
   }
   private credentialsChanged(): void {
     for (const producer of this.publishers.values()) if (!accountStore.authenticate(producer.token)) { producer.stopped = true; this.stopPublisher(producer, 'session-revoked'); producer.ws.close(4001, 'session revoked'); }
@@ -294,7 +327,7 @@ export class MediaRelay {
       if (producer.lastFrame && now - producer.lastFrame > FRAME_AGE_MS) { const stream = this.accounts.get(producer.session.account.accountId)?.find(item => item.publisherDeviceId === producer.session.device.deviceId); if (stream?.isStreaming) this.stopPublisher(producer, 'frame-stalled'); }
     }
     for (const consumer of this.subscribers.values()) {
-      if (!accountStore.authenticate(consumer.token) || now - consumer.lastSeen > 45_000 || [...consumer.inflight.values()].some(frame => now - frame.sentAt > SUBSCRIBER_TIMEOUT_MS)) consumer.ws.close(4002, 'consumer stalled or session expired');
+      if (!accountStore.authenticate(consumer.token) || now - consumer.lastSeen > 45_000 || [...consumer.inflight.values()].some(frames => frames.some(frame => now - frame.sentAt > SUBSCRIBER_TIMEOUT_MS))) consumer.ws.close(4002, 'consumer stalled or session expired');
     }
     for (const accountId of this.statsDirty) { this.statsDirty.delete(accountId); this.changed(accountId); }
   }

@@ -27,7 +27,9 @@ class CameraPublisher(private val account: AccountStore) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val handler = Handler(Looper.getMainLooper())
     private val http = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(0, TimeUnit.SECONDS).build()
-    private val credit = FrameCredit()
+    private val credit = FrameWindow()
+    @Volatile var framesPerSecond = 5
+        private set
     private var control: WebSocket? = null
     private var media: WebSocket? = null
     private var controlGeneration = 0
@@ -180,9 +182,13 @@ class CameraPublisher(private val account: AccountStore) {
                             synchronized(credit) {
                                 mediaSession = body.getString("sessionId"); readyStream = body.getString("streamId")
                                 credit.reset(mediaSession); ready = true
+                                framesPerSecond = body.optInt("targetSamplingRate", 5).coerceIn(1, 5)
                             }
                             mediaAuthenticated = true; mediaHealth.responded(SystemClock.elapsedRealtime())
                             update { it.copy(status = "正在推流") }
+                        }
+                        "media-rate" -> if (body.optString("streamId") == readyStream && body.optString("sessionId") == mediaSession) {
+                            framesPerSecond = body.getInt("targetSamplingRate").coerceIn(1, 5)
                         }
                         "frame-ack" -> {
                             val age = credit.acknowledgementAge(body.optString("sessionId"), body.optLong("sequence"), SystemClock.elapsedRealtime())
@@ -205,12 +211,12 @@ class CameraPublisher(private val account: AccountStore) {
             override fun onClosing(ws: WebSocket, code: Int, reason: String) { handler.post { if (own == mediaGeneration && !closed) { ws.close(code, reason); dropMedia() } } }
         })
     }
-    fun canPublish(): Boolean = synchronized(credit) { wanted && ready && credit.available() }
+    fun canPublish(): Boolean = synchronized(credit) { wanted && ready && credit.available() && (media?.queueSize() ?: Long.MAX_VALUE) < MediaPacket.MAX_JPEG_BYTES }
     fun dropped() { update { it.copy(droppedFrames = it.droppedFrames + 1) } }
     fun sampledOut() { update { it.copy(sampledOutFrames = it.sampledOutFrames + 1) } }
     fun publish(frame: CameraFrame): Boolean = synchronized(credit) {
         if (!canPublish() || SystemClock.elapsedRealtime() - frame.capturedAt !in 0..2500) { dropped(); return@synchronized false }
-        val sequence = credit.take(SystemClock.elapsedRealtime()) ?: return@synchronized false
+        val sequence = credit.take(SystemClock.elapsedRealtime(), frame.jpeg.size + MediaPacket.MAX_HEADER_BYTES + 4) ?: run { dropped(); return@synchronized false }
         val header = JSONObject().put("streamId", readyStream).put("sessionId", mediaSession).put("sequence", sequence)
             .put("capturedAt", frame.capturedAt).put("width", frame.width).put("height", frame.height).put("rotation", frame.rotation)
         val packet = MediaPacket.encode(header.toString().toByteArray(Charsets.UTF_8), frame.jpeg)

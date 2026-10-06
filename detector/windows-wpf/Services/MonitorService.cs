@@ -38,6 +38,8 @@ namespace VisionGuard.Detector.Windows.Services
         private string _loggedOutputLayout;
         private string _lastRemoteSession = "";
         private long _lastRemoteSequence = -1;
+        private long _nextRemoteSample, _remoteInterval;
+        private bool _remotePending, _remoteSubscribed;
         // 停止同步：确保 OnTick 完全结束（包括 finally）后才能安全 Dispose _engine
         private readonly ManualResetEvent _tickCompleted = new ManualResetEvent(true);
         private readonly object _tickSync = new object();
@@ -95,7 +97,34 @@ namespace VisionGuard.Detector.Windows.Services
             }
 
             int intervalMs = 1000 / Math.Max(1, config.TargetFps);
-            lock (_tickSync) _timer = new Timer(OnTick, null, 0, intervalMs);
+            lock (_tickSync)
+            {
+                _nextRemoteSample = 0; _remotePending = false;
+                _remoteInterval = Stopwatch.Frequency / Math.Max(1, config.TargetFps);
+                if (config.CaptureMode == CaptureMode.RemoteStream)
+                {
+                    RemoteFrameStore.Shared.FrameAvailable += OnRemoteFrameAvailable;
+                    _remoteSubscribed = true;
+                }
+                // Remote frames drive sampling. The idle timer only checks stalled media.
+                _timer = new Timer(OnTick, null, 0, _remoteSubscribed ? 1000 : intervalMs);
+            }
+        }
+
+        private void OnRemoteFrameAvailable(string streamId)
+        {
+            lock (_tickSync)
+            {
+                if (_timer == null || !_remoteSubscribed || _config.RemoteStreamId != streamId) return;
+                _remotePending = true;
+                if (_isRunning == 0) ScheduleRemoteSample();
+            }
+        }
+        private void ScheduleRemoteSample()
+        {
+            long remaining = _nextRemoteSample - Stopwatch.GetTimestamp();
+            int delay = remaining <= 0 ? 0 : (int)Math.Ceiling(remaining * 1000d / Stopwatch.Frequency);
+            _timer?.Change(delay, 1000);
         }
 
         public void Stop()
@@ -103,6 +132,8 @@ namespace VisionGuard.Detector.Windows.Services
             // 与帧入口同步：关闭定时器后，排队的回调不能再使用推理引擎。
             lock (_tickSync)
             {
+                if (_remoteSubscribed) RemoteFrameStore.Shared.FrameAvailable -= OnRemoteFrameAvailable;
+                _remoteSubscribed = false; _remotePending = false;
                 _timer?.Dispose();
                 _timer = null;
             }
@@ -120,7 +151,9 @@ namespace VisionGuard.Detector.Windows.Services
             lock (_tickSync)
             {
                 if (_timer == null || _isRunning != 0) return;
+                if (_remoteSubscribed && Stopwatch.GetTimestamp() < _nextRemoteSample) { ScheduleRemoteSample(); return; }
                 _isRunning = 1;
+                _remotePending = false;
                 _tickCompleted.Reset();
             }
 
@@ -138,6 +171,12 @@ namespace VisionGuard.Detector.Windows.Services
                 if (cfg.CaptureMode == Models.CaptureMode.RemoteStream)
                 {
                     frame = RemoteFrameStore.Shared.ReadFresh(cfg.RemoteStreamId, ref _lastRemoteSession, ref _lastRemoteSequence, out remoteHeader);
+                    lock (_tickSync)
+                    {
+                        long now = Stopwatch.GetTimestamp();
+                        _nextRemoteSample = _nextRemoteSample == 0 ? now + _remoteInterval : _nextRemoteSample + _remoteInterval;
+                        if (_nextRemoteSample <= now) _nextRemoteSample = now + _remoteInterval;
+                    }
                 }
                 else if (cfg.CaptureMode == Models.CaptureMode.WindowHandle
                     && cfg.TargetWindowHandle != IntPtr.Zero)
@@ -226,6 +265,7 @@ namespace VisionGuard.Detector.Windows.Services
                 lock (_tickSync)
                 {
                     _isRunning = 0;
+                    if (_timer != null && _remotePending && _remoteSubscribed) ScheduleRemoteSample();
                     _tickCompleted.Set();
                 }
             }

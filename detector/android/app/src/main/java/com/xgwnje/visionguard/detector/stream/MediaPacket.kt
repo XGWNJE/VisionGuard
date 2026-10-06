@@ -18,29 +18,51 @@ object MediaPacket {
     }
 }
 
-/** One transferable frame per media session. An acknowledgement cannot release another session's credit. */
-class FrameCredit {
+/** Receipts report cumulative progress; up to eight frames / 2 MiB can travel concurrently. */
+class FrameWindow(private val frameLimit: Int = 8, private val byteLimit: Int = MediaPacket.MAX_JPEG_BYTES + 4100) {
     private var session = ""
-    private var pending: Long? = null
+    private data class Pending(val sentAt: Long, val bytes: Int)
+    private val pending = linkedMapOf<Long, Pending>()
     private var next = 0L
-    private var sentAt = 0L
+    private var acknowledged = 0L
+    private var bytes = 0
     @Synchronized fun reset(sessionId: String) {
         if (sessionId.isNotEmpty() && sessionId == session) return
-        session = sessionId; pending = null; next = 0; sentAt = 0
+        session = sessionId; pending.clear(); next = 0; acknowledged = 0; bytes = 0
     }
-    @Synchronized fun available(): Boolean = session.isNotEmpty() && pending == null
-    @Synchronized fun take(now: Long): Long? {
-        if (!available()) return null
-        next++; pending = next; sentAt = now
+    @Synchronized fun available(frameBytes: Int = 1): Boolean =
+        session.isNotEmpty() && pending.size < frameLimit && frameBytes > 0 && frameBytes <= byteLimit - bytes
+    @Synchronized fun take(now: Long, frameBytes: Int = 1): Long? {
+        if (!available(frameBytes)) return null
+        next++; pending[next] = Pending(now, frameBytes); bytes += frameBytes
         return next
     }
     @Synchronized fun acknowledge(sessionId: String, sequence: Long): Boolean {
-        if (sessionId != session || sequence != pending) return false
-        pending = null; return true
+        if (sessionId != session || sequence <= acknowledged || sequence > next) return false
+        val iterator = pending.iterator()
+        while (iterator.hasNext()) { val entry = iterator.next(); if (entry.key <= sequence) { bytes -= entry.value.bytes; iterator.remove() } }
+        acknowledged = sequence; return true
     }
     @Synchronized fun acknowledgementAge(sessionId: String, sequence: Long, now: Long): Long? =
-        if (sessionId == session && sequence == pending) (now - sentAt).coerceAtLeast(0) else null
-    @Synchronized fun stalled(now: Long): Boolean = pending != null && now - sentAt > 3000
+        if (sessionId == session) pending[sequence]?.let { (now - it.sentAt).coerceAtLeast(0) } else null
+    @Synchronized fun stalled(now: Long): Boolean = pending.values.firstOrNull()?.let { now - it.sentAt > 3000 } ?: false
+}
+
+/** Keep a fixed cadence without accumulating callback delay or catching up in bursts. */
+class FramePacer {
+    private var rate = 0
+    private var nextAt = 0.0
+    fun reset() { rate = 0; nextAt = 0.0 }
+    fun due(now: Long, framesPerSecond: Int): Boolean {
+        require(framesPerSecond in 1..5)
+        if (rate != framesPerSecond) { rate = framesPerSecond; nextAt = now.toDouble() }
+        return now >= nextAt
+    }
+    fun sampled(now: Long) {
+        val interval = 1000.0 / rate
+        nextAt += interval
+        if (nextAt <= now) nextAt = now + interval
+    }
 }
 
 /** Media needs responses even while no frame is in flight or while waiting to become active. */

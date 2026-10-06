@@ -171,12 +171,20 @@ internal static class Program
     static void RemoteFrameProbe()
     {
         using var frames = new RemoteFrameStore();
+        int notifications = 0;
+        frames.FrameAvailable += streamId => {
+            Require(streamId == "probe-stream", "Notification was routed to another stream");
+            // The decoded latest frame is already readable when the event fires.
+            using var latest = frames.Peek(streamId);
+            notifications++;
+        };
         var stream = new RemoteStreamInfo { streamId = "probe-stream", targetDeviceId = "node-1", sourceId = "camera-1", isStreaming = true };
         stream.isStreaming = false;
         frames.SetStreams(new[] { stream }, "node-1"); frames.Accept(Packet(1, Color.Red)); frames.Accept(Packet(2, Color.Blue));
         byte[] shortJpeg = Packet(3, Color.Red); int headerSize = (shortJpeg[0] << 24) | (shortJpeg[1] << 16) | (shortJpeg[2] << 8) | shortJpeg[3];
         bool shortRejected = false; try { frames.Accept(shortJpeg.Take(headerSize + 5).ToArray()); } catch (InvalidDataException) { shortRejected = true; }
         Require(shortRejected, "One-byte JPEG payload was not cleanly rejected");
+        Require(notifications == 2, "Invalid frames triggered processing notifications");
         string session = ""; long sequence = -1; using (var image = frames.ReadFresh("probe-stream", ref session, ref sequence, out var header)) Require(header.sequence == 2 && image.GetPixel(20, 20).B > 200, "Latest frame was not retained");
         bool noDuplicate = false; try { frames.ReadFresh("probe-stream", ref session, ref sequence, out _).Dispose(); } catch (RemoteFrameUnavailableException ex) { noDuplicate = ex.WaitingForNext; }
         Require(noDuplicate, "Same cached frame could advance inference again");
@@ -198,6 +206,7 @@ internal static class Program
         using (var image = frames.Peek("probe-stream")) Require(image.GetPixel(20, 20).B > 200, "Old connection cleanup removed new frames");
         bool oldRejected = false; try { frames.Accept(Packet(2, Color.Red), oldOwner); } catch (IOException) { oldRejected = true; }
         Require(oldRejected, "Old media callback replaced a new connection frame");
+        Require(notifications == 4, "Old connection callbacks advanced processing notifications");
     }
     static void AccountProbe()
     {
@@ -207,13 +216,16 @@ internal static class Program
         string url = "http://127.0.0.1:" + port; Environment.SetEnvironmentVariable("VISIONGUARD_SERVER_URL", url);
         using var listener = new HttpListener(); listener.Prefixes.Add(url + "/"); listener.Start();
         bool revoked = false; int calls = 0;
+        using var refreshEntered = new ManualResetEvent(false);
+        using var refreshRelease = new ManualResetEvent(false);
         var fixture = Task.Run(() =>
         {
-            while (calls < 4)
+            while (calls < 5)
             {
                 var request = listener.GetContext(); calls++;
                 using var reader = new StreamReader(request.Request.InputStream); string body = reader.ReadToEnd();
                 string path = request.Request.Url!.AbsolutePath;
+                if (path.EndsWith("refresh") || path.EndsWith("session")) { refreshEntered.Set(); Require(refreshRelease.WaitOne(5000), "Account HTTP test was not released"); }
                 if (path.EndsWith("logout")) revoked = true;
                 string user = body.Contains("second") ? "second" : "first";
                 if (path.EndsWith("login")) Require(body.Contains("windows-inference") && !body.Contains("role"), "Client self-granted an identity");
@@ -224,7 +236,32 @@ internal static class Program
         });
         AccountSession.Load(); AccountSession.Login(url, "first", "local-fixture-password", "probe"); string firstScope = AccountSession.ScopeKey;
         byte[] saved = File.ReadAllBytes(Directory.GetFiles(directory, "session-*.bin").Single()); Require(!Encoding.UTF8.GetString(saved).Contains("probe-token"), "Session credential stored in plaintext");
-        Require(AccountSession.EnsureFresh()!.token == "rotated-probe-token", "Expiry did not rotate account/resident login");
+        var refreshing = Task.Run(() => AccountSession.EnsureFresh());
+        Require(refreshEntered.WaitOne(5000), "Refresh request did not start");
+        try
+        {
+            var read = Task.Run(() => {
+                for (int index = 0; index < 100; index++)
+                    Require(AccountSession.Current!.token == "probe-token-first" && AccountSession.ServiceUrl == url && AccountSession.ScopeKey == firstScope,
+                        "The endpoint/identity view changed before refresh completed");
+            });
+            Require(read.Wait(200), "Inference account reads waited for an HTTP refresh");
+            read.GetAwaiter().GetResult();
+        }
+        finally { refreshRelease.Set(); }
+        Require(refreshing.GetAwaiter().GetResult()!.token == "rotated-probe-token", "Expiry did not rotate account/resident login");
+        Require(AccountSession.ScopeKey == firstScope, "Token renewal changed account scope");
+        refreshEntered.Reset(); refreshRelease.Reset();
+        typeof(AccountSession).GetField("_lastValidated", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!.SetValue(null, DateTime.MinValue);
+        var validating = Task.Run(() => AccountSession.EnsureFresh());
+        Require(refreshEntered.WaitOne(5000), "Periodic validation request did not start");
+        try
+        {
+            var read = Task.Run(() => AccountSession.Current!.token == "rotated-probe-token" && AccountSession.ScopeKey == firstScope && AccountSession.ServiceUrl == url);
+            Require(read.Wait(200) && read.Result, "Inference account reads waited for periodic HTTP validation");
+        }
+        finally { refreshRelease.Set(); }
+        validating.GetAwaiter().GetResult();
         AccountSession.ApplyDeviceUpdate(new AccountDevice { deviceId = "node-first", deviceName = "Renamed by console" });
         AccountSession.Load(); Require(AccountSession.Current!.device.deviceName == "Renamed by console" && AccountSession.Current.resident.device.deviceName == "Renamed by console", "Server-assigned device name did not persist for both Windows components");
         using var firstAlerts = new AlertService("first-source", "first source"); bool leakedAlert = false; firstAlerts.AlertTriggered += (_, _) => leakedAlert = true;
