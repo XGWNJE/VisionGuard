@@ -19,13 +19,15 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public bool IsTargets => Key == "targets";
         public bool IsNumeric => !IsModel && !IsTargets;
         public bool IsConfidence => Key == "confidence";
-        public bool IsDiscrete => IsNumeric && !IsConfidence;
+        public bool IsSampling => Key == "targetSamplingRate";
+        public bool IsCooldown => Key == "cooldown";
         public double NumericMinimum => IsConfidence ? 10 : 1;
         public double NumericMaximum => IsConfidence ? 95 : Key == "cooldown" ? 300 : 5;
         public double NumericDraft { get => double.TryParse(Draft, out var number) ? number : NumericMinimum; set => Draft = Math.Round(value).ToString(CultureInfo.InvariantCulture); }
         public IEnumerable<NumericParameterOption> NumericOptions => Enumerable.Range(1, Key == "cooldown" ? 300 : 5).Select(value => new NumericParameterOption(value.ToString(CultureInfo.InvariantCulture), value + (Key == "cooldown" ? " 秒" : " FPS")));
         public RelayCommand IncreaseCommand { get; }
         public RelayCommand DecreaseCommand { get; }
+        public RelayCommand SelectNumericCommand { get; }
         public string[] ModelOptions => _source.ModelOptions;
         public ObservableCollection<DetectionClassOption> TargetOptions { get; } = new();
         public IEnumerable<DetectionClassOption> FilteredTargets => TargetOptions.Where(item => (item.ChineseName + " " + item.EnglishName).IndexOf(Search.Trim(), StringComparison.OrdinalIgnoreCase) >= 0);
@@ -50,6 +52,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             SaveCommand = new RelayCommand(Save, () => CanEdit && Valid());
             IncreaseCommand = new RelayCommand(() => NumericDraft++, () => CanEdit && NumericDraft < NumericMaximum);
             DecreaseCommand = new RelayCommand(() => NumericDraft--, () => CanEdit && NumericDraft > NumericMinimum);
+            SelectNumericCommand = new RelayCommand(value => Draft = value as string ?? Draft, _ => CanEdit);
             source.PropertyChanged += (s, e) => { OnPropertyChanged(nameof(ValueText)); OnPropertyChanged(nameof(CanEdit)); OnPropertyChanged(nameof(Hint)); OnPropertyChanged(nameof(ModelOptions)); if (e.PropertyName == nameof(SourceViewModel.ModelKey)) BuildTargets(); EditCommand.RaiseCanExecuteChanged(); SaveCommand.RaiseCanExecuteChanged(); IncreaseCommand.RaiseCanExecuteChanged(); DecreaseCommand.RaiseCanExecuteChanged(); };
             BuildTargets();
         }

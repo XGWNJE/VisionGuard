@@ -46,6 +46,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public ObservableCollection<SourceViewModel> PreviewSources { get; } = new();
 
         public IReadOnlyList<MonitorSourceStatus> Statuses => _coordinator.Statuses;
+        public int FocusedPreviewIndex => Math.Max(0, SelectedSource == null ? 0 : PreviewSources.IndexOf(SelectedSource));
         public SourceViewModel? SelectedSource
         {
             get => _selectedSource;
@@ -53,8 +54,9 @@ namespace VisionGuard.Detector.Windows.ViewModels
             {
                 if (ReferenceEquals(_selectedSource, value)) return;
                 if (_selectedSource != null) _selectedSource.IsSelected = false;
-                // 选中只影响右侧检查区；不再有「跳到这一页」——卡片不再分页。
+                // 选中同步检查区与主画面；不改变预览勾选、采集或运行状态。
                 if (SetProperty(ref _selectedSource, value) && value != null) value.IsSelected = true;
+                OnPropertyChanged(nameof(FocusedPreviewIndex));
             }
         }
 
@@ -157,6 +159,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             _server = server;
             _settings = settings;
             _coordinator = new MultiSourceMonitorCoordinator();
+            PreviewSources.CollectionChanged += (_, __) => OnPropertyChanged(nameof(FocusedPreviewIndex));
             ToggleGlobalViewCommand = new RelayCommand(() => IsGlobalView = !IsGlobalView);
             EnsureLegacyBackupAndMigration();
             EnsureSourceKeyMigration();
@@ -865,6 +868,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 return $"{string.Join("、", selected.Take(2).Select(option => option.ChineseName))}等 {selected.Count} 类";
             }
         }
+        public string ParameterSummary => $"{ModelKey} · {TargetSummary} · {TargetFps} FPS";
         public int ThresholdPercent { get => _thresholdPercent; set { if (SetProperty(ref _thresholdPercent, Net472Compat.Clamp(value, 10, 95))) MarkDirty(); } }
         public int TargetFps { get => _targetFps; set { if (SetProperty(ref _targetFps, Net472Compat.Clamp(value, 1, 5))) MarkDirty(); } }
         public int Cooldown { get => _cooldown; set { if (SetProperty(ref _cooldown, Net472Compat.Clamp(value, 1, 300))) MarkDirty(); } }
@@ -1418,6 +1422,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         /// </summary>
         private void MarkDirty()
         {
+            OnPropertyChanged(nameof(ParameterSummary));
             RefreshPendingApply();
             if (!IsMonitoring) StatusText = HasPendingApply ? PendingApplyText : (IsReady ? "就绪" : "未配置");
             _autoSaveTimer.Stop();

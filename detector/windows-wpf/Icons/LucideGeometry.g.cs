@@ -5,16 +5,18 @@ using System.Windows.Media;
 
 namespace VisionGuard.Detector.Windows.Icons
 {
-    public enum LucideGlyph { Check, ChevronDown, ChevronRight, Plus, Trash2 }
+    public enum LucideGlyph { Camera, Check, ChevronDown, ChevronRight, Plus, Settings, Trash2 }
 
     internal static class LucideGeometry
     {
         internal static readonly Dictionary<LucideGlyph, Geometry[]> Paths = new Dictionary<LucideGlyph, Geometry[]>
         {
+            [LucideGlyph.Camera] = Parse("M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z", "M9 13a3 3 0 1 0 6 0a3 3 0 1 0 -6 0Z"),
             [LucideGlyph.Check] = Parse("M20 6 9 17l-5-5"),
             [LucideGlyph.ChevronDown] = Parse("m6 9 6 6 6-6"),
             [LucideGlyph.ChevronRight] = Parse("m9 18 6-6-6-6"),
             [LucideGlyph.Plus] = Parse("M5 12h14", "M12 5v14"),
+            [LucideGlyph.Settings] = Parse("M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915", "M9 12a3 3 0 1 0 6 0a3 3 0 1 0 -6 0Z"),
             [LucideGlyph.Trash2] = Parse("M10 11v6", "M14 11v6", "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6", "M3 6h18", "M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"),
         };
 

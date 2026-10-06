@@ -115,6 +115,18 @@ namespace VisionGuard.Detector.Windows.Views
             VisionGuard.Detector.Windows.Utils.SettingsStore.Save();
         }
 
+        private void OpenGlobalSettings_OnClick(object sender, RoutedEventArgs e) => MainInspector.SelectedIndex = 1;
+
+        private void SourceMenu_OnClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is System.Windows.Controls.Button button && button.ContextMenu != null)
+            {
+                button.ContextMenu.PlacementTarget = button;
+                button.ContextMenu.IsOpen = true;
+            }
+            e.Handled = true;
+        }
+
         private void ConstrainInspectorWidth()
         {
             if (MainLayout == null || MainLayout.ActualWidth <= 0) return;

@@ -211,143 +211,59 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
         if (!ok) layoutPassed = false;
     }
 
-    // 与 MainWindow 一致的两个固定占用：窗口标题栏/边框，以及卡片区底部工具条。
+    // Header, source strip and client frame stay outside the preview viewport.
     const double WindowChromeHeight = 45;
-    const double ToolBarHeight = 44;
-
-    // 卡片区可用宽度 = 窗口宽度 - 卡片区外边距 - 检查区最小宽度 - 分隔条宽度。
+    const double ToolBarHeight = 192;
     double CardsWidthFor(double windowWidth) => Math.Max(
         CardLayoutPlanner.MinimumCardsPanelWidth - CardLayoutPlanner.HostMarginWidth,
         windowWidth - CardLayoutPlanner.HostMarginWidth - CardLayoutPlanner.InspectorMinWidth - CardLayoutPlanner.SplitterWidth);
-
-    // 网格面板可用高度 = 窗口高度 - 标题栏/边框 - 卡片区外边距 - 底部工具条。
-    double CardsHeightFor(double windowHeight) => Math.Max(
-        CardLayoutPlanner.MinimumPictureEdge,
+    double CardsHeightFor(double windowHeight) => Math.Max(1,
         windowHeight - WindowChromeHeight - CardLayoutPlanner.HostMarginHeight - ToolBarHeight);
-
     CardLayoutPlan PlanFor(int visible, double windowWidth, double windowHeight, double? aspectRatio = 1d)
         => CardLayoutPlanner.ComputeScrollable(new CardLayoutRequest
-        {
-            VisibleCount = visible,
-            TotalWidth = CardsWidthFor(windowWidth),
-            TotalHeight = CardsHeightFor(windowHeight),
-            UniformAspectRatio = aspectRatio,
-        });
-
+        { VisibleCount = visible, TotalWidth = CardsWidthFor(windowWidth), TotalHeight = CardsHeightFor(windowHeight), UniformAspectRatio = aspectRatio });
     var layoutWindows = new[]
     {
-        (Name: "最小窗口 1040x540", Width: CardLayoutPlanner.MinimumWindowWidth, Height: CardLayoutPlanner.MinimumWindowHeight),
-        (Name: "900P 100% 工作区", Width: 1584d, Height: 844d),
-        (Name: "900P 125% 工作区", Width: 1264d, Height: 664d),
-        (Name: "900P 150% 工作区", Width: 1050d, Height: 544d),
-        (Name: "1420x880", Width: 1420d, Height: 880d),
+        (Name: "1040x540 minimum", Width: 1040d, Height: 540d),
+        (Name: "900P 100%", Width: 1584d, Height: 844d),
+        (Name: "900P 125%", Width: 1264d, Height: 664d),
+        (Name: "900P 150%", Width: 1050d, Height: 544d),
+        (Name: "1420x720 default", Width: 1420d, Height: 720d),
         (Name: "1920x1080", Width: 1920d, Height: 1080d),
     };
-
-    // 1) 比例约束（2026-09-20 新契约）：卡片必须接近方形，宽高比落在 1:1.2 ~ 1.2:1。
-    //    不论预览几张、窗口多大，越界时求解器都要收窄格子并留成间隔，而不是把卡片拉宽。
     foreach (var window in layoutWindows)
     {
-        for (int visible = 1; visible <= CardLayoutPlanner.MaximumVisibleCards; visible++)
+        for (int visible = 1; visible <= 4; visible++)
         {
             var plan = PlanFor(visible, window.Width, window.Height);
-            double ratio = plan.CellHeight <= 0 ? 0 : plan.CellWidth / plan.CellHeight;
-            CheckLayout($"{visible} 张 {window.Name} 卡片比例在 1:1.2~1.2:1",
-                plan.IsValid
-                && ratio >= CardLayoutPlanner.MinimumCardAspectRatio - 0.001
-                && ratio <= CardLayoutPlanner.MaximumCardAspectRatio + 0.001,
-                new { plan.Rows, plan.Columns, plan.CellWidth, plan.CellHeight, ratio });
+            CheckLayout($"focused layout {visible} / {window.Name}",
+                plan.IsValid && plan.VisibleCount == visible
+                && plan.PrimaryWidth >= CardLayoutPlanner.MinimumPrimaryWidth
+                && plan.ContentWidth <= CardsWidthFor(window.Width) + .5
+                && Math.Abs(plan.ContentHeight - Math.Max(CardsHeightFor(window.Height), Math.Max(
+                    CardLayoutPlanner.MinimumPictureEdge + CardLayoutPlanner.CardChromeHeight,
+                    (visible - 1) * CardLayoutPlanner.MinimumSecondaryHeight + Math.Max(0, visible - 2) * CardLayoutPlanner.CardSpacing))) < .5
+                && (visible == 1 ? plan.PrimaryWidth == plan.ContentWidth
+                    : plan.PrimaryWidth > plan.SecondaryWidth
+                      && plan.SecondaryWidth >= CardLayoutPlanner.MinimumSecondaryWidth
+                      && plan.SecondaryHeight >= CardLayoutPlanner.MinimumSecondaryHeight
+                      && Math.Abs((visible - 1) * plan.SecondaryHeight + (visible - 2) * CardLayoutPlanner.CardSpacing - plan.ContentHeight) < .01),
+                plan);
         }
     }
-
-    // 2) 网格方向按可见区域选择；空间不足只扩展达到画面下限所需的滚动内容，全部按钮仍可达。
-    foreach (var window in layoutWindows)
-    {
-        for (int visible = 1; visible <= CardLayoutPlanner.MaximumVisibleCards; visible++)
-        {
-            var plan = PlanFor(visible, window.Width, window.Height);
-            double gridWidth = plan.Columns * plan.CellWidth + (plan.Columns - 1) * CardLayoutPlanner.CardSpacing;
-            double gridHeight = plan.Rows * plan.CellHeight + (plan.Rows - 1) * CardLayoutPlanner.CardSpacing;
-            bool rowsAndColumnsMatch = visible <= 2
-                ? plan.Rows * plan.Columns == visible
-                : plan.Rows == 2 && plan.Columns == 2;
-            double minimumCellHeight = CardLayoutPlanner.MinimumPictureEdge + CardLayoutPlanner.CardChromeHeight;
-            double minimumCellWidth = Math.Max(CardLayoutPlanner.MinimumPictureEdge + CardLayoutPlanner.CardChromeWidth,
-                minimumCellHeight * CardLayoutPlanner.MinimumCardAspectRatio);
-            CheckLayout($"{visible} 张 {window.Name} 完整布局且仅必要时扩展滚动内容",
-                plan.IsValid && rowsAndColumnsMatch
-                && gridWidth <= Math.Max(CardsWidthFor(window.Width), plan.Columns * minimumCellWidth + (plan.Columns - 1) * CardLayoutPlanner.CardSpacing) + 0.5
-                && gridHeight <= Math.Max(CardsHeightFor(window.Height), plan.Rows * minimumCellHeight + (plan.Rows - 1) * CardLayoutPlanner.CardSpacing) + 0.5
-                && plan.PictureAreaWidth >= CardLayoutPlanner.MinimumPictureEdge - 0.5
-                && plan.PictureAreaHeight >= CardLayoutPlanner.MinimumPictureEdge - 0.5,
-                new { plan.Rows, plan.Columns, gridWidth, gridHeight, plan.ContentWidth, plan.ContentHeight });
-        }
-    }
-
-    // 3) 40 DIP 按钮与完整内边距下，最小窗口的四路预览通过滚动保持 320 DIP 画面短边。
-    var minSingle = PlanFor(1, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight);
-    CheckLayout("最小窗口 1 张 1:1 画面短边 >= 320",
-        minSingle.IsValid && minSingle.MinimumPictureEdge >= CardLayoutPlanner.MinimumPictureEdge - 0.5,
-        new { minSingle.CellWidth, minSingle.CellHeight, minSingle.PictureWidth, minSingle.PictureHeight });
-    var minPair = PlanFor(2, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight);
-    CheckLayout("最小窗口 2 张 1:1 画面短边 >= 320",
-        minPair.IsValid && minPair.MinimumPictureEdge >= CardLayoutPlanner.MinimumPictureEdge - 0.5,
-        new { minPair.CellWidth, minPair.CellHeight, minPair.PictureWidth, minPair.PictureHeight });
-    var minFour = PlanFor(4, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight);
-    CheckLayout("最小窗口 4 张 1:1 画面短边 >= 320",
-        minFour.IsValid && minFour.MinimumPictureEdge >= CardLayoutPlanner.MinimumPictureEdge - 0.5,
-        new { minFour.CellWidth, minFour.CellHeight, minFour.PictureWidth, minFour.PictureHeight });
-    CheckLayout("最小窗口四路预览滚动承载全部卡片",
-        minFour.ContentHeight > CardsHeightFor(CardLayoutPlanner.MinimumWindowHeight),
-        new { minFour.ContentHeight, viewportHeight = CardsHeightFor(CardLayoutPlanner.MinimumWindowHeight) });
-    var spaciousFour = PlanFor(4, 1920d, 1080d);
-    CheckLayout("足够高的窗口无需扩展滚动内容",
-        spaciousFour.ContentHeight <= CardsHeightFor(1080d) + 0.5 && spaciousFour.ContentWidth <= CardsWidthFor(1920d) + 0.5,
-        new { spaciousFour.ContentWidth, spaciousFour.ContentHeight });
-
-    // 4) 极端可用空间：宽扁 / 窄高容器下比例仍受约束，靠留白吸收差异，绝不出现宽扁条或细高条。
-    var wideShallow = CardLayoutPlanner.ComputeScrollable(new CardLayoutRequest
-    {
-        VisibleCount = 4, TotalWidth = 1800, TotalHeight = 300, UniformAspectRatio = null,
-    });
-    CheckLayout("宽扁容器 4 张比例不超 1.2:1",
-        wideShallow.IsValid
-        && wideShallow.CellWidth / wideShallow.CellHeight <= CardLayoutPlanner.MaximumCardAspectRatio + 0.001,
-        new { wideShallow.Rows, wideShallow.Columns, wideShallow.CellWidth, wideShallow.CellHeight });
-    var narrowTall = CardLayoutPlanner.ComputeScrollable(new CardLayoutRequest
-    {
-        VisibleCount = 4, TotalWidth = 420, TotalHeight = 1400, UniformAspectRatio = null,
-    });
-    CheckLayout("窄高容器 4 张比例不低于 1:1.2",
-        narrowTall.IsValid
-        && narrowTall.CellWidth / narrowTall.CellHeight >= CardLayoutPlanner.MinimumCardAspectRatio - 0.001,
-        new { narrowTall.Rows, narrowTall.Columns, narrowTall.CellWidth, narrowTall.CellHeight });
-
-    // 5) 确定性：同一输入两次求解必须完全一致，界面重排与净室断言都建立在这一点上。
-    var first = PlanFor(3, 1420d, 880d);
-    var second = PlanFor(3, 1420d, 880d);
-    CheckLayout("同一输入结果确定",
-        first.Rows == second.Rows && first.Columns == second.Columns
-        && first.CellWidth == second.CellWidth && first.CellHeight == second.CellHeight,
-        new { first.Rows, first.Columns, first.CellWidth, first.CellHeight });
-
-    // 6) 退化输入不得抛异常，也不得返回“看起来有效”的布局（窗口最小化时视图应原样跳过）。
-    var degenerate = CardLayoutPlanner.Compute(new CardLayoutRequest { VisibleCount = 3, TotalWidth = 0, TotalHeight = 0 });
-    CheckLayout("零可用空间返回无效布局", !degenerate.IsValid, new { degenerate.CellWidth, degenerate.CellHeight });
-    var noAspect = PlanFor(2, 1420d, 880d, null);
-    CheckLayout("无画面比例时仍能求解", noAspect.IsValid && noAspect.Rows * noAspect.Columns >= 2,
-        new { noAspect.CellWidth, noAspect.CellHeight });
-
-    // 7) 原始帧比例只能影响卡片内的等比画面，绝不能改变卡片外框或固定操作区的尺寸。
-    var wideFramePlan = PlanFor(4, 1420d, 880d, 3d);
-    var tallFramePlan = PlanFor(4, 1420d, 880d, 1d / 3d);
-    CheckLayout("3:1 与 1:3 画面不改变卡片外框尺寸",
-        wideFramePlan.CellWidth == tallFramePlan.CellWidth && wideFramePlan.CellHeight == tallFramePlan.CellHeight,
-        new
-        {
-            wide = new { wideFramePlan.CellWidth, wideFramePlan.CellHeight, wideFramePlan.PictureWidth, wideFramePlan.PictureHeight },
-            tall = new { tallFramePlan.CellWidth, tallFramePlan.CellHeight, tallFramePlan.PictureWidth, tallFramePlan.PictureHeight },
-        });
+    var first = PlanFor(3, 1420, 820);
+    var second = PlanFor(3, 1420, 820);
+    CheckLayout("deterministic layout", first.PrimaryWidth == second.PrimaryWidth && first.SecondaryHeight == second.SecondaryHeight);
+    var degenerate = CardLayoutPlanner.ComputeScrollable(new CardLayoutRequest { VisibleCount = 3, TotalWidth = 0, TotalHeight = 0 });
+    CheckLayout("zero viewport is invalid", !degenerate.IsValid);
+    CheckLayout("nonfinite viewport is invalid", !CardLayoutPlanner.ComputeScrollable(new CardLayoutRequest { VisibleCount = 4, TotalWidth = double.NaN, TotalHeight = 500 }).IsValid);
+    CheckLayout("preview capacity remains four", PlanFor(16, 1420, 820).VisibleCount == 4);
+    var wideFramePlan = PlanFor(4, 1420, 820, 3);
+    var tallFramePlan = PlanFor(4, 1420, 820, 1d / 3);
+    CheckLayout("frame aspect does not resize cards", wideFramePlan.PrimaryWidth == tallFramePlan.PrimaryWidth && wideFramePlan.ContentHeight == tallFramePlan.ContentHeight);
+    CheckLayout("wide and tall frames preserve aspect",
+        Math.Abs(wideFramePlan.PictureWidth / wideFramePlan.PictureHeight - 3) < .001
+        && Math.Abs(tallFramePlan.PictureWidth / tallFramePlan.PictureHeight - 1d / 3) < .001);
 
     // 8) 等比留白输入：方形无黑边，2:1 边界仍保留一半有效面积，3:1 / 1:3 居中留黑边。
     // 同时检查张量中留白位置真的是纯黑，而不是 Bitmap 默认值或拉伸后的图像残留。
@@ -410,6 +326,7 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
     // 3:1 画布只等比缩放并居中，容器自身的期望尺寸仍为 0（由外层星号行决定）。
     Exception? presenterFailure = null;
     bool emptyFrameArranged = false;
+    bool focusedPanelArranged = false;
     WpfSize presenterDesired = WpfSize.Empty;
     WpfMatrix presenterMatrix = WpfMatrix.Identity;
     var presenterThread = new Thread(() =>
@@ -429,6 +346,23 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
             emptyFramePresenter.Measure(new WpfSize(400, 200));
             emptyFramePresenter.Arrange(new WpfRect(0, 0, 400, 200));
             emptyFrameArranged = true;
+
+            var focusPanel = new CardGridPanel { ViewportWidth = 680, ViewportHeight = 320, FocusedIndex = 2 };
+            var focusPlan = CardLayoutPlanner.ComputeScrollable(new CardLayoutRequest { VisibleCount = 4, TotalWidth = 680, TotalHeight = 320 });
+            for (int index = 0; index < 4; index++) focusPanel.Children.Add(new Border());
+            focusPanel.Measure(new WpfSize(680, 320));
+            focusPanel.Arrange(new WpfRect(0, 0, focusPlan.ContentWidth, focusPlan.ContentHeight));
+            bool thirdIsPrimary = CardGridPanel.GetIsPrimaryCard(focusPanel.Children[2])
+                && focusPanel.Children[2].RenderSize.Width > focusPanel.Children[0].RenderSize.Width;
+            focusPanel.FocusedIndex = 1;
+            focusPanel.Measure(new WpfSize(680, 320));
+            focusPanel.Arrange(new WpfRect(0, 0, focusPlan.ContentWidth, focusPlan.ContentHeight));
+            focusedPanelArranged = thirdIsPrimary
+                && CardGridPanel.GetIsPrimaryCard(focusPanel.Children[1])
+                && !CardGridPanel.GetIsPrimaryCard(focusPanel.Children[2])
+                && focusPanel.Children[1].RenderSize.Height == focusPlan.ContentHeight
+                && focusPlan.ContentHeight > focusPanel.ViewportHeight
+                && focusPanel.Children.Cast<System.Windows.UIElement>().All(child => child.Visibility == System.Windows.Visibility.Visible && child.RenderSize.Height >= CardLayoutPlanner.MinimumSecondaryHeight);
         }
         catch (Exception ex)
         {
@@ -447,6 +381,8 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
         && Math.Abs(presenterMatrix.OffsetY - (200d - 100d * 4d / 3d) / 2d) < 0.001
         && emptyFrameArranged,
         new { presenterDesired, presenterMatrix, emptyFrameArranged, error = presenterFailure?.Message });
+    CheckLayout("WPF focus switch promotes selected card and retains all previews", focusedPanelArranged,
+        new { focusedPanelArranged, error = presenterFailure?.Message });
 
     var layoutReport = new
     {
@@ -456,8 +392,8 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
         {
             CardLayoutPlanner.MaximumVisibleCards,
             CardLayoutPlanner.MinimumPictureEdge,
-            CardLayoutPlanner.MinimumCardAspectRatio,
-            CardLayoutPlanner.MaximumCardAspectRatio,
+            CardLayoutPlanner.MinimumPrimaryWidth,
+            CardLayoutPlanner.MinimumSecondaryHeight,
             CardLayoutPlanner.CardChromeWidth,
             CardLayoutPlanner.CardChromeHeight,
             CardLayoutPlanner.MinimumCardsPanelWidth,
@@ -471,7 +407,7 @@ if (args.Length >= 2 && args[1].Equals("--layout-plan", StringComparison.Ordinal
             new { visible = 1, window = "最小窗口 1040x540", plan = PlanFor(1, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight) },
             new { visible = 2, window = "最小窗口 1040x540", plan = PlanFor(2, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight) },
             new { visible = 4, window = "最小窗口 1040x540", plan = PlanFor(4, CardLayoutPlanner.MinimumWindowWidth, CardLayoutPlanner.MinimumWindowHeight) },
-            new { visible = 4, window = "1420x880", plan = PlanFor(4, 1420d, 880d) },
+            new { visible = 4, window = "1420x720", plan = PlanFor(4, 1420d, 720d) },
             new { visible = 4, window = "1920x1080", plan = PlanFor(4, 1920d, 1080d) },
         },
         checks = layoutChecks,

@@ -78,7 +78,8 @@
       "name": "camera",
       "symbol": "Camera",
       "platforms": [
-        "web"
+        "web",
+        "windows"
       ],
       "autoMirror": false,
       "notification": false,
@@ -332,7 +333,8 @@
       "name": "settings",
       "symbol": "Settings",
       "platforms": [
-        "web"
+        "web",
+        "windows"
       ],
       "autoMirror": false,
       "notification": false,

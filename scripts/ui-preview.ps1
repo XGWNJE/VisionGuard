@@ -94,7 +94,12 @@ if ($Target -in @('Windows', 'PrepareWindows')) {
     $taskSettings = Join-Path $taskWindows 'settings.ini'
     $taskNamePrefix = '[UI preview] '
     $taskCount = if ($Scene -eq 'limits') { 16 } elseif ($Scene -eq 'empty') { 1 } else { 4 }
-    $taskLines = @('Source.Indexes=' + ((1..$taskCount) -join ','), 'MonitorOnStartup=False')
+    $taskLines = @(
+        ('Source.Indexes=' + ((1..$taskCount) -join ','))
+        'MonitorOnStartup=False'
+        'Source.LegacyMigrationCompleted=True'
+        'Source.KeyMigrationCompleted=True'
+    )
     foreach ($taskIndex in 1..$taskCount) {
         $taskName = if ($Scene -eq 'limits') { ($taskNamePrefix + ('SourceName0123456789' * 5)).Substring(0,64) } else { "$taskNamePrefix Source $taskIndex" }
         $taskLines += "Source.$taskIndex.Name=$taskName", "Source.$taskIndex.Initialized=True", "Source.$taskIndex.SourceId=preview-$taskIndex", "Source.$taskIndex.Threshold=95", "Source.$taskIndex.Cooldown=300", "Source.$taskIndex.Fps=5", "Source.$taskIndex.ModelKey=yolo26n_320", "Source.$taskIndex.Targets=person", "Source.$taskIndex.CaptureMode=ScreenRegion", "Source.$taskIndex.ScreenRegion=", "Source.$taskIndex.Masks="
