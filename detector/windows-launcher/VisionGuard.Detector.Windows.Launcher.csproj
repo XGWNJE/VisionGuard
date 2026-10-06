@@ -15,9 +15,9 @@
     <LangVersion>7.3</LangVersion>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
-    <Version>0.6.3</Version>
-    <FileVersion>0.6.3</FileVersion>
-    <AssemblyVersion>0.6.3</AssemblyVersion>
+    <Version>0.6.4</Version>
+    <FileVersion>0.6.4</FileVersion>
+    <AssemblyVersion>0.6.4</AssemblyVersion>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System.Net.Http" />

@@ -62,8 +62,12 @@ class MainActivity : ComponentActivity() {
     private var creditBlockedFrames = 0L
     private var diagnosticAt = 0L
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted && policy.foreground) startCamera()
-        else Toast.makeText(this, "需要允许摄像头后才能推流", Toast.LENGTH_LONG).show()
+        if (granted) {
+            if (policy.permissionStartPending && policy.foreground) startCamera()
+        } else {
+            policy.cancelPermissionRequest()
+            Toast.makeText(this, "需要允许摄像头后才能推流", Toast.LENGTH_LONG).show()
+        }
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -103,7 +107,7 @@ class MainActivity : ComponentActivity() {
                         CameraHome(state, preview, streaming, highResolution, dimScreen, hidePreview, captureSize, sentSize,
                             onStart = {
                                 if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startCamera()
-                                else permission.launch(Manifest.permission.CAMERA)
+                                else { policy.requestPermission(); permission.launch(Manifest.permission.CAMERA) }
                             }, onStop = { stopCamera("user") }, onBind = connection::bind, onRefresh = connection::refreshTargets,
                             onResolution = { highResolution = it; prefs.edit().putBoolean("720p", it).apply() },
                             onDim = { dimScreen = it; prefs.edit().putBoolean("dim", it).apply(); applyScreen() },
@@ -115,15 +119,20 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-    override fun onResume() { super.onResume(); policy.resumed() }
+    override fun onResume() {
+        super.onResume(); policy.resumed()
+        if (policy.permissionStartPending && ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startCamera()
+    }
     override fun onPause() {
         policy.leftForeground()
-        stopCamera(if (getSystemService(KeyguardManager::class.java).isKeyguardLocked) "locked" else "background")
+        if (streaming) stopCamera(if (getSystemService(KeyguardManager::class.java).isKeyguardLocked) "locked" else "background")
         super.onPause()
     }
+    override fun onStop() { policy.cancelPermissionRequest(); super.onStop() }
     private fun startCamera() {
-        if (!policy.start() || publisher?.state?.value?.connected != true) return
-        if (publisher?.state?.value?.stream?.targetDeviceId == null) { policy.stop(); return }
+        val state = publisher?.state?.value
+        if (state?.connected != true || state.stream?.targetDeviceId == null) { policy.cancelPermissionRequest(); return }
+        if (!policy.start()) return
         streaming = true; captureSize = null; sentSize = null; applyScreen(); publisher?.start()
         val own = ++cameraGeneration
         val future = ProcessCameraProvider.getInstance(this)

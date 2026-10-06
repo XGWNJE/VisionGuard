@@ -5,6 +5,29 @@ import org.junit.Test
 import java.nio.ByteBuffer
 
 class StreamPolicyTest {
+    @Test fun permissionRequestSurvivesDialogPauseAndStartsOnlyAfterResume() {
+        val policy = ForegroundStreamPolicy()
+        policy.resumed(); policy.requestPermission()
+        policy.leftForeground()
+        assertTrue(policy.permissionStartPending)
+        assertFalse(policy.start())
+        policy.resumed()
+        assertTrue(policy.permissionStartPending)
+        assertTrue(policy.start())
+        assertFalse(policy.permissionStartPending)
+        assertTrue(policy.streaming)
+    }
+    @Test fun leavingTheActivityOrCancellingPermissionDiscardsPendingStart() {
+        val policy = ForegroundStreamPolicy()
+        policy.resumed(); policy.requestPermission(); policy.leftForeground()
+        policy.cancelPermissionRequest(); policy.resumed()
+        assertFalse(policy.permissionStartPending)
+        assertFalse(policy.streaming)
+        policy.requestPermission(); policy.stop()
+        assertFalse(policy.permissionStartPending)
+        policy.leftForeground(); policy.requestPermission()
+        assertFalse(policy.permissionStartPending)
+    }
     @Test fun leavingForegroundRequiresManualRestart() {
         val policy = ForegroundStreamPolicy()
         assertFalse(policy.start())

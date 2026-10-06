@@ -8,7 +8,7 @@ VisionGuard 由检测节点、统一服务和控制台协作。视觉节点在 W
 
 [使用方式](#使用方式) · [快速开始](#快速开始) · [当前组件](#当前组件) · [路线规划](#路线规划) · [文档与许可](#文档与许可)
 
-[![Version](https://img.shields.io/badge/version-0.6.3-1f6feb)](./VERSION) [![License](https://img.shields.io/badge/license-MIT-7c3aed)](./LICENSE)
+[![Version](https://img.shields.io/badge/version-0.6.4-1f6feb)](./VERSION) [![License](https://img.shields.io/badge/license-MIT-7c3aed)](./LICENSE)
 
 </div>
 
@@ -18,7 +18,7 @@ VisionGuard 由检测节点、统一服务和控制台协作。视觉节点在 W
 
 **适合**需要在自己的设备上运行视觉检测，并在手机、平板或电脑上管理节点，在 Android 通知节点中接警的个人或团队。
 
-**当前边界**：0.6.3 修复账号请求限流、校时时钟导致新告警提前过期及来源登记前发送告警的问题；提供三分区 Windows 界面、相机推流、独立 Web 会话与通知节点。设备、视频、控制和事件按账号隔离。连接状态不等于通知收件确认，通知收件确认不等于声音播放。漏报风险是检测效果与故障处置的最高优先级，人员检测以 `person` 类验证。安装与升级见[发行说明](./docs/107-发行说明v0.6.3.md)，发布进展与实机覆盖见[验证报告](./docs/90-验证记录.md)。
+**当前边界**：0.6.4 修复首次相机授权后无法启动预览与推流，包含账号请求限流、校时时钟导致新告警提前过期及来源登记前发送告警的问题；提供三分区 Windows 界面、相机推流、独立 Web 会话与通知节点。设备、视频、控制和事件按账号隔离。连接状态不等于通知收件确认，通知收件确认不等于声音播放。漏报风险是检测效果与故障处置的最高优先级，人员检测以 `person` 类验证。安装与升级见[发行说明](./docs/108-发行说明v0.6.4.md)，发布进展与实机覆盖见[验证报告](./docs/90-验证记录.md)。
 
 1. 各组件登录同一账号后自动登记和匹配；相机推流节点以前台摄像头采集画面，经服务交给 Windows 视觉节点推理，也可继续使用本地屏幕或窗口来源。
 2. 视觉节点把告警、截图和状态发往统一服务；所有公网业务数据统一通过统一服务转发，不使用 P2P、ICE、STUN 或 TURN。正式服务地址为 `https://visionguard.xgwnje.cn`。
@@ -28,7 +28,7 @@ Windows 发行包使用统一目录：从目录根启动 `VisionGuard.Detector.W
 
 ## 快速开始
 
-[客户端发行包](https://github.com/XGWNJE/VisionGuard/releases/tag/v0.6.3) · [线上控制台](https://visionguard.xgwnje.cn/console/) · [发行说明](./docs/107-发行说明v0.6.3.md)
+[客户端发行包](https://github.com/XGWNJE/VisionGuard/releases/tag/v0.6.4) · [线上控制台](https://visionguard.xgwnje.cn/console/) · [发行说明](./docs/108-发行说明v0.6.4.md)
 
 各组件的发行版内置正式服务地址，只需登录同一账号；进入程序后可修改自动生成的本机名称。初始管理员为 `xgwnje`，已有账号沿用密码；全新服务的随机初始密码仅存私有数据目录，见[账号管理](./docs/60-构建验证与发布.md#基础账号与客户端登录)。管理员可在控制台创建账号、禁用账号、重置密码及设置权限。开发验收使用[隔离测试入口](./docs/60-构建验证与发布.md#本机隔离测试)。
 
@@ -93,6 +93,6 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scri
 | 已验证范围与未覆盖项 | [验证报告](./docs/90-验证记录.md) |
 | 界面规范与终端组件 | [设计索引](./docs/00-文档索引.md) · [组件设计](./docs/72-多平台UI组件设计.md) |
 | 0.6.2 发行内容 | [发行说明](./docs/106-发行说明v0.6.2.md) |
-| 0.6.3 发行内容 | [发行说明](./docs/107-发行说明v0.6.3.md) |
+| 0.6.4 发行内容 | [发行说明](./docs/108-发行说明v0.6.4.md) |
 
 本项目采用 [MIT License](./LICENSE)。第三方依赖、模型和素材遵循各自许可证。
