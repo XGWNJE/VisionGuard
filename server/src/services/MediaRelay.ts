@@ -21,6 +21,9 @@ const FRAME_BYTES = 2 * 1024 * 1024;
 const FRAME_AGE_MS = 2500;
 const SUBSCRIBER_TIMEOUT_MS = 5000;
 const BINDING_LIMIT = 16;
+function mediaDiagnostic(message: () => string): void {
+  if (process.env.VISIONGUARD_MEDIA_DIAGNOSTICS === '1') console.log(`[MediaPerf] ${message()}`);
+}
 function send(ws: WebSocket, value: object): void { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(value)); }
 
 /** Read JPEG SOF dimensions, reject truncated headers and non-JPEG payloads before relay. */
@@ -197,10 +200,12 @@ export class MediaRelay {
           }
           if (!publisher.credit || publisher.stopped) { ws.close(4002, 'frame credit required'); return; }
           const packet = Buffer.isBuffer(raw) ? raw : Buffer.concat(Array.isArray(raw) ? raw : [Buffer.from(raw as ArrayBuffer)]);
+          const parsingAt = performance.now();
           const frame = parseFrame(packet);
           const stream = this.accounts.get(publisher.session.account.accountId)!.find(item => item.publisherDeviceId === publisher!.session.device.deviceId)!;
           if (!frame || frame.header.streamId !== stream.streamId || frame.header.sessionId !== publisher.sessionId || frame.header.sequence <= publisher.sequence || frame.header.capturedAt < publisher.capturedAt) { ws.close(4002, 'invalid frame'); return; }
           const now = Date.now(), monotonicNow = performance.now();
+          mediaDiagnostic(() => `event=publish sequence=${frame.header.sequence} packetBytes=${packet.length} parseMs=${(monotonicNow-parsingAt).toFixed(3)} socketQueueBytes=${publisher!.ws.bufferedAmount}`);
           publisher.offset ??= monotonicNow - frame.header.capturedAt;
           const age = monotonicNow - (frame.header.capturedAt + publisher.offset);
           if (age < -FRAME_AGE_MS) { ws.close(4002, 'capture clock changed'); return; }
@@ -234,6 +239,7 @@ export class MediaRelay {
           if (message.type !== 'frame-received') return;
           const sent = subscriber.inflight.get(message.streamId);
           if (!sent || sent.sessionId !== message.sessionId || sent.sequence !== message.sequence) return;
+          mediaDiagnostic(() => `event=consumerAck sequence=${message.sequence} roundTripMs=${(performance.now()-sent.sentAt).toFixed(3)} socketQueueBytes=${subscriber!.ws.bufferedAmount}`);
           const stats = this.stats(subscriber.session.account.accountId, message.streamId); if (stats) stats.confirmed++;
           subscriber.inflight.delete(message.streamId);
           const latest = subscriber.latest.get(message.streamId); subscriber.latest.delete(message.streamId);
@@ -270,6 +276,7 @@ export class MediaRelay {
     if (performance.now() - frame.receivedAt > FRAME_AGE_MS) { this.dropped(consumer.session.account.accountId, streamId, 'stale'); return; }
     if (consumer.ws.readyState !== WebSocket.OPEN || consumer.ws.bufferedAmount > FRAME_BYTES) { this.dropped(consumer.session.account.accountId, streamId, 'sendFailed'); consumer.ws.terminate(); return; }
     consumer.inflight.set(streamId, { sessionId: parsed.header.sessionId, sequence: parsed.header.sequence, sentAt: performance.now() });
+    mediaDiagnostic(() => `event=deliver sequence=${parsed.header.sequence} queueAgeMs=${(performance.now()-frame.receivedAt).toFixed(3)} packetBytes=${frame.packet.length} socketQueueBytes=${consumer.ws.bufferedAmount}`);
     consumer.ws.send(frame.packet, { binary: true }, error => {
       if (error) { this.dropped(consumer.session.account.accountId, streamId, 'sendFailed'); consumer.ws.terminate(); }
       else { const stats = this.stats(consumer.session.account.accountId, streamId); if (stats) stats.forwarded++; }

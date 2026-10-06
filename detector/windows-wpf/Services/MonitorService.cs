@@ -195,9 +195,13 @@ namespace VisionGuard.Detector.Windows.Services
                     timings["publisherCapturedAt"] = remoteHeader.capturedAt;
                     timings["relayReceivedAt"] = remoteHeader.receivedAt;
                 }
+                long alertStarted = totalSw.ElapsedMilliseconds;
                 _alertService.Evaluate(detections, cfg, timings, frame);
+                long alertMs = totalSw.ElapsedMilliseconds - alertStarted;
 
                 // 6. 通知 UI
+                if (remoteHeader != null && MediaDiagnostics.Enabled)
+                    MediaDiagnostics.Write($"[MediaPerf] event=inference sequence={remoteHeader.sequence} captureMs={captureMs} preprocessMs={preprocessMs} inferMs={inferMs} parseMs={parseMs} alertMs={alertMs} cachedAgeMs={remoteAgeMs} totalMs={totalSw.ElapsedMilliseconds}");
                 FrameProcessed?.Invoke(this, new FrameResultEventArgs(
                     detections, (Bitmap)frame.Clone(), inferMs, totalSw.ElapsedMilliseconds));
             }

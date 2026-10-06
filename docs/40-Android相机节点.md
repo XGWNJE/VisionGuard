@@ -13,6 +13,7 @@
 - 摄像头生命周期绑定当前 Activity；切到后台或锁屏立即停流、解绑摄像头。回到前台须手动开始。
 - 仅推流时保持亮屏；应用内可单独降低窗口亮度、收起画面预览。跟随系统／浅色／深色选择持久保存，与推流亮度独立；系统状态不可用时回退浅色。停止后恢复窗口亮度，不修改系统锁屏或唤醒设置。
 - CameraX 只保留最新画面；发送端最多一帧等待服务器确认，超过确认时限重建媒体连接，丢弃积压画面。
+- YUV 各平面按行批量读取，分别处理行距、像素步长和起始偏移，再转为 NV21；不假设 U/V 共享内存。JPEG 质量保持 55，超过规格上限才缩放；等待发送额度不消耗下一次采样间隔。最高 5 FPS 是采样上限，实际帧率仍受逐帧回执往返限制。
 - 重复绑定同一目标保留媒体会话、帧序号与在途额度；媒体空闲时也发送心跳，12 秒无响应重连。新连接使用自己的期限，旧回调不能清理新连接。
 - 启动与手动检查 GitHub 稳定版更新，精确选择相机 APK；下载支持取消、大小／SHA256、包名／版本／签名校验与私有缓存暂存。安装前后台复核并要求应用处于前台，损坏缓存退回下载；退出时网络清理也在后台执行。允许安装后请求系统安装器，不把请求或打开安装器显示为已安装。
 
@@ -38,7 +39,7 @@
 
 - 采集、前后台状态、亮度与页面：`detector/android/app/src/main/java/com/xgwnje/visionguard/detector/MainActivity.kt`
 - 媒体连接、帧确认与目标绑定：同目录 `stream/CameraPublisher.kt`
-- YUV 转换与规格限制：`stream/CameraFrameCodec.kt`、`stream/MediaPacket.kt`
+- YUV 转换与规格限制：`stream/YuvPlanes.kt`、`stream/CameraFrameCodec.kt`、`stream/MediaPacket.kt`
 - 账号与统一主题：`android-shared/src/main/java/com/xgwnje/visionguard/account/`
 - 编译与签名：`detector/android/app/build.gradle.kts`；不限制为单一 ARM ABI，支持本机 x86_64 模拟器构建。
 - UI 规范：[Android 设计说明](71-Android界面规范.md)

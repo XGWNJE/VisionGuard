@@ -57,6 +57,9 @@ class MainActivity : ComponentActivity() {
     private var hidePreview by mutableStateOf(false)
     private var priorBrightness = -1f
     private var nextFrameAt = 0L
+    private var analyzedFrames = 0L
+    private var creditBlockedFrames = 0L
+    private var diagnosticAt = 0L
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted && policy.foreground) startCamera()
         else Toast.makeText(this, "需要允许摄像头后才能推流", Toast.LENGTH_LONG).show()
@@ -135,18 +138,26 @@ class MainActivity : ComponentActivity() {
                 analysis.setAnalyzer(executor) { image ->
                     try {
                         val now = SystemClock.elapsedRealtime()
+                        analyzedFrames++
+                        if (BuildConfig.DEBUG && now - diagnosticAt >= 5000) {
+                            MediaDiagnostics.log { "event=cameraSample callbacks=$analyzedFrames creditBlocked=$creditBlockedFrames windowMs=${if(diagnosticAt==0L) 0 else now-diagnosticAt} width=${image.width} height=${image.height}" }
+                            analyzedFrames = 0; creditBlockedFrames = 0; diagnosticAt = now
+                        }
                         val active = publisher
                         if (own != cameraGeneration || !streaming || active == null) return@setAnalyzer
                         if (now < nextFrameAt) { active.sampledOut(); return@setAnalyzer }
+                        if (!active.canPublish()) { creditBlockedFrames++; active.dropped(); return@setAnalyzer }
+                        // Pace actual samples; waiting for credit must not consume the next sampling interval.
                         nextFrameAt = now + 200
-                        if (!active.canPublish()) { active.dropped(); return@setAnalyzer }
                         val frame = CameraFrameCodec.encode(image, if (highResolution) 1280 else 640, if (highResolution) 720 else 480)
                         val captured = image.width to image.height
                         runOnUiThread { if (own == cameraGeneration && streaming) { captureSize = captured; sentSize = frame.width to frame.height } }
                         if (active.publish(frame) && !hidePreview) {
+                            val previewStarted = SystemClock.elapsedRealtimeNanos()
                             val bitmap = BitmapFactory.decodeByteArray(frame.jpeg, 0, frame.jpeg.size)
                             val oriented = if (frame.rotation == 0 || bitmap == null) bitmap else Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply { postRotate(frame.rotation.toFloat()) }, true)
                             runOnUiThread { if (own == cameraGeneration && streaming) preview = oriented }
+                            MediaDiagnostics.log { "event=preview workUs=${(SystemClock.elapsedRealtimeNanos()-previewStarted)/1000}" }
                         }
                     } catch (_: Exception) {
                         if (own == cameraGeneration) publisher?.dropped()

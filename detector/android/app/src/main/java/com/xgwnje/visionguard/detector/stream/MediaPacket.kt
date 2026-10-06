@@ -38,6 +38,8 @@ class FrameCredit {
         if (sessionId != session || sequence != pending) return false
         pending = null; return true
     }
+    @Synchronized fun acknowledgementAge(sessionId: String, sequence: Long, now: Long): Long? =
+        if (sessionId == session && sequence == pending) (now - sentAt).coerceAtLeast(0) else null
     @Synchronized fun stalled(now: Long): Boolean = pending != null && now - sentAt > 3000
 }
 
