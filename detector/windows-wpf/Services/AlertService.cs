@@ -88,6 +88,7 @@ namespace VisionGuard.Detector.Windows.Services
                 snapshot = null;
             }
 
+            long renderedMs = sw.ElapsedMilliseconds;
             // 生成 alertId，用于本地截图文件名和服务端追踪
             string alertId = Guid.NewGuid().ToString();
 
@@ -105,6 +106,8 @@ namespace VisionGuard.Detector.Windows.Services
 
             // 触发事件（传递本帧所有检测结果）
             AlertTriggered?.Invoke(this, new AlertEvent(alertId, detections.AsReadOnly(), snapshot, finalTimings, _sourceId, _sourceName));
+            if (MediaDiagnostics.Enabled)
+                MediaDiagnostics.Write($"[MediaPerf] event=alert renderMs={renderedMs} saveMs={alertMs-renderedMs} dispatchMs={sw.ElapsedMilliseconds-alertMs} totalMs={sw.ElapsedMilliseconds}");
         }
 
         // ── 截图缓存管理 ─────────────────────────────────────────────

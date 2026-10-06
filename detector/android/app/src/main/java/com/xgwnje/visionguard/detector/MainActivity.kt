@@ -56,7 +56,9 @@ class MainActivity : ComponentActivity() {
     private var dimScreen by mutableStateOf(false)
     private var hidePreview by mutableStateOf(false)
     private var priorBrightness = -1f
-    private var nextFrameAt = 0L
+    private var analyzedFrames = 0L
+    private var creditBlockedFrames = 0L
+    private var diagnosticAt = 0L
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted && policy.foreground) startCamera()
         else Toast.makeText(this, "需要允许摄像头后才能推流", Toast.LENGTH_LONG).show()
@@ -120,7 +122,7 @@ class MainActivity : ComponentActivity() {
     private fun startCamera() {
         if (!policy.start() || publisher?.state?.value?.connected != true) return
         if (publisher?.state?.value?.stream?.targetDeviceId == null) { policy.stop(); return }
-        streaming = true; nextFrameAt = 0; captureSize = null; sentSize = null; applyScreen(); publisher?.start()
+        streaming = true; captureSize = null; sentSize = null; applyScreen(); publisher?.start()
         val own = ++cameraGeneration
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
@@ -132,21 +134,30 @@ class MainActivity : ComponentActivity() {
                     .setResolutionSelector(ResolutionSelector.Builder()
                         .setAspectRatioStrategy(if (highResolution) AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY else AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
                         .setResolutionStrategy(ResolutionStrategy(target, ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER)).build()).build()
+                val framePacer = com.xgwnje.visionguard.detector.stream.FramePacer()
                 analysis.setAnalyzer(executor) { image ->
                     try {
                         val now = SystemClock.elapsedRealtime()
+                        analyzedFrames++
+                        if (BuildConfig.DEBUG && now - diagnosticAt >= 5000) {
+                            MediaDiagnostics.log { "event=cameraSample callbacks=$analyzedFrames creditBlocked=$creditBlockedFrames windowMs=${if(diagnosticAt==0L) 0 else now-diagnosticAt} width=${image.width} height=${image.height}" }
+                            analyzedFrames = 0; creditBlockedFrames = 0; diagnosticAt = now
+                        }
                         val active = publisher
                         if (own != cameraGeneration || !streaming || active == null) return@setAnalyzer
-                        if (now < nextFrameAt) { active.sampledOut(); return@setAnalyzer }
-                        nextFrameAt = now + 200
-                        if (!active.canPublish()) { active.dropped(); return@setAnalyzer }
+                        if (!framePacer.due(now, active.framesPerSecond)) { active.sampledOut(); return@setAnalyzer }
+                        if (!active.canPublish()) { creditBlockedFrames++; active.dropped(); return@setAnalyzer }
+                        // Skip before conversion/compression; callback jitter must not lower the requested cadence.
+                        framePacer.sampled(now)
                         val frame = CameraFrameCodec.encode(image, if (highResolution) 1280 else 640, if (highResolution) 720 else 480)
                         val captured = image.width to image.height
                         runOnUiThread { if (own == cameraGeneration && streaming) { captureSize = captured; sentSize = frame.width to frame.height } }
                         if (active.publish(frame) && !hidePreview) {
+                            val previewStarted = SystemClock.elapsedRealtimeNanos()
                             val bitmap = BitmapFactory.decodeByteArray(frame.jpeg, 0, frame.jpeg.size)
                             val oriented = if (frame.rotation == 0 || bitmap == null) bitmap else Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, Matrix().apply { postRotate(frame.rotation.toFloat()) }, true)
                             runOnUiThread { if (own == cameraGeneration && streaming) preview = oriented }
+                            MediaDiagnostics.log { "event=preview workUs=${(SystemClock.elapsedRealtimeNanos()-previewStarted)/1000}" }
                         }
                     } catch (_: Exception) {
                         if (own == cameraGeneration) publisher?.dropped()

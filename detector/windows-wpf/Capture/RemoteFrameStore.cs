@@ -45,6 +45,7 @@ namespace VisionGuard.Detector.Windows.Capture
         public const int MaximumHeaderBytes = 4096;
         public const int MaximumFrameAgeMs = 3000;
         public static RemoteFrameStore Shared { get; } = new RemoteFrameStore();
+        public event Action<string>? FrameAvailable;
         private readonly object _sync = new object();
         private object? _owner;
         private readonly Dictionary<string, Entry> _frames = new Dictionary<string, Entry>(StringComparer.Ordinal);
@@ -102,6 +103,7 @@ namespace VisionGuard.Detector.Windows.Capture
                     stream.isStreaming = true; stream.stopReason = null;
                 }
             }
+            FrameAvailable?.Invoke(header.streamId);
             return header;
         }
         public Bitmap ReadFresh(string streamId, ref string lastSession, ref long lastSequence, out RemoteFrameHeader header)

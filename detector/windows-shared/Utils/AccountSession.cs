@@ -42,12 +42,28 @@ namespace VisionGuard.Detector.Windows.Utils
         private static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = 1024 * 1024 };
         private static readonly object Sync = new object();
         private static AccountSnapshot _current;
-        private static bool _loaded;
         private static string _serviceUrl;
+        // Readers must not wait for the writer's HTTP request. Publish one coherent endpoint/identity view.
+        private sealed class PublishedSession
+        {
+            public readonly AccountSnapshot Current;
+            public readonly string ServiceUrl, ScopeKey;
+            public PublishedSession(AccountSnapshot current, string serviceUrl)
+            {
+                Current = current; ServiceUrl = serviceUrl;
+                ScopeKey = Hash(serviceUrl + "|" + (current == null ? "signed-out" : current.account.accountId + "|" + current.device.deviceId));
+            }
+        }
+        private static PublishedSession _published;
+        private static PublishedSession Published
+        {
+            get { var value = Volatile.Read(ref _published); if (value == null) { Load(); value = Volatile.Read(ref _published); } return value; }
+        }
+        private static void Publish() { Volatile.Write(ref _published, new PublishedSession(_current, _serviceUrl)); }
         private static DateTime _lastValidated = DateTime.MinValue;
         public static event EventHandler Changed;
-        public static AccountSnapshot Current { get { lock (Sync) { if (!_loaded) Load(); return _current; } } }
-        public static string ServiceUrl { get { lock (Sync) { if (!_loaded) Load(); return _serviceUrl; } } }
+        public static AccountSnapshot Current { get { return Published.Current; } }
+        public static string ServiceUrl { get { return Published.ServiceUrl; } }
         public static string Root
         {
             get { return Environment.GetEnvironmentVariable("VISIONGUARD_ACCOUNT_DIR") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionGuard", "accounts"); }
@@ -74,7 +90,7 @@ namespace VisionGuard.Detector.Windows.Utils
         public static string LogRoot { get { return Environment.GetEnvironmentVariable("VISIONGUARD_LOG_DIR") ?? (IsIsolated ? Path.Combine(Root, "logs") : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "VisionGuard")); } }
         public static string ScopeKey
         {
-            get { var s = Current; return Hash(ServiceUrl + "|" + (s == null ? "signed-out" : s.account.accountId + "|" + s.device.deviceId)); }
+            get { return Published.ScopeKey; }
         }
         public static string Hash(string value)
         {
@@ -87,7 +103,8 @@ namespace VisionGuard.Detector.Windows.Utils
             private readonly Mutex _mutex;
             public SessionWriteLock()
             {
-                _mutex = new Mutex(false, @"Local\VisionGuard.AccountSession." + Hash(ServiceUrl));
+                if (Volatile.Read(ref _published) == null) Load();
+                _mutex = new Mutex(false, @"Local\VisionGuard.AccountSession." + Hash(_serviceUrl));
                 bool owned;
                 try { owned = _mutex.WaitOne(TimeSpan.FromSeconds(20)); } catch (AbandonedMutexException) { owned = true; }
                 if (!owned) { _mutex.Dispose(); throw new TimeoutException("等待登录会话更新超时。"); }
@@ -141,7 +158,7 @@ namespace VisionGuard.Detector.Windows.Utils
             Environment.SetEnvironmentVariable("VISIONGUARD_SETTINGS_PATH", values["settingsPath"]);
             Environment.SetEnvironmentVariable("VISIONGUARD_MODELS_DIR", values["modelsDirectory"]);
             Environment.SetEnvironmentVariable("VISIONGUARD_LOG_DIR", values["logDirectory"]);
-            lock (Sync) { _loaded = false; _current = null; _lastValidated = DateTime.MinValue; }
+            lock (Sync) { _current = null; _lastValidated = DateTime.MinValue; Volatile.Write(ref _published, null); }
         }
         public static void Load()
         {
@@ -154,8 +171,8 @@ namespace VisionGuard.Detector.Windows.Utils
                     _serviceUrl = File.Exists(endpoint) ? File.ReadAllText(endpoint).Trim() : ProductionUrl;
                 }
                 _serviceUrl = NormalizeUrl(_serviceUrl);
-                _loaded = true;
                 _current = Read();
+                Publish();
             }
         }
         private static AccountSnapshot Read()
@@ -209,7 +226,7 @@ namespace VisionGuard.Detector.Windows.Utils
                 var previousService = ServiceUrl; var previousCurrent = _current;
                 try
                 {
-                    _serviceUrl = AllowsTestEndpoint ? NormalizeUrl(serviceUrl) : ProductionUrl; _loaded = true;
+                    _serviceUrl = AllowsTestEndpoint ? NormalizeUrl(serviceUrl) : ProductionUrl;
                     using (var sessionLock = new SessionWriteLock())
                     {
                         var previous = Read();
@@ -228,6 +245,7 @@ namespace VisionGuard.Detector.Windows.Utils
                         RememberDevice(normalizedUser, _current.device.deviceId);
                         Write(_current); _lastValidated = DateTime.UtcNow;
                         File.WriteAllText(Path.Combine(Root, "endpoint.txt"), _serviceUrl, new UTF8Encoding(false));
+                        Publish();
                     }
                 }
                 catch { _serviceUrl = previousService; _current = previousCurrent; throw; }
@@ -241,30 +259,34 @@ namespace VisionGuard.Detector.Windows.Utils
             lock (Sync)
             using (var sessionLock = new SessionWriteLock())
             {
-                var disk = Read();
-                if ((_current == null) != (disk == null) || (_current != null && disk != null && _current.token != disk.token)) changed = true;
-#pragma warning disable CS8601 // Shared with C# 7.3 projects; null represents a signed-out session.
-                _current = disk;
-#pragma warning restore CS8601
-                if (_current != null)
+                try
                 {
-                    DateTimeOffset expires;
-                    if (!DateTimeOffset.TryParse(_current.expiresAt, out expires) || expires <= DateTimeOffset.UtcNow.AddMinutes(5))
+                    var disk = Read();
+                    if ((_current == null) != (disk == null) || (_current != null && disk != null && _current.token != disk.token)) changed = true;
+#pragma warning disable CS8601 // Shared with C# 7.3 projects; null represents a signed-out session.
+                    _current = disk;
+#pragma warning restore CS8601
+                    if (_current != null)
                     {
-                        try { _current = RequestSession("/api/account/refresh", new { }, _current.token); Write(_current); changed = true; }
-                        catch (UnauthorizedAccessException) { _current = null; Write(null); changed = true; }
-                    }
-                    else if (DateTime.UtcNow - _lastValidated > TimeSpan.FromSeconds(30))
-                    {
-                        using (var client = Client(_current.token))
-                        using (var response = client.GetAsync(_serviceUrl + "/api/account/session").GetAwaiter().GetResult())
+                        DateTimeOffset expires;
+                        if (!DateTimeOffset.TryParse(_current.expiresAt, out expires) || expires <= DateTimeOffset.UtcNow.AddMinutes(5))
                         {
-                            if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden) { _current = null; Write(null); changed = true; }
-                            else response.EnsureSuccessStatusCode();
-                            _lastValidated = DateTime.UtcNow;
+                            try { _current = RequestSession("/api/account/refresh", new { }, _current.token); Write(_current); changed = true; }
+                            catch (UnauthorizedAccessException) { _current = null; Write(null); changed = true; }
+                        }
+                        else if (DateTime.UtcNow - _lastValidated > TimeSpan.FromSeconds(30))
+                        {
+                            using (var client = Client(_current.token))
+                            using (var response = client.GetAsync(_serviceUrl + "/api/account/session").GetAwaiter().GetResult())
+                            {
+                                if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden) { _current = null; Write(null); changed = true; }
+                                else response.EnsureSuccessStatusCode();
+                                _lastValidated = DateTime.UtcNow;
+                            }
                         }
                     }
                 }
+                finally { Publish(); }
             }
             if (changed) Changed?.Invoke(null, EventArgs.Empty);
             return Current;
@@ -282,7 +304,7 @@ namespace VisionGuard.Detector.Windows.Utils
                         using (var client = Client(current.token))
                         using (var response = client.PostAsync(_serviceUrl + "/api/account/logout", new StringContent("{}", Encoding.UTF8, "application/json")).GetAwaiter().GetResult()) { response.EnsureSuccessStatusCode(); }
                 }
-                finally { _current = null; Write(null); }
+                finally { _current = null; Publish(); Write(null); }
             }
             Changed?.Invoke(null, EventArgs.Empty);
         }
@@ -316,6 +338,7 @@ namespace VisionGuard.Detector.Windows.Utils
                     if (_current.resident != null) _current.resident.device.deviceName = device.deviceName;
                 }
                 Write(latest);
+                Publish();
             }
         }
     }

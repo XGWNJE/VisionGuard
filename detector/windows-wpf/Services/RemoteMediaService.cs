@@ -52,6 +52,7 @@ namespace VisionGuard.Detector.Windows.Services
                         }, null, 3000, 3000))
                         {
                         byte[] buffer = new byte[64 * 1024];
+                        long previousFrameAt = 0;
                         while (!_stop.IsCancellationRequested)
                         {
                             using (var message = new MemoryStream())
@@ -66,8 +67,16 @@ namespace VisionGuard.Detector.Windows.Services
                                 } while (!result.EndOfMessage);
                                 if (result.MessageType == WebSocketMessageType.Binary)
                                 {
+                                    long arrivedAt = Stopwatch.GetTimestamp();
                                     var header = RemoteFrameStore.Shared.Accept(message.ToArray(), this);
+                                    long decodedAt = Stopwatch.GetTimestamp();
                                     Send(ws, new { type = "frame-received", header.streamId, header.sessionId, header.sequence });
+                                    if (MediaDiagnostics.Enabled)
+                                        MediaDiagnostics.Write(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                                            "[MediaPerf] event=receive sequence={0} packetBytes={1} gapMs={2:F3} decodeMs={3:F3} ackSendMs={4:F3}",
+                                            header.sequence, message.Length, previousFrameAt == 0 ? 0 : (arrivedAt - previousFrameAt) * 1000d / Stopwatch.Frequency,
+                                            (decodedAt - arrivedAt) * 1000d / Stopwatch.Frequency, (Stopwatch.GetTimestamp() - decodedAt) * 1000d / Stopwatch.Frequency));
+                                    previousFrameAt = arrivedAt;
                                     Interlocked.Exchange(ref lastResponse, Stopwatch.GetTimestamp());
                                 }
                                 else

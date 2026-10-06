@@ -790,7 +790,10 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   if (msg.components !== undefined) client.components = sanitizeComponents(msg.components) ?? client.components;
   if (typeof msg.monitoringExpected === 'boolean') client.monitoringExpected = msg.monitoringExpected;
   if (validProgress(msg.lastProgressAt)) client.lastProgressAt = msg.lastProgressAt;
-  if (sanitizedSources !== undefined) client.sources = sanitizedSources;
+  if (sanitizedSources !== undefined) {
+    client.sources = sanitizedSources;
+    mediaRelay.updateSamplingRates(accountId, client.deviceId, client.sources);
+  }
   if (msg.sources !== undefined) client.sourceLimitExceeded = sourceOverLimit;
 
   const count = (_heartbeatCounter.get(msg.deviceId) ?? 0) + 1;
