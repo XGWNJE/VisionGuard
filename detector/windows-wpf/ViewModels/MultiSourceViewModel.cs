@@ -545,7 +545,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         };
         private BitmapSource? _previewImage;
         private double _frameWidth, _frameHeight;
-        private string _lastFrameText = "尚无画面", _inferenceText = "推理 — ms", _lastAlertText = "最后报警 —", _backendText = "后端 —";
+        private string _lastFrameText = "尚无画面", _inferenceText = "— ms", _lastAlertText = "—", _backendText = "—";
         private string _statusToolTip = "";
         private double _actualFps;
         private bool _isPerformanceInsufficient;
@@ -1123,7 +1123,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             // 只有“持续不足”达到看门狗的持续时间阈值后 PerformanceWarning 才有文案，
             // 因此直接用它作为“已确认性能不足”的标记，卡片与弹窗共用同一个判据。
             IsPerformanceInsufficient = !string.IsNullOrWhiteSpace(status.PerformanceWarning);
-            BackendText = status.ActiveBackend == "Unavailable" ? "后端 —" : $"{status.ActiveBackend} · {status.ActualFps:0.0} FPS";
+            BackendText = status.ActiveBackend == "Unavailable" ? "—" : status.ActiveBackend;
             StatusText = !string.IsNullOrWhiteSpace(status.Error)
                 ? $"异常：{status.Error}"
                 : IsPerformanceInsufficient
@@ -1141,7 +1141,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             PreviewImage = image; FrameWidth = image.PixelWidth; FrameHeight = image.PixelHeight; Detections.Clear();
             foreach (var d in detections) Detections.Add(new DetectionItem { Left = d.BoundingBox.Left, Top = d.BoundingBox.Top, Width = d.BoundingBox.Width, Height = d.BoundingBox.Height, Label = $"{d.Label} {(int)(d.Confidence * 100)}%" });
             LastFrameText = $"更新 {DateTime.Now:HH:mm:ss}";
-            InferenceText = $"推理 {inferenceMs} ms";
+            InferenceText = $"{inferenceMs} ms";
         }
 
         /// <summary>
@@ -1151,7 +1151,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         internal void ApplyFrameStatsOnly(long inferenceMs)
         {
             LastFrameText = $"更新 {DateTime.Now:HH:mm:ss}";
-            InferenceText = $"推理 {inferenceMs} ms";
+            InferenceText = $"{inferenceMs} ms";
         }
 
         /// <summary>配置、账号或来源生命周期结束时释放画面。</summary>
@@ -1167,7 +1167,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         internal void ApplyAlert(AlertEvent alert)
         {
             var target = alert.Detections.FirstOrDefault()?.Label ?? "目标";
-            LastAlertText = $"最后报警 {DateTime.Now:HH:mm:ss} · {target} ×{alert.Detections.Count}";
+            LastAlertText = $"{DateTime.Now:HH:mm:ss} · {target} ×{alert.Detections.Count}";
         }
 
         /// <summary>采集目标三件套变更：立即持久化并重建来源（这三项本来就不经过冷改动路径）。</summary>

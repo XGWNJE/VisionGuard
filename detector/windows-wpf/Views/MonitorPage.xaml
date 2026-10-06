@@ -18,11 +18,20 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" MinHeight="32"/>
                     <RowDefinition Height="32"/>
+                    <RowDefinition Height="Auto" MinHeight="32"/>
+                    <RowDefinition Height="Auto" MinHeight="32"/>
+                    <RowDefinition Height="Auto" MinHeight="32"/>
                 </Grid.RowDefinitions>
                 <TextBlock Text="状态" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
                 <TextBlock Grid.Column="1" Text="{Binding StatusText}" Style="{StaticResource SourceStatusText}" TextWrapping="Wrap" VerticalAlignment="Center" ToolTip="{Binding StatusToolTip}"/>
                 <TextBlock Grid.Row="1" Text="实际帧率" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
                 <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding FpsText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="2" Text="后端" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding BackendText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="3" Text="推理耗时" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding InferenceText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="4" Text="最后报警" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding LastAlertText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
             </Grid>
             <Grid Margin="0,8,0,24">
                 <Button Content="开始检测" Style="{StaticResource PanePrimaryButton}" Command="{Binding StartCommand}" ToolTip="{Binding StartActionHint}" ToolTipService.ShowOnDisabled="True">
@@ -93,13 +102,6 @@
                 <TextBlock Grid.Column="1" Text="{Binding MaskInfo}" TextWrapping="Wrap" VerticalAlignment="Center"/>
             </Grid>
             <Button Content="编辑遮罩" Style="{StaticResource PaneButton}" Command="{Binding EditMasksCommand}" ToolTip="{Binding EditActionHint}" ToolTipService.ShowOnDisabled="True" Margin="0,8,0,0"/>
-            <Expander Header="运行详情" Margin="0,24,0,0">
-                <StackPanel Margin="0,12,0,0">
-                    <TextBlock Text="{Binding BackendText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                    <TextBlock Text="{Binding InferenceText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                    <TextBlock Text="{Binding LastAlertText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                </StackPanel>
-            </Expander>
             <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Margin="0,24,0,0" Padding="0,16,0,0">
                 <StackPanel>
                     <TextBlock Text="来源管理" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
