@@ -92,7 +92,7 @@
     <Page Include="Views\MainWindow.xaml" SubType="Designer" Generator="MSBuild:Compile" />
     <Page Include="Views\MonitorPage.xaml" SubType="Designer" Generator="MSBuild:Compile" />
     <Page Include="Views\SourcePreviewCard.xaml" SubType="Designer" Generator="MSBuild:Compile" />
-    <Page Include="Views\SourceStrip.xaml" SubType="Designer" Generator="MSBuild:Compile" />
+    <Page Include="Views\AddSourceWindow.xaml" SubType="Designer" Generator="MSBuild:Compile" />
     <Page Include="Views\ParameterEditorWindow.xaml" SubType="Designer" Generator="MSBuild:Compile" />
     <Page Include="Views\GlobalSettingsPage.xaml" SubType="Designer" Generator="MSBuild:Compile" />
     <Page Include="Views\MaskEditorWindow.xaml" SubType="Designer" Generator="MSBuild:Compile" />

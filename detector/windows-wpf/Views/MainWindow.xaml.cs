@@ -13,14 +13,26 @@ namespace VisionGuard.Detector.Windows.Views
         private NotifyIcon? _notifyIcon;
         private bool _resourcesDisposed;
         private bool _isClosing;
+        private double _inspectorWidth = 320;
+        private System.Windows.Controls.Control? _settingsReturnControl;
 
         public MainWindow()
         {
             InitializeComponent();
             SourceInitialized += (s, e) => Themes.ThemeManager.ApplyTitleBar(this);
-            Loaded += (s, e) => { FitWorkArea(); ConstrainInspectorWidth(); };
-            SizeChanged += (s, e) => ConstrainInspectorWidth();
+            Loaded += (s, e) => { FitWorkArea(); AdaptPanes(); };
+            SizeChanged += (s, e) => AdaptPanes();
+            SourceList.SelectionChanged += (_, e) =>
+            {
+                if (e.AddedItems.Count > 0) SourceList.ScrollIntoView(e.AddedItems[0]);
+            };
             SetupTrayIcon();
+            PreviewKeyDown += (_, e) =>
+            {
+                if (e.Key != System.Windows.Input.Key.Escape) return;
+                if (GlobalHost.Visibility == Visibility.Visible) { CloseGlobalSettings_OnClick(this, new RoutedEventArgs()); e.Handled = true; }
+                else if (InspectorDrawer.Visibility == Visibility.Visible) { CloseInspector_OnClick(this, new RoutedEventArgs()); e.Handled = true; }
+            };
         }
 
         private void SetupTrayIcon()
@@ -47,7 +59,7 @@ namespace VisionGuard.Detector.Windows.Views
 
         private void FitWorkArea()
         {
-            // WPF uses logical pixels: retain usable space at 900P with 125%/150% DPI.
+            // Fit the current work area; layout depends on usable width rather than a fixed resolution.
             var workArea = SystemParameters.WorkArea;
             Width = Math.Min(Width, Math.Max(MinWidth, workArea.Width - 16));
             Height = Math.Min(Height, Math.Max(MinHeight, workArea.Height - 16));
@@ -105,24 +117,41 @@ namespace VisionGuard.Detector.Windows.Views
         }
 
         /// <summary>
-        /// 分隔条拖完立即落盘，并把卡片列恢复成自适应：只让「检查区宽度」成为持久化的事实，
-        /// 卡片区永远占满剩余空间（否则拖动会把卡片列也变成固定像素，窗口放大时它不跟着变）。
+        /// 限制两列侧栏的可用宽度，让主画面继续随窗口伸缩。
         /// </summary>
         private void CardsSplitter_OnDragCompleted(object sender, DragCompletedEventArgs e)
         {
-            ConstrainInspectorWidth();
+            InspectorColumn.Width = new GridLength(Math.Max(300, Math.Min(420, InspectorColumn.ActualWidth)));
+            _inspectorWidth = InspectorColumn.Width.Value;
+            SourcesColumn.Width = new GridLength(Math.Max(240, Math.Min(380, SourcesColumn.ActualWidth)));
             CardsColumn.Width = new GridLength(1, GridUnitType.Star);
-            VisionGuard.Detector.Windows.Utils.SettingsStore.Save();
         }
-
-        private void OpenGlobalSettings_OnClick(object sender, RoutedEventArgs e) => MainInspector.SelectedIndex = 1;
-
-        private void ConstrainInspectorWidth()
+        private void SourcesSplitter_OnDragCompleted(object sender, DragCompletedEventArgs e)
         {
-            if (MainLayout == null || MainLayout.ActualWidth <= 0) return;
-            InspectorColumn.MaxWidth = Math.Min(Services.CardLayoutPlanner.MaximumInspectorPanelWidth,
-                Math.Max(Services.CardLayoutPlanner.MinimumInspectorPanelWidth,
-                    MainLayout.ActualWidth - Services.CardLayoutPlanner.MinimumCardsPanelWidth - Services.CardLayoutPlanner.SplitterWidth));
+            SourcesColumn.Width = new GridLength(Math.Max(240, Math.Min(380, SourcesColumn.ActualWidth)));
+            CardsColumn.Width = new GridLength(1, GridUnitType.Star);
+        }
+        private void OpenGlobalSettings_OnClick(object sender, RoutedEventArgs e) { _settingsReturnControl = sender as System.Windows.Controls.Control; InspectorDrawer.Visibility = Visibility.Collapsed; GlobalHost.Visibility = Visibility.Visible; MainLayout.Visibility = Visibility.Collapsed; }
+        private void CloseGlobalSettings_OnClick(object sender, RoutedEventArgs e)
+        {
+            GlobalHost.Visibility = Visibility.Collapsed;
+            MainLayout.Visibility = Visibility.Visible;
+            AdaptPanes();
+            if (_settingsReturnControl?.IsVisible == true) _settingsReturnControl.Focus();
+            else if (InspectorToggle.IsVisible) InspectorToggle.Focus();
+        }
+        private void ToggleInspector_OnClick(object sender, RoutedEventArgs e) => InspectorDrawer.Visibility = Visibility.Visible;
+        private void CloseInspector_OnClick(object sender, RoutedEventArgs e) { InspectorDrawer.Visibility = Visibility.Collapsed; InspectorToggle.Focus(); }
+        private void AdaptPanes()
+        {
+            if (MainLayout == null) return;
+            bool compact = ActualWidth < 1080;
+            InspectorHost.Visibility = InspectorSplitter.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+            InspectorToggle.Visibility = CompactActions.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
+            InspectorColumn.Width = compact ? new GridLength(0) : new GridLength(_inspectorWidth);
+            SourceFooter.Columns = compact ? 2 : 1;
+            InspectorGap.Width = new GridLength(compact ? 0 : 8);
+            if (!compact) InspectorDrawer.Visibility = Visibility.Collapsed;
         }
 
         private void DisposeResourcesOnce()

@@ -3,7 +3,7 @@ using System.Windows.Controls;
 namespace VisionGuard.Detector.Windows.Views
 {
     /// <summary>
-    /// 「全局设定」页：把原「运行环境」与「连接」两页合并成一页。
+    /// 全局设置子界面：按五个分类组织设备级设置。
     /// DataContext 由 MainViewModel 传入的 GlobalSettingsViewModel 提供，
     /// 页内绑定通过 Environment / Connection 两个子 ViewModel 定位。
     /// </summary>
@@ -12,6 +12,10 @@ namespace VisionGuard.Detector.Windows.Views
         public GlobalSettingsPage()
         {
             InitializeComponent();
+        }
+        private void Appearance_OnClick(object sender, System.Windows.RoutedEventArgs e)
+        {
+            if (sender is Button button && DataContext is ViewModels.GlobalSettingsViewModel vm && int.TryParse(button.Tag?.ToString(), out var mode)) vm.AppearanceIndex = mode;
         }
         internal static void ValidateNamePaste(object sender, System.Windows.DataObjectPastingEventArgs e)
         {

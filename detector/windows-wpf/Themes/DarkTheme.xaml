@@ -591,4 +591,12 @@
     </Style>
     <BooleanToVisibilityConverter x:Key="BoolToVis"/>
 
+    <!-- Shared menu controls: one height, one padding, aligned action column. -->
+    <Style x:Key="PaneButton" TargetType="Button" BasedOn="{StaticResource DarkButton}"><Setter Property="Height" Value="36"/><Setter Property="Padding" Value="12,4"/><Setter Property="FontWeight" Value="Normal"/></Style>
+    <Style x:Key="PanePrimaryButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}"><Setter Property="Height" Value="36"/><Setter Property="Padding" Value="12,4"/><Setter Property="FontWeight" Value="Normal"/></Style>
+    <Style x:Key="PaneDangerButton" TargetType="Button" BasedOn="{StaticResource PaneButton}"><Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/></Style>
+    <Style x:Key="PaneTextBox" TargetType="TextBox" BasedOn="{StaticResource DarkTextBox}"><Setter Property="Height" Value="36"/><Setter Property="Padding" Value="12,4"/></Style>
+    <Style x:Key="PaneComboBox" TargetType="ComboBox" BasedOn="{StaticResource DarkComboBox}"><Setter Property="Height" Value="36"/><Setter Property="Padding" Value="12,4"/></Style>
+    <Style x:Key="SettingsSection" TargetType="StackPanel"><Setter Property="Margin" Value="0,0,0,24"/></Style>
+    <Style x:Key="SettingsNavItem" TargetType="ListBoxItem"><Setter Property="Height" Value="36"/><Setter Property="Margin" Value="0,0,0,8"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocus}"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ListBoxItem"><Border x:Name="NavSurface" Background="Transparent" CornerRadius="8" Padding="12,4"><ContentPresenter VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter TargetName="NavSurface" Property="Background" Value="{DynamicResource SelectedBrush}"/><Setter Property="Foreground" Value="{DynamicResource SelectedTextBrush}"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="NavSurface" Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter TargetName="NavSurface" Property="BorderThickness" Value="1"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
 </ResourceDictionary>

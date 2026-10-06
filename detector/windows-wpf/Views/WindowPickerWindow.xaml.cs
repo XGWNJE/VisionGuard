@@ -43,7 +43,9 @@ namespace VisionGuard.Detector.Windows.Views
             WindowList.IsEnabled = false;
 
             var pickerHandle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-            var windows = await Task.Run(() => WindowEnumerator.GetWindows(_excludeHwnd).Where(window => window.Handle != pickerHandle).ToList());
+            var ownerHandle = Owner == null ? IntPtr.Zero : new System.Windows.Interop.WindowInteropHelper(Owner).Handle;
+            var windows = await Task.Run(() => WindowEnumerator.GetWindows(_excludeHwnd)
+                .Where(window => window.Handle != pickerHandle && window.Handle != ownerHandle).ToList());
 
             WindowList.ItemsSource = windows;
             WindowList.IsEnabled = true;

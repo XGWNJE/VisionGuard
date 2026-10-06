@@ -1,65 +1,92 @@
-<UserControl x:Class="VisionGuard.Detector.Windows.Views.MonitorPage"
-             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:icons="clr-namespace:VisionGuard.Detector.Windows.Icons"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             Background="Transparent">
-    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <StackPanel Margin="4,8,8,8" DataContext="{Binding SelectedSource}">
-            <!-- 当前上下文：名称原位编辑，失焦或回车自动保存 -->
-            <Grid Margin="0,0,0,16" MinHeight="40">
-                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <Button x:Name="SourceNameText" Style="{StaticResource GhostButton}" Padding="0" Margin="0,0,8,0"
-                        HorizontalContentAlignment="Stretch" VerticalAlignment="Center"
-                        AutomationProperties.Name="修改来源名称" ToolTip="点击或按 Enter 修改来源名称"
-                        Click="SourceNameText_OnClick">
-                    <TextBlock Text="{Binding SourceName}" Style="{StaticResource TitleText}" FontSize="16" LineHeight="24" TextTrimming="CharacterEllipsis" ToolTip="{Binding SourceName}"/>
+<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="VisionGuard.Detector.Windows.Views.MonitorPage">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Visibility="{Binding HasSelectedSource, Converter={StaticResource BoolToVis}}">
+        <StackPanel Margin="16" DataContext="{Binding SelectedSource}">
+            <TextBlock Text="来源检查" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+            <Grid MinHeight="36">
+                <Button x:Name="SourceNameText" Style="{StaticResource PaneButton}" HorizontalContentAlignment="Left" Click="SourceNameText_OnClick" ToolTip="修改来源名称">
+                    <TextBlock Text="{Binding SourceName}" TextTrimming="CharacterEllipsis" ToolTip="{Binding SourceName}"/>
                 </Button>
-                <TextBox x:Name="SourceNameEditor" DataObject.Pasting="SourceName_OnPasting"
-                         MaxLength="64" ToolTip="名称须为 1–64 个字符，不能包含换行或控制字符"
-                         Text="{Binding SourceName, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}"
-                         Style="{StaticResource DarkTextBox}"
-                         Visibility="Collapsed"
-                         VerticalAlignment="Center"
-                         LostKeyboardFocus="SourceNameEditor_OnLostKeyboardFocus"
-                         KeyDown="SourceNameEditor_OnKeyDown"/>
-                <Border Grid.Column="1" Style="{StaticResource StatusPill}" VerticalAlignment="Center" MaxWidth="136">
-                    <TextBlock Text="{Binding StatusText}" Style="{StaticResource SourceStatusText}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding StatusToolTip}"/>
-                </Border>
-                <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding PreviewRoleText}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                <TextBox x:Name="SourceNameEditor" Style="{StaticResource PaneTextBox}" Text="{Binding SourceName, UpdateSourceTrigger=PropertyChanged, ValidatesOnExceptions=True}" MaxLength="64" DataObject.Pasting="SourceName_OnPasting" Visibility="Collapsed" LostKeyboardFocus="SourceNameEditor_OnLostKeyboardFocus" KeyDown="SourceNameEditor_OnKeyDown"/>
             </Grid>
-
-            <StackPanel Margin="0,0,0,16">
-                <TextBlock Text="采集目标" Style="{StaticResource SectionLabel}" Margin="0,0,0,8"/>
-                <Border Background="{DynamicResource SurfaceLight}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10,8" Margin="0,0,0,8">
-                    <TextBlock Text="{Binding TargetInfo}" Style="{StaticResource BodyText}" TextWrapping="Wrap" ToolTip="{Binding TargetInfo}"/>
-                </Border>
-                <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                    <Button Content="选择窗口" Command="{Binding PickWindowCommand}" Style="{StaticResource DarkButton}" MinHeight="36" Padding="4" Margin="0,0,4,0"/>
-                    <Button Grid.Column="1" Content="选区" Command="{Binding SelectRegionCommand}" Style="{StaticResource DarkButton}" MinHeight="36" Padding="4" Margin="4,0"/>
-                    <Button Grid.Column="2" Content="遮罩" Command="{Binding EditMasksCommand}" Style="{StaticResource DarkButton}" MinHeight="36" Padding="4" Margin="4,0,0,0"/>
-                </Grid>
-            </StackPanel>
-
-            <StackPanel Margin="0,0,0,16">
-                <TextBlock Text="检测参数" Style="{StaticResource SectionLabel}"/>
-                <TextBlock Text="{Binding ParameterSummary}" Style="{StaticResource BodyText}" TextWrapping="Wrap" Margin="0,8,0,4"/>
-                <TextBlock Text="{Binding ParameterDetails}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,12"/>
-                <Button x:Name="AdjustParametersButton" Click="AdjustParameters_OnClick" Style="{StaticResource InspectorAction}" HorizontalContentAlignment="Stretch" AutomationProperties.Name="调整检测参数">
-                    <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="调整参数"/><icons:LucideIcon Grid.Column="1" Kind="ChevronRight" Width="16" Height="16"/></Grid>
+            <Grid Margin="0,8,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding SourceTypeText}" Style="{StaticResource CaptionText}"/>
+                <TextBlock Grid.Column="1" Text="{Binding FpsText}" Style="{StaticResource CaptionText}"/>
+            </Grid>
+            <TextBlock Text="{Binding StatusText}" Style="{StaticResource SourceStatusText}" Height="40" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding StatusToolTip}" Margin="0,0,0,8"/>
+            <Grid Margin="0,0,0,24">
+                <Button Content="开始检测" Style="{StaticResource PanePrimaryButton}" Command="{Binding StartCommand}" ToolTip="{Binding StartActionHint}" ToolTipService.ShowOnDisabled="True">
+                    <Button.Visibility>
+                        <Binding Path="CanEdit" Converter="{StaticResource BoolToVis}"/>
+                    </Button.Visibility>
                 </Button>
-                <TextBlock Text="{Binding NoModelHint}" Foreground="{DynamicResource WarningBrush}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                <Button Content="停止检测" Style="{StaticResource PaneButton}" Command="{Binding StopCommand}" Visibility="{Binding IsMonitoring, Converter={StaticResource BoolToVis}}"/>
+            </Grid>
+            <TextBlock Text="采集配置" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+            <TextBlock Text="{Binding TargetInfo}" TextWrapping="Wrap" ToolTip="{Binding TargetInfo}" Margin="0,0,0,12"/>
+            <StackPanel>
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsRemoteStream}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
+                <UniformGrid Columns="2" Margin="0,0,0,8">
+                    <Button Content="更换窗口" Style="{StaticResource PaneButton}" Command="{Binding PickWindowCommand}" ToolTip="{Binding EditActionHint}" ToolTipService.ShowOnDisabled="True" Margin="0,0,4,0"/>
+                    <Button Content="调整选区" Style="{StaticResource PaneButton}" Command="{Binding SelectRegionCommand}" ToolTip="{Binding EditActionHint}" ToolTipService.ShowOnDisabled="True" Margin="4,0,0,0"/>
+                </UniformGrid>
             </StackPanel>
-            <Expander Header="更多来源信息" IsExpanded="False" Foreground="{DynamicResource TextSecondary}" Margin="0,8,0,0">
-                <StackPanel Margin="0,8,0,0">
-                    <TextBlock Text="{Binding MaskInfo}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                    <TextBlock Text="{Binding AspectRatioWarning}" Foreground="{DynamicResource WarningBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,8" Visibility="{Binding HasAspectRatioWarning, Converter={StaticResource BoolToVis}}"/>
-                    <TextBlock Text="{Binding BackendText}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                    <TextBlock Text="{Binding InferenceText}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                    <TextBlock Text="{Binding LastAlertText}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                    <Button Content="重置采集目标" Command="{Binding ResetTargetCommand}" Style="{StaticResource GhostButton}" HorizontalAlignment="Left" ToolTip="清除窗口、选区与遮罩"/>
+            <Grid Margin="0,0,0,24">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition/>
+                    <ColumnDefinition Width="112"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding MaskInfo}" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                <Button Grid.Column="1" Content="编辑遮罩" Style="{StaticResource PaneButton}" Command="{Binding EditMasksCommand}" ToolTip="{Binding EditActionHint}" ToolTipService.ShowOnDisabled="True"/>
+            </Grid>
+            <TextBlock Text="检测参数" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72"/>
+                    <ColumnDefinition/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="32"/>
+                    <RowDefinition Height="32"/>
+                    <RowDefinition Height="32"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="模型" Style="{StaticResource CaptionText}"/>
+                <TextBlock Grid.Column="1" Text="{Binding ModelDisplayText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                <TextBlock Grid.Row="1" Text="检测目标" Style="{StaticResource CaptionText}"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding TargetsDisplayText}" TextTrimming="CharacterEllipsis" ToolTip="{Binding TargetsDisplayText}" Margin="0,0,0,8"/>
+                <TextBlock Grid.Row="2" Text="置信度" Style="{StaticResource CaptionText}"/>
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ThresholdPercent, StringFormat={}{0}%}"/>
+                <TextBlock Grid.Row="3" Text="采样率" Style="{StaticResource CaptionText}"/>
+                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding TargetFps, StringFormat={}{0} FPS}"/>
+                <TextBlock Grid.Row="4" Text="冷却" Style="{StaticResource CaptionText}"/>
+                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Cooldown, StringFormat={}{0} 秒}"/>
+            </Grid>
+            <Button x:Name="AdjustParametersButton" Content="调整参数" Style="{StaticResource PaneButton}" Click="AdjustParameters_OnClick" Margin="0,4,0,0"/>
+            <TextBlock Text="{Binding NoModelHint}" Foreground="{DynamicResource WarningBrush}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+            <Expander Header="运行详情" Margin="0,24,0,0">
+                <StackPanel Margin="0,12,0,0">
+                    <TextBlock Text="{Binding BackendText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                    <TextBlock Text="{Binding InferenceText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                    <TextBlock Text="{Binding LastAlertText}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                    <TextBlock Text="{Binding AspectRatioWarning}" TextWrapping="Wrap" Foreground="{DynamicResource WarningBrush}" Visibility="{Binding HasAspectRatioWarning, Converter={StaticResource BoolToVis}}"/>
                 </StackPanel>
             </Expander>
+            <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" Margin="0,24,0,0" Padding="0,16,0,0">
+                <Button Content="删除来源" Command="{Binding RemoveSourceCommand}" Style="{StaticResource PaneDangerButton}" ToolTip="{Binding DeleteActionHint}" ToolTipService.ShowOnDisabled="True"/>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

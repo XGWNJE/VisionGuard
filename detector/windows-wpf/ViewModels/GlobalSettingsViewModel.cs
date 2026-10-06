@@ -9,10 +9,11 @@ namespace VisionGuard.Detector.Windows.ViewModels
     /// </summary>
     public sealed class GlobalSettingsViewModel : ViewModelBase
     {
+        public string AppearanceName => AppearanceOptions[AppearanceIndex];
         public string[] AppearanceOptions { get; } = new[] { "跟随系统", "浅色", "深色" };
         public int AppearanceIndex {
             get => Themes.ThemeManager.Mode == "dark" ? 2 : Themes.ThemeManager.Mode == "light" ? 1 : 0;
-            set { if (value < 0 || value > 2 || value == AppearanceIndex) return; AppearanceStatus = Themes.ThemeManager.SetMode(new[] { "system", "light", "dark" }[value]) ? "外观已保存" : "外观保存失败，请重试"; OnPropertyChanged(); OnPropertyChanged(nameof(AppearanceStatus)); }
+            set { if (value < 0 || value > 2 || value == AppearanceIndex) return; AppearanceStatus = Themes.ThemeManager.SetMode(new[] { "system", "light", "dark" }[value]) ? "外观已保存" : "外观保存失败，请重试"; OnPropertyChanged(); OnPropertyChanged(nameof(AppearanceName)); OnPropertyChanged(nameof(AppearanceStatus)); }
         }
         public string AppearanceStatus { get; private set; } = "系统外观不可用时使用浅色；高对比度优先使用系统颜色。";
         /// <summary>推理设备与模型资源。</summary>

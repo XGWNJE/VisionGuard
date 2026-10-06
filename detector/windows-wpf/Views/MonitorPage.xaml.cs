@@ -9,10 +9,22 @@ namespace VisionGuard.Detector.Windows.Views
     public partial class MonitorPage : UserControl
     {
         private string _nameBeforeEdit = string.Empty;
+        private SourceViewModel? _nameSource;
 
         public MonitorPage()
         {
             InitializeComponent();
+            SourceNameEditor.DataContextChanged += (_, e) =>
+            {
+                if (_nameSource == null || ReferenceEquals(_nameSource, e.NewValue)) return;
+                CommitSourceName();
+                // 无效草稿不能随选择切换带到另一个来源。
+                if (_nameSource != null)
+                {
+                    _nameSource.CancelSourceNameEdit(_nameBeforeEdit);
+                    EndSourceNameEdit();
+                }
+            };
         }
 
         private void SourceNameText_OnClick(object sender, RoutedEventArgs e)
@@ -20,6 +32,7 @@ namespace VisionGuard.Detector.Windows.Views
             if (SourceNameText.DataContext is not SourceViewModel source) return;
 
             _nameBeforeEdit = source.SourceName;
+            _nameSource = source;
             SourceNameText.Visibility = Visibility.Collapsed;
             SourceNameEditor.Visibility = Visibility.Visible;
             Dispatcher.BeginInvoke(() =>
@@ -42,7 +55,7 @@ namespace VisionGuard.Detector.Windows.Views
             }
             else if (e.Key == Key.Escape)
             {
-                if (SourceNameEditor.DataContext is SourceViewModel source) source.CancelSourceNameEdit(_nameBeforeEdit);
+                _nameSource?.CancelSourceNameEdit(_nameBeforeEdit);
                 EndSourceNameEdit();
                 e.Handled = true;
             }
@@ -54,7 +67,7 @@ namespace VisionGuard.Detector.Windows.Views
         {
             if (SourceNameEditor.Visibility != Visibility.Visible) return;
             if (Validation.GetHasError(SourceNameEditor)) return;
-            if (SourceNameEditor.DataContext is SourceViewModel source)
+            if (_nameSource is SourceViewModel source)
             {
                 if (!Utils.DisplayNamePolicy.IsValid(source.SourceName))
                 {
@@ -77,6 +90,7 @@ namespace VisionGuard.Detector.Windows.Views
             bool restoreFocus = SourceNameEditor.IsKeyboardFocusWithin;
             SourceNameEditor.Visibility = Visibility.Collapsed;
             SourceNameText.Visibility = Visibility.Visible;
+            _nameSource = null;
             if (restoreFocus) SourceNameText.Focus();
         }
 

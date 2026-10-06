@@ -692,10 +692,9 @@ function Run-SourceAutoSave {
 }
 
 function Run-CardLayoutPlan {
-    # 卡片区布局契约：驱动 CardLayoutPlanner（纯计算，不开窗口、不建推理会话），
-    # 断言「卡片宽高比落在 1:1.2~1.2:1」「1/2/4 张的网格都恰好排得下且不裁剪」「最小窗口下 1:1 画面短边达标」
-    # 「宽扁/窄高容器不出现畸形卡片」「同输入结果确定」「零可用空间返回无效布局」。
-    # 它证明布局数学，不证明真实界面的视觉与拖拽手感——那部分必须 owner 目检。
+    # 画面与组件布局契约：驱动等比呈现和真实控件量测（不显示窗口、不建推理会话），
+    # 断言等比画面与检测坐标、主卡自适应高度、来源卡边界、五个设置分类和统一控件高度。
+    # 它是组件量测补充证据，不证明真实界面的视觉与拖拽手感——那部分必须 owner 目检。
     $benchmarkProject = Join-Path $repoRoot 'tests\WpfInference.Benchmark\WpfInference.Benchmark.csproj'
     if (-not (Test-Path -LiteralPath $benchmarkProject)) { throw "契约探针工程不存在：$benchmarkProject" }
 
