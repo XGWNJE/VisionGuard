@@ -327,3 +327,12 @@ test('both release entrypoints keep assets private until uploaded size and diges
   assert.ok(workflow.indexOf('--draft \\') < workflow.indexOf('uploaded-release.json'));
   assert.ok(workflow.indexOf('.[0].digest == $digest') < workflow.indexOf('--draft=false'));
 });
+
+ test('draft-only mode verifies assets without publishing or deploying', () => {
+  const script = read('scripts/publish-release.ps1');
+  assert.match(script, /\[switch\]\$DraftOnly/);
+  assert.match(script, /-DraftOnly requires -CreateGitHubRelease/);
+  assert.match(script, /if \(\$UploadVps -or \$DeployServer\)/);
+  const block = script.slice(script.indexOf('Assert-GitHubUploadedAssets -Artifacts'), script.indexOf('function Get-GitHubReleaseByTag'));
+  assert.match(block, /if \(\$DraftOnly\) \{[^}]+Draft retained:[^}]+\}\s*else \{[^}]+--draft=false/);
+});

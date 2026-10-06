@@ -29,18 +29,21 @@ try {
         if ($Arguments[0] -eq 'api' -and $Arguments[1] -eq 'repos/fixture/repository/releases/23') { return ($script:release | ConvertTo-Json -Depth 8) }
         throw 'Drafts are unavailable through the published-release tag endpoint.'
     }
-    foreach ($script:case in @('valid', 'existing-draft', 'wrong-digest', 'extra-asset', 'already-public', 'wrong-tag', 'invalid-id')) {
+    foreach ($script:case in @('valid', 'existing-draft', 'draft-only', 'draft-only-wrong-digest', 'wrong-digest', 'extra-asset', 'already-public', 'wrong-tag', 'invalid-id')) {
+        $DraftOnly = $case -like 'draft-only*'
         $script:calls = New-Object 'System.Collections.Generic.List[string]'
         $script:alreadyExists = $case -in @('existing-draft', 'already-public')
         $script:release = [pscustomobject]@{ tag_name = 'v0.7.0'; draft = $case -ne 'already-public'; assets = @([pscustomobject]@{ name = [IO.Path]::GetFileName($package); state = 'uploaded'; size = (Get-Item $package).Length; digest = 'sha256:' + (Get-Sha256 $package) }) }
         if ($case -eq 'wrong-tag') { $script:release.tag_name = 'v0.8.0' }
-        if ($case -eq 'wrong-digest') { $script:release.assets[0].digest = 'sha256:' + ('0' * 64) }
+        if ($case -in @('wrong-digest', 'draft-only-wrong-digest')) { $script:release.assets[0].digest = 'sha256:' + ('0' * 64) }
         if ($case -eq 'extra-asset') { $script:release.assets += [pscustomobject]@{ name = 'unexpected.apk' } }
         $failed = $false
         try { Invoke-GitHubSteps -Artifacts @([pscustomobject]@{ Path = $package }) } catch { $failed = $true }
         $published = @($script:calls | Where-Object { $_ -match '--draft=false' }).Count -gt 0
         if ($case -in @('valid', 'existing-draft')) {
             if ($failed -or -not $published -or $script:calls[0] -notmatch '--draft' -or $script:calls[1] -notmatch 'release upload') { throw 'Valid upload order failed.' }
+        } elseif ($case -eq 'draft-only') {
+            if ($failed -or $published -or $script:calls.Count -ne 2 -or $script:calls[1] -notmatch 'release upload') { throw 'Draft-only upload was not retained.' }
         } elseif (-not $failed -or $published) { throw "Failed validation was published: $case" }
     }
     Write-Output 'PASS: production release functions create/resume drafts by ID, verify uploads, reject corrupt/extra/public/tag-mismatched assets, then publish; all external commands mocked.'

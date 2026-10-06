@@ -19,6 +19,7 @@ It performs preflight before version sync, builds selected targets, prepares sig
 - Run `publish-release.ps1`, `sync-version.js`, Git push/tag/Release, VPS upload, or deployment only when explicitly requested.
 - `-PreflightOnly` is read-only with respect to versions and publication. Use it to validate release prerequisites.
 - GitHub publication is disabled by default and remains opt-in through `-PushGitHub`, `-CreateTag`, and `-CreateGitHubRelease`.
+- `-DraftOnly -CreateGitHubRelease` uploads and verifies a private draft without publishing; it refuses VPS upload or Server deployment. A later authorized run without `-DraftOnly` publishes the verified release.
 - Use `-SkipServerDeploy` only for an explicitly client-only release.
 
 ## Non-negotiable gates

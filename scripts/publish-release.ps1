@@ -9,6 +9,7 @@
     [switch]$PushGitHub,
     [switch]$CreateTag,
     [switch]$CreateGitHubRelease,
+    [switch]$DraftOnly,
     [switch]$DeployServer,
     [switch]$SkipServerDeploy,
     [switch]$SkipBuild,
@@ -1227,7 +1228,12 @@ function Invoke-GitHubSteps {
             '--repo', $GitHubRepository
         ) + $assetPaths + @('--clobber'))
         Assert-GitHubUploadedAssets -Artifacts $Artifacts -TagName $tagName
-        Invoke-Native -FilePath 'gh' -Arguments @('release', 'edit', $tagName, '--repo', $GitHubRepository, '--draft=false', '--prerelease=false', '--latest')
+        if ($DraftOnly) {
+            Write-Host "Draft retained: $tagName assets verified; publication requires a separate authorized run."
+        }
+        else {
+            Invoke-Native -FilePath 'gh' -Arguments @('release', 'edit', $tagName, '--repo', $GitHubRepository, '--draft=false', '--prerelease=false', '--latest')
+        }
     }
 }
 
@@ -1263,6 +1269,11 @@ if ($Version -notmatch '^\d+\.\d+\.\d+([-.][0-9A-Za-z.-]+)?$') {
 
 if ($DeployServer -and $SkipServerDeploy) {
     throw "Use either -DeployServer or -SkipServerDeploy, not both."
+}
+
+if ($DraftOnly) {
+    if (-not $CreateGitHubRelease) { throw "-DraftOnly requires -CreateGitHubRelease." }
+    if ($UploadVps -or $DeployServer) { throw "-DraftOnly cannot upload to VPS or deploy Server." }
 }
 
 if ($GitHubOnly) {

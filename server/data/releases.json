@@ -1,27 +1,27 @@
 {
-  "wpf": {
-    "version": "0.6.1",
-    "url": "/releases/VisionGuard-WPF-v0.6.1.zip",
-    "size": 18146251,
-    "sha256": "924B72F70B579FCC79A324F578FC1D00B8C3D634FBA08F8F373389693135461D"
-  },
-  "android-detector": {
-    "version": "0.6.1",
-    "url": "/releases/VisionGuard-Detector-v0.6.1.apk",
-    "size": 12053971,
-    "sha256": "592C078F51AAB403340B41B00A86FA010022D4333C3D36322B7D1C6825E795BA"
-  },
-  "android-receiver": {
-    "version": "0.6.0",
-    "url": "/releases/VisionGuard-Receiver-v0.6.0.apk",
-    "size": 11737841,
-    "sha256": "24D4E70BAFE3E09605441D55DE48829290EF0CA3436092458E6FB8A9F44B1DC1",
-    "heldBack": true
-  },
-  "android-notifier": {
-    "version": "0.6.1",
-    "url": "/releases/VisionGuard-Notifier-v0.6.1.apk",
-    "size": 3047198,
-    "sha256": "76A47C6085000FEDDCF3350D148FEA8848918BCB4ED7F0036F383DBED3A6B11F"
-  }
+    "wpf":  {
+                "version":  "0.6.2",
+                "url":  "/releases/VisionGuard-WPF-v0.6.2.zip",
+                "size":  18164968,
+                "sha256":  "EE8F48A4F69D8E0D769F3F1BC2ED17CA6AE5E3EEADCD0D4EEDE2663385EFF6C2"
+            },
+    "android-detector":  {
+                             "version":  "0.6.2",
+                             "url":  "/releases/VisionGuard-Detector-v0.6.2.apk",
+                             "size":  12070355,
+                             "sha256":  "4D3C926621D089DBA8DC56BE44F82CD557DAC2D47A6C20B1316EECB426535781"
+                         },
+    "android-receiver":  {
+                             "version":  "0.6.0",
+                             "url":  "/releases/VisionGuard-Receiver-v0.6.0.apk",
+                             "size":  11737841,
+                             "sha256":  "24D4E70BAFE3E09605441D55DE48829290EF0CA3436092458E6FB8A9F44B1DC1",
+                             "heldBack":  true
+                         },
+    "android-notifier":  {
+                             "version":  "0.6.2",
+                             "url":  "/releases/VisionGuard-Notifier-v0.6.2.apk",
+                             "size":  3051114,
+                             "sha256":  "B3218E8EA10BCE3BF4A2FEFAB58399CA16A7F292EA72B82F973FCF376B2A3BA0"
+                         }
 }
