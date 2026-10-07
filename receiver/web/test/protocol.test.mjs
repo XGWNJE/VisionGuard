@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createRequestId, formatTime, parseTimeStandard, websocketURL, mergeDevices, mergeAlerts } from '../src/protocol.ts';
+import { createRequestId, formatTime, isWithinEventTime, parseEventTime, parseTimeStandard, websocketURL, mergeDevices, mergeAlerts } from '../src/protocol.ts';
 
 test('credentials only travel over same-origin WSS except local development', () => {
   assert.equal(websocketURL('https://relay.example/console/'), 'wss://relay.example/ws');
@@ -46,6 +46,31 @@ test('malformed time standards cannot silently switch the clock display', () => 
   assert.equal(parseTimeStandard({ timeZone: 'UTC', serverTime: 'bad-time' }), null);
   assert.equal(parseTimeStandard({ timeZone: 'bad-zone', serverTime: new Date().toISOString() }), null);
   assert.equal(parseTimeStandard({ timeZone: 'Asia/Shanghai', serverTime: '2026-10-02T00:00:00Z' })?.timeZone, 'Asia/Shanghai');
+});
+
+test('event time inputs use the account timezone rather than the browser timezone', () => {
+  const original = process.env.TZ;
+  process.env.TZ = 'America/Los_Angeles';
+  try {
+    assert.equal(parseEventTime('2026-10-02T00:00', 'Asia/Shanghai'), Date.parse('2026-10-01T16:00:00Z'));
+    assert.equal(parseEventTime('2026-10-02T00:00:30', 'UTC'), Date.parse('2026-10-02T00:00:30Z'));
+    assert.equal(parseEventTime('', 'UTC'), null);
+    for (const value of ['2026-02-29T12:00', '2026-10-02T24:00', 'bad-time', '2026-10-02T12:00Z']) assert.ok(Number.isNaN(parseEventTime(value, 'UTC')));
+    assert.ok(Number.isFinite(parseEventTime('2028-02-29T12:00', 'Asia/Shanghai')));
+    assert.ok(Number.isFinite(parseEventTime('0001-01-01T00:00', 'UTC')));
+  } finally { if (original === undefined) delete process.env.TZ; else process.env.TZ = original; }
+});
+
+test('event ranges include the displayed end second and support either open boundary', () => {
+  const start = Date.parse('2026-10-01T16:00:00Z'), end = start + 1000;
+  assert.equal(isWithinEventTime('2026-10-02T00:00:00+08:00', start, end), true);
+  assert.equal(isWithinEventTime('2026-10-01T16:00:01.999Z', start, end), true);
+  assert.equal(isWithinEventTime('2026-10-01T16:00:02Z', start, end), false);
+  assert.equal(isWithinEventTime('2026-10-01T15:59:59.999Z', start, null), false);
+  assert.equal(isWithinEventTime('2026-10-01T15:00:00Z', null, end), true);
+  assert.equal(isWithinEventTime('2026-10-01T17:00:00Z', start, null), true);
+  assert.equal(isWithinEventTime('bad-time', start, end), false);
+  assert.equal(isWithinEventTime('bad-time', null, null), true);
 });
 
 test('disconnected registered nodes remain visible without stale control capabilities', () => {
