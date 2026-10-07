@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
 using Microsoft.Win32;
@@ -36,7 +37,13 @@ namespace VisionGuard.Detector.Windows.Utils
         public string serviceUrl { get; set; }
     }
 
-    // The current Windows user owns this encrypted login; passwords are never saved.
+    public sealed class RememberedLogin
+    {
+        public string Username { get; set; }
+        public string Password { get; set; }
+        public override string ToString() { return "RememberedLogin [redacted]"; }
+    }
+    // Sessions and explicitly remembered login fields are separately protected for the current user.
     // Resident and launcher read the same store, so neither asks for another credential.
     public static class DisplayNamePolicy
     {
@@ -151,6 +158,44 @@ namespace VisionGuard.Detector.Windows.Utils
             }
         }
         private static string StorePath { get { return Path.Combine(Root, "session-" + Hash(_serviceUrl) + ".bin"); } }
+        private static string RememberedLoginPath(string endpoint) { return Path.Combine(Root, "remembered-login-" + Hash(endpoint) + ".bin"); }
+        public static RememberedLogin ReadRememberedLogin(string serviceUrl)
+        {
+            lock (Sync)
+            {
+                string endpoint = AllowsTestEndpoint ? NormalizeUrl(serviceUrl) : ProductionUrl;
+                string file = RememberedLoginPath(endpoint);
+                try
+                {
+                    if (!File.Exists(file) || new FileInfo(file).Length > 8192) return null;
+                    byte[] clear = ProtectedData.Unprotect(File.ReadAllBytes(file), Encoding.UTF8.GetBytes("remembered-login|" + endpoint), DataProtectionScope.CurrentUser);
+                    var value = Json.Deserialize<RememberedLogin>(Encoding.UTF8.GetString(clear));
+                    if (value == null || !IsRememberedUsername(value.Username) || string.IsNullOrEmpty(value.Password) || value.Password.Length > 256) return null;
+                    return value;
+                }
+                catch (CryptographicException) { return null; }
+                catch (ArgumentException) { return null; }
+                catch (IOException) { return null; }
+                catch (UnauthorizedAccessException) { return null; }
+            }
+        }
+        public static void SaveRememberedLogin(string serviceUrl, string username, string password)
+        {
+            lock (Sync)
+            {
+                string endpoint = AllowsTestEndpoint ? NormalizeUrl(serviceUrl) : ProductionUrl;
+                string file = RememberedLoginPath(endpoint);
+                if (username == null || password == null) { if (File.Exists(file)) File.Delete(file); return; }
+                var value = new RememberedLogin { Username = username.Trim().ToLowerInvariant(), Password = password };
+                if (!IsRememberedUsername(value.Username) || string.IsNullOrEmpty(password) || password.Length > 256) throw new ArgumentException("账号须为 3–64 个字母、数字、点、横线或下划线；密码须为 1–256 个字符。");
+                byte[] encrypted = ProtectedData.Protect(Encoding.UTF8.GetBytes(Json.Serialize(value)), Encoding.UTF8.GetBytes("remembered-login|" + endpoint), DataProtectionScope.CurrentUser);
+                Directory.CreateDirectory(Root);
+                string temp = file + "." + Guid.NewGuid().ToString("N");
+                File.WriteAllBytes(temp, encrypted);
+                if (File.Exists(file)) File.Replace(temp, file, null); else File.Move(temp, file);
+            }
+        }
+        private static bool IsRememberedUsername(string value) { return value != null && Regex.IsMatch(value, @"\A[A-Za-z0-9][A-Za-z0-9._-]{2,63}\z"); }
         private static string DevicesPath { get { return Path.Combine(Root, "devices-" + Hash(_serviceUrl) + ".json"); } }
         private sealed class SessionWriteLock : IDisposable
         {

@@ -6,6 +6,7 @@ import { eventLabel, formatTime, mergeDevices, timeStandardLabel, typeLabel, web
 import { useRelay } from './useRelay';
 import { accountRequest, AccountRequestError, browserDeviceIdentity, browserDeviceModel, normalizeDisplayName, parseLogin, rotateLogin, type Login } from './account';
 import { AccountManagement } from './AccountManagement';
+import { clearRememberedLogin, readRememberedLogin, saveRememberedLogin } from './rememberedLogin';
 import { AppearanceSelector, useAppearance } from './appearance';
 import { Parameters, type ParameterDrafts } from './Parameters';
 import { RemoteSettings } from './RemoteSettings';
@@ -93,7 +94,7 @@ function App() {
       </div></>}
       {page === '事件' && <section className="panel"><div className="section-title"><h2>最近事件</h2><span className="subtle">{timeStandardLabel(timeZone)} · 最多 100 条</span></div><div className="node-filters"><label className="search-field"><Search size={20}/><input aria-label="搜索事件" placeholder="搜索节点、来源或摘要" value={eventSearch} onChange={e=>setEventSearch(e.target.value)}/></label><select aria-label="事件类型" value={eventKind} onChange={e=>setEventKind(e.target.value)}><option value="">全部事件</option>{[...new Set(relay.alerts.map(alert=>alert.eventKind))].map(kind=><option key={kind} value={kind}>{eventLabel(kind)}</option>)}</select></div>{filteredEvents.length === 0 ? <Empty text={relay.alerts.length ? "没有匹配的事件" : "暂无事件"}/> : <div className="event-table">{filteredEvents.map(a => <button className="event-row" key={a.alertId} onClick={() => setEvent(a)}><span className="event-kind">{eventLabel(a.eventKind)}</span><span><strong>{a.deviceName || a.deviceId}{a.sourceName && ` · ${a.sourceName}`}</strong><small>{a.summary || '查看检测详情'}</small></span><span className="subtle">{formatTime(a.timestamp,timeZone)}<small>{(relay.receipts[a.alertId] ?? []).length > 0 ? `${relay.receipts[a.alertId].length} 个通知节点已收件` : '查看详情'}</small></span></button>)}</div>}</section>}
       {page === '通知范围' && <div className="scope-list">{relay.notifiers.length === 0 ? <section className="panel"><Empty text="尚无已登记的通知节点"/></section> : relay.notifiers.map(notifier => <ScopeEditor key={notifier.deviceId} notifier={notifier} nodes={nodes.filter(n => n.role === 'detector')} connected={relay.connected} acks={relay.acks} send={relay.send}/>)}</div>}
-      {page === '设置' && <div className="settings-grid"><ServerCacheMaintenance key={login.token} login={login}/><section className="panel"><h2>外观</h2><AppearanceSelector preference={appearance}/></section><TimeStandardSettings standard={relay.timeStandard} connected={relay.connected} acks={relay.acks} send={relay.send}/><AccountSettings login={login} onDeviceNameChanged={name=>{if(loginRef.current?.token===login.token)updateLogin({...login,device:{...login.device,deviceName:name}});}} onLogout={() => { void logout(); }} onPasswordChanged={() => { if (loginRef.current?.token === login.token) clearSession('密码已修改，请重新登录'); }}/></div>}
+      {page === '设置' && <div className="settings-grid"><ServerCacheMaintenance key={login.token} login={login}/><section className="panel"><h2>外观</h2><AppearanceSelector preference={appearance}/></section><TimeStandardSettings standard={relay.timeStandard} connected={relay.connected} acks={relay.acks} send={relay.send}/><AccountSettings login={login} onDeviceNameChanged={name=>{if(loginRef.current?.token===login.token)updateLogin({...login,device:{...login.device,deviceName:name}});}} onLogout={() => { void logout(); }} onPasswordChanged={warning => { if (loginRef.current?.token === login.token) clearSession(warning || '密码已修改，请重新登录'); }}/></div>}
       {page === '账号管理' && login.account.isAdmin && <AccountManagement login={login}/>}
     </main>
     {visibleEvent && <EventDialog key={visibleEvent.alertId} alert={visibleEvent} timeZone={timeZone} login={login} receipts={relay.receipts[visibleEvent.alertId] ?? []} onClose={() => setEvent(null)}/>}
@@ -115,22 +116,49 @@ function TimeStandardSettings({standard,connected,acks,send}:{standard:TimeStand
 function LoginScreen({onLogin,error}:{onLogin:(value:Login)=>void;error:string}) {
   const [username,setUsername] = useState(''); const [password,setPassword] = useState('');
   const [busy,setBusy] = useState(false); const [failure,setFailure] = useState('');
-  async function submit() { setBusy(true); setFailure(''); try { websocketURL(location.origin); const value = await accountRequest('/api/account/login', undefined, {username:username.trim(),password,component:'web-console',deviceIdentity:await browserDeviceIdentity(),deviceModel:browserDeviceModel()}); onLogin(parseLogin(value)); setPassword(''); } catch (e) { setFailure((e as Error).message); } finally { setBusy(false); } }
+  const [remember,setRemember] = useState(false), [restoring,setRestoring] = useState(true);
+  useEffect(()=>{let active=true;void readRememberedLogin().then(saved=>{if(active&&saved){setUsername(saved.username);setPassword(saved.password);setRemember(true);}}).catch(()=>{if(active)setFailure('无法读取记住的账号密码，可手动填写后登录');}).finally(()=>{if(active)setRestoring(false);});return()=>{active=false;};},[]);
+  async function changeRemember(checked:boolean) {
+    if(checked){setRemember(true);return;}
+    setBusy(true);setFailure('');
+    try { await clearRememberedLogin();setRemember(false); } catch { setFailure('无法清除已记住的账号密码，请检查浏览器站点存储权限'); } finally { setBusy(false); }
+  }
+  async function submit() {
+    setBusy(true);setFailure('');
+    try {
+      websocketURL(location.origin);
+      const value=parseLogin(await accountRequest('/api/account/login',undefined,{username:username.trim(),password,component:'web-console',deviceIdentity:await browserDeviceIdentity(),deviceModel:browserDeviceModel()}));
+      if(remember) {
+        try { await saveRememberedLogin({username:value.account.username,password}); }
+        catch { await accountRequest('/api/account/logout',value.token,{}).catch(()=>{});throw new Error('账号密码未能保存，请取消“记住账号密码”后重试'); }
+      }
+      onLogin(value);setPassword('');
+    } catch(e) {setFailure((e as Error).message);} finally {setBusy(false);}
+  }
   return <div className="login-page"><form className="panel login-form" onSubmit={e => { e.preventDefault(); void submit(); }}>
     <div className="brand"><img src="/console/icon.png" width="40" height="40" alt=""/><span>控制台</span></div><h1>登录账号</h1><p>查看和管理同一账号下的设备</p>
     {(failure || error) && <p className="error" role="alert">{failure || error}</p>}
-    <label>账号<input required maxLength={64} autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} disabled={busy}/></label>
-    <label>密码<input required type="password" maxLength={256} autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} disabled={busy}/></label>
-    <button className="button" type="submit" disabled={busy}><ShieldCheck size={20}/>{busy ? '登录中…' : '登录'}</button><small className="subtle">设备登录同一账号后自动关联。</small>
+    <label>账号<input required maxLength={64} autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} disabled={busy||restoring}/></label>
+    <label>密码<input required type="password" maxLength={256} autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} disabled={busy||restoring}/></label>
+    <label className="remember-login"><input type="checkbox" checked={remember} onChange={e=>void changeRemember(e.target.checked)} disabled={busy||restoring}/>记住账号密码</label>
+    <button className="button" type="submit" disabled={busy||restoring}><ShieldCheck size={20}/>{busy ? '登录中…' : '登录'}</button><small className="subtle">设备登录同一账号后自动关联。</small>
   </form></div>;
 }
-function AccountSettings({login,onLogout,onPasswordChanged,onDeviceNameChanged}:{login:Login;onLogout:()=>void;onPasswordChanged:()=>void;onDeviceNameChanged:(name:string)=>void}) {
+function AccountSettings({login,onLogout,onPasswordChanged,onDeviceNameChanged}:{login:Login;onLogout:()=>void;onPasswordChanged:(warning?:string)=>void;onDeviceNameChanged:(name:string)=>void}) {
   const [deviceName,setDeviceName] = useState(login.device.deviceName); const [nameBusy,setNameBusy] = useState(false); const [nameMessage,setNameMessage] = useState(''); const [nameError,setNameError] = useState('');
   useEffect(()=>setDeviceName(login.device.deviceName),[login.device.deviceName]);
   async function renameSelf() { setNameBusy(true);setNameMessage('');setNameError('');try { const name=normalizeDisplayName(deviceName);await accountRequest(`/api/devices/${encodeURIComponent(login.device.deviceId)}`,login.token,{deviceName:name},'PATCH');onDeviceNameChanged(name);setNameMessage('名称已保存'); } catch(e) { setNameError((e as Error).message); } finally { setNameBusy(false); } }
   const [currentPassword,setCurrentPassword] = useState(''); const [newPassword,setNewPassword] = useState('');
   const [busy,setBusy] = useState(false); const [error,setError] = useState('');
-  async function changePassword() { setBusy(true); setError(''); try { await accountRequest('/api/account/password',login.token,{currentPassword,newPassword}); setCurrentPassword(''); setNewPassword(''); onPasswordChanged(); } catch(e) { setError((e as Error).message); } finally { setBusy(false); } }
+  async function changePassword() {
+    setBusy(true);setError('');
+    try {
+      await accountRequest('/api/account/password',login.token,{currentPassword,newPassword});
+      let warning:string|undefined;
+      try { await clearRememberedLogin(); } catch { warning='密码已修改，但旧账号密码记忆未能清除；请填写新密码后重新登录'; }
+      setCurrentPassword('');setNewPassword('');onPasswordChanged(warning);
+    } catch(e) {setError((e as Error).message);} finally {setBusy(false);}
+  }
   return <section className="panel settings-panel"><h2>账号</h2><dl><dt>当前账号</dt><dd>{login.account.username}</dd><dt>服务地址</dt><dd>{location.origin}</dd></dl><form onSubmit={e=>{e.preventDefault();void renameSelf();}}><h3>本机名称</h3><label>设备名称<input required maxLength={64} value={deviceName} onPaste={e=>checkNamePaste(e,setNameError)} onChange={e=>{setNameError('');setDeviceName(e.target.value);}} disabled={nameBusy}/></label><button className="button secondary" disabled={nameBusy||!deviceName.trim()}>{nameBusy?'保存中…':'保存名称'}</button>{nameMessage&&<p role="status">{nameMessage}</p>}{nameError&&<p className="error" role="alert">{nameError}</p>}</form><button className="button secondary" onClick={onLogout}><LogOut size={20}/>退出登录</button><form className="account-password" onSubmit={e=>{e.preventDefault();void changePassword();}}><h3>修改密码</h3><label>当前密码<input required type="password" autoComplete="current-password" value={currentPassword} onChange={e=>setCurrentPassword(e.target.value)} disabled={busy}/></label><label>新密码<input required type="password" minLength={8} maxLength={256} autoComplete="new-password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} disabled={busy}/></label><p className="subtle">修改后，本账号的设备需要重新登录。</p><button className="button" disabled={busy}>{busy?'保存中…':'修改密码'}</button>{error&&<p className="error" role="alert">{error}</p>}</form></section>;
 }
 function DeviceSettings({node,nodes,streams,login,onChanged}:{node:Device;nodes:Device[];streams:Stream[];login:Login;onChanged:()=>void}) {

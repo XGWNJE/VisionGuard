@@ -25,7 +25,7 @@
 
 显示名为 **相机推流节点**，工程目录和包名仍是 `detector/android/` 与 `com.xgwnje.visionguard.detector`。服务器按登录组件 `android-camera` 分配 `detector / visual / android` 身份；摄像端声明 `video-publish` 能力，不声明本地推理、模型或参数控制能力。
 
-两个 Android 组件共用 [`android-shared/`](../android-shared) 的账号 HTTP、Keystore 加密会话、登录界面和主题。密码只用于登录请求；会话凭证保存在本机加密存储，退出后撤销服务会话。服务、账号和本机设备共同决定本地缓存分区，关闭系统备份。Release 内置正式服务地址，登录只填账号密码；Debug 才显示隔离测试设置，允许明确的私网 HTTP 地址。旧测试会话不会在 Release 中发往正式服务。默认设备名称遵循[命名规范](15-命名规范.md)，登录后在账号菜单修改本机名称。
+两个 Android 组件共用 [`android-shared/`](../android-shared) 的账号 HTTP、Keystore 加密会话、登录界面和主题。登录页“记住账号密码”默认未勾选，成功登录后用 Keystore / AES-GCM 按服务和组件加密保存，下次登录自动填入；取消勾选立即清除，本机改密成功后清除旧记忆。退出撤销服务会话但保留账号密码记忆，既有会话恢复方式不变。会话与记忆均排除系统备份和设备转移；服务、账号和本机设备共同决定本地缓存分区。Release 内置正式服务地址；Debug 才显示隔离测试设置，允许明确的私网 HTTP 地址。旧测试会话不会在 Release 中发往正式服务。默认设备名称遵循[命名规范](15-命名规范.md)，登录后在账号菜单修改本机名称。
 
 ## 媒体与推理边界
 

@@ -8,12 +8,14 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.autofill.AutofillNode
 import androidx.compose.ui.autofill.AutofillType
 import androidx.compose.ui.composed
@@ -78,7 +80,7 @@ private fun Modifier.accountAutofill(type: AutofillType, onFill: (String) -> Uni
     }
 }
 
-/** Passwords only exist in the login request; saved bearer sessions are encrypted by Android Keystore. */
+/** Saved sessions and opt-in login fields use Android Keystore; app backups exclude both. */
 class AccountStore private constructor(private val prefs: android.content.SharedPreferences, val allowsTestEndpoint: Boolean, private val stableIdentity: () -> String) {
     private val http = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build()
     private val lock = Mutex()
@@ -94,6 +96,39 @@ class AccountStore private constructor(private val prefs: android.content.Shared
             init(KeyGenParameterSpec.Builder(KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
         }.generateKey()
+    }
+    private fun encrypt(text: String, associatedData: String): String {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key())
+        cipher.updateAAD(associatedData.toByteArray(Charsets.UTF_8))
+        return Base64.encodeToString(cipher.iv + cipher.doFinal(text.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
+    }
+    private fun decrypt(encrypted: String, associatedData: String): String {
+        val bytes = Base64.decode(encrypted, Base64.NO_WRAP)
+        require(bytes.size > 12 && bytes.size < 16_384)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
+        cipher.updateAAD(associatedData.toByteArray(Charsets.UTF_8))
+        return String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
+    }
+    private fun rememberedKey(endpoint: String, component: String): String {
+        val base = if (allowsTestEndpoint) normalizeEndpoint(endpoint) else DEFAULT_ENDPOINT
+        require(component == "android-camera" || component == "android-notifier")
+        return "remembered:$base:$component"
+    }
+    @Synchronized fun rememberedLogin(endpoint: String, component: String): RememberedLogin? = runCatching {
+        val name = rememberedKey(endpoint, component)
+        val encrypted = prefs.getString(name, null) ?: return null
+        require(encrypted.length <= 24_000)
+        val value = JSONObject(decrypt(encrypted, name))
+        RememberedLogin(value.getString("username"), value.getString("password"))
+    }.getOrNull()
+    @Synchronized fun rememberLogin(endpoint: String, component: String, value: RememberedLogin?) {
+        val name = rememberedKey(endpoint, component)
+        val edit = prefs.edit()
+        if (value == null) edit.remove(name)
+        else edit.putString(name, encrypt(JSONObject().put("username", value.username).put("password", value.password).toString(), name))
+        check(edit.commit()) { "无法保存或清除记住的账号密码" }
     }
     private fun readSaved(): AccountSession? = runCatching {
         if (!allowsTestEndpoint && prefs.getString("endpoint", DEFAULT_ENDPOINT) != DEFAULT_ENDPOINT) return null
@@ -122,11 +157,12 @@ class AccountStore private constructor(private val prefs: android.content.Shared
         mutableSession.value = value
         return value
     }
-    suspend fun login(endpoint: String, username: String, password: String, component: String): AccountSession =
+    suspend fun login(endpoint: String, username: String, password: String, component: String, rememberCredentials: Boolean = false): AccountSession =
         lock.withLock { withContext(Dispatchers.IO) {
             val base = if (allowsTestEndpoint) normalizeEndpoint(endpoint) else DEFAULT_ENDPOINT
             val user = username.trim().lowercase(Locale.ROOT)
             require(user.isNotBlank() && password.isNotBlank()) { "请输入账号和密码" }
+            val credentials = RememberedLogin(user, password)
             val idKey = deviceKey(base, user, component)
             val existingId = prefs.getString(idKey, null)
             val identity = stableIdentity()
@@ -140,6 +176,7 @@ class AccountStore private constructor(private val prefs: android.content.Shared
                     body.remove("deviceId")
                     call(base, "/api/account/login", "POST", body)
                 }
+            rememberLogin(base, component, if (rememberCredentials) credentials else null)
             save(response, base)
         } }
     suspend fun ensureSession(): AccountSession? = lock.withLock { withContext(Dispatchers.IO) {
@@ -157,7 +194,9 @@ class AccountStore private constructor(private val prefs: android.content.Shared
         clear()
     } }
     suspend fun changePassword(currentPassword: String, newPassword: String) {
+        val current = mutableSession.value
         request("/api/account/password", "POST", JSONObject().put("currentPassword", currentPassword).put("newPassword", newPassword))
+        if (current != null) withContext(Dispatchers.IO) { rememberLogin(current.endpoint, current.component, null) }
     }
     suspend fun refreshIdentity() = lock.withLock { withContext(Dispatchers.IO) {
         val current = mutableSession.value ?: return@withContext
@@ -243,14 +282,35 @@ fun AccountLogin(store: AccountStore, title: String, component: String, beforeLo
     var advanced by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var rememberCredentials by remember { mutableStateOf(false) }
+    var restoring by remember { mutableStateOf(true) }
     val scope = rememberCoroutineScope()
+    LaunchedEffect(store, endpoint, component) {
+        restoring = true
+        val saved = withContext(Dispatchers.IO) { store.rememberedLogin(endpoint, component) }
+        username = saved?.username ?: ""; password = saved?.password ?: ""; rememberCredentials = saved != null
+        restoring = false
+    }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(16.dp).wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 480.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Spacer(Modifier.height(16.dp))
         Text(title, style = MaterialTheme.typography.titleLarge)
         Text("登录同一账号，自动关联这套系统中的设备。", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedTextField(username, { username = it }, label = { Text("账号") }, singleLine = true, modifier = Modifier.fillMaxWidth().accountAutofill(AutofillType.Username) { if (!busy) username = it }, enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next))
-        OutlinedTextField(password, { password = it }, label = { Text("密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth().accountAutofill(AutofillType.Password) { if (!busy) password = it }, enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next))
+        OutlinedTextField(username, { if (it.length <= 64) username = it else message = "账号最多 64 个字符" }, label = { Text("账号") }, singleLine = true, modifier = Modifier.fillMaxWidth().accountAutofill(AutofillType.Username) { if (!busy && !restoring && it.length <= 64) username = it }, enabled = !busy && !restoring, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next))
+        OutlinedTextField(password, { if (it.length <= 256) password = it else message = "密码最多 256 个字符" }, label = { Text("密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth().accountAutofill(AutofillType.Password) { if (!busy && !restoring && it.length <= 256) password = it }, enabled = !busy && !restoring, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next))
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(rememberCredentials, enabled = !busy && !restoring, role = Role.Checkbox) { checked ->
+            if (checked) rememberCredentials = true else {
+                busy = true; message = null
+                scope.launchAccount {
+                    try { withContext(Dispatchers.IO) { store.rememberLogin(endpoint, component, null) }; rememberCredentials = false }
+                    catch (_: Exception) { message = "无法清除已记住的账号密码，请检查本机存储" }
+                    finally { busy = false }
+                }
+            }
+        }, verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(rememberCredentials, onCheckedChange = null, enabled = !busy && !restoring, colors = VisionGuardControlColors.checkbox())
+            Spacer(Modifier.width(8.dp)); Text("记住账号密码")
+        }
         if (store.allowsTestEndpoint) {
             TextButton({ advanced = !advanced }, enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text(if (advanced) "收起测试设置" else "隔离测试设置") }
             if (advanced) OutlinedTextField(endpoint, { endpoint = it }, label = { Text("隔离服务地址") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
@@ -259,11 +319,11 @@ fun AccountLogin(store: AccountStore, title: String, component: String, beforeLo
         Button(onClick = {
             busy = true; message = null
             scope.launchAccount {
-                try { beforeLogin(); store.login(endpoint, username, password, component); password = "" }
+                try { beforeLogin(); store.login(endpoint, username, password, component, rememberCredentials); password = "" }
                 catch (e: Exception) { message = e.message?.take(160) ?: "无法登录，请检查网络" }
                 finally { busy = false }
             }
-        }, enabled = !busy && username.isNotBlank() && password.isNotBlank(), colors = VisionGuardControlColors.button(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) {
+        }, enabled = !busy && !restoring && username.isNotBlank() && password.isNotBlank(), colors = VisionGuardControlColors.button(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) {
             Text(if (busy) "正在登录…" else "登录")
         }
     }

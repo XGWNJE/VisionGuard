@@ -13,10 +13,21 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public event EventHandler AccountChanged;
         private string _serviceAddress = AccountSession.ServiceUrl, _username = "", _password = "", _loginMessage = "";
         private bool _isChangingAccount, _isRefreshing, _isLoginError, _hasSessionMaintenanceError;
+        private bool _rememberCredentials;
+        public bool RememberCredentials
+        {
+            get => _rememberCredentials;
+            set
+            {
+                if (_rememberCredentials == value) return;
+                if (!value) { try { AccountSession.SaveRememberedLogin(ServiceAddress, null, null); } catch { SetLoginError("无法清除已记住的账号密码，请检查本机存储权限。"); OnPropertyChanged(nameof(RememberCredentials)); return; } }
+                SetProperty(ref _rememberCredentials, value);
+            }
+        }
         public bool CanEditAccount => !_isChangingAccount;
         public bool AllowsTestEndpoint => AccountSession.AllowsTestEndpoint;
         public bool CanEditDeviceName => AccountSession.Current != null && !_isChangingAccount;
-        public string ServiceAddress { get => _serviceAddress; set => SetProperty(ref _serviceAddress, value); }
+        public string ServiceAddress { get => _serviceAddress; set { if (SetProperty(ref _serviceAddress, value)) { try { AccountSession.NormalizeUrl(value); RestoreRememberedLogin(); } catch (ArgumentException) { Password = ""; } } } }
         public string Username { get => _username; set => SetProperty(ref _username, value); }
         public string Password { get => _password; set => SetProperty(ref _password, value); }
         public string LoginMessage { get => _loginMessage; private set => SetProperty(ref _loginMessage, value); }
@@ -118,10 +129,18 @@ namespace VisionGuard.Detector.Windows.ViewModels
         {
             DeviceName = SettingsStore.GetString("DeviceName", System.Environment.MachineName);
             ServiceAddress = AccountSession.ServiceUrl;
-            Username = AccountSession.Current?.account.username ?? "";
+            RestoreRememberedLogin();
+            if (!RememberCredentials) Username = AccountSession.Current?.account.username ?? "";
             if (AccountSession.Current != null) DeviceName = AccountSession.Current.device.deviceName;
             OnPropertyChanged(nameof(AccountText)); OnPropertyChanged(nameof(IsLoggedIn));
             OnPropertyChanged(nameof(CanEditDeviceName));
+        }
+
+        private void RestoreRememberedLogin()
+        {
+            var saved = AccountSession.ReadRememberedLogin(ServiceAddress);
+            _rememberCredentials = saved != null; OnPropertyChanged(nameof(RememberCredentials));
+            Username = saved?.Username ?? ""; Password = saved?.Password ?? "";
         }
 
         public void Save()
@@ -150,8 +169,13 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 try
                 {
                     AccountChanging?.Invoke(this, EventArgs.Empty);
-                    await Task.Run(() => AccountSession.Login(ServiceAddress, Username, Password));
-                    Password = ""; AccountChanged?.Invoke(this, EventArgs.Empty); LoginMessage = "登录成功";
+                    var username = Username; var password = Password; var endpoint = ServiceAddress; var remember = RememberCredentials;
+                    await Task.Run(() => AccountSession.Login(endpoint, username, password));
+                    string rememberError = null;
+                    try { await Task.Run(() => AccountSession.SaveRememberedLogin(endpoint, remember ? username : null, remember ? password : null)); }
+                    catch { rememberError = "登录成功，但账号密码未能保存，请检查本机存储权限。"; }
+                    Password = ""; AccountChanged?.Invoke(this, EventArgs.Empty); LoginMessage = rememberError ?? "登录成功";
+                    IsLoginError = rememberError != null;
                 }
                 catch (Exception ex) { SetLoginError(ex.Message); }
                 finally { _isChangingAccount = false; OnPropertyChanged(nameof(CanEditAccount)); OnPropertyChanged(nameof(CanEditDeviceName)); OnPropertyChanged(nameof(AccountText)); OnPropertyChanged(nameof(IsLoggedIn)); }
@@ -166,7 +190,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                     await Task.Run(AccountSession.Logout); LoginMessage = "已退出登录";
                 }
                 catch (Exception ex) { SetLoginError("本机已退出；服务撤销未确认：" + ex.Message); }
-                finally { _isChangingAccount = false; OnPropertyChanged(nameof(CanEditAccount)); OnPropertyChanged(nameof(CanEditDeviceName)); AccountChanged?.Invoke(this, EventArgs.Empty); Password = ""; OnPropertyChanged(nameof(AccountText)); OnPropertyChanged(nameof(IsLoggedIn)); }
+                finally { _isChangingAccount = false; OnPropertyChanged(nameof(CanEditAccount)); OnPropertyChanged(nameof(CanEditDeviceName)); AccountChanged?.Invoke(this, EventArgs.Empty); RestoreRememberedLogin(); OnPropertyChanged(nameof(AccountText)); OnPropertyChanged(nameof(IsLoggedIn)); }
             });
 
             RetryCommand = new RelayCommand(() =>
@@ -261,7 +285,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 if (old?.token != current?.token)
                 {
                     AccountChanged?.Invoke(this, EventArgs.Empty);
-                    if (current == null) SetLoginError("登录已失效，请重新登录。");
+                    if (current == null) { RestoreRememberedLogin(); SetLoginError("登录已失效，请重新登录。"); }
                 }
             }
             catch (Exception ex) { _hasSessionMaintenanceError = true; SetLoginError(ex.Message); }

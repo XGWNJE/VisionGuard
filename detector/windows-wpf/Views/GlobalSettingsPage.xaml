@@ -60,7 +60,7 @@
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="账号" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
                                         <Grid Grid.Column="1" Margin="0,0,0,0">
-                                            <TextBox Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource PaneTextBox}" AutomationProperties.Name="Username"/>
+                                            <TextBox Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" MaxLength="64" Style="{StaticResource PaneTextBox}" AutomationProperties.Name="Username"/>
                                         </Grid>
                                         <Grid Grid.Column="2"/>
                                     </Grid>
@@ -72,12 +72,13 @@
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="密码" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
                                         <Grid Grid.Column="1" Margin="0,0,12,0">
-                                            <PasswordBox PasswordChanged="AccountPasswordChanged" Height="36" AutomationProperties.Name="密码"/>
+                                            <PasswordBox PasswordChanged="AccountPasswordChanged" Loaded="AccountPasswordLoaded" Unloaded="AccountPasswordUnloaded" MaxLength="256" Height="36" AutomationProperties.Name="密码"/>
                                         </Grid>
                                         <Grid Grid.Column="2">
                                             <Button Content="登录" Command="{Binding LoginCommand}" Style="{StaticResource PanePrimaryButton}"/>
                                         </Grid>
                                     </Grid>
+                                    <CheckBox Content="记住账号密码" IsChecked="{Binding RememberCredentials, Mode=TwoWay}" Style="{StaticResource DarkCheckBox}" MinHeight="36" Margin="96,0,0,8"/>
                                 </StackPanel>
                                 <TextBlock Text="{Binding LoginMessage}" Style="{StaticResource CaptionText}" TextWrapping="Wrap"/>
                             </StackPanel>

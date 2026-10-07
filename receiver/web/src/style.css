@@ -169,6 +169,7 @@ dd { margin: 0; overflow-wrap: anywhere; }
 .login-page { min-height: 100dvh; display: grid; place-items: center; padding: 32px; }
 .login-form { display: flex; flex-direction: column; gap: 16px; width: 400px; padding: 32px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
 .login-form label { display: flex; flex-direction: column; gap: 8px; }
+.login-form .remember-login { flex-direction: row; align-items: center; min-height: 48px; }
 .login-form .button { margin-top: 8px; }
 .appearance-selector { display: flex; gap: 12px; align-items: center; margin: 12px 0; }
 .appearance-selector select { width: 160px; }
