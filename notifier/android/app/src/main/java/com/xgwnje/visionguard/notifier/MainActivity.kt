@@ -22,6 +22,7 @@ import com.xgwnje.visionguard.notifier.node.NotificationNodeSettings
 import com.xgwnje.visionguard.notifier.ui.dialogs.AlarmDialog
 import com.xgwnje.visionguard.notifier.ui.history.AlertHistoryScreen
 import com.xgwnje.visionguard.notifier.ui.main.NotificationDashboard
+import com.xgwnje.visionguard.notifier.ui.main.NotificationHelpButton
 import com.xgwnje.visionguard.notifier.ui.settings.RingtoneLibraryScreen
 import com.xgwnje.visionguard.notifier.ui.settings.SettingsViewModel
 import com.xgwnje.visionguard.notifier.ui.theme.NotificationTheme
@@ -66,7 +67,12 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-                        AccountHeader(account, session!!, actions = { ApplicationOptions(appearance, BuildConfig.VERSION_NAME, "android-notifier", Modifier) }, beforeLogout = { stopAccount() })
+                        AccountHeader(account, session!!, actions = {
+                            Row {
+                                NotificationHelpButton()
+                                ApplicationOptions(appearance, BuildConfig.VERSION_NAME, "android-notifier", Modifier, compact = true)
+                            }
+                        }, compact = true, beforeLogout = { stopAccount() })
                         val nav = rememberNavController()
                         NavHost(navController = nav, startDestination = "node", modifier = Modifier.weight(1f)) {
                             composable("node") { NotificationDashboard(model, onHistory = { nav.navigate("history") }, onLibrary = { nav.navigate("ringtones") }) }
