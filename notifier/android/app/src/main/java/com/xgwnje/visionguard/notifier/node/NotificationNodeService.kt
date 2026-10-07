@@ -210,7 +210,18 @@ class NotificationNodeService : Service() {
             val timestamp = Instant.parse(message.getString("timestamp")).toEpochMilli()
             val expires = Instant.parse(message.getString("expiresAt")).toEpochMilli()
             val source = message.optString("deviceName", message.getString("deviceId")) + message.optString("sourceName").let { if (it.isBlank()) "" else " · $it" }
-            if (alarms.acceptRemoteAlert(id, label, source, message.optString("summary"), timestamp, expires)) {
+            val detectedObject = if (message.getString("eventKind") == "visual-detection") {
+                val detections = message.optJSONArray("detections")
+                com.xgwnje.visionguard.notifier.highestConfidenceObject(buildList {
+                    if (detections != null && detections.length() <= 100) for (index in 0 until detections.length()) {
+                        val detection = detections.optJSONObject(index) ?: continue
+                        val score = (detection.opt("confidence") as? Number)?.toDouble() ?: continue
+                        add(com.xgwnje.visionguard.notifier.DetectedObject(detection.optString("label"), score))
+                    }
+                })
+            } else null
+            if (alarms.acceptRemoteAlert(id, label, source, message.optString("summary"), timestamp, expires,
+                    detectedObject = detectedObject)) {
                 ws.send(JSONObject().put("type", "notification-receipt").put("alertId", id).toString())
                 wakePlayback()
                 mutableState.value = mutableState.value.copy(received = mutableState.value.received + 1)

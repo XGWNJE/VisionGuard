@@ -30,7 +30,8 @@ data class AlertQueueItem(
     val loopLimit: Int,
     val playedLoops: Int,
     val occurrenceCount: Int,
-    val snippet: String? = null
+    val snippet: String? = null,
+    val detectedObject: DetectedObject? = null
 )
 
 data class AlertQueueTransition(
@@ -85,7 +86,8 @@ class SharedPreferencesHelper(context: Context) {
     fun markServiceRecovered(): Boolean = synchronized(alertQueueLock) { !prefs.contains(KEY_SERVICE_OUTAGE) || commitCritical(prefs.edit().remove(KEY_SERVICE_OUTAGE), KEY_SERVICE_OUTAGE) }
 
     fun acceptRemoteAlert(id: String, label: String, source: String, summary: String,
-                          timestamp: Long, expiresAt: Long, now: Long = System.currentTimeMillis(), serviceOutage: Boolean = false): Boolean =
+                          timestamp: Long, expiresAt: Long, now: Long = System.currentTimeMillis(), serviceOutage: Boolean = false,
+                          detectedObject: DetectedObject? = null): Boolean =
         synchronized(alertQueueLock) {
             if (serviceOutage && prefs.contains(KEY_SERVICE_OUTAGE)) return@synchronized true
             if (id.isBlank() || id.length > 128 || expiresAt <= now || timestamp > now + 5_000 ||
@@ -100,7 +102,7 @@ class SharedPreferencesHelper(context: Context) {
             // A previously accepted item can remain in the queue beyond the transport deadline.
             if (queue.any { it.id == id }) return@synchronized true
             queue += AlertQueueItem(id, label, "visionguard", source.take(160), timestamp, timestamp,
-                getRingtoneValue(), getDefaultLoopCount(), 0, 1, summary.take(100))
+                getRingtoneValue(), getDefaultLoopCount(), 0, 1, summary.take(100), detectedObject?.takeIf { it.valid })
             accepted.put(id, expiresAt)
             val editor = prefs.edit().putString(KEY_ALERT_QUEUE, encodeAlertQueue(queue)).putString(key, accepted.toString())
             if (serviceOutage) editor.putString(KEY_SERVICE_OUTAGE, id)
@@ -165,7 +167,11 @@ class SharedPreferencesHelper(context: Context) {
                             ),
                             playedLoops = obj.optInt("playedLoops", 0).coerceAtLeast(0),
                             occurrenceCount = obj.optInt("occurrenceCount", 1).coerceAtLeast(1),
-                            snippet = obj.nullableString("snippet")
+                            snippet = obj.nullableString("snippet"),
+                            detectedObject = obj.optJSONObject("detectedObject")?.let { target ->
+                                val score = (target.opt("confidence") as? Number)?.toDouble()
+                                if (score == null) null else DetectedObject(target.optString("label"), score).takeIf { it.valid }
+                            }
                         )
                     )
                 }
@@ -191,6 +197,9 @@ class SharedPreferencesHelper(context: Context) {
                 put("playedLoops", item.playedLoops.coerceAtLeast(0))
                 put("occurrenceCount", item.occurrenceCount.coerceAtLeast(1))
                 put("snippet", item.snippet ?: JSONObject.NULL)
+                put("detectedObject", item.detectedObject?.let { target ->
+                    JSONObject().put("label", target.label).put("confidence", target.confidence)
+                } ?: JSONObject.NULL)
             })
         }
         return JSONObject().put("version", ALERT_QUEUE_VERSION).put("items", items).toString()

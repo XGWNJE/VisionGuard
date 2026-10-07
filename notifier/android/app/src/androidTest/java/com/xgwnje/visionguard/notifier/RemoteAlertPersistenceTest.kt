@@ -29,6 +29,17 @@ class RemoteAlertPersistenceTest {
         assertTrue(reopened.getAlertQueue().isEmpty())
         assertEquals(1, reopened.getAlertHistory().size)
     }
+    @Test fun selectedObjectSurvivesRecreationAndDuplicateReceiptsDoNotReplaceIt() {
+        val target = highestConfidenceObject(listOf(DetectedObject("person", .72), DetectedObject("car", .94)))!!
+        assertTrue(prefs.acceptRemoteAlert("object-id", "视觉检测", "模拟来源", "mixed", 1_000, 31_000, 2_000, detectedObject = target))
+        val reopened = SharedPreferencesHelper(context)
+        assertEquals(target, reopened.getActiveAlert()!!.detectedObject)
+        assertTrue(reopened.acceptRemoteAlert("object-id", "视觉检测", "模拟来源", "mixed", 1_000, 31_000, 3_000,
+            detectedObject = DetectedObject("person", 1.0)))
+        assertEquals(target, reopened.getActiveAlert()!!.detectedObject)
+        assertTrue(reopened.finishActiveAlert("object-id", AlertEndType.MANUAL).success)
+        assertNull(reopened.getActiveAlert())
+    }
     @Test fun fullQueueDoesNotConfirmAndCanRetryWhileStillFresh() {
         repeat(20) { assertTrue(prefs.acceptRemoteAlert("full-$it", "检测", "节点", "text", 1_000, 31_000, 2_000)) }
         assertFalse(prefs.acceptRemoteAlert("retry", "检测", "节点", "text", 1_000, 31_000, 2_000))

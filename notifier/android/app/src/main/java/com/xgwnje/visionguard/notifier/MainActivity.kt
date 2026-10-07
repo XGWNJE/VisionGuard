@@ -86,7 +86,8 @@ class MainActivity : AppCompatActivity() {
                             if (alarms?.finishActiveAlert(item.id, AlertEndType.MANUAL)?.success != true)
                                 confirmationError = "确认保存失败，请重试"
                             syncAlarm()
-                        }, matchedKeyword = item.keyword, sourceApp = item.sourceApp, snippet = item.snippet, eventTimeMillis = item.firstTriggeredAt, confirmationError = confirmationError)
+                        }, matchedKeyword = item.keyword, sourceApp = item.sourceApp, snippet = item.snippet,
+                            eventTimeMillis = item.firstTriggeredAt, confirmationError = confirmationError, detectedObject = item.detectedObject)
                     }
                 }
                 }
