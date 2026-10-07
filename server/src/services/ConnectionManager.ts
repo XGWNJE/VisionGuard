@@ -8,6 +8,8 @@ import { parseCacheReport } from './CacheMaintenance';
 // └─────────────────────────────────────────────────────────┘
 
 import WebSocket from 'ws';
+import type { IncomingMessage } from 'node:http';
+import { performance } from 'node:perf_hooks';
 import fs from 'fs';
 import { config } from '../config';
 import crypto from 'node:crypto';
@@ -431,10 +433,7 @@ function handleConnection(ws: WebSocket): void {
   let identity: NodeIdentity | undefined;
   let deviceId: string | null = null;
   let connectionKey: string | null = null;
-  const ts = new Date().toISOString();
   const remoteIp = (ws as any).socket?.remoteAddress ?? 'unknown';
-
-  console.log(`[ws][${ts}] 新连接 ← ${remoteIp} (等待认证, 超时 ${config.wsAuthTimeoutMs}ms)`);
 
   const authTimer = setTimeout(() => {
     if (!authenticated) {
@@ -1437,19 +1436,31 @@ function forAccount(accountId: string) {
 }
 accountStore.onChange(() => { for (const context of contexts.values()) context.revokeAndRefresh(); });
 mediaRelay.onChange(accountId => contexts.get(accountId)?.sendStreams());
-export function handleConnection(ws: WebSocket): void {
-  const timer = setTimeout(() => ws.close(4001, 'auth timeout'), config.wsAuthTimeoutMs); timer.unref();
+export function handleConnection(ws: WebSocket, req?: IncomingMessage): void {
+  const connectionId = crypto.randomUUID(), started = performance.now();
+  const suppliedTrace = new URL(req?.url ?? '/ws', 'http://localhost').searchParams.get('traceId');
+  const traceId = suppliedTrace && /^[a-f0-9]{32}$/.test(suppliedTrace) ? suppliedTrace : undefined;
+  let authenticated = false, firstFrameReceived = false, endReason = 'remote-close';
+  const log = (event: string, details: { reason?: string; code?: number; binary?: boolean; component?: string } = {}) => {
+    console.info('[WsAuth]', JSON.stringify({ timestamp: new Date().toISOString(), connectionId, traceId, event,
+      elapsedMs: Math.round(performance.now() - started), authenticated, firstFrameReceived, ...details }));
+  };
+  log('socket-open');
+  const timer = setTimeout(() => { endReason = 'auth-timeout'; log('auth-timeout'); ws.close(4001, 'auth timeout'); }, config.wsAuthTimeoutMs); timer.unref();
   ws.once('message', (raw, binary) => {
+    firstFrameReceived = true; log('first-frame', { binary });
     clearTimeout(timer);
-    let message: any; try { message = JSON.parse(raw.toString()); } catch { ws.close(4001, 'invalid auth'); return; }
+    let message: any; try { message = JSON.parse(raw.toString()); } catch { endReason = 'invalid-json'; log('auth-rejected', { reason: endReason }); ws.close(4001, 'invalid auth'); return; }
+    if (!message || typeof message !== 'object' || Array.isArray(message)) { endReason = 'invalid-auth-message'; log('auth-rejected', { reason: endReason }); ws.close(4001, 'invalid auth'); return; }
     const session = !binary && message.type === 'auth' ? accountStore.authenticate(message.token) : undefined;
-    if (!session) { ws.send(JSON.stringify({ type: 'auth-result', success: false, reason: 'invalid session' })); ws.close(4001, 'invalid session'); return; }
+    if (!session) { endReason = binary ? 'binary-auth' : message.type !== 'auth' ? 'unexpected-message' : 'invalid-session'; log('auth-rejected', { reason: endReason }); ws.send(JSON.stringify({ type: 'auth-result', success: false, reason: 'invalid session' })); ws.close(4001, 'invalid session'); return; }
     socketTokens.set(ws, message.token);
     forAccount(session.account.accountId).handleConnection(ws);
     ws.emit('message', raw, false);
+    authenticated = true; log('auth-success', { component: session.device.component });
   });
-  ws.on('error', () => ws.terminate());
-  ws.once('close', () => clearTimeout(timer));
+  ws.on('error', () => { endReason = 'transport-error'; log('socket-error'); ws.terminate(); });
+  ws.once('close', code => { clearTimeout(timer); log('socket-close', { code, reason: endReason }); });
 }
 export function broadcastAlert(accountId: string, alert: WsAlertPush): void { forAccount(accountId).broadcastAlert(alert); }
 export function broadcastScreenshotData(accountId: string, payload: WsScreenshotDataPush): void { forAccount(accountId).broadcastScreenshotData(payload); }

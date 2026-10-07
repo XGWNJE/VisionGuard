@@ -2,18 +2,26 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import vm from 'node:vm';
+import { webcrypto } from 'node:crypto';
 import test from 'node:test';
 import ts from 'typescript';
 import * as protocol from '../src/protocol.ts';
 
 const source=readFileSync(new URL('../src/useRelay.ts',import.meta.url),'utf8');
 const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+const diagnosticsSource=readFileSync(new URL('../src/connectionDiagnostics.ts',import.meta.url),'utf8');
+const diagnosticsCompiled=ts.transpileModule(diagnosticsSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
 const login={token:'a'.repeat(32),expiresAt:'2026-12-01T00:00:00Z',channel:'test',account:{accountId:'one',username:'one'},device:{deviceId:'console-one',deviceName:'Console',role:'console',nodeType:'console',platform:'web',component:'web-console'}};
 
 // Execute the production transport hook with controlled effect commits and socket/HTTP timing.
 // No DOM or clock sleeps are needed to reproduce a response arriving after a new account renders.
 function harness(fetcher){
-  const slots=[],effects=new Map(),pending=[],sockets=[];let cursor=0, now=0, timer;
+  const slots=[],effects=new Map(),pending=[],sockets=[],logs=[];let cursor=0, now=0, timer;
+  const storage=new Map();
+  const logConsole={info:(_tag,value)=>logs.push(JSON.parse(value))};
+  const sessionStorage={getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)};
+  const diagnosticsModule={exports:{}};
+  new vm.Script(diagnosticsCompiled).runInContext(vm.createContext({module:diagnosticsModule,exports:diagnosticsModule.exports,console:logConsole,sessionStorage}));
   const react={
     useState(initial){const i=cursor++;if(!Object.hasOwn(slots,i))slots[i]=initial;return[slots[i],next=>{slots[i]=typeof next==='function'?next(slots[i]):next;}];},
     useRef(initial){const i=cursor++;if(!Object.hasOwn(slots,i))slots[i]={current:initial};return slots[i];},
@@ -22,7 +30,7 @@ function harness(fetcher){
   class Socket{
     static OPEN=1;
     readyState=0; sent=[];
-    constructor(){sockets.push(this);}
+    constructor(url){this.url=url;sockets.push(this);}
     send(value){this.sent.push(JSON.parse(value));}
     close(){this.readyState=3;this.onclose?.({code:1000});}
     open(){this.readyState=1;this.onopen?.();}
@@ -30,11 +38,11 @@ function harness(fetcher){
     revoked(){this.readyState=3;this.onclose?.({code:4001});}
   }
   const module={exports:{}};
-  const context=vm.createContext({module,exports:module.exports,require:name=>name==='react'?react:protocol,performance:{now:()=>now},location:{origin:'http://127.0.0.1:3100'},WebSocket:Socket,fetch:fetcher,AbortController,setInterval:fn=>{timer=fn;return 1;},clearInterval:()=>{timer=null;}});
+  const context=vm.createContext({module,exports:module.exports,require:name=>name==='react'?react:name==='./connectionDiagnostics'?diagnosticsModule.exports:protocol,performance:{now:()=>now},location:{origin:'http://127.0.0.1:3100'},URL,console:logConsole,crypto:webcrypto,WebSocket:Socket,fetch:fetcher,AbortController,setInterval:fn=>{timer=fn;return 1;},clearInterval:()=>{timer=null;}});
   new vm.Script(compiled).runInContext(context);
   const commit=()=>{while(pending.length)pending.shift()();};
   return{
-    sockets,commit, advance(ms){now+=ms;timer?.();},
+    sockets,logs,storage,commit, advance(ms){now+=ms;timer?.();},
     render(session=login,commitEffects=true){cursor=0;const value=module.exports.useRelay(session);if(commitEffects)commit();return value;},
     stop(){for(const effect of effects.values())effect.cleanup?.();},
   };
@@ -62,6 +70,41 @@ test('losing the transport invalidates live status while retaining registered id
   assert.equal(socket.sent.filter(message=>message.type==='command').length,0);
   socket.receive({type:'device-list',devices:[{...camera,online:true}]});
   assert.equal(h.render().devices.length,0);
+});
+
+test('two slow handshakes and a recovered third attempt have distinct correlated phase logs without credentials',async t=>{
+  const h=harness(()=>Promise.resolve(new Response(JSON.stringify({alerts:[]}))));t.after(()=>h.stop());h.render();
+  h.advance(15000);h.advance(3000);h.advance(15000);h.advance(3000);
+  const third=h.sockets[2];third.open();h.advance(100);third.receive({type:'auth-result',success:true});
+  assert.equal(h.render().connected,true);
+  const starts=h.logs.filter(entry=>entry.event==='connect-start');
+  assert.equal(starts.length,3);assert.equal(new Set(starts.map(entry=>entry.attemptId)).size,3);
+  assert.deepEqual(h.logs.filter(entry=>entry.event==='timeout').map(entry=>entry.reason),['connect-timeout','connect-timeout']);
+  assert.deepEqual(h.logs.filter(entry=>entry.event==='retry-scheduled').map(entry=>entry.retryInMs),[1000,2000]);
+  const success=h.logs.find(entry=>entry.event==='auth-success');
+  assert.equal(success.attempt,3);assert.equal(success.phase,'authenticating');assert.equal(success.openElapsedMs,100);
+  assert.equal(new URL(third.url).searchParams.get('traceId'),success.attemptId);
+  assert.ok(!JSON.stringify(h.logs).includes(login.token));
+  assert.ok(!h.storage.get('visionguard.connection-log').includes(login.token));
+});
+
+test('a socket opened without an auth response is diagnosed separately from a slow handshake',async t=>{
+  const h=harness(()=>Promise.resolve(new Response(JSON.stringify({alerts:[]}))));t.after(()=>h.stop());h.render();
+  h.advance(2000);h.sockets[0].open();h.advance(11000);
+  const timeout=h.logs.find(entry=>entry.event==='timeout');
+  assert.equal(timeout.reason,'auth-timeout');assert.equal(timeout.phase,'authenticating');
+  assert.equal(timeout.elapsedMs,13000);assert.equal(timeout.openElapsedMs,11000);
+  assert.equal(h.sockets[0].sent[0].type,'auth');
+  assert.equal(h.logs.filter(entry=>entry.event==='auth-sent').length,1);
+});
+
+test('unexpected server rejection and close text are not copied into diagnostic storage',async t=>{
+  const h=harness(()=>Promise.resolve(new Response(JSON.stringify({alerts:[]}))));t.after(()=>h.stop());h.render();h.sockets[0].open();
+  h.sockets[0].receive({type:'auth-result',success:false,reason:`token=${login.token} password=private`});
+  assert.equal(h.render().authExpired,true);
+  assert.equal(h.logs.find(entry=>entry.event==='auth-rejected').reason,'server-rejected');
+  assert.ok(!JSON.stringify(h.logs).includes(login.token));assert.ok(!JSON.stringify(h.logs).includes('password='));
+  assert.equal(h.logs.filter(entry=>entry.event==='retry-scheduled').length,0);
 });
 
 test('a late old-account HTTP 401 cannot expire the next account or expose its cached events',async t=>{

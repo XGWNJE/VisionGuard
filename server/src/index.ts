@@ -94,7 +94,7 @@ wss.on('connection', (ws, req) => {
   }
   const pathname = req.url?.split('?')[0];
   if (pathname === '/media/ws') mediaRelay.handleConnection(ws);
-  else if (pathname === '/ws') handleConnection(ws);
+  else if (pathname === '/ws') handleConnection(ws, req);
   else ws.close(1008, 'unknown websocket path');
 });
 // ── 启动 ──────────────────────────────────────────────────
