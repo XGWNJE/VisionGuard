@@ -75,10 +75,10 @@ private fun CameraControlPanel(modifier: Modifier, header: @Composable () -> Uni
             CameraSettings(streaming, highResolution, dim, hidden, rowGap, onResolution, onDim, onHidePreview)
         }
         }
-        if (streaming) Button(onStop, Modifier.fillMaxWidth().padding(12.dp).heightIn(min = 48.dp),
+        if (streaming) Button(onStop, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).heightIn(min = 48.dp),
             colors = VisionGuardControlColors.button(containerColor = colors.error, contentColor = colors.onError),
             shape = MaterialTheme.shapes.small) { Text("停止推流") }
-        else Button(onStart, Modifier.fillMaxWidth().padding(12.dp).heightIn(min = 48.dp),
+        else Button(onStart, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).heightIn(min = 48.dp),
             enabled = state.connected && state.stream?.targetDeviceId != null,
             colors = VisionGuardControlColors.button(), shape = MaterialTheme.shapes.small) { Text("开始推流") }
     }
