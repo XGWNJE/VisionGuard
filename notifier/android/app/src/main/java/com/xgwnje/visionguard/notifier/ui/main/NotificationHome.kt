@@ -71,17 +71,20 @@ private fun ReceptionPanel(
     onLoops: () -> Unit, onLibrary: () -> Unit, onDetails: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
-    OutlinedCard(modifier.semantics { contentDescription = "接警控制区" },
-        colors = CardDefaults.outlinedCardColors(containerColor = colors.surface),
-        border = BorderStroke(1.dp, colors.outlineVariant), shape = MaterialTheme.shapes.medium) {
-        val content: @Composable () -> Unit = {
+    BoxWithConstraints(modifier) {
+        val compact = bounded && maxHeight < 320.dp
+        OutlinedCard(Modifier.fillMaxWidth().then(if (bounded) Modifier.fillMaxHeight() else Modifier)
+            .semantics { contentDescription = "接警控制区" },
+            colors = CardDefaults.outlinedCardColors(containerColor = colors.surface),
+            border = BorderStroke(1.dp, colors.outlineVariant), shape = MaterialTheme.shapes.medium) {
             val statusColor = when {
                 !enabled -> colors.onSurfaceVariant
                 node.status in ConnectionErrorStatuses -> colors.error
                 node.connected && node.status == "已连接" -> VisionGuardStatusColors.onSuccessContainer
                 else -> VisionGuardStatusColors.warning
             }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp).heightIn(min = 48.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("接收报警", style = MaterialTheme.typography.titleMedium)
                 Text(if (enabled) node.status else "未启用", Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyMedium, color = statusColor,
@@ -91,33 +94,40 @@ private fun ReceptionPanel(
                     Icon(LucideIcons.RefreshCw, "重新连接", Modifier.size(20.dp))
                 }
             }
-            if (!canNotify) TextButton(onPermission, Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            HorizontalDivider(color = colors.outlineVariant)
+            val content: @Composable () -> Unit = {
+                if (!canNotify) TextButton(onPermission, Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    shape = MaterialTheme.shapes.small,
+                    colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.warning)) {
+                    Text("通知未授权 · 去设置", Modifier.weight(1f))
+                    Icon(LucideIcons.ChevronRight, null, Modifier.size(16.dp))
+                }
+                if (!compact) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ReceptionStatistic("本次收件", if (enabled) "${node.received}" else "—", Modifier.weight(1f))
+                    ReceptionStatistic("服务响应", if (enabled && node.lastResponse > 0) formatAlarmTime(node.lastResponse, "HH:mm:ss", timeZone) else "—", Modifier.weight(1f))
+                }
+                ReceptionSetting("接收范围", if (enabled) node.scope else "由控制台分配", onDetails)
+                ReceptionSetting("铃声", ringtone, onRingtone)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onLoops, Modifier.weight(1f).heightIn(min = 48.dp), shape = MaterialTheme.shapes.small,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)) { Text("循环 $loops 次", style = MaterialTheme.typography.bodyMedium) }
+                    OutlinedButton(onLibrary, Modifier.weight(1f).heightIn(min = 48.dp), shape = MaterialTheme.shapes.small,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)) { Text("铃声库", style = MaterialTheme.typography.bodyMedium) }
+                }
+            }
+            if (bounded) Box(Modifier.weight(1f).fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = if (compact) 4.dp else 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 8.dp)) { content() }
+            } else Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) { content() }
+            Button({ onEnabled(!enabled) }, Modifier.fillMaxWidth()
+                .padding(start = 12.dp, end = 12.dp, top = if (compact) 4.dp else 8.dp, bottom = if (compact) 8.dp else 12.dp)
+                .heightIn(min = 48.dp),
                 shape = MaterialTheme.shapes.small,
-                colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.warning)) {
-                Text("通知未授权 · 去设置", Modifier.weight(1f))
-                Icon(LucideIcons.ChevronRight, null, Modifier.size(16.dp))
+                colors = if (enabled) VisionGuardControlColors.button(containerColor = colors.error, contentColor = colors.onError) else VisionGuardControlColors.button()) {
+                Text(if (enabled) "停止接警" else "开启接警")
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ReceptionStatistic("本次收件", if (enabled) "${node.received}" else "—", Modifier.weight(1f))
-                ReceptionStatistic("服务响应", if (enabled && node.lastResponse > 0) formatAlarmTime(node.lastResponse, "HH:mm:ss", timeZone) else "—", Modifier.weight(1f))
-            }
-            ReceptionSetting("接收范围", if (enabled) node.scope else "由控制台分配", onDetails)
-            ReceptionSetting("铃声", ringtone, onRingtone)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onLoops, Modifier.weight(1f).heightIn(min = 48.dp), shape = MaterialTheme.shapes.small,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)) { Text("循环 $loops 次", style = MaterialTheme.typography.bodyMedium) }
-                OutlinedButton(onLibrary, Modifier.weight(1f).heightIn(min = 48.dp), shape = MaterialTheme.shapes.small,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)) { Text("铃声库", style = MaterialTheme.typography.bodyMedium) }
-            }
-        }
-        if (bounded) BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight).padding(horizontal = 12.dp, vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(if (maxHeight >= 300.dp) 12.dp else 4.dp, Alignment.CenterVertically)) { content() }
-        } else Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { content() }
-        Button({ onEnabled(!enabled) }, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).heightIn(min = 48.dp),
-            shape = MaterialTheme.shapes.small,
-            colors = if (enabled) VisionGuardControlColors.button(containerColor = colors.error, contentColor = colors.onError) else VisionGuardControlColors.button()) {
-            Text(if (enabled) "停止接警" else "开启接警")
         }
     }
 }
@@ -126,7 +136,7 @@ private fun ReceptionPanel(
 private fun ReceptionStatistic(label: String, value: String, modifier: Modifier) {
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodySmall)
+        Text(value, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End)
     }
 }
 
@@ -137,7 +147,8 @@ private fun ReceptionSetting(label: String, value: String, onClick: () -> Unit) 
         border = BorderStroke(1.dp, colors.outlineVariant),
         colors = VisionGuardControlColors.outlinedButton(contentColor = colors.onSurface),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
+        Text(label, Modifier.width((64 * LocalDensity.current.fontScale).dp),
+            style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
         Text(value, Modifier.weight(1f).padding(horizontal = 8.dp), style = MaterialTheme.typography.bodyMedium,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         Icon(LucideIcons.ChevronRight, null, Modifier.size(16.dp))
@@ -150,9 +161,10 @@ private fun RecentAlerts(records: List<AlertRecord>, timeZone: String?, onHistor
     OutlinedCard(modifier.semantics { contentDescription = "最近报警区" },
         colors = CardDefaults.outlinedCardColors(containerColor = colors.surface),
         border = BorderStroke(1.dp, colors.outlineVariant), shape = MaterialTheme.shapes.medium) {
-        Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("最近报警", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-            TextButton(onHistory, Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("全部记录") }
+            TextButton(onHistory, Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small,
+                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 8.dp)) { Text("全部记录") }
         }
         HorizontalDivider(color = colors.outlineVariant)
         if (records.isEmpty()) Box(if (bounded) Modifier.weight(1f).fillMaxWidth() else Modifier.fillMaxWidth().heightIn(min = 160.dp), contentAlignment = Alignment.Center) {
@@ -160,9 +172,9 @@ private fun RecentAlerts(records: List<AlertRecord>, timeZone: String?, onHistor
                 Icon(LucideIcons.Bell, null, Modifier.size(24.dp), tint = colors.onSurfaceVariant)
                 Text("暂无报警记录", style = MaterialTheme.typography.bodyMedium, color = colors.onSurfaceVariant)
             }
-        } else if (bounded) LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(12.dp)) {
+        } else if (bounded) LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
             items(records.take(6)) { record -> RecentAlert(record, timeZone) }
-        } else Column(Modifier.fillMaxWidth().padding(12.dp)) { records.take(4).forEach { RecentAlert(it, timeZone) } }
+        } else Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) { records.take(4).forEach { RecentAlert(it, timeZone) } }
     }
 }
 
