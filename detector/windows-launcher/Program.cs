@@ -15,7 +15,7 @@ namespace VisionGuard.Detector.Windows.Launcher
 {
     internal static class Program
     {
-        private const string Version = "0.6.7";
+        private const string Version = "0.6.8";
         private static string ServerBase { get { return AccountSession.ServiceUrl; } }
         private static string DetectorShutdownEvent { get { return @"Local\VisionGuard." + AccountSession.ApplicationId + ".Shutdown"; } }
         private static string ResidentShutdownEvent { get { return AccountSession.ResidentShutdownName; } }

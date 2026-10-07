@@ -26,9 +26,9 @@
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
     <AllowedReferenceRelatedFileExtensions>.allowedextension</AllowedReferenceRelatedFileExtensions>
     <Platforms>AnyCPU;x86</Platforms>
-    <Version>0.6.7</Version>
-    <FileVersion>0.6.7</FileVersion>
-    <AssemblyVersion>0.6.7</AssemblyVersion>
+    <Version>0.6.8</Version>
+    <FileVersion>0.6.8</FileVersion>
+    <AssemblyVersion>0.6.8</AssemblyVersion>
     <!-- net472 下必须显式生成绑定重定向，否则 System.Text.Json 的依赖无法解析。 -->
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
