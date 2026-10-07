@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 64" fill="none"><title>VisionGuard</title><g><path d="M6 14V6h8M50 6h8v8M58 50v8h-8M14 58H6v-8" stroke="#64748B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+  <circle cx="32" cy="20" r="9" fill="#0F172A" />
+  <path d="M32 37A20 20 0 0 1 44 41H20A20 20 0 0 1 32 37ZM17.717 43H46.283A20 20 0 0 1 49.321 47H14.679A20 20 0 0 1 17.717 43ZM13.67 49H50.33A20 20 0 0 1 51.596 53H12.404A20 20 0 0 1 13.67 49Z" fill="#0F172A" />
+  <path d="M8 33h48" stroke="#FF6B3D" stroke-width="4" stroke-linecap="round" />
+</g><text x="78" y="43" font-family="Segoe UI, sans-serif" font-size="34" font-weight="700" letter-spacing="-.5" fill="#0F172A">VisionGuard</text></svg>

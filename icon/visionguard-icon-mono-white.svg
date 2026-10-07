@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>VisionGuard 扫描人简化版</title>
+  <path d="M6 14V6h8M50 6h8v8M58 50v8h-8M14 58H6v-8" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="32" cy="20" r="9" fill="#FFFFFF"/>
+  <path d="M32 37A20 20 0 0 1 44 41H20A20 20 0 0 1 32 37ZM17.717 43H46.283A20 20 0 0 1 49.321 47H14.679A20 20 0 0 1 17.717 43ZM13.67 49H50.33A20 20 0 0 1 51.596 53H12.404A20 20 0 0 1 13.67 49Z" fill="#FFFFFF"/>
+  <path d="M8 33h48" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+</svg>

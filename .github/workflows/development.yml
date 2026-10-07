@@ -35,6 +35,10 @@ jobs:
         run: npm --prefix server run build
       - name: Rollback backup failure and retention checks
         run: python3 scripts/test_server_resources.py
+      - name: Shared application icon exports
+        run: |
+          python3 -m pip install Pillow==12.3.0
+          python3 scripts/generate-icons.py --check
       - name: Naming, documentation and scripts
         run: |
           node scripts/check-docs.js
