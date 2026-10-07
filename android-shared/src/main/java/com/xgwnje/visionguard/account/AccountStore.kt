@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.xgwnje.visionguard.icons.LucideIcons
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -334,7 +335,7 @@ private fun kotlinx.coroutines.CoroutineScope.launchAccount(block: suspend () ->
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("DEPRECATION")
 @Composable
-fun AccountHeader(store: AccountStore, session: AccountSession, actions: @Composable () -> Unit = {}, beforeLogout: suspend () -> Unit = {}) {
+fun AccountHeader(store: AccountStore, session: AccountSession, actions: @Composable () -> Unit = {}, compact: Boolean = false, beforeLogout: suspend () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf(false) }
     var oldPassword by remember { mutableStateOf("") }
@@ -348,11 +349,13 @@ fun AccountHeader(store: AccountStore, session: AccountSession, actions: @Compos
         if (menuOpen) runCatching { store.refreshIdentity() }
     }
     Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 0.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.padding(horizontal = if (compact) 12.dp else 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compact) 0.dp else 12.dp)) {
             Text(session.deviceName, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             actions()
             Box {
-                TextButton({ menuOpen = true }, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text("账号") }
+                if (compact) IconButton({ menuOpen = true }, Modifier.size(48.dp)) {
+                    Icon(LucideIcons.UserRound, "账号", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else TextButton({ menuOpen = true }, modifier = Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text("账号") }
             }
         }
     }
