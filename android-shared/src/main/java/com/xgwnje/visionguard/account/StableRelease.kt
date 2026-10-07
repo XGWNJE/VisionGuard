@@ -13,6 +13,10 @@ object StableReleasePolicy {
         return value.split('.').map { it.toIntOrNull() ?: return null }
     }
     private fun compare(a: List<Int>, b: List<Int>): Int { a.indices.forEach { if (a[it] != b[it]) return a[it].compareTo(b[it]) }; return 0 }
+    fun isNewer(candidate: String, installed: String): Boolean = compare(
+        requireNotNull(version(candidate)) { "更新版本无效" },
+        requireNotNull(version(installed)) { "当前客户端版本无效" }
+    ) > 0
     private fun time(value: String) = runCatching { Instant.parse(value) }.getOrNull()
     fun select(releases: List<StableRelease>, installed: String, client: String): ClientUpdate? {
         val current = requireNotNull(version(installed)) { "当前客户端版本无效" }

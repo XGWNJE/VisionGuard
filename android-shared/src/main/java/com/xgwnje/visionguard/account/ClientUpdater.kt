@@ -27,7 +27,7 @@ import java.lang.ref.WeakReference
 import java.util.concurrent.TimeUnit
 
 data class UpdateState(val busy: Boolean = false, val downloading: Boolean = false, val bytes: Long = 0, val update: ClientUpdate? = null, val ready: Boolean = false, val message: String = "")
-class ClientUpdater(context: Context, private val installed: String, private val client: String) {
+class ClientUpdater(context: Context, private val client: String) {
     companion object {
         private val operations = Mutex()
         private val protectedFiles = java.util.concurrent.ConcurrentHashMap<ClientUpdater, File>()
@@ -46,12 +46,20 @@ class ClientUpdater(context: Context, private val installed: String, private val
     @Volatile private var cancelled = false
     @Volatile private var closed = false
     private var job: Job? = null
+    @Suppress("DEPRECATION") private fun installedVersion(): String =
+        requireNotNull(context.packageManager.getPackageInfo(context.packageName, 0).versionName) { "无法读取当前客户端版本" }
+    private fun stillPending(update: ClientUpdate): Boolean {
+        if (StableReleasePolicy.isNewer(update.version, installedVersion())) return true
+        complete(UpdateState(message = "当前已是最新版本"))
+        return false
+    }
     @Synchronized fun check() {
         if (closed || mutable.value.busy) return
         mutable.value = mutable.value.copy(busy = true, message = "正在检查 GitHub 稳定版…")
         cancelled = false
         job = scope.launch { operations.withLock {
             try {
+                val installed = installedVersion()
                 val releases = mutableListOf<StableRelease>()
                 for (page in 1..10) {
                     val request = Request.Builder().url("https://api.github.com/repos/${StableReleasePolicy.REPOSITORY}/releases?per_page=100&page=$page").header("User-Agent", "VisionGuard/$installed").header("Accept", "application/vnd.github+json").build()
@@ -72,8 +80,11 @@ class ClientUpdater(context: Context, private val installed: String, private val
                     if (rows.length() < 100) break
                     check(page < 10) { "发行列表过长，无法完整判断版本" }
                 }
-                val update = StableReleasePolicy.select(releases, installed, client)
-                complete(UpdateState(update = update, message = if (update == null) "当前已是最新版本" else "发现稳定版 ${update.version}"))
+                val update = StableReleasePolicy.select(releases, installedVersion(), client)
+                val ready = update != null && file(update).exists() && runCatching { verify(file(update), update) }
+                    .onFailure { check(!cancelled && !closed) { "已取消" } }.isSuccess
+                complete(UpdateState(update = update, ready = ready, bytes = if (ready) update.asset.size else 0,
+                    message = when { update == null -> "当前已是最新版本"; ready -> "校验通过，可交给系统安装器"; else -> "发现稳定版 ${update.version}" }))
             } catch (e: Exception) { mutable.value = UpdateState(message = if (cancelled) "已取消检查" else failureMessage(e, "检查失败，请重试")) }
             finally { call = null }
         }
@@ -123,11 +134,12 @@ class ClientUpdater(context: Context, private val installed: String, private val
     @Synchronized fun download() {
         val update = mutable.value.update ?: return
         if (closed || mutable.value.busy) return
-        cancelled = false; mutable.value = mutable.value.copy(busy = true, downloading = true, bytes = 0, ready = false, message = "正在下载并校验…")
+        cancelled = false; mutable.value = mutable.value.copy(busy = true, downloading = false, bytes = 0, ready = false, message = "正在检查本机版本和安装包…")
         job = scope.launch { operations.withLock {
             val target = file(update); val partial = File(directory, target.name + ".part")
             val hadTarget = target.exists()
             try {
+                if (!stillPending(update)) return@withLock
                 check(directory.isDirectory && directory.canonicalFile == directory.absoluteFile) { "安装包暂存目录异常，请检查本机存储" }
                 directory.listFiles()?.filter { TemporaryCachePolicy.knownUpdate(it.name) && it.name.endsWith(".part") }?.forEach { it.delete() }
                 // Bound the download cache without deleting files held by another updater/installer.
@@ -135,8 +147,9 @@ class ClientUpdater(context: Context, private val installed: String, private val
                 old.forEach { it.delete() }
                 val retainedBytes = directory.listFiles().orEmpty().sumOf { it.length() } - (if (target.exists()) target.length() else 0)
                 check(update.asset.size <= 256L * 1024 * 1024 && retainedBytes + update.asset.size <= 256L * 1024 * 1024) { "安装包暂存已达 256 MB 上限，请清理过期缓存后重试" }
-                if (target.exists()) { runCatching { verify(target, update) }.getOrElse { check(target.delete()) { "无法移除损坏的暂存安装包，请重试" } } }
+                if (target.exists()) { runCatching { verify(target, update) }.getOrElse { check(!cancelled && !closed) { "已取消" }; check(target.delete()) { "无法移除损坏的暂存安装包，请重试" } } }
                 if (!target.exists()) {
+                    mutable.value = mutable.value.copy(downloading = true, message = "正在下载并校验…")
                     execute(Request.Builder().url(update.asset.url).build()).use { response ->
                         check(response.isSuccessful) { "下载失败（HTTP ${response.code}）" }
                         response.body?.byteStream()?.use { input -> partial.outputStream().use { output ->
@@ -147,7 +160,7 @@ class ClientUpdater(context: Context, private val installed: String, private val
                     }
                     verify(partial, update); check(partial.renameTo(target)) { "无法保存暂存安装包" }
                 }
-                complete(mutable.value.copy(busy = false, downloading = false, ready = true, message = "校验通过，可交给系统安装器"))
+                complete(mutable.value.copy(busy = false, downloading = false, bytes = update.asset.size, ready = true, message = "校验通过，可交给系统安装器"))
             } catch (e: Exception) { partial.delete(); if (!hadTarget) target.delete(); mutable.value = mutable.value.copy(busy = false, downloading = false, ready = false, message = if (cancelled) "下载已取消" else failureMessage(e, "下载失败，请检查网络和存储空间后重试")) }
             finally { call = null }
         }
@@ -161,6 +174,7 @@ class ClientUpdater(context: Context, private val installed: String, private val
         job = scope.launch { operations.withLock {
             var verified = false
             try {
+                if (!stillPending(update)) return@withLock
                 verify(file(update), update); verified = true
                 file(update).setLastModified(System.currentTimeMillis()) // Keep the installer URI available for at least seven days.
                 withContext(Dispatchers.Main) {

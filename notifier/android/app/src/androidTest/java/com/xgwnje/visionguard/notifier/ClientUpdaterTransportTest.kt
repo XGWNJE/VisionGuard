@@ -16,7 +16,11 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import com.xgwnje.visionguard.account.ClientUpdater
+import com.xgwnje.visionguard.account.ClientUpdate
+import com.xgwnje.visionguard.account.ReleaseAsset
 import com.xgwnje.visionguard.account.StableReleasePolicy
+import com.xgwnje.visionguard.account.UpdateState
+import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Response
@@ -117,6 +121,12 @@ class ClientUpdaterTransportTest {
         updater.download(); awaitIdle(updater)
         assertTrue(updater.state.value.ready)
         assertEquals("Verified cached APK was downloaded again", 1, server.requests.get())
+        updater.check(); awaitIdle(updater)
+        assertTrue("Rechecking forgot the verified APK", updater.state.value.ready)
+        assertEquals(apk.size.toLong(), updater.state.value.bytes)
+        val reopened = updater(); discover(reopened)
+        assertTrue("Reopening forgot the verified APK", reopened.state.value.ready)
+        assertEquals("Cache restoration performed an APK download", 1, server.requests.get())
 
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             updater.install()
@@ -138,6 +148,46 @@ class ClientUpdaterTransportTest {
             assertEquals("已请求打开系统安装器；请以系统界面为准", updater.state.value.message)
         }
         // The context records the intent; this is preparation, not installation acceptance.
+    }
+
+    @Test fun installedVersionClearsStaleDownloadAndInstallWithoutNetwork() {
+        val updater = updater(installed)
+        repeat(2) {
+            updater.check(); awaitIdle(updater)
+            assertNull(updater.state.value.update)
+            assertFalse(updater.state.value.ready)
+            assertEquals("当前已是最新版本", updater.state.value.message)
+        }
+        @Suppress("UNCHECKED_CAST")
+        val state = ClientUpdater::class.java.getDeclaredField("mutable").apply { isAccessible = true }
+            .get(updater) as MutableStateFlow<UpdateState>
+        val stale = ClientUpdate(installed, ReleaseAsset("VisionGuard-Notifier-v$installed.apk",
+            "https://github.com/${StableReleasePolicy.REPOSITORY}/releases/download/v$installed/VisionGuard-Notifier-v$installed.apk",
+            apk.size.toLong(), "sha256:${hash(apk)}", "uploaded"))
+        state.value = UpdateState(update = stale, ready = true)
+        updater.download(); awaitIdle(updater)
+        assertNull("Download retained an already installed update", updater.state.value.update)
+        assertFalse(updater.state.value.ready)
+        state.value = UpdateState(update = stale, ready = true)
+        updater.install(); awaitIdle(updater)
+        assertNull("Install retained an already installed update", updater.state.value.update)
+        assertFalse(updater.state.value.ready)
+        assertEquals("当前已是最新版本", updater.state.value.message)
+        assertEquals("An already installed APK was downloaded", 0, server.requests.get())
+        assertEquals("An already installed APK reached the installer", 0, context.launches.get())
+    }
+
+    @Test fun recheckingDamagedCacheDoesNotDownloadAndAllowsFreshDownload() {
+        val updater = updater(); discover(updater); updater.download(); awaitIdle(updater)
+        assertTrue(updater.state.value.ready)
+        target.outputStream().use { it.write(0) }
+        updater.check(); awaitIdle(updater)
+        assertFalse("Damaged cache remained installable", updater.state.value.ready)
+        assertNotNull(updater.state.value.update)
+        assertEquals("Checking updates automatically downloaded an APK", 1, server.requests.get())
+        updater.download(); awaitIdle(updater)
+        assertTrue(updater.state.value.message, updater.state.value.ready)
+        assertEquals(2, server.requests.get())
     }
 
     @Test fun cancellingActiveDownloadCleansPartialAndAllowsRetry() {
@@ -287,7 +337,7 @@ class ClientUpdaterTransportTest {
     @Test fun liveGitHubCheckAllowsUiThreadDisposalWithoutNetworkCrash() {
         assumeTrue("Real GitHub access is opt-in", InstrumentationRegistry.getArguments().getString("liveUpdates") == "true")
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val updater = ClientUpdater(instrumentation.targetContext, installed, "android-notifier")
+        val updater = ClientUpdater(instrumentation.targetContext, "android-notifier")
         updaters += updater
         updater.check(); awaitIdle(updater)
         assertTrue("Real GitHub check failed: ${updater.state.value.message}", updater.state.value.update != null || updater.state.value.message == "当前已是最新版本")
@@ -304,7 +354,7 @@ class ClientUpdaterTransportTest {
     }
 
     private fun updater(version: String = candidate, actualHandoff: Boolean = false): ClientUpdater {
-        val updater = ClientUpdater(if (actualHandoff) requireNotNull(foregroundActivity) else context, installed, "android-notifier")
+        val updater = ClientUpdater(if (actualHandoff) requireNotNull(foregroundActivity) else context, "android-notifier")
         val name = "VisionGuard-Notifier-v$version.apk"
         val release = JSONArray().put(JSONObject()
             .put("tag_name", "v$version").put("published_at", "2026-10-05T00:00:00Z")

@@ -9,12 +9,12 @@ import androidx.compose.ui.unit.dp
 
 @Composable fun ClientUpdateButton(version: String, client: String, sharedUpdater: ClientUpdater? = null) {
     val context = LocalContext.current
-    val updater = remember(version, client, sharedUpdater) { sharedUpdater ?: ClientUpdater(context, version, client) }
+    val updater = remember(version, client, sharedUpdater) { sharedUpdater ?: ClientUpdater(context, client) }
     val state by updater.state.collectAsState()
     var open by remember { mutableStateOf(false) }
     LaunchedEffect(updater) { if (sharedUpdater == null) updater.check() }
     DisposableEffect(updater) { onDispose { if (sharedUpdater == null) updater.close() } }
-    TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (state.update == null) "检查更新 · $version" else "新版本 ${state.update!!.version}") }
+    TextButton(onClick = { open = true; updater.check() }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (state.update == null) "检查更新 · $version" else "新版本 ${state.update!!.version}") }
     if (open) AlertDialog(onDismissRequest = { if (!state.busy) open = false }, title = { Text("客户端更新") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(state.message.ifEmpty { "GitHub 稳定版 · 当前 $version" })

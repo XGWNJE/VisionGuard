@@ -12,7 +12,7 @@ import com.xgwnje.visionguard.icons.LucideIcons
 
 @Composable fun ApplicationOptions(preference: AppearancePreference, version: String, client: String, modifier: Modifier = Modifier.fillMaxWidth(), compact: Boolean = false) {
     val context = LocalContext.current
-    val updater = remember(version, client) { ClientUpdater(context, version, client) }
+    val updater = remember(version, client) { ClientUpdater(context, client) }
     val state by updater.state.collectAsState()
     LaunchedEffect(updater) { updater.check() }
     DisposableEffect(updater) { onDispose { updater.close() } }

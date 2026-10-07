@@ -12,16 +12,19 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class ClientUpdaterCacheTest {
-    @Test fun damagedCacheThatCannotBeRemovedNeverBecomesInstallable() {
+    @Suppress("DEPRECATION") @Test fun damagedCacheThatCannotBeRemovedNeverBecomesInstallable() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val updater = ClientUpdater(context, "0.6.0", "android-notifier")
+        val updater = ClientUpdater(context, "android-notifier")
+        val installed = requireNotNull(context.packageManager.getPackageInfo(context.packageName, 0).versionName)
+        val parts = StableReleasePolicy.version(installed)!!
+        val newer = "${parts[0]}.${parts[1]}.${parts[2] + 1}"
         val name = "cache-test-${UUID.randomUUID()}.apk"
         val damaged = File(context.cacheDir, "client-updates/$name").apply { mkdirs() }
         val retained = File(damaged, "retained").apply { writeText("fixture") }
         try {
             @Suppress("UNCHECKED_CAST")
             val state = ClientUpdater::class.java.getDeclaredField("mutable").apply { isAccessible = true }.get(updater) as MutableStateFlow<UpdateState>
-            state.value = UpdateState(update = ClientUpdate("0.6.1", ReleaseAsset(name, "http://127.0.0.1:1/unused", -1, "sha256:" + "0".repeat(64), "uploaded")))
+            state.value = UpdateState(update = ClientUpdate(newer, ReleaseAsset(name, "http://127.0.0.1:1/unused", -1, "sha256:" + "0".repeat(64), "uploaded")))
             updater.download()
             val deadline = android.os.SystemClock.elapsedRealtime() + 5_000
             while (updater.state.value.busy && android.os.SystemClock.elapsedRealtime() < deadline) Thread.sleep(10)
