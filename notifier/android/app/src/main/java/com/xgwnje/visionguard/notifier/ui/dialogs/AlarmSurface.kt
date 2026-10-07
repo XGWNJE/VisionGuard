@@ -129,7 +129,5 @@ private fun AlarmArtwork(target: DetectedObject?, modifier: Modifier) {
             drawRect(Brush.verticalGradient(listOf(Color.Transparent, colors.primary.copy(alpha = alpha), Color.Transparent),
                 startY = top, endY = top + beamHeight), Offset(size.width * .08f, top), Size(size.width * .84f, beamHeight))
         }
-        if (resource != null) Text("目标示意", Modifier.align(Alignment.BottomCenter),
-            style = MaterialTheme.typography.labelSmall, color = colors.onSurfaceVariant)
     }
 }
