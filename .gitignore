@@ -9,7 +9,10 @@ dist/
 artifacts/
 
 # 本仓库以 AGENTS.md + .agents/skills/ 为当前 Agent 入口；本地 Agent 状态不入库。
-.codex/
+.codex/*
+!.codex/rules/
+.codex/rules/*
+!.codex/rules/project.rules
 .claude/
 .zcode/
 .local/

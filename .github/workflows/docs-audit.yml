@@ -30,7 +30,7 @@ jobs:
         run: node scripts/check-docs.js
 
       - name: Test documentation guardrails
-        run: node --test scripts/check-docs.test.js scripts/release-workflow.test.js scripts/version-sync.test.js scripts/online-release-contract.test.js
+        run: node --test scripts/check-docs.test.js scripts/release-workflow.test.js scripts/release-notes.test.js scripts/version-sync.test.js scripts/project-guards.test.js scripts/online-release-contract.test.js
 
   online-release-contract:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

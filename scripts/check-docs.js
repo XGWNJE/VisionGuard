@@ -25,6 +25,7 @@ const RETAINED_SKILLS = [
 ];
 
 const DEPRECATED_ENTRYPOINTS = [
+  'CODEX.md',
   '.claude',
   'CLAUDE.md',
   '.Codex/agents',
@@ -539,14 +540,14 @@ function checkValidationContract(root, readme, operations, verificationReport, e
   requirePattern(verificationReport, /待人工[、/].*真机/, 'docs/90-验证记录.md', 'the pending manual/device status vocabulary', errors);
 }
 
-function checkDocumentResponsibilities(readme, index, codexGuide, agents, operations, verificationReport, errors) {
+function checkDocumentResponsibilities(readme, index, agents, operations, verificationReport, errors) {
   requireText(readme, './docs/00-文档索引.md', 'README.md', 'the canonical documentation index link', errors);
   requireText(readme, './docs/60-构建验证与发布.md', 'README.md', 'the operational verification pointer', errors);
   requireText(index, 'README 面向用户和开发者', 'docs/00-文档索引.md', 'the README responsibility statement', errors);
   requireText(index, 'AGENTS.md 维护项目操作规则', 'docs/00-文档索引.md', 'the AGENTS responsibility statement', errors);
 
   requireText(index, '验证报告维护自动化、人工和真机证据', 'docs/00-文档索引.md', 'the verification responsibility statement', errors);
-  requireText(codexGuide, 'docs/00-文档索引.md', 'CODEX.md', 'the canonical documentation index pointer', errors);
+  requireText(agents, 'docs/00-文档索引.md', 'AGENTS.md', 'the canonical documentation index pointer', errors);
   requireText(agents, 'docs/90-验证记录.md', 'AGENTS.md', 'the verification evidence pointer', errors);
   requireText(agents, 'docs/60-构建验证与发布.md', 'AGENTS.md', 'the operations pointer', errors);
 
@@ -581,14 +582,24 @@ function checkEvidencePaths(root, documents, errors) {
   }
 }
 
-function checkIndexCoverage(codexFiles, index, codexGuide, errors) {
-  for (const relativePath of codexFiles) {
-    const fileName = path.basename(relativePath);
-    if (fileName === '00-文档索引.md') {
-      continue;
+function checkIndexCoverage(docsFiles, index, releaseIndex, errors) {
+  for (const relativePath of docsFiles) {
+    if (relativePath === 'docs/00-文档索引.md') continue;
+    const release = relativePath.startsWith('docs/releases/') && relativePath !== 'docs/releases/README.md';
+    const target = path.posix.relative(release ? 'docs/releases' : 'docs', relativePath);
+    requireText(release ? releaseIndex : index, `](${target})`, release ? 'docs/releases/README.md' : 'docs/00-文档索引.md', `navigation for ${target}`, errors);
+  }
+}
+
+function checkDocumentLayout(docsFiles, contents, errors) {
+  for (const relativePath of docsFiles) {
+    if (!/^docs\/\d+-[^/]*[\u4e00-\u9fff][^/]*\.md$/.test(relativePath) &&
+        !/^docs\/releases\/(?:README|v\d+\.\d+\.\d+)\.md$/.test(relativePath)) {
+      errors.push(`[layout] ${relativePath} must be a numbered Chinese topic or a versioned release note`);
     }
-    requireText(index, `](${fileName})`, 'docs/00-文档索引.md', `navigation for ${fileName}`, errors);
-    requireText(codexGuide, `](docs/${fileName})`, 'CODEX.md', `navigation for ${fileName}`, errors);
+    if (/^docs\/\d+-发行说明/.test(relativePath)) errors.push(`[layout] ${relativePath} belongs in docs/releases/`);
+    const beginning = (contents.get(relativePath) || '').split(/\r?\n/).slice(0, 8).join('\n');
+    for (const responsibility of ['负责：', '不负责：', '更新时机：']) requireText(beginning, responsibility, relativePath, 'document scope', errors);
   }
 }
 
@@ -623,7 +634,7 @@ function checkCurrentComponentNames(markdownFiles, contents, errors) {
   const staleNames = /视觉中继|视觉检测[（(](?:Windows|Android)[）)]|视觉告警|\bVision Guard\b/;
   for (const relativePath of markdownFiles) {
     if (relativePath === 'docs/15-命名规范.md') continue;
-    if (!['README.md', 'AGENTS.md', 'CODEX.md'].includes(relativePath) && (!relativePath.startsWith('docs/') || /发行说明v/.test(relativePath))) continue;
+    if (!['README.md', 'AGENTS.md'].includes(relativePath) && (!relativePath.startsWith('docs/') || relativePath.startsWith('docs/releases/'))) continue;
     if (staleNames.test(contents.get(relativePath) || '')) {
       errors.push(`[naming] ${relativePath} uses a retired component display name; use the canonical naming document`);
     }
@@ -638,7 +649,7 @@ function checkCancelledPlans(root, markdownFiles, contents, errors) {
   const cancelledTerms = /15-product-roadmap\.md|(?<![\d.])5\.0(?![\d.])|\bV\d+\s*[·：]|决策\s*\d+|Detector Platform|Reliable Event Network|Device & Fleet Cloud|Linux (?:ARM64 )?Edge Detector|Web Management Console|DeviceOfflineAlert/;
   for (const relativePath of markdownFiles) {
     // 授权条款与正式发布历史不作为未来工作清单；它们仍受独立的许可与版本检查约束。
-    if (!['README.md', 'AGENTS.md', 'CODEX.md'].includes(relativePath) && (!relativePath.startsWith('docs/') || /发行说明v/.test(relativePath))) continue;
+    if (!['README.md', 'AGENTS.md'].includes(relativePath) && (!relativePath.startsWith('docs/') || relativePath.startsWith('docs/releases/'))) continue;
     if (cancelledTerms.test(contents.get(relativePath) || '')) {
       errors.push(`[cancelled-plan] ${relativePath} references cancelled version/platform plans`);
     }
@@ -712,11 +723,9 @@ function checkDomainAlignment(root, operations, readme, overview, errors) {
 function auditRepository(root = DEFAULT_ROOT) {
   const errors = [];
   const docsFiles = listMarkdownFiles(root, 'docs');
-  const codexFiles = docsFiles;
   const markdownFiles = [...new Set([
     'README.md',
     'AGENTS.md',
-    'CODEX.md',
     'CONTRIBUTING.md',
     ...docsFiles
   ])].sort();
@@ -733,7 +742,7 @@ function auditRepository(root = DEFAULT_ROOT) {
 
   const readme = contents.get('README.md') || '';
   const agents = contents.get('AGENTS.md') || '';
-  const codexGuide = contents.get('CODEX.md') || '';
+  const releaseIndex = contents.get('docs/releases/README.md') || '';
   const index = contents.get('docs/00-文档索引.md') || '';
   const overview = contents.get('docs/10-当前架构.md') || '';
 
@@ -745,7 +754,7 @@ function auditRepository(root = DEFAULT_ROOT) {
     checkVersionSources(root, version, errors);
     checkVerificationVersionClaims(version, verificationReport, errors);
   }
-  checkIndexCoverage(codexFiles, index, codexGuide, errors);
+  checkIndexCoverage(docsFiles, index, releaseIndex, errors);
   checkProductContract(readme, overview, agents, errors);
   checkLicenseContract(root, readme, overview, agents, errors);
   checkDomainAlignment(root, operations, readme, overview, errors);
@@ -753,7 +762,7 @@ function auditRepository(root = DEFAULT_ROOT) {
   checkCurrentComponentNames(markdownFiles, contents, errors);
   checkSkillContract(root, errors);
   checkValidationContract(root, readme, operations, verificationReport, errors);
-  checkDocumentResponsibilities(readme, index, codexGuide, agents, operations, verificationReport, errors);
+  checkDocumentResponsibilities(readme, index, agents, operations, verificationReport, errors);
   checkEvidencePaths(root, [
 
     ['docs/90-验证记录.md', verificationReport]
@@ -763,11 +772,7 @@ function auditRepository(root = DEFAULT_ROOT) {
   checkDeprecatedEntrypoints(root, markdownFiles, contents, errors);
   checkCancelledPlans(root, markdownFiles, contents, errors);
 
-  for (const relativePath of docsFiles) {
-    if (!/^docs\/\d+-[^/]*[\u4e00-\u9fff][^/]*\.md$/.test(relativePath)) errors.push(`[layout] ${relativePath} must be flat and numbered with a Chinese name`);
-    const beginning=(contents.get(relativePath) || '').split(/\r?\n/).slice(0,8).join('\n');
-    for (const responsibility of ['负责：','不负责：','更新时机：']) requireText(beginning,responsibility,relativePath,'document scope',errors);
-  }
+  checkDocumentLayout(docsFiles, contents, errors);
 
   return errors;
 }
@@ -795,6 +800,7 @@ module.exports = {
   checkComponentContract,
   checkCurrentComponentNames,
   checkDocumentAnchors,
+  checkDocumentLayout,
   checkDocumentResponsibilities,
   checkDeprecatedEntrypoints,
   checkEvidencePaths,

@@ -1,4 +1,5 @@
 # Keep pinned upstream hashes stable on Windows checkouts.
+.githooks/* text eol=lf
 assets/vendor/lucide/** -text
 android-shared/src/main/java/com/xgwnje/visionguard/icons/LucideIcons.kt text eol=lf
 android-shared/src/main/res/drawable/ic_lucide_*.xml text eol=lf

@@ -1,0 +1,4 @@
+# Defense in depth for trusted Codex project layers; see docs/60 for limits.
+prefix_rule(pattern = ["git", "push"], decision = "prompt", justification = "VisionGuard push requires explicit owner authorization", match = ["git push origin main"], not_match = ["git status"])
+prefix_rule(pattern = ["git", "tag"], decision = "prompt", justification = "VisionGuard tag writes require explicit owner authorization; use git show-ref --tags for read-only inspection", match = ["git tag v0.7.0"], not_match = ["git show-ref --tags"])
+prefix_rule(pattern = ["gh", "release", ["create", "edit", "delete", "upload", "delete-asset"]], decision = "prompt", justification = "VisionGuard release writes require explicit owner authorization and the publish-release.ps1 entrypoint", match = ["gh release create v0.7.0", "gh release edit v0.7.0 --draft=false"], not_match = ["gh release view v0.6.9"])

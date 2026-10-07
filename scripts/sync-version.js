@@ -9,6 +9,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
+const { requireVersionAuthorization } = require('./project-guards');
 
 /**
  * releases.json 里各平台条目应指向的产物文件名。
@@ -35,6 +36,8 @@ function main() {
   }
   const [major, minor, patch] = newVersion.split('.').map(Number);
   const versionCode = major * 1000 + minor * 100 + patch;
+
+  requireVersionAuthorization(newVersion);
 
   console.log(`🔄 同步版本号到全端: ${newVersion}`);
 

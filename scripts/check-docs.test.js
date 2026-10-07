@@ -7,6 +7,7 @@ const test = require('node:test');
 const {
   auditRepository,
   checkIndexCoverage,
+  checkDocumentLayout,
   checkEvidencePaths,
   checkLicenseTexts,
   checkProductContract,
@@ -34,16 +35,31 @@ test('README version drift is rejected', () => {
   assert.ok(errors.every((message) => message.includes('README.md')));
 });
 
-test('new canonical document must be registered in canonical documentation entrypoints', () => {
+test('new topic needs only the canonical index and releases use their own entry', () => {
   const errors = [];
   checkIndexCoverage(
-    ['docs/00-文档索引.md', 'docs/codex/new-current-module.md'],
+    ['docs/00-文档索引.md', 'docs/80-新模块.md', 'docs/releases/README.md', 'docs/releases/v0.7.0.md'],
     '# Index',
-    '# CODEX',
+    '# Releases',
     errors
   );
+  assert.equal(errors.length, 3);
+  const registered = [];
+  checkIndexCoverage(['docs/80-新模块.md', 'docs/releases/README.md', 'docs/releases/v0.7.0.md'],
+    '[专题](80-新模块.md) [发行](releases/README.md)', '[版本](v0.7.0.md)', registered);
+  assert.deepEqual(registered, []);
+  const misplaced = [];
+  checkIndexCoverage(['docs/releases/v0.7.0.md'], '[版本](releases/v0.7.0.md)', '', misplaced);
+  assert.equal(misplaced.length, 1);
+});
+
+test('release layout accepts version files and rejects numbered notes or arbitrary subfolders', () => {
+  const docs = ['docs/80-新模块.md', 'docs/releases/README.md', 'docs/releases/v0.7.0.md', 'docs/114-发行说明v0.7.0.md', 'docs/other/说明.md'];
+  const contents = new Map(docs.map(p => [p, '# 标题\n\n负责：本主题。不负责：其他主题。更新时机：变化时。']));
+  const errors = [];
+  checkDocumentLayout(docs, contents, errors);
   assert.equal(errors.length, 2);
-  assert.ok(errors.every((message) => message.includes('new-current-module.md')));
+  assert.ok(errors.every(e => e.includes('[layout]')));
 });
 
 test('stale artifact paths in current evidence documents are rejected', () => {
@@ -206,7 +222,7 @@ test('retired display names are rejected in current modules while version facts 
     ['docs/20-统一服务.md', '# 视觉中继'],
     ['docs/40-Android相机节点.md', '# 视觉检测（Android）'],
     ['docs/15-命名规范.md', '视觉中继仅为旧版本名称；visionguard-relay 是技术标识'],
-    ['docs/104-发行说明v4.5.1.md', '视觉中继、视觉检测（Android）和视觉告警是该版本实际显示名']
+    ['docs/releases/v4.5.1.md', '视觉中继、视觉检测（Android）和视觉告警是该版本实际显示名']
   ]);
   const errors = [];
   checkCurrentComponentNames([...contents.keys()], contents, errors);

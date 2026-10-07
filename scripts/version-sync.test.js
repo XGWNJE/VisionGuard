@@ -55,7 +55,7 @@ test('被搁置的平台在统一版本同步时保留最后一个已发布包',
 function withVersionFixture(callback) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-version-'));
   const files = [
-    'VERSION', 'README.md', 'scripts/sync-version.js',
+    'VERSION', 'README.md', 'scripts/sync-version.js', 'scripts/project-guards.js',
     'detector/windows-wpf/Utils/AppConfig.cs',
     'detector/windows-wpf/VisionGuard.Detector.Windows.csproj',
     'detector/windows-launcher/Program.cs',
@@ -80,9 +80,24 @@ function withVersionFixture(callback) {
 }
 
 function syncFixture(root, ...args) {
-  const result = spawnSync(process.execPath, [path.join(root, 'scripts/sync-version.js'), ...args], { encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [path.join(root, 'scripts/sync-version.js'), ...args], {
+    encoding: 'utf8', env: { ...process.env, VISIONGUARD_OWNER_VERSION: args.find(arg => arg !== '--source-only') || fs.readFileSync(path.join(root, 'VERSION'), 'utf8').trim(), VISIONGUARD_OWNER_RELEASE: '' }
+  });
   assert.equal(result.status, 0, result.stderr || result.stdout);
 }
+
+test('unapproved synchronization fails before any fixture file is rewritten', () => {
+  withVersionFixture(root => {
+    const files = fs.readdirSync(root, { recursive: true }).filter(p => fs.statSync(path.join(root, p)).isFile());
+    const before = files.map(p => fs.readFileSync(path.join(root, p)));
+    const result = spawnSync(process.execPath, [path.join(root, 'scripts/sync-version.js'), '0.7.0', '--source-only'], {
+      encoding: 'utf8', env: { ...process.env, VISIONGUARD_OWNER_VERSION: '', VISIONGUARD_OWNER_RELEASE: '' }
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /requires owner authorization/);
+    files.forEach((p, i) => assert.deepEqual(fs.readFileSync(path.join(root, p)), before[i]));
+  });
+});
 
 test('0.x source-only synchronization aligns every component without inventing released packages', () => {
   withVersionFixture(root => {

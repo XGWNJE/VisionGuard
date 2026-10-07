@@ -31,6 +31,11 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+# A version-scoped latch prevents accidental mutation; it does not replace owner approval.
+if (-not $PreflightOnly -and -not $DryRun -and $env:VISIONGUARD_OWNER_RELEASE -cne $Version) {
+    throw "Release operations require owner authorization and VISIONGUARD_OWNER_RELEASE=$Version"
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 # Server-infra lives next to this repository; derive it when -ServerEnvPath is not passed.
 $serverInfraRoot = Join-Path (Split-Path -Parent $repoRoot) 'Server-infra'

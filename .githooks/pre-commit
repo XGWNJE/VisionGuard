@@ -1,0 +1,2 @@
+#!/bin/sh
+exec node scripts/project-guards.js pre-commit
