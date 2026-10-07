@@ -129,8 +129,8 @@ class MainActivity : ComponentActivity() {
                             onHidePreview = { saveCameraOption("cameraHidePreview", it.toString()) },
                             header = {
                                 AccountHeader(account, session!!, actions = {
-                                    Row { CameraHelpButton(state); ApplicationOptions(appearance, BuildConfig.VERSION_NAME, "android-camera", Modifier) }
-                                }, beforeLogout = {
+                                    Row { CameraHelpButton(state, captureSize, sentSize, highResolution); ApplicationOptions(appearance, BuildConfig.VERSION_NAME, "android-camera", Modifier, compact = true) }
+                                }, compact = true, beforeLogout = {
                                     stopCamera("user"); connection.close(); prefs.edit().clear().commit()
                                 })
                             })

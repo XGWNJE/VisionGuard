@@ -12,14 +12,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.xgwnje.visionguard.account.VisionGuardControlColors
@@ -62,11 +66,14 @@ private fun CameraControlPanel(modifier: Modifier, header: @Composable () -> Uni
     OutlinedCard(modifier.semantics { contentDescription = "控制和状态区" }, colors = CardDefaults.outlinedCardColors(containerColor = colors.surface),
         border = BorderStroke(1.dp, colors.outlineVariant), shape = MaterialTheme.shapes.medium) {
         header()
-        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            CameraStatistics(state, captureSize, sentSize, highResolution)
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+        val rowGap = if (maxHeight >= 300.dp) 12.dp else 4.dp
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight).padding(horizontal = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(rowGap, Alignment.CenterVertically)) {
+            CameraStatistics(state, sentSize, highResolution && captureSize != null && (maxOf(captureSize.first, captureSize.second) < 1280 || minOf(captureSize.first, captureSize.second) < 720))
             CameraTarget(state, streaming, onBind, onRefresh)
-            CameraSettings(streaming, highResolution, dim, hidden, onResolution, onDim, onHidePreview)
+            CameraSettings(streaming, highResolution, dim, hidden, rowGap, onResolution, onDim, onHidePreview)
+        }
         }
         if (streaming) Button(onStop, Modifier.fillMaxWidth().padding(12.dp).heightIn(min = 48.dp),
             colors = VisionGuardControlColors.button(containerColor = colors.error, contentColor = colors.onError),
@@ -99,11 +106,12 @@ private fun CameraTarget(state: PublisherState, streaming: Boolean, onBind: (Str
     val selected = state.targets.find { it.deviceId == state.stream?.targetDeviceId }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("目标", style = MaterialTheme.typography.labelLarge)
+            CameraFieldLabel("目标")
             Box(Modifier.weight(1f)) {
                 OutlinedButton({ choosing = true }, enabled = !streaming && state.connected && state.targets.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small,
-                    colors = VisionGuardControlColors.outlinedButton(), border = BorderStroke(1.dp, colors.outlineVariant)) {
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    colors = VisionGuardControlColors.outlinedButton(contentColor = colors.onSurface), border = BorderStroke(1.dp, colors.outlineVariant)) {
                     val label = selected?.deviceName ?: when {
                         !state.connected -> "未连接"
                         state.targetsLoading -> "加载中…"
@@ -112,7 +120,8 @@ private fun CameraTarget(state: PublisherState, streaming: Boolean, onBind: (Str
                         else -> "选择视觉节点"
                     }
                     Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Icon(LucideIcons.ChevronRight, null, Modifier.padding(start = 4.dp).size(16.dp).rotate(90f))
                 }
                 DropdownMenu(expanded = choosing && !streaming && state.connected,
                     onDismissRequest = { choosing = false }, modifier = Modifier.heightIn(max = 280.dp).widthIn(max = 400.dp)) {
@@ -122,8 +131,10 @@ private fun CameraTarget(state: PublisherState, streaming: Boolean, onBind: (Str
                     }
                 }
             }
-            IconButton(onRefresh, enabled = state.connected && !state.targetsLoading, modifier = Modifier.size(48.dp)) {
-                Icon(LucideIcons.RefreshCw, "刷新目标")
+            OutlinedIconButton(onRefresh, enabled = state.connected && !state.targetsLoading,
+                modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small,
+                border = BorderStroke(1.dp, colors.outlineVariant)) {
+                Icon(LucideIcons.RefreshCw, "刷新目标", Modifier.size(20.dp))
             }
         }
     }
@@ -131,14 +142,23 @@ private fun CameraTarget(state: PublisherState, streaming: Boolean, onBind: (Str
 
 @Composable
 private fun CameraSettings(streaming: Boolean, highResolution: Boolean, dim: Boolean, hidden: Boolean,
-    onResolution: (Boolean) -> Unit, onDim: (Boolean) -> Unit, onHidePreview: (Boolean) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    rowGap: Dp, onResolution: (Boolean) -> Unit, onDim: (Boolean) -> Unit, onHidePreview: (Boolean) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(rowGap)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("规格", style = MaterialTheme.typography.labelLarge)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CameraFieldLabel("规格")
+            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(false to "640×480", true to "720P").forEach { (resolution, title) ->
-                    FilterChip(selected = highResolution == resolution, onClick = { onResolution(resolution) },
-                        enabled = !streaming, label = { Text(title) }, modifier = Modifier.heightIn(min = 48.dp))
+                    val selected = highResolution == resolution
+                    val colors = MaterialTheme.colorScheme
+                    OutlinedButton(onClick = { onResolution(resolution) }, enabled = !streaming,
+                        modifier = Modifier.weight(1f).heightIn(min = 48.dp).semantics { this.selected = selected },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp), shape = MaterialTheme.shapes.small,
+                        border = BorderStroke(1.dp, if (selected) colors.primary else colors.outlineVariant),
+                        colors = VisionGuardControlColors.outlinedButton(
+                            containerColor = if (selected) colors.primaryContainer else colors.surface,
+                            contentColor = if (selected) VisionGuardStatusColors.onSuccessContainer else colors.onSurfaceVariant)) {
+                        Text(title, style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             }
         }
@@ -151,40 +171,55 @@ private fun CameraSettings(streaming: Boolean, highResolution: Boolean, dim: Boo
 
 @Composable
 private fun CameraSetting(label: String, checked: Boolean, onChange: (Boolean) -> Unit, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().heightIn(min = 48.dp)
-        .toggleable(checked, role = Role.Switch, onValueChange = onChange),
+    val colors = MaterialTheme.colorScheme
+    Surface(modifier.toggleable(checked, role = Role.Switch, onValueChange = onChange),
+        shape = MaterialTheme.shapes.small, color = colors.surface,
+        border = BorderStroke(1.dp, colors.outlineVariant)) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
         Switch(checked, onCheckedChange = null)
     }
+    }
 }
 
 @Composable
-private fun CameraStatistics(state: PublisherState, captureSize: Pair<Int, Int>?, sentSize: Pair<Int, Int>?, highResolution: Boolean) {
+private fun CameraFieldLabel(label: String) {
+    Text(label, Modifier.width((36 * LocalDensity.current.fontScale).dp),
+        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+private fun CameraStatistics(state: PublisherState, sentSize: Pair<Int, Int>?, fallback: Boolean) {
     val colors = MaterialTheme.colorScheme
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val statusColor = when {
                 state.status.contains("失败") || state.status.contains("无法") || state.status.contains("超时") -> colors.error
                 !state.connected || state.status.contains("等待") || state.status.contains("重连") -> VisionGuardStatusColors.warning
                 state.stream?.isStreaming == true -> VisionGuardStatusColors.onSuccessContainer
                 else -> colors.onSurface
             }
-            Text(state.status, style = MaterialTheme.typography.bodySmall, color = statusColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("入队 ${state.sentFrames}", style = MaterialTheme.typography.bodySmall)
-            Text("收帧 ${state.acknowledgedFrames}", style = MaterialTheme.typography.bodySmall)
-            Text("丢弃 ${state.droppedFrames}/${state.relayDroppedFrames}", style = MaterialTheme.typography.bodySmall)
+            Text(state.status, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = statusColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            sentSize?.let { Text("发送 ${it.first}×${it.second}" + if (fallback) " · 回退" else "",
+                style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant) }
         }
-        if (captureSize != null && sentSize != null) {
-            val fallback = highResolution && (maxOf(captureSize.first, captureSize.second) < 1280 || minOf(captureSize.first, captureSize.second) < 720)
-            Text("采集 ${captureSize.first}×${captureSize.second} · 发送 ${sentSize.first}×${sentSize.second}" + if (fallback) " · 回退" else "",
-                style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("入队" to "${state.sentFrames}", "收帧" to "${state.acknowledgedFrames}",
+                "丢弃" to "${state.droppedFrames}/${state.relayDroppedFrames}").forEachIndexed { index, (label, value) ->
+                if (index > 0) VerticalDivider(Modifier.height(16.dp), color = colors.outlineVariant)
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(label, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                    Text(value, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
         }
     }
 }
 
 @Composable
-internal fun CameraHelpButton(state: PublisherState) {
+internal fun CameraHelpButton(state: PublisherState, captureSize: Pair<Int, Int>?, sentSize: Pair<Int, Int>?, highResolution: Boolean) {
     var open by remember { mutableStateOf(false) }
     IconButton({ open = true }, Modifier.size(48.dp)) {
         Icon(LucideIcons.CircleHelp, "相机帮助", tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -202,8 +237,13 @@ internal fun CameraHelpButton(state: PublisherState) {
                     CameraHelpSection("开始推流", "相机与视觉节点登录同一账号，选择目标后开始。首次使用需要允许摄像头；暂无目标时先在视觉节点登录，加载失败可刷新。推流期间不能更换目标或规格。")
                     Text("当前状态：${state.status}", style = MaterialTheme.typography.bodySmall)
                     CameraHelpSection("画面与规格", "640×480 / 720P 是规格上限，最高 5 帧/秒。实际采集和发送尺寸由摄像头能力决定，不支持时会回退；画面等比显示，横竖屏切换保持推流并更新方向。")
+                    if (captureSize != null && sentSize != null) {
+                        val fallback = highResolution && (maxOf(captureSize.first, captureSize.second) < 1280 || minOf(captureSize.first, captureSize.second) < 720)
+                        Text("采集 ${captureSize.first}×${captureSize.second} · 发送 ${sentSize.first}×${sentSize.second}" + if (fallback) " · 回退" else "", style = MaterialTheme.typography.bodySmall)
+                    }
                     CameraHelpSection("亮度与预览", "降低亮度仅在推流时调整当前窗口；停止后恢复。关闭预览只隐藏本机画面，推流继续，区域尺寸和位置不变。外观在设置中独立选择。")
                     CameraHelpSection("统计", "入队表示本机发送队列接纳；收帧只表示服务中继收件，不代表视觉节点已接收或完成推理。丢弃的两个数值依次为本机 / 服务；主动限帧未采样不算丢弃。")
+                    Text("入队 ${state.sentFrames} · 收帧 ${state.acknowledgedFrames} · 丢弃 ${state.droppedFrames}/${state.relayDroppedFrames}", style = MaterialTheme.typography.bodySmall)
                     Text("当前主动未采样 ${state.sampledOutFrames} 帧", style = MaterialTheme.typography.bodySmall)
                     state.stream?.sourceName?.takeIf { it.isNotBlank() }?.let {
                         Text("当前推理来源：$it", style = MaterialTheme.typography.bodySmall)
