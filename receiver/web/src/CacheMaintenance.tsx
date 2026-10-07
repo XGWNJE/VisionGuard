@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { accountRequest, type Login } from './account';
 import type { Ack, Device } from './protocol';
+import { HardDrive, RefreshCw, Trash2 } from 'lucide-react';
 
 export type CacheReport = { categories: {id:string;label:string;files:number;bytes:number;cleanableFiles:number;cleanableBytes:number}[]; removedFiles:number;removedBytes:number;releasedBytes:number|null;failedFiles:number };
 const size = (bytes:number) => bytes >= 1024*1024 ? `${(bytes/1024/1024).toFixed(1)} MB` : `${(bytes/1024).toFixed(1)} KB`;
@@ -18,9 +19,9 @@ export function ServerCacheMaintenance({login}:{login:Login}) {
     catch(e){if(own===generation.current){setReport(null);setError((e as Error).message+'；结果未确认时，请重新盘点。');}}
     finally{if(own===generation.current)setBusy(false);}
   }
-  return <section className="panel settings-panel"><h2>统一服务缓存</h2><p className="subtle">仅清理过期且无事件引用的截图，默认期限 72 小时。账号、配置、模型、安装包与备份保留。</p>
+  return <section className="panel settings-panel cache-panel"><div className="section-title"><h2>统一服务缓存</h2><HardDrive size={18} aria-hidden="true"/></div><p className="subtle">仅清理过期且无事件引用的截图，默认期限 72 小时。账号、配置、模型、安装包与备份保留。</p>
     {login.account.isAdmin && <label>范围<select value={scope} disabled={busy} onChange={e=>setScope(e.target.value)}><option value="account">当前账号</option><option value="legacy">旧公共截图目录</option></select></label>}
-    <div className="toolbar"><button className="button secondary" disabled={busy} onClick={()=>void run(false)}>盘点缓存</button><button className="button" disabled={busy||!report?.categories.some(c=>c.cleanableFiles>0)} onClick={()=>void run(true)}>清理可回收缓存</button></div>
+    <div className="actions"><button className="button secondary" disabled={busy} onClick={()=>void run(false)}><RefreshCw size={16}/>盘点缓存</button><button className="button" disabled={busy||!report?.categories.some(c=>c.cleanableFiles>0)} onClick={()=>void run(true)}><Trash2 size={16}/>清理可回收缓存</button></div>
     {busy&&<p role="status">正在处理…</p>}{error&&<p className="error" role="alert">{error}</p>}{report&&<Report report={report}/>}</section>;
 }
 export function NodeCacheMaintenance({node,connected,acks,send}:{node:Device;connected:boolean;acks:Ack[];send:(m:Record<string,unknown>)=>string}) {
@@ -28,7 +29,7 @@ export function NodeCacheMaintenance({node,connected,acks,send}:{node:Device;con
   const ack=acks.find(a=>a.requestId===request), busy=ack?.phase==='pending'||ack?.phase==='forwarded';
   const report=ack?.phase==='completed'&&ack.success?ack.cache:undefined;
   if(!node.capabilities.includes('cache-maintenance'))return null;
-  return <section className="panel"><h2>节点缓存</h2><p className="subtle">节点按固定目录和保留期限处理；下载、当前使用文件和持久数据受保护。</p><div className="toolbar">
+  return <section className="panel cache-panel"><div className="section-title"><h2>节点缓存</h2><HardDrive size={18} aria-hidden="true"/></div><p className="subtle">节点按固定目录和保留期限处理；下载、当前使用文件和持久数据受保护。</p><div className="actions">
     <button className="button secondary" disabled={!connected||!node.online||busy} onClick={()=>setRequest(send({type:'command',targetDeviceId:node.deviceId,command:'cache-inspect'}))}>盘点缓存</button>
     <button className="button" disabled={!connected||!node.online||busy||!report?.categories.some(c=>c.cleanableFiles>0)} onClick={()=>setRequest(send({type:'command',targetDeviceId:node.deviceId,command:'cache-clean'}))}>清理可回收缓存</button></div>
     {ack&&<p className={ack.success?'subtle':'error'} role={ack.success?'status':'alert'}>{ack.reason}{ack.phase==='uncertain'&&'；请重新盘点。'}</p>}{report&&<Report report={report}/>}</section>;

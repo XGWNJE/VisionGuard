@@ -1,3 +1,4 @@
+import { Plus, Settings, ShieldCheck, Users, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { accountRequest, type Login } from './account';
 
@@ -33,10 +34,10 @@ export function AccountManagement({login}:{login:Login}) {
       {error&&<p className="error" role="alert">{error}</p>}
       <div className="dialog-actions"><button type="button" className="button secondary" disabled={busy} onClick={()=>setCreating(false)}>取消</button><button className="button" disabled={busy}>{busy?'提交中…':'创建账号'}</button></div>
     </form></AccountFormDialog>}
-    <section className="panel settings-panel"><div className="account-list-header"><h2>账号列表</h2><button className="button" onClick={()=>{setError('');setMessage('');setCreating(true);}}>创建账号</button></div><p className="subtle">禁用、重置密码或变更权限会撤销该账号的现有会话。至少保留一个启用的管理员。</p>
+    <section className="panel settings-panel managed-accounts"><div className="account-list-header"><div><h2>账号列表 <span className="count-badge">{accounts.length}</span></h2><small>{accounts.filter(a=>a.enabled).length} 个启用 · {accounts.filter(a=>a.enabled&&a.isAdmin).length} 个启用的管理员</small></div><button className="button" onClick={()=>{setError('');setMessage('');setCreating(true);}}><Plus size={16}/>创建账号</button></div><p className="subtle">禁用、重置密码或变更权限会撤销该账号的现有会话。至少保留一个启用的管理员。</p>
       {loading&&<p role="status">正在读取账号…</p>}
       {!loading&&!accounts.length&&<button className="button secondary" disabled={busy} onClick={()=>{setError('');void refresh().catch(e=>setError(e.message));}}>重新读取</button>}
-      {accounts.map(account=><div className="receipt-row" key={account.accountId}><span><strong>{account.username}{account.accountId===login.account.accountId?'（当前账号）':''}</strong><small>{account.isAdmin?'管理员':'普通账号'} · {account.enabled?'已启用':'已禁用'}</small></span><button className="button secondary" disabled={busy} onClick={()=>{setEditing({...account});setResetPassword('');setError('');setMessage('');}}>管理</button></div>)}
+      {accounts.map(account=><div className="account-row" key={account.accountId}><span className="account-identity">{account.isAdmin?<ShieldCheck size={20} aria-hidden="true"/>:<Users size={20} aria-hidden="true"/>}<span><strong>{account.username}{account.accountId===login.account.accountId?'（当前账号）':''}</strong><small>{account.isAdmin?'管理员':'普通账号'}</small></span></span><span className={'status-tag '+(account.enabled?'good':'')}>{account.enabled?'已启用':'已禁用'}</span><button className="button secondary" disabled={busy} onClick={()=>{setEditing({...account});setResetPassword('');setError('');setMessage('');}}><Settings size={16}/>管理</button></div>)}
     </section>
     {editing&&<AccountFormDialog title={`管理 ${editing.username}`} onClose={()=>{if(!busy){setEditing(null);setResetPassword('');}}}><form onSubmit={e=>{e.preventDefault();void save();}}>
       <label className="check"><input type="checkbox" checked={editing.enabled} onChange={e=>setEditing({...editing,enabled:e.target.checked})} disabled={busy}/>启用账号</label>
@@ -51,5 +52,5 @@ export function AccountManagement({login}:{login:Login}) {
 function AccountFormDialog({title,children,onClose}:{title:string;children:ReactNode;onClose:()=>void}) {
   const ref=useRef<HTMLDialogElement>(null);
   useEffect(()=>{const previous=document.activeElement;ref.current?.showModal();return()=>{ref.current?.close();if(previous instanceof HTMLElement&&previous.isConnected)previous.focus();};},[]);
-  return <dialog ref={ref} aria-label={title} onCancel={event=>{event.preventDefault();onClose();}}><div className="dialog-body settings-panel"><div className="section-title"><h2>{title}</h2><button className="text-button" type="button" autoFocus onClick={onClose}>关闭</button></div>{children}</div></dialog>;
+  return <dialog ref={ref} aria-label={title} onCancel={event=>{event.preventDefault();onClose();}}><div className="dialog-body settings-panel"><div className="section-title"><h2>{title}</h2><button className="icon-button" type="button" aria-label="关闭账号表单" title="关闭" autoFocus onClick={onClose}><X size={18}/></button></div>{children}</div></dialog>;
 }

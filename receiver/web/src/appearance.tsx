@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Monitor, Moon, Sun } from 'lucide-react';
 export type Appearance = 'system' | 'light' | 'dark';
 export function readAppearance(value: string | null): Appearance { return value === 'light' || value === 'dark' ? value : 'system'; }
 export function useAppearance() {
@@ -14,5 +15,5 @@ export function useAppearance() {
   return { mode, error, select(value: Appearance) { setMode(value); try { localStorage.setItem('vg.appearance', value); setError(''); } catch { setError('外观已切换，当前浏览器无法保存选择'); } } };
 }
 export function AppearanceSelector({ preference }: { preference: ReturnType<typeof useAppearance> }) {
-  return <label className="appearance-selector">外观<select aria-label="外观" value={preference.mode} onChange={e => preference.select(e.target.value as Appearance)}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select>{preference.error && <small role="status">{preference.error}</small>}</label>;
+  return <div className="appearance-selector"><div className="choice-group appearance-choices" role="group" aria-label="外观">{([{value:'system',label:'跟随系统',Icon:Monitor},{value:'light',label:'浅色',Icon:Sun},{value:'dark',label:'深色',Icon:Moon}] as const).map(({value,label,Icon})=><button type="button" key={value} className="choice" aria-pressed={preference.mode===value} onClick={()=>preference.select(value)}><Icon size={16} aria-hidden="true"/>{label}</button>)}</div>{preference.error && <small role="status">{preference.error}</small>}</div>;
 }

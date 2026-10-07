@@ -1,6 +1,7 @@
 import {useEffect, useId, useRef, useState} from 'react';
 import type {Ack, Device} from './protocol';
 import {audioImportMetadata, validAudioName, MAX_AUDIO_BYTES} from './remote-config';
+import { SlidersHorizontal, Volume2, Square, Upload } from 'lucide-react';
 
 type Props = {node:Device;connected:boolean;acks:Ack[];send:(m:Record<string,unknown>)=>string};
 function ConfigRow({label,current,options,disabled,onSave}:{label:string;current:string;options:{value:string;label:string}[];disabled:boolean;onSave:(value:string)=>void}) {
@@ -48,7 +49,7 @@ export function RemoteSettings({node,connected,acks,send}:Props) {
     } catch(e) {if(active.current)setError((e as Error).message);} finally {if(active.current)setLoading(false);}
   }
   if(!node.capabilities.some(c=>['camera-config','sound-config','audio-library'].includes(c)))return null;
-  return <section className="panel remote-settings"><details><summary>{node.component==='android-camera'?'相机远程配置':'声音策略与音频库'}</summary>
+  return <section className="panel remote-settings"><div className="section-title"><h2>{node.component==='android-camera'?'相机远程配置':'声音策略与音频库'}</h2><SlidersHorizontal size={18} aria-hidden="true"/></div>
     {!settings ? <p className="subtle">等待节点报告当前配置，请保持节点连接。</p> : <>
       {node.capabilities.includes('camera-config')&&<>
         <ConfigRow label="推流规格" current={settings.cameraResolution ?? ''} options={[{value:'480p',label:'480p'},{value:'720p',label:'720p'}]} disabled={disabled||node.isMonitoring} onSave={v=>save('cameraResolution',v)}/>
@@ -63,26 +64,26 @@ export function RemoteSettings({node,connected,acks,send}:Props) {
         <p className="subtle">声音策略用于后续入队报警；已入队报警保留原策略。其他系统铃声须先在本机选择。</p>
       </>}
       {node.capabilities.includes('audio-library')&&<fieldset disabled={disabled}><legend>节点音频库</legend>
-        <div className="remote-audio-list">{entries.filter(e=>e.mutable||e.id.startsWith('preset:')).map(e=><div className="parameter-field" key={e.id}><span>{e.name}{!e.mutable?' · 内置':''}{settings.soundSelection===e.id?' · 默认':''}{settings.audioPreview===e.id?' · 试听中':''}</span><button className="text-button" type="button" onClick={()=>save('audioPreview',e.id)}>在节点试听</button></div>)}</div>
+        <div className="remote-audio-list">{entries.filter(e=>e.mutable||e.id.startsWith('preset:')).map(e=><div className="audio-row" key={e.id}><span>{e.name}<small>{!e.mutable?'内置':'自定义'}{settings.soundSelection===e.id?' · 默认':''}{settings.audioPreview===e.id?' · 试听中':''}</small></span><button className="text-button" type="button" aria-label={`在节点试听 ${e.name}`} onClick={()=>save('audioPreview',e.id)}><Volume2 size={16}/>试听</button></div>)}</div>
         {!entries.some(e=>e.mutable)&&<p className="subtle">暂无自定义音频。</p>}
-        <button className="text-button" type="button" onClick={()=>save('audioStopPreview','')}>停止节点试听</button>
+        <button className="text-button" type="button" onClick={()=>save('audioStopPreview','')}><Square size={16}/>停止节点试听</button>
         <label htmlFor={entryField}>管理自定义音频<select id={entryField} value={entry?.id ?? ''} onChange={e=>setEntryId(e.target.value)}><option value="">选择条目</option>{library.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
         {entry&&<><label htmlFor={nameField}>名称<input id={nameField} maxLength={64} value={name} onChange={e=>setName(e.target.value)}/></label><div className="actions">
           <button className="button secondary" type="button" disabled={!validAudioName(name)||name.trim()===entry.name} onClick={()=>save('audioRename',JSON.stringify({id:entry.id,name:name.trim()}))}>保存名称</button>
           <button className="text-button danger" type="button" disabled={settings.soundSelection===entry.id} onClick={()=>setConfirmDelete(true)}>删除音频</button></div>
           {settings.soundSelection===entry.id&&<p className="subtle">请先选择其他默认铃声再删除。</p>}
-          {confirmDelete&&<div role="group" aria-label="确认删除音频"><p>删除“{entry.name}”的节点文件？正在被报警队列使用时会拒绝删除。</p><div className="actions"><button className="button" type="button" onClick={()=>{setConfirmDelete(false);save('audioDelete',entry.id);}}>确认删除</button><button className="text-button" type="button" onClick={()=>setConfirmDelete(false)}>取消</button></div></div>}
+          {confirmDelete&&<div className="audio-delete-confirm" role="group" aria-label="确认删除音频"><p>删除“{entry.name}”的节点文件？正在被报警队列使用时会拒绝删除。</p><div className="actions"><button className="button secondary" type="button" autoFocus onClick={()=>setConfirmDelete(false)}>取消</button><button className="button danger" type="button" onClick={()=>{setConfirmDelete(false);save('audioDelete',entry.id);}}>确认删除</button></div></div>}
         </>}
         <form onSubmit={e=>{e.preventDefault();void importAudio();}}><label htmlFor={fileField}>导入音频<input id={fileField} type="file" accept=".mp3,.wav,.ogg,.m4a" disabled={!!settings.audioLibraryFull} onChange={e=>{
           const next=e.target.files?.[0]??null;setFile(null);setError('');if(!next)return;
           try{const metadata=audioImportMetadata(next);setFile(next);setImportName(metadata.name);}catch(error){setError((error as Error).message);e.target.value='';}
         }}/></label><label htmlFor={importField}>展示名称<input id={importField} maxLength={64} value={importName} onChange={e=>setImportName(e.target.value)}/></label>
-          <button className="button secondary" disabled={!file||file.size>MAX_AUDIO_BYTES||!validAudioName(importName)||!!settings.audioLibraryFull}>导入到节点</button>
+          <button className="button secondary" disabled={!file||file.size>MAX_AUDIO_BYTES||!validAudioName(importName)||!!settings.audioLibraryFull}><Upload size={16}/>导入到节点</button>
         </form><p className="subtle">自定义库最多 100 项；远程导入支持 MP3 / WAV / OGG / M4A，文件最多 512 KiB、时长最多 60 秒。录音和麦克风授权需在本机操作。试听执行回执不代表声音已可听。</p>
         {settings.audioLibraryFull&&<p className="subtle">音频库已满，请先删除不用的条目。</p>}
       </fieldset>}
     </>}
     {request&&<p role={result?.phase==='completed'&&!result.success?'alert':'status'} className={result?.phase==='completed'&&!result.success?'error':'subtle'}>{result?.phase==='completed'?result.reason||(result.success?'已保存':'执行失败'):timedOut||result?.phase==='uncertain'?'结果未确认，请核对节点当前配置后重试':result?.phase==='forwarded'?'已转发，等待节点执行':'正在发送…'}</p>}
     {error&&<p className="error" role="alert">{error}</p>}
-  </details></section>;
+  </section>;
 }

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Pencil, SlidersHorizontal } from 'lucide-react';
 import type { Ack, Device, Source } from './protocol';
 import { NumericSelection } from './NumericSelection';
 type Entry = { draft: string; editing: boolean; request?: string; status?: 'pending'|'confirmed'|'failed'|'uncertain'; message?: string; model?: string };
@@ -9,14 +10,12 @@ export function Parameters({node,source,disabled,send,acks,drafts}:{node:Device;
   const config = source ?? node;
   const fields = node.nodeType === 'sensor' ? [['confidence','置信度阈值'],['cooldown','报警冷却（秒）']] : [['modelKey','推理模型'],['confidence','置信度阈值'],['cooldown','报警冷却（秒）'],['targetSamplingRate','采样频率（FPS）'],['targets','检测目标']];
   function write(key:string, entry:Entry|null) { setEntries(previous => { const next={...previous}; if(entry)next[key]=entry;else delete next[key];drafts.set(context,next);return next; }); }
-  const [open,setOpen] = useState(!!source);
-  useEffect(() => { if (Object.values(entries).some(entry => entry.editing)) setOpen(true); }, [entries]);
   const summary = node.nodeType === 'sensor'
     ? `${config.confidence === undefined ? '阈值未报告' : `${Math.round(config.confidence * 100)}%`} · ${config.cooldown === undefined ? '冷却未报告' : `${config.cooldown} 秒`}`
     : `${config.modelKey || '模型未报告'} · ${config.targetSamplingRate === undefined ? '采样未报告' : `${config.targetSamplingRate} FPS`}`;
-  return <section className="panel parameter-panel"><details open={open} onToggle={event=>setOpen(event.currentTarget.open)}><summary><strong>检测参数</strong><span className="parameter-summary">{summary}</span></summary><div className="section-title"><h2>{source ? source.sourceName || source.sourceId : node.deviceName}</h2><span className="subtle">{disabled ? '暂停并连接后可保存' : '逐项选择'}</span></div>
+  return <section className="panel parameter-panel"><div className="section-title"><div><h2>检测参数</h2><small>{summary}</small></div><SlidersHorizontal size={18} aria-hidden="true"/></div><p className="parameter-hint">{disabled ? '暂停检测并保持连接后可保存；草稿会保留。' : '逐项编辑，收到执行端回执后确认保存。'}</p>
     <div className="parameter-grid">{fields.map(([key,label]) => <ParameterField key={key} name={key} label={label} value={config[key as keyof typeof config]} model={config.modelKey ?? ''} node={node} source={source} disabled={disabled} send={send} acks={acks} entry={entries[key]} write={entry=>write(key,entry)}/>)}</div>
-  </details></section>;
+  </section>;
 }
 function ParameterField({name,label,value,model,node,source,disabled,send,acks,entry,write}:{name:string;label:string;value:unknown;model:string;node:Device;source?:Source;disabled:boolean;send:(m:Record<string,unknown>)=>string;acks:Ack[];entry?:Entry;write:(entry:Entry|null)=>void}) {
   const id=React.useId(), current=value === undefined ? '' : String(value);
@@ -46,7 +45,7 @@ function ParameterField({name,label,value,model,node,source,disabled,send,acks,e
   const feedback=entry?.status==='confirmed' ? matches ? '已保存' : '执行端已保存，等待读回' : entry?.status==='pending' ? '等待执行端结果…' : entry?.message;
   function change(next:string) { if(entry)write({...entry,draft:next,status:undefined,message:''}); }
   function save() { if(disabled || saving || !valid || !entry) return; const request=send({type:'set-config',targetDeviceId:node.deviceId,...(source?{targetSourceId:source.sourceId}:{}),key:name,value:draft});write({...entry,request,status:request?'pending':'failed',message:request?'':'发送失败，草稿已保留'}); }
-  return <form className="parameter-field" onKeyDown={event=>{if(event.key==='Escape'&&entry?.editing&&!saving){event.preventDefault();write(null);}}} onSubmit={event=>{event.preventDefault();save();}}><div className="parameter-reading"><label htmlFor={id}>{label}</label><span className="current-value" title={name==='targets'?targetNames.join('、'):current}>{display || '未报告'}</span>{!entry?.editing && <button ref={editButton} className="text-button" type="button" disabled={disabled||saving||modelMissing||labelsMissing} onClick={()=>write({draft:current,editing:true,model})}>{name==='targets'?'选择':'编辑'}</button>}</div>
+  return <form className="parameter-field" onKeyDown={event=>{if(event.key==='Escape'&&entry?.editing&&!saving){event.preventDefault();write(null);}}} onSubmit={event=>{event.preventDefault();save();}}><div className="parameter-reading"><label htmlFor={id}>{label}</label><span className="current-value" title={name==='targets'?targetNames.join('、'):current}>{display || '未报告'}</span>{!entry?.editing && <button ref={editButton} className="text-button" type="button" aria-label={`${name==='targets'?'选择':'编辑'}${label}`} disabled={disabled||saving||modelMissing||labelsMissing} onClick={()=>write({draft:current,editing:true,model})}><Pencil size={14}/>{name==='targets'?'选择':'编辑'}</button>}</div>
     {entry?.editing && <div className="parameter-editing">
       {name==='modelKey' ? <select autoFocus id={id} value={draft} disabled={disabled||saving} onChange={event=>change(event.target.value)}>{!node.modelOptions?.includes(draft)&&<option value={draft}>当前模型不可用：{draft||'未报告'}</option>}{node.modelOptions?.map(option=><option key={option}>{option}</option>)}</select>
       : name==='targets' ? <><input autoFocus id={id} aria-label="搜索检测目标" placeholder="搜索中文名称或标签" value={search} onChange={event=>setSearch(event.target.value)}/><div className="target-options">{choices.map(item=><label key={item.value}><input type="checkbox" checked={targets.includes(item.value)} disabled={disabled||saving||targets.length===1&&targets.includes(item.value)} onChange={()=>change(targets.includes(item.value)?targets.filter(value=>value!==item.value).join(','):[...targets,item.value].join(','))}/>{item.label}<small>{item.value}</small></label>)}{!choices.length&&<span className="subtle">没有匹配的目标</span>}</div><small className="subtle">已选 {targets.length} 项 · 当前模型 {model}{entry.model!==model?' · 模型已变化，请重新核对':''}</small></>
