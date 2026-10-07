@@ -16,7 +16,8 @@ const login={token:'a'.repeat(32),expiresAt:'2026-12-01T00:00:00Z',channel:'test
 // Execute the production transport hook with controlled effect commits and socket/HTTP timing.
 // No DOM or clock sleeps are needed to reproduce a response arriving after a new account renders.
 function harness(fetcher){
-  const slots=[],effects=new Map(),pending=[],sockets=[],logs=[];let cursor=0, now=0, timer;
+  const slots=[],effects=new Map(),pending=[],sockets=[],logs=[],timers=new Map();let cursor=0, now=0, timerId=0;
+  const schedule=(callback,delay,interval=false)=>{const id=++timerId;timers.set(id,{callback,at:now+delay,interval:interval?delay:0});return id;};
   const storage=new Map();
   const logConsole={info:(_tag,value)=>logs.push(JSON.parse(value))};
   const sessionStorage={getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)};
@@ -30,19 +31,31 @@ function harness(fetcher){
   class Socket{
     static OPEN=1;
     readyState=0; sent=[];
-    constructor(url){this.url=url;sockets.push(this);}
+    constructor(url){this.url=url;this.createdAt=now;sockets.push(this);}
     send(value){this.sent.push(JSON.parse(value));}
     close(){this.readyState=3;this.onclose?.({code:1000});}
     open(){this.readyState=1;this.onopen?.();}
     receive(message){this.onmessage?.({data:JSON.stringify(message)});}
     revoked(){this.readyState=3;this.onclose?.({code:4001});}
+    serverClose(code,reason){this.readyState=3;this.onclose?.({code,reason,wasClean:true});}
   }
   const module={exports:{}};
-  const context=vm.createContext({module,exports:module.exports,require:name=>name==='react'?react:name==='./connectionDiagnostics'?diagnosticsModule.exports:protocol,performance:{now:()=>now},location:{origin:'http://127.0.0.1:3100'},URL,console:logConsole,crypto:webcrypto,WebSocket:Socket,fetch:fetcher,AbortController,setInterval:fn=>{timer=fn;return 1;},clearInterval:()=>{timer=null;}});
+  const context=vm.createContext({module,exports:module.exports,require:name=>name==='react'?react:name==='./connectionDiagnostics'?diagnosticsModule.exports:protocol,performance:{now:()=>now},location:{origin:'http://127.0.0.1:3100'},URL,console:logConsole,crypto:webcrypto,WebSocket:Socket,fetch:fetcher,AbortController,setTimeout:(fn,ms)=>schedule(fn,ms),clearTimeout:id=>timers.delete(id),setInterval:(fn,ms)=>schedule(fn,ms,true),clearInterval:id=>timers.delete(id)});
   new vm.Script(compiled).runInContext(context);
   const commit=()=>{while(pending.length)pending.shift()();};
   return{
-    sockets,logs,storage,commit, advance(ms){now+=ms;timer?.();},
+    sockets,logs,storage,commit, advance(ms){
+      const end=now+ms;
+      while(true){
+        const due=[...timers].filter(([,timer])=>timer.at<=end).sort((a,b)=>a[1].at-b[1].at||a[0]-b[0])[0];
+        if(!due)break;
+        const[id,timer]=due;now=timer.at;
+        if(timer.interval)timer.at+=timer.interval;else timers.delete(id);
+        timer.callback();
+      }
+      now=end;
+    },
+    activeTimers:()=>timers.size,
     render(session=login,commitEffects=true){cursor=0;const value=module.exports.useRelay(session);if(commitEffects)commit();return value;},
     stop(){for(const effect of effects.values())effect.cleanup?.();},
   };
@@ -74,9 +87,13 @@ test('losing the transport invalidates live status while retaining registered id
 
 test('two slow handshakes and a recovered third attempt have distinct correlated phase logs without credentials',async t=>{
   const h=harness(()=>Promise.resolve(new Response(JSON.stringify({alerts:[]}))));t.after(()=>h.stop());h.render();
-  h.advance(15000);h.advance(3000);h.advance(15000);h.advance(3000);
+  assert.equal(h.render().status,'正在连接');h.advance(11999);assert.equal(h.sockets.length,1);
+  h.advance(1);assert.equal(h.render().status,'网络连接超时，等待重试');assert.equal(h.render().authExpired,false);
+  h.advance(999);assert.equal(h.sockets.length,1);h.advance(1);assert.equal(h.sockets.length,2);
+  h.advance(12000);h.advance(1999);assert.equal(h.sockets.length,2);h.advance(1);
   const third=h.sockets[2];third.open();h.advance(100);third.receive({type:'auth-result',success:true});
   assert.equal(h.render().connected,true);
+  assert.deepEqual(h.sockets.map(socket=>socket.createdAt),[0,13000,27000]);
   const starts=h.logs.filter(entry=>entry.event==='connect-start');
   assert.equal(starts.length,3);assert.equal(new Set(starts.map(entry=>entry.attemptId)).size,3);
   assert.deepEqual(h.logs.filter(entry=>entry.event==='timeout').map(entry=>entry.reason),['connect-timeout','connect-timeout']);
@@ -90,12 +107,71 @@ test('two slow handshakes and a recovered third attempt have distinct correlated
 
 test('a socket opened without an auth response is diagnosed separately from a slow handshake',async t=>{
   const h=harness(()=>Promise.resolve(new Response(JSON.stringify({alerts:[]}))));t.after(()=>h.stop());h.render();
-  h.advance(2000);h.sockets[0].open();h.advance(11000);
+  h.advance(11000);h.sockets[0].open();assert.equal(h.render().status,'正在认证');
+  h.advance(11999);assert.equal(h.logs.some(entry=>entry.event==='timeout'),false);
+  h.advance(1);assert.equal(h.render().status,'认证响应超时，等待重试');assert.equal(h.render().authExpired,false);
   const timeout=h.logs.find(entry=>entry.event==='timeout');
   assert.equal(timeout.reason,'auth-timeout');assert.equal(timeout.phase,'authenticating');
-  assert.equal(timeout.elapsedMs,13000);assert.equal(timeout.openElapsedMs,11000);
+  assert.equal(timeout.elapsedMs,23000);assert.equal(timeout.openElapsedMs,12000);
   assert.equal(h.sockets[0].sent[0].type,'auth');
   assert.equal(h.logs.filter(entry=>entry.event==='auth-sent').length,1);
+});
+
+test('successful auth cancels its deadline and keeps the existing three-second heartbeat',async t=>{
+  const h=harness(()=>Promise.resolve(new Response(JSON.stringify({alerts:[]}))));t.after(()=>h.stop());h.render();
+  h.advance(11000);const socket=h.sockets[0];socket.open();h.advance(11000);socket.receive({type:'auth-result',success:true});
+  const before=socket.sent.filter(message=>message.type==='heartbeat-console').length;
+  h.advance(2000);assert.equal(socket.sent.filter(message=>message.type==='heartbeat-console').length,before+1);
+  assert.equal(h.render().status,'已连接');assert.equal(h.sockets.length,1);assert.equal(h.logs.some(entry=>entry.event==='timeout'),false);
+});
+
+test('server auth timeout reports a transient failure and retries the same credential for message and close paths',async t=>{
+  for(const path of ['message','close']){
+    const h=harness(()=>Promise.resolve(new Response(JSON.stringify({alerts:[]}))));t.after(()=>h.stop());h.render();
+    const first=h.sockets[0];first.open();h.advance(5000);
+    if(path==='message')first.receive({type:'auth-result',success:false,reason:'auth timeout'});
+    else first.serverClose(4001,'auth timeout');
+    assert.equal(h.render().status,'认证响应超时，等待重试');assert.equal(h.render().authExpired,false);
+    h.advance(999);assert.equal(h.sockets.length,1);h.advance(1);assert.equal(h.sockets.length,2);
+    h.sockets[1].open();assert.equal(h.sockets[1].sent[0].token,login.token);
+    h.sockets[1].receive({type:'auth-result',success:true});h.advance(12000);
+    assert.equal(h.render().connected,true);assert.equal(h.sockets.length,2);
+  }
+});
+
+test('actual session rejection remains terminal and cannot schedule a retry',async t=>{
+  for(const path of ['message','close','revoked']){
+    const h=harness(()=>Promise.resolve(new Response(JSON.stringify({alerts:[]}))));t.after(()=>h.stop());h.render();h.sockets[0].open();
+    if(path==='message')h.sockets[0].receive({type:'auth-result',success:false,reason:'invalid session'});
+    else if(path==='close')h.sockets[0].serverClose(4001,'invalid session');
+    else h.sockets[0].receive({type:'session-revoked'});
+    assert.equal(h.render().authExpired,true);assert.equal(h.render().status,'登录已失效，请重新登录');
+    h.advance(60000);assert.equal(h.sockets.length,1);assert.equal(h.logs.some(entry=>entry.event==='retry-scheduled'),false);
+  }
+});
+
+test('backoff caps at thirty seconds and resets after successful authentication',async t=>{
+  const h=harness(()=>Promise.resolve(new Response(JSON.stringify({alerts:[]}))));t.after(()=>h.stop());h.render();
+  for(const delay of [1000,2000,4000,8000,16000,30000,30000]){h.sockets.at(-1).onerror();h.advance(delay);}
+  assert.deepEqual(h.logs.filter(entry=>entry.event==='retry-scheduled').map(entry=>entry.retryInMs),[1000,2000,4000,8000,16000,30000,30000]);
+  const recovered=h.sockets.at(-1);recovered.open();recovered.receive({type:'auth-result',success:true});recovered.close();
+  const count=h.sockets.length;h.advance(999);assert.equal(h.sockets.length,count);h.advance(1);assert.equal(h.sockets.length,count+1);
+});
+
+test('logout, account replacement and credential rotation cancel queued retries and ignore stale callbacks',async t=>{
+  for(const action of ['logout','replace','rotate','unmount']){
+    const h=harness(()=>Promise.resolve(new Response(JSON.stringify({alerts:[]}))));t.after(()=>h.stop());h.render();
+    const old=h.sockets[0],lateOpen=old.onopen,lateMessage=old.onmessage;old.onerror();
+    const replacement={...login,token:'e'.repeat(32),account:{accountId:'two',username:'two'}};
+    if(action==='logout')h.render(null);
+    else if(action==='replace')h.render(replacement);
+    else if(action==='rotate')h.render().suspend();
+    else h.stop();
+    lateOpen();lateMessage({data:JSON.stringify({type:'auth-result',success:true})});
+    h.advance(1000);assert.equal(h.sockets.length,action==='replace'?2:1);assert.equal(old.sent.length,0);
+    if(action==='unmount')assert.equal(h.activeTimers(),0);
+    if(action==='replace'){h.sockets[1].open();h.sockets[1].receive({type:'auth-result',success:true});assert.equal(h.render(replacement).connected,true);}
+  }
 });
 
 test('unexpected server rejection and close text are not copied into diagnostic storage',async t=>{

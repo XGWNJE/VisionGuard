@@ -4,6 +4,7 @@ import type { Login } from './account';
 import { recordConnectionEvent, type ConnectionPhase } from './connectionDiagnostics';
 // Keep every operation awaiting its result; bound only completed history.
 const retainAcks = (items: Ack[]) => { let history=0; return items.filter(item => ['pending','forwarded'].includes(item.phase ?? '') || history++ < 100); };
+const connectTimeoutMs = 12_000, authTimeoutMs = 12_000;
 export function useRelay(login: Login | null) {
   const scope = login ? `${login.account.accountId}:${login.device.deviceId}:${login.token}` : '';
   const [dataScope, setDataScope] = useState('');
@@ -26,7 +27,8 @@ export function useRelay(login: Login | null) {
     setDataScope(scope); setDevices([]); setRegistered([]); setNotifiers([]); setAlerts([]); setAcks([]); setReceipts({}); setTimeStandard(null); setStreams([]); setExpiredToken(''); setConnected(false);
     if (!login) { setStatus('未连接'); return; }
     let stopped = false, terminal = false, authenticated = false, ws: WebSocket | null = null;
-    let lastResponse = performance.now(), opened = 0, retry = 1_000, nextAttempt = 0;
+    let lastResponse = performance.now(), opened = 0, retry = 1_000;
+    let phaseTimer: ReturnType<typeof setTimeout> | null = null, retryTimer: ReturnType<typeof setTimeout> | null = null;
     let attemptId = '', attempt = 0, phase: ConnectionPhase = 'connecting', socketOpened: number | null = null;
     const log = (event: Parameters<typeof recordConnectionEvent>[0]['event'], details: Partial<Parameters<typeof recordConnectionEvent>[0]> = {}) => {
       if (attemptId) recordConnectionEvent({ attemptId, attempt, phase, event, elapsedMs: Math.round(performance.now() - opened),
@@ -34,6 +36,8 @@ export function useRelay(login: Login | null) {
     };
     let historyAbort: AbortController | null = null;
     const disconnect = (text: string, reason: Parameters<typeof recordConnectionEvent>[0]['reason'] = 'local-close') => {
+      if (phaseTimer !== null) { clearTimeout(phaseTimer); phaseTimer = null; }
+      if (retryTimer !== null) { clearTimeout(retryTimer); retryTimer = null; }
       if (ws) log('disconnect', { reason, readyState: ws.readyState });
       pending.current.clear();
       if (!stopped) setAcks(old => old.map(ack => ['pending','forwarded'].includes(ack.phase ?? '') ? {...ack,phase:'uncertain',success:false,reason:'连接中断，执行结果待核实'} : ack));
@@ -41,8 +45,11 @@ export function useRelay(login: Login | null) {
       setDevices([]); setStreams([]); setNotifiers(items => items.map(notifier => ({...notifier,online:false})));
       const old = ws; ws = null; transport.current = null;
       if (old) { old.onclose = null; old.onerror = null; old.onmessage = null; old.onopen = null; old.close(); }
-      nextAttempt = performance.now() + retry; retry = Math.min(retry * 2, 30_000);
-      if (!stopped && !terminal) log('retry-scheduled', { retryInMs: Math.round(nextAttempt - performance.now()) });
+      if (!stopped && !terminal) {
+        const delay = retry; retry = Math.min(retry * 2, 30_000);
+        log('retry-scheduled', { retryInMs: delay });
+        retryTimer = setTimeout(() => { retryTimer = null; connect(); }, delay);
+      }
     };
     const history = async () => {
       historyAbort?.abort(); const abort = new AbortController(); historyAbort = abort;
@@ -59,7 +66,7 @@ export function useRelay(login: Login | null) {
     refresh.current = () => { if (authenticated) { ws?.send(JSON.stringify({type:'get-devices'})); ws?.send(JSON.stringify({type:'get-notification-scopes'})); ws?.send(JSON.stringify({type:'get-time-standard'})); ws?.send(JSON.stringify({type:'get-streams'})); void history(); } };
     const connect = () => {
       if (stopped || terminal) return;
-      setStatus('连接中'); opened = performance.now();
+      setStatus('正在连接'); opened = performance.now();
       attemptId = createRequestId(); attempt++; phase = 'connecting'; socketOpened = null;
       log('connect-start');
       try {
@@ -67,9 +74,20 @@ export function useRelay(login: Login | null) {
         ws = new WebSocket(url.href);
       } catch (e) { log('connect-error', { reason: 'invalid-url' }); terminal = true; setStatus((e as Error).message); return; }
       const current = ws; transport.current = current;
+      const waitForPhase = (reason: 'connect-timeout' | 'auth-timeout', delay: number) => {
+        if (phaseTimer !== null) clearTimeout(phaseTimer);
+        phaseTimer = setTimeout(() => {
+          if (stopped || ws !== current || authenticated) return;
+          phaseTimer = null;
+          log('timeout', { reason, readyState: current.readyState });
+          disconnect(reason === 'connect-timeout' ? '网络连接超时，等待重试' : '认证响应超时，等待重试', reason);
+        }, delay);
+      };
+      waitForPhase('connect-timeout', connectTimeoutMs);
       current.onopen = () => {
         if (stopped || ws !== current) return;
         socketOpened = performance.now(); phase = 'authenticating'; log('socket-open');
+        setStatus('正在认证'); waitForPhase('auth-timeout', authTimeoutMs);
         current.send(JSON.stringify({ type:'auth', token:login.token })); log('auth-sent');
       };
       current.onmessage = event => {
@@ -78,7 +96,13 @@ export function useRelay(login: Login | null) {
           const m = JSON.parse(event.data);
           if (m.type === 'kicked' || m.type === 'session-revoked') { terminal = true; setExpiredToken(login.token); disconnect('登录已失效，请重新登录', 'session-revoked'); return; }
           if (m.type === 'auth-result') {
-            if (!m.success) { log('auth-rejected', { reason: m.reason === 'auth timeout' ? 'auth-timeout' : m.reason === 'invalid session' ? 'invalid-session' : 'server-rejected' }); terminal = true; setExpiredToken(login.token); disconnect('登录已失效，请重新登录', 'server-rejected'); return; }
+            if (!m.success) {
+              const reason = m.reason === 'auth timeout' ? 'auth-timeout' : m.reason === 'invalid session' ? 'invalid-session' : 'server-rejected';
+              log('auth-rejected', { reason });
+              if (reason === 'auth-timeout') { disconnect('认证响应超时，等待重试', reason); return; }
+              terminal = true; setExpiredToken(login.token); disconnect('登录已失效，请重新登录', reason); return;
+            }
+            if (phaseTimer !== null) { clearTimeout(phaseTimer); phaseTimer = null; }
             log('auth-success'); phase = 'authenticated';
             authenticated = true; retry = 1_000; setConnected(true); setStatus('已连接'); void history();
             setTimeStandard(parseTimeStandard(m.timeStandard));
@@ -99,14 +123,15 @@ export function useRelay(login: Login | null) {
           }
         } catch { setStatus('收到无效消息'); }
       };
-      current.onerror = () => { if (ws === current && !stopped) { log('socket-error', { readyState: current.readyState }); disconnect('连接断开，等待重试', 'transport-error'); } };
+      current.onerror = () => { if (ws === current && !stopped) { log('socket-error', { readyState: current.readyState }); disconnect(phase === 'connecting' ? '网络连接失败，等待重试' : '连接断开，等待重试', 'transport-error'); } };
       current.onclose = event => {
         if (ws !== current || stopped) return;
         const reason = event.reason === 'auth timeout' ? 'auth-timeout' : event.reason === 'invalid session' ? 'invalid-session'
           : event.reason === 'session revoked' ? 'session-revoked' : 'transport-close';
         log('socket-close', { code: event.code, wasClean: event.wasClean, reason });
-        if (event.code === 4001 || event.code === 4003 || event.code === 4401) { terminal = true; setExpiredToken(login.token); }
-        disconnect(terminal ? '登录已失效，请重新登录' : '连接关闭，等待重试', reason);
+        if (reason === 'auth-timeout') { disconnect('认证响应超时，等待重试', reason); return; }
+        if (reason === 'invalid-session' || reason === 'session-revoked' || event.code === 4001 || event.code === 4003 || event.code === 4401) { terminal = true; setExpiredToken(login.token); }
+        disconnect(terminal ? '登录已失效，请重新登录' : phase === 'connecting' ? '网络连接失败，等待重试' : '连接关闭，等待重试', reason);
       };
     };
     connect();
@@ -114,11 +139,6 @@ export function useRelay(login: Login | null) {
       const now = performance.now();
       for (const [id,request] of pending.current) if (now>=request.deadline) { pending.current.delete(id); setAcks(old=>old.map(ack=>ack.requestId===id?{...ack,phase:'uncertain',success:false,reason:'执行回执超时，请核对节点状态'}:ack)); }
       if (authenticated && now - lastResponse > 45_000) { log('timeout', { reason: 'service-timeout' }); disconnect('服务响应超时，等待重试', 'service-timeout'); }
-      if (ws && !authenticated && now - opened > 12_000) {
-        const reason = socketOpened === null ? 'connect-timeout' : 'auth-timeout';
-        log('timeout', { reason, readyState: ws.readyState }); disconnect('认证超时，等待重试', reason);
-      }
-      if (!ws && now >= nextAttempt && !terminal) connect();
       if (authenticated && ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type:'heartbeat-console'}));
     }, 3_000);
     return () => { stopped = true; clearInterval(timer); historyAbort?.abort(); refresh.current = () => {}; suspend.current = () => {}; disconnect('未连接', 'effect-cleanup'); };
