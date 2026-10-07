@@ -25,6 +25,19 @@ export function formatTime(value: string, timeZone: AlarmTimeZone): string {
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(p => p.type === type)?.value;
   return `${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')}:${part('second')}`;
 }
+export function parseEventTime(value: string, timeZone: AlarmTimeZone): number | null {
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(value)) return NaN;
+  const normalized = value.length === 16 ? `${value}:00` : value;
+  const timestamp = Date.parse(`${normalized}${timeZone === 'UTC' ? 'Z' : '+08:00'}`);
+  const offset = timeZone === 'UTC' ? 0 : 8 * 60 * 60 * 1000;
+  return Number.isFinite(timestamp) && new Date(timestamp + offset).toISOString().slice(0,19) === normalized ? timestamp : NaN;
+}
+export function isWithinEventTime(value: string, start: number | null, end: number | null): boolean {
+  if (start === null && end === null) return true;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && (start === null || timestamp >= start) && (end === null || timestamp < end + 1000);
+}
 export function websocketURL(origin: string): string {
   const url = new URL('/ws', origin);
   const parts = url.hostname.split('.').map(Number);

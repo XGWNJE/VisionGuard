@@ -19,10 +19,10 @@ export function ServerCacheMaintenance({login}:{login:Login}) {
     catch(e){if(own===generation.current){setReport(null);setError((e as Error).message+'；结果未确认时，请重新盘点。');}}
     finally{if(own===generation.current)setBusy(false);}
   }
-  return <section className="panel settings-panel cache-panel"><div className="section-title"><h2>统一服务缓存</h2><HardDrive size={18} aria-hidden="true"/></div><p className="subtle">仅清理过期且无事件引用的截图，默认期限 72 小时。账号、配置、模型、安装包与备份保留。</p>
+  return <section className="panel settings-panel cache-panel" id="settings-cache"><div className="section-title"><h2>统一服务缓存</h2><HardDrive size={18} aria-hidden="true"/></div><p className="subtle">清理过期且未被事件引用的截图，默认保留 72 小时。</p>
     {login.account.isAdmin && <label>范围<select value={scope} disabled={busy} onChange={e=>setScope(e.target.value)}><option value="account">当前账号</option><option value="legacy">旧公共截图目录</option></select></label>}
-    <div className="actions"><button className="button secondary" disabled={busy} onClick={()=>void run(false)}><RefreshCw size={16}/>盘点缓存</button><button className="button" disabled={busy||!report?.categories.some(c=>c.cleanableFiles>0)} onClick={()=>void run(true)}><Trash2 size={16}/>清理可回收缓存</button></div>
-    {busy&&<p role="status">正在处理…</p>}{error&&<p className="error" role="alert">{error}</p>}{report&&<Report report={report}/>}</section>;
+    {busy&&<p role="status">正在处理…</p>}{error&&<p className="error" role="alert">{error}</p>}{report&&<Report report={report}/>}
+    <div className="actions"><button className="button secondary" disabled={busy} onClick={()=>void run(false)}><RefreshCw size={16}/>盘点缓存</button><button className="button" disabled={busy||!report?.categories.some(c=>c.cleanableFiles>0)} title={!report?'请先盘点缓存':report.categories.some(c=>c.cleanableFiles>0)?undefined:'没有可清理的缓存'} onClick={()=>void run(true)}><Trash2 size={16}/>清理缓存</button></div></section>;
 }
 export function NodeCacheMaintenance({node,connected,acks,send}:{node:Device;connected:boolean;acks:Ack[];send:(m:Record<string,unknown>)=>string}) {
   const [request,setRequest] = useState('');
