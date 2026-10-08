@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+   本机账号会话、模型缓存与报警发件箱都不参与系统备份与设备转移，
+   与共享账号存储的排除范围保持一致。
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="account_session.xml" />
+</full-backup-content>

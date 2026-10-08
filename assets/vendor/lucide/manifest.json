@@ -245,7 +245,7 @@
         "web"
       ],
       "autoMirror": false,
-      "notification": false,
+      "notification": true,
       "sha256": "73552286acb7d250c2701014da6865ed2102a6bc51c22eb130ba0a561c08f89c"
     },
     {

@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet("All", "Server", "Windows", "WPF", "WindowsResident", "Android", "AndroidDetector", "AndroidNotifier")]
+    [ValidateSet("All", "Server", "Windows", "WPF", "WindowsResident", "Android", "AndroidDetector", "AndroidInference", "AndroidNotifier")]
     [string]$Target = "All"
 )
 
@@ -144,6 +144,19 @@ try {
             -Artifact "detector/android/app/build/outputs/apk/release/app-release.apk" `
             -Script {
                 Push-Location "detector\android"
+                try { .\gradlew.bat assembleRelease }
+                finally { Pop-Location }
+            }
+    }
+
+    if (Should-Run @("Android", "AndroidInference")) {
+        Set-CommandJavaHome
+        Invoke-Step `
+            -Name "Android Inference Node" `
+            -CommandText "detector\android-inference\gradlew.bat assembleRelease" `
+            -Artifact "detector/android-inference/app/build/outputs/apk/release/app-release.apk" `
+            -Script {
+                Push-Location "detector\android-inference"
                 try { .\gradlew.bat assembleRelease }
                 finally { Pop-Location }
             }

@@ -12,7 +12,7 @@ const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-control-acc
 process.env.VISIONGUARD_DATA_DIR = temporary;
 test.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
 const { AccountFixture } = require('./helpers/accounts') as typeof import('./helpers/accounts');
-const fixtures = new AccountFixture([{"name": "foreign-channel-receiver", "component": "web-console"}, {"name": "alert-retry-detector", "component": "windows-inference"}, {"name": "alert-retry-receiver", "component": "web-console"}, {"name": "detector-control-test", "component": "windows-inference"}, {"name": "receiver-control-test", "component": "web-console"}, {"name": "other-receiver-control-test", "component": "web-console"}, {"name": "resident-control-test", "component": "windows-resident"}, {"name": "resident-receiver-test", "component": "web-console"}, {"name": "resident-name-test", "component": "windows-resident"}, {"name": "resident-name-test", "component": "windows-inference"}, {"name": "resident-name-receiver", "component": "web-console"}]);
+const fixtures = new AccountFixture([{"name": "foreign-channel-receiver", "component": "web-console"}, {"name": "alert-retry-detector", "component": "windows-inference"}, {"name": "alert-retry-receiver", "component": "web-console"}, {"name": "detector-control-test", "component": "windows-inference"}, {"name": "android-inference-config", "component": "android-inference"}, {"name": "receiver-control-test", "component": "web-console"}, {"name": "other-receiver-control-test", "component": "web-console"}, {"name": "resident-control-test", "component": "windows-resident"}, {"name": "resident-receiver-test", "component": "web-console"}, {"name": "resident-name-test", "component": "windows-resident"}, {"name": "resident-name-test", "component": "windows-inference"}, {"name": "resident-name-receiver", "component": "web-console"}]);
 
 const { associateScreenshotPayload, handleConnection } = require('../src/services/ConnectionManager') as typeof import('../src/services/ConnectionManager');
 const { accountStore } = require('../src/services/AccountStore') as typeof import('../src/services/AccountStore');
@@ -519,6 +519,47 @@ test('correlates detector completion with the requesting receiver', async (t) =>
   }));
   assert.equal((await recoveredListPromise).devices
     .find((device: any) => device.deviceId === fixtures.id('detector-control-test')).sources.length, 1);
+});
+
+test('android inference set-config shares the Windows integer-percent confidence contract', async (t) => {
+  const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+  wss.on('connection', handleConnection);
+  await new Promise<void>((resolve) => wss.once('listening', resolve));
+  const address = wss.address();
+  assert.ok(address && typeof address === 'object');
+  const detector = await connect(address.port);
+  const receiver = await connect(address.port);
+  t.after(() => { detector.terminate(); receiver.terminate(); wss.close(); });
+  const detectorAuth = waitForMessage(detector, msg => msg.type === 'auth-result');
+  detector.send(JSON.stringify(fixtures.auth('android-inference-config', 'detector')));
+  assert.equal((await detectorAuth).success, true);
+  const receiverAuth = waitForMessage(receiver, msg => msg.type === 'auth-result');
+  receiver.send(JSON.stringify(fixtures.auth('receiver-control-test', 'console')));
+  assert.equal((await receiverAuth).success, true);
+  const heartbeatAck = waitForMessage(detector, msg => msg.type === 'heartbeat-ack');
+  detector.send(JSON.stringify({ type: 'heartbeat', deviceId: fixtures.id('android-inference-config'), isMonitoring: false, isReady: true,
+    capabilities: ['monitor-control', 'config-control', 'source-control', 'video-subscribe', 'visual-inference', 'request-correlation', 'cache-maintenance', 'screenshot-on-demand'],
+    sources: [{ sourceId: 'front', sourceName: 'Front', isMonitoring: false, isReady: true, modelKey: '', confidence: 0.45 }] }));
+  await heartbeatAck;
+
+  async function rejected(value: string) {
+    const requestId = crypto.randomUUID(), reply = waitForMessage(receiver, msg => msg.type === 'command-ack' && msg.requestId === requestId);
+    receiver.send(JSON.stringify({ type: 'set-config', requestId, targetDeviceId: fixtures.id('android-inference-config'), key: 'confidence', value }));
+    assert.equal((await reply).success, false);
+  }
+  await rejected('0.09');
+  await rejected('0.96');
+  await rejected('0.455');
+
+  const requestId = crypto.randomUUID();
+  const relay = waitForMessage(detector, msg => msg.type === 'set-config' && msg.requestId === requestId);
+  const forwarded = waitForMessage(receiver, msg => msg.type === 'command-ack' && msg.requestId === requestId && msg.phase === 'forwarded');
+  receiver.send(JSON.stringify({ type: 'set-config', requestId, targetDeviceId: fixtures.id('android-inference-config'), key: 'confidence', value: '0.45' }));
+  assert.equal((await relay).value, '0.45'); assert.equal((await forwarded).success, true);
+  const completion = waitForMessage(receiver, msg => msg.type === 'command-ack' && msg.requestId === requestId && msg.phase === 'completed');
+  detector.send(JSON.stringify({ type: 'command-ack', requestId, targetDeviceId: fixtures.id('android-inference-config'),
+    command: 'set-config:confidence', phase: 'completed', success: true, reason: '已更新' }));
+  assert.equal((await completion).success, true);
 });
 
 test('keeps resident identity separate and routes lifecycle commands only to it', async (t) => {

@@ -99,3 +99,16 @@ notifier/android/keystore.properties
 notifier/android/key/
 notifier/android/keystore/
 notifier/android/**/*.jks
+
+# ===== Android 视觉推理节点 =====
+detector/android-inference/.gradle/
+detector/android-inference/.idea/
+detector/android-inference/.kotlin/
+detector/android-inference/local.properties
+detector/android-inference/build/
+detector/android-inference/app/build/
+detector/android-inference/app/release/
+detector/android-inference/keystore.properties
+detector/android-inference/key/
+detector/android-inference/keystore/
+detector/android-inference/**/*.jks

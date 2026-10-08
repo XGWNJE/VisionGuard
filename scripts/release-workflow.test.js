@@ -240,7 +240,7 @@ test('Windows build script compiles both WPF inference profiles and drops the Wi
   assert.doesNotMatch(script, /windows-winforms/);
   assert.match(
     script,
-    /ValidateSet\("All", "Server", "Windows", "WPF", "WindowsResident", "Android", "AndroidDetector", "AndroidNotifier"\)/
+    /ValidateSet\("All", "Server", "Windows", "WPF", "WindowsResident", "Android", "AndroidDetector", "AndroidInference", "AndroidNotifier"\)/
   );
   assert.match(script, /dotnet build detector\\windows-wpf\\VisionGuard\.Detector\.Windows\.sln -c Release/);
   assert.match(script, /-p:OrtProfile=legacy/);

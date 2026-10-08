@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="visionguard_background">#F5F5F5</color>
+    <color name="visionguard_primary">#087F83</color>
+    <bool name="visionguard_light_system_bars">true</bool>
+</resources>

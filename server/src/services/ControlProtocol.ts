@@ -5,6 +5,14 @@ export type SetConfigValidationResult =
   | { ok: true; value: string }
   | { ok: false; reason: string };
 
+/**
+ * 视觉推理节点的置信度按整数百分比（0.10–0.95，步长 0.01）下发：
+ * Windows 推理节点与 Android 推理节点共用该契约，其余组件保持宽松浮点范围。
+ */
+export function usesIntegerPercentConfidence(component: string): boolean {
+  return component === 'windows-inference' || component === 'android-inference';
+}
+
 export function validateSetConfigValue(
   key: string,
   rawValue: string,
@@ -26,6 +34,7 @@ export function validateSetConfigValue(
 
   if (key === 'confidence') {
     const v = Number(rawValue);
+    // windows 参数表示“整数百分比契约”，Windows 与 Android 推理节点共用（见 usesIntegerPercentConfidence）。
     if (!isFinite(v) || v < (windows ? 0.1 : 0.01) || v > (windows ? 0.95 : 1.0) || windows && Math.abs(v * 100 - Math.round(v * 100)) > 0.000001) {
       return { ok: false, reason: windows ? 'confidence 必须为 0.10-0.95，步长 0.01' : 'confidence 必须是 0.01-1.0 的数字' };
     }

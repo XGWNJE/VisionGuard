@@ -50,7 +50,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [detector/android, notifier/android]
+        project: [detector/android, notifier/android, detector/android-inference]
     defaults:
       run:
         working-directory: ${{ matrix.project }}

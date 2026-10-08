@@ -34,6 +34,10 @@ class StableReleasePolicyTest {
         assertTrue(runCatching { StableReleasePolicy.select(listOf(bad), "0.6.0", "android-camera") }.isFailure)
         assertTrue(runCatching { StableReleasePolicy.select(listOf(release("0.7.0", 4)), "0.6.0", "android-console") }.isFailure)
     }
+    @Test fun androidInferenceSelectsItsOwnAssetPrefix() {
+        assertEquals("0.7.0", StableReleasePolicy.select(listOf(release("0.7.0", 4, "Inference")), "0.6.0", "android-inference")!!.version)
+        assertNull(StableReleasePolicy.select(listOf(release("0.7.0", 4, "Detector")), "0.6.0", "android-inference"))
+    }
     @Test fun versionsAreNumericAndMalformedVersionsAreNotStable() {
         assertEquals("0.10.0", StableReleasePolicy.select(listOf(release("0.10.0", 4)), "0.9.0", "android-camera")!!.version)
         for (bad in listOf("1", "1.0", "01.0.0", "1.0.0-beta", "999999999999.0.0", "-1.0.0")) assertNull(StableReleasePolicy.version(bad))

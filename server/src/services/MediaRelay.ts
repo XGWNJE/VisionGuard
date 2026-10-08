@@ -28,6 +28,10 @@ function mediaDiagnostic(message: () => string): void {
   if (process.env.VISIONGUARD_MEDIA_DIAGNOSTICS === '1') console.log(`[MediaPerf] ${message()}`);
 }
 function send(ws: WebSocket, value: object): void { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(value)); }
+/** 推理消费端：Windows 推理节点与 Android 推理节点；发布端仍只允许 android-camera。 */
+function isInferenceComponent(component: string | undefined): boolean {
+  return component === 'windows-inference' || component === 'android-inference';
+}
 
 /** Read JPEG SOF dimensions, reject truncated headers and non-JPEG payloads before relay. */
 export function jpegDimensions(bytes: Buffer): { width: number; height: number } | undefined {
@@ -85,7 +89,7 @@ export class MediaRelay {
     return rates ? rates.get(stream.sourceId ?? '') ?? 1 : 5;
   }
   updateSamplingRates(accountId: string, deviceId: string, sources: { sourceId: string; isMonitoring: boolean; targetSamplingRate?: number }[]): void {
-    if (accountStore.device(accountId, deviceId)?.component !== 'windows-inference') return;
+    if (!isInferenceComponent(accountStore.device(accountId, deviceId)?.component)) return;
     const rates = new Map(sources.map(source => [source.sourceId, source.isMonitoring ? Math.max(1, Math.min(5, source.targetSamplingRate ?? 3)) : 1]));
     const streams = this.streams(accountId).filter(stream => stream.targetDeviceId === deviceId);
     const previous = new Map(streams.map(stream => [stream.streamId, this.samplingRate(stream)]));
@@ -134,7 +138,7 @@ export class MediaRelay {
     }
     const devices = accountStore.devices(accountId);
     const cameras = devices.filter(device => device.component === 'android-camera');
-    const inference = devices.filter(device => device.component === 'windows-inference');
+    const inference = devices.filter(device => isInferenceComponent(device.component));
     const next = previous!.filter(stream => cameras.some(device => device.deviceId === stream.publisherDeviceId)).map(stream => ({ ...stream }));
     for (const camera of cameras) {
       let stream = next.find(item => item.publisherDeviceId === camera.deviceId);
@@ -150,7 +154,7 @@ export class MediaRelay {
     const accountId = session.account.accountId;
     if (typeof publisherDeviceId !== 'string' || typeof targetDeviceId !== 'string') throw new AccountError(400, 'Invalid binding');
     const publisher = accountStore.device(accountId, publisherDeviceId), target = accountStore.device(accountId, targetDeviceId);
-    if (publisher?.component !== 'android-camera' || target?.component !== 'windows-inference') throw new AccountError(404, 'Compatible devices not found');
+    if (publisher?.component !== 'android-camera' || !isInferenceComponent(target?.component)) throw new AccountError(404, 'Compatible devices not found');
     if (session.device.role !== 'console' && !(session.device.component === 'android-camera' && session.device.deviceId === publisherDeviceId)) throw new AccountError(403, 'Binding permission required');
     const previous = this.streams(accountId);
     const current = previous.find(stream => stream.publisherDeviceId === publisherDeviceId);
@@ -183,7 +187,7 @@ export class MediaRelay {
           if (binary) { ws.close(4001, 'media auth required'); return; }
           const message = JSON.parse(raw.toString());
           const session = message?.type === 'media-auth' ? accountStore.authenticate(message.token) : undefined;
-          if (!session || !((message.direction === 'publish' && session.device.component === 'android-camera') || (message.direction === 'subscribe' && session.device.component === 'windows-inference'))) { ws.close(4001, 'media permission required'); return; }
+          if (!session || !((message.direction === 'publish' && session.device.component === 'android-camera') || (message.direction === 'subscribe' && isInferenceComponent(session.device.component)))) { ws.close(4001, 'media permission required'); return; }
           clearTimeout(timer); this.ensureAccount(session.account.accountId);
           if (message.direction === 'publish') {
             this.publishers.get(session.device.deviceId)?.ws.close(4000, 'publisher replaced');

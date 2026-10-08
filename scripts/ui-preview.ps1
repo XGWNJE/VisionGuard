@@ -29,17 +29,17 @@ function Assert-LocalOwner([int]$Port, [string]$ScriptName) {
 if ($Target -eq 'AndroidPackages') {
     if (!$env:GRADLE_USER_HOME) { $taskGradle = Join-Path $taskRoot '.local\acceptance-gradle'; $env:GRADLE_USER_HOME = if (Test-Path $taskGradle) { $taskGradle } else { Join-Path $taskDirectory 'gradle-cache' } }
     if (!$env:JAVA_HOME) { $taskJava = Get-Command java.exe -ErrorAction Stop; $env:JAVA_HOME = Split-Path (Split-Path $taskJava.Source -Parent) -Parent }
-    foreach ($taskComponent in @('detector', 'notifier')) {
-        Push-Location (Join-Path $taskRoot "$taskComponent\android")
+    foreach ($taskProject in @(@{ Path = 'detector\android'; Name = 'Detector' }, @{ Path = 'notifier\android'; Name = 'Notifier' }, @{ Path = 'detector\android-inference'; Name = 'Inference' })) {
+        Push-Location (Join-Path $taskRoot $taskProject.Path)
         try {
             & .\gradlew.bat -I (Join-Path $taskRoot 'scripts\ui-preview.init.gradle') :app:assembleRelease :app:testDebugUnitTest --console=plain
-            if ($LASTEXITCODE -ne 0) { throw "$taskComponent UI preview build or tests failed." }
+            if ($LASTEXITCODE -ne 0) { throw "$($taskProject.Name) UI preview build or tests failed." }
         } finally { Pop-Location }
     }
     $taskPackages = Join-Path $taskDirectory 'packages'
     New-Item -ItemType Directory -Force -Path $taskPackages | Out-Null
-    $taskPackageNames = @{ Detector = 'camera'; Notifier = 'notifier' }
-    foreach ($taskName in @('Detector', 'Notifier')) {
+    $taskPackageNames = @{ Detector = 'camera'; Notifier = 'notifier'; Inference = 'inference' }
+    foreach ($taskName in @('Detector', 'Notifier', 'Inference')) {
         $taskApk = Join-Path $taskDirectory "android\VisionGuard.$taskName.Android\app\outputs\apk\release\app-release.apk"
         if (!(Test-Path $taskApk)) { throw "Missing preview APK: $taskName" }
         Copy-Item -LiteralPath $taskApk -Destination (Join-Path $taskPackages ($taskPackageNames[$taskName] + '-ui-preview.apk')) -Force
