@@ -35,7 +35,7 @@
 ## 文档与验证入口
 
 - README 只留介绍、组件入口、常用命令和文档入口；模块专题维护当前事实，不复制任务与完整测试报告。新增专题只登记 `docs/00-文档索引.md`，发行说明只登记 `docs/releases/README.md`。
-- [验证记录](docs/90-验证记录.md)是证据与未覆盖项唯一来源，保留最近三个发行版本和当前专项，更早汇总并保留必要原始证据；[任务清单](docs/06-任务清单.md)只维护未完成事项和仍存在分支的归属。提交前压缩重复、过时记录。
+- [验证记录](docs/90-验证记录.md)是证据与未覆盖项唯一来源，保留最近三个发行版本和当前专项，更早汇总并保留必要原始证据；[任务清单](docs/06-任务清单.md)只维护未完成的开发、修复、维护事项和仍存在分支的归属，不列真实设备验收、观感反馈或上线观察待办。owner 发现真实使用问题后主动反馈，再登记处理任务；移除验收待办不表示已通过验证。提交前压缩重复、过时记录。
 - 中文 Markdown 为 UTF-8 无 BOM；含非 ASCII 的 PowerShell 为 UTF-8 with BOM，由编码测试校验。
 - 修改文档、入口、协议、版本 / 域名边界后运行 `node scripts/check-docs.js` 和 `node --test scripts/check-docs.test.js scripts/release-workflow.test.js scripts/release-notes.test.js scripts/check-powershell-encoding.test.js scripts/project-guards.test.js`。
 - 编译用 `visionguard-build`；运行 / 设备烟测用 `visionguard-e2e`；明确授权的发布用 `visionguard-release`。详细命令、ServerBuild / person / FPS 证据标准见[运维文档](docs/60-构建验证与发布.md)，执行前按任务读取对应 Skill。
