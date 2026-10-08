@@ -10,9 +10,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.xgwnje.visionguard.icons.LucideIcons
 
-@Composable fun ApplicationOptions(preference: AppearancePreference, version: String, client: String, modifier: Modifier = Modifier.fillMaxWidth(), compact: Boolean = false) {
+@Composable fun ApplicationOptions(preference: AppearancePreference, client: String, modifier: Modifier = Modifier.fillMaxWidth(), compact: Boolean = false) {
     val context = LocalContext.current
-    val updater = remember(version, client) { ClientUpdater(context, client) }
+    val updater = remember(context, client) { ClientUpdater(context, client) }
     val state by updater.state.collectAsState()
     LaunchedEffect(updater) { updater.check() }
     DisposableEffect(updater) { onDispose { updater.close() } }
@@ -24,5 +24,5 @@ import com.xgwnje.visionguard.icons.LucideIcons
             }
         } else TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp)) { Icon(LucideIcons.SlidersHorizontal, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text(if (state.update == null) "设置" else "设置 · 新版本") }
     }
-    if (open) AlertDialog(onDismissRequest = { open = false }, title = { Text("应用设置") }, text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) { Text("外观", style = MaterialTheme.typography.titleMedium); AppearanceSelector(preference); HorizontalDivider(); ClientUpdateButton(version, client, updater) } }, confirmButton = { TextButton({ open = false }, Modifier.heightIn(min = 48.dp)) { Text("完成") } })
+    if (open) AlertDialog(onDismissRequest = { open = false }, title = { Text("应用设置") }, text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(16.dp)) { Text("外观", style = MaterialTheme.typography.titleMedium); AppearanceSelector(preference); HorizontalDivider(); ClientUpdateButton(client, updater) } }, confirmButton = { TextButton({ open = false }, Modifier.heightIn(min = 48.dp)) { Text("完成") } })
 }

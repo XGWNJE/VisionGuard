@@ -48,7 +48,7 @@ class MainActivity : AppCompatActivity() {
             } }
             NotificationTheme(darkTheme = dark) {
                 Column(Modifier.fillMaxSize().statusBarsPadding()) {
-                if (session == null) ApplicationOptions(appearance, BuildConfig.VERSION_NAME, "android-notifier")
+                if (session == null) ApplicationOptions(appearance, "android-notifier")
                 Box(Modifier.weight(1f)) {
                 if (session == null) AccountLogin(account, "通知节点", "android-notifier")
                 else key(session!!.scope) {
@@ -70,7 +70,7 @@ class MainActivity : AppCompatActivity() {
                         AccountHeader(account, session!!, actions = {
                             Row {
                                 NotificationHelpButton()
-                                ApplicationOptions(appearance, BuildConfig.VERSION_NAME, "android-notifier", Modifier, compact = true)
+                                ApplicationOptions(appearance, "android-notifier", Modifier, compact = true)
                             }
                         }, compact = true, beforeLogout = { stopAccount() })
                         val nav = rememberNavController()

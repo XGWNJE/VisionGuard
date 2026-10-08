@@ -46,7 +46,7 @@ class ClientUpdater(context: Context, private val client: String) {
     @Volatile private var cancelled = false
     @Volatile private var closed = false
     private var job: Job? = null
-    @Suppress("DEPRECATION") private fun installedVersion(): String =
+    @Suppress("DEPRECATION") fun installedVersion(): String =
         requireNotNull(context.packageManager.getPackageInfo(context.packageName, 0).versionName) { "无法读取当前客户端版本" }
     private fun stillPending(update: ClientUpdate): Boolean {
         if (StableReleasePolicy.isNewer(update.version, installedVersion())) return true

@@ -7,9 +7,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
-@Composable fun ClientUpdateButton(version: String, client: String, sharedUpdater: ClientUpdater? = null) {
+@Composable fun ClientUpdateButton(client: String, sharedUpdater: ClientUpdater? = null) {
     val context = LocalContext.current
-    val updater = remember(version, client, sharedUpdater) { sharedUpdater ?: ClientUpdater(context, client) }
+    val updater = remember(context, client, sharedUpdater) { sharedUpdater ?: ClientUpdater(context, client) }
+    val version = remember(updater) { updater.installedVersion() }
     val state by updater.state.collectAsState()
     var open by remember { mutableStateOf(false) }
     LaunchedEffect(updater) { if (sharedUpdater == null) updater.check() }
@@ -17,6 +18,7 @@ import androidx.compose.ui.unit.dp
     TextButton(onClick = { open = true; updater.check() }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (state.update == null) "检查更新 · $version" else "新版本 ${state.update!!.version}") }
     if (open) AlertDialog(onDismissRequest = { if (!state.busy) open = false }, title = { Text("客户端更新") },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("当前版本 · $version")
             Text(state.message.ifEmpty { "GitHub 稳定版 · 当前 $version" })
             state.update?.let { Text("${it.asset.name} · ${it.asset.size / 1024 / 1024} MiB") }
             if (state.downloading) { LinearProgressIndicator(progress = { (state.bytes.toFloat() / (state.update?.asset?.size ?: 1)).coerceIn(0f, 1f) }); Text("已下载 ${state.bytes / 1024} KiB") }

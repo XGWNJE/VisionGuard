@@ -86,7 +86,7 @@ class MainActivity : ComponentActivity() {
             }
             VisionguardTheme(darkTheme = darkTheme) {
                 Column(Modifier.fillMaxSize().statusBarsPadding()) {
-                if (session == null) ApplicationOptions(appearance, BuildConfig.VERSION_NAME, "android-camera")
+                if (session == null) ApplicationOptions(appearance, "android-camera")
                 Box(Modifier.weight(1f)) {
                 if (session == null) AccountLogin(account, "相机推流节点", "android-camera")
                 else key(session!!.scope) {
@@ -129,7 +129,7 @@ class MainActivity : ComponentActivity() {
                             onHidePreview = { saveCameraOption("cameraHidePreview", it.toString()) },
                             header = {
                                 AccountHeader(account, session!!, actions = {
-                                    Row { CameraHelpButton(state, captureSize, sentSize, highResolution); ApplicationOptions(appearance, BuildConfig.VERSION_NAME, "android-camera", Modifier, compact = true) }
+                                    Row { CameraHelpButton(state, captureSize, sentSize, highResolution); ApplicationOptions(appearance, "android-camera", Modifier, compact = true) }
                                 }, compact = true, beforeLogout = {
                                     stopCamera("user"); connection.close(); prefs.edit().clear().commit()
                                 })
