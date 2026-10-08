@@ -4,6 +4,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ConnectionRecoveryTest {
+    @Test fun restoredNetworkStartsFreshVerificationInsteadOfConfirmingTheOldFailure() {
+        val policy = ConnectionRecovery(); policy.attempt(0); policy.responded(0)
+        policy.failed(1); policy.attempt(2)
+        policy.networkChanged(3); policy.attempt(3)
+        assertEquals(ConnectionRecovery.Action.RECONNECT, policy.failed(4))
+        policy.attempt(5)
+        assertEquals(ConnectionRecovery.Action.CONFIRM_FAILURE, policy.failed(6))
+    }
     @Test fun silenceRequiresProbeThenANewFailedAttempt() {
         val policy = ConnectionRecovery(); policy.attempt(0); policy.responded(0)
         for (now in 0L..42_000L step 3000) assertEquals(ConnectionRecovery.Action.NONE, policy.tick(now, true, true))

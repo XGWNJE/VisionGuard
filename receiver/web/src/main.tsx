@@ -28,6 +28,7 @@ function App() {
   const [login, setLogin] = useState<Login | null>(null);
   const loginRef = useRef<Login | null>(null);
   const [restoringSession, setRestoringSession] = useState(true);
+  const [sessionWarning, setSessionWarning] = useState('');
   function updateLogin(value: Login | null) { loginRef.current = value; setLogin(value); }
   const [loginError, setLoginError] = useState('');
   const relay = useRelay(login);
@@ -84,7 +85,7 @@ function App() {
   const eventTimeError = Number.isNaN(rangeStart) || Number.isNaN(rangeEnd) ? '请输入有效时间' : rangeStart !== null && rangeEnd !== null && rangeStart > rangeEnd ? '结束时间不能早于开始时间' : '';
   const filteredEvents = relay.alerts.filter(a=>!eventTimeError && isWithinEventTime(a.timestamp,rangeStart,rangeEnd) && (!eventKind || a.eventKind===eventKind) && `${a.deviceName} ${a.sourceName} ${a.summary}`.toLowerCase().includes(eventSearch.trim().toLowerCase()));
   if (restoringSession) return <div className="login-page" role="status">正在恢复登录…</div>;
-  if (!login) return <><div className="login-appearance"><AppearanceSelector preference={appearance} showIcons={false}/></div><LoginScreen error={loginError} onLogin={value => { updateLogin(value); setLoginError(''); setPage('节点'); setEvent(null); }} /></>;
+  if (!login) return <><div className="login-appearance"><AppearanceSelector preference={appearance} showIcons={false}/></div><LoginScreen error={loginError} onLogin={(value,warning) => { updateLogin(value); setSessionWarning(warning ?? ''); setLoginError(''); setPage('节点'); setEvent(null); }} /></>;
   return <div className={'app-shell '+(page!=='账号管理' ? 'workspace-page ' : '')+(page==='节点' ? 'nodes-page ' : '')+(page==='节点' && nodeDetailOpen ? 'node-detail-open' : '')}>
     <aside className="sidebar">
 
@@ -93,6 +94,7 @@ function App() {
     </aside>
     <main className={page==='设置'?'settings-page':undefined}>
       <header className="page-header"><div><span className="eyebrow">控制台 / {page}</span><h1>{({节点:'节点工作区',事件:'事件记录',通知范围:'通知范围',设置:'设置',账号管理:'账号管理'} as Record<Page,string>)[page]}</h1></div><div className="toolbar"><span className="connection" role="status"><span className={'dot '+(relay.connected ? 'online' : '')}/>{relay.status}</span><button className="icon-button" aria-label="刷新" title="刷新节点与事件" onClick={relay.refresh} disabled={!relay.connected}><RefreshCw size={18}/></button></div></header>
+      {sessionWarning && <p className="subtle" role="status">{sessionWarning}</p>}
       {page === '节点' && <><div className="master-detail">
         <section className="panel node-list"><div className="overview-bar" aria-label="账号运行概览"><span><span>节点在线</span><strong>{nodes.filter(n=>n.online).length}<small> / {nodes.length}</small></strong></span><span><span>检测中</span><strong>{nodes.filter(n=>n.online&&n.component!=='android-camera'&&n.nodeType!=='notification'&&n.isMonitoring).length}</strong></span><span><span>推流中</span><strong>{relay.streams.filter(s=>s.isStreaming).length}</strong></span><button className="text-button" aria-label={`${relay.alerts.length} 条最近事件`} onClick={()=>setPage('事件')}><span>最近事件</span><strong>{relay.alerts.length}</strong><ChevronRight size={12}/></button></div><div className="section-title"><h2>节点目录</h2><span className="count-badge">{visibleNodes.length}</span></div><div className="directory-filters"><label className="search-field"><Search size={16}/><input aria-label="搜索节点名称" placeholder="搜索名称或设备 ID" value={search} onChange={e => setSearch(e.target.value)}/></label><div className="filter-row"><select aria-label="节点类型" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}><option value="">全部类型</option><option value="visual">视觉类型（推理 / 相机）</option><option value="sensor">传感器节点</option><option value="notification">通知节点</option></select><button type="button" className={'filter-toggle '+(onlineOnly?'active':'')} aria-pressed={onlineOnly} onClick={()=>setOnlineOnly(!onlineOnly)}>仅在线</button></div></div><div className="node-directory">
           {visibleNodes.length === 0 && <Empty text={nodes.length ? '没有匹配的节点' : '尚无已登记节点'} />}
@@ -132,7 +134,7 @@ function TimeStandardSettings({standard,connected,acks,send}:{standard:TimeStand
     {result && <p role={saving || result.success ? 'status' : 'alert'} className={saving || result.success ? 'subtle' : 'error'}>{saving ? '正在保存…' : result.success ? '时间标准已保存' : result.reason || '保存失败'}</p>}
   </section>;
 }
-function LoginScreen({onLogin,error}:{onLogin:(value:Login)=>void;error:string}) {
+function LoginScreen({onLogin,error}:{onLogin:(value:Login,warning?:string)=>void;error:string}) {
   const [username,setUsername] = useState(''); const [password,setPassword] = useState('');
   const [busy,setBusy] = useState(false); const [failure,setFailure] = useState('');
   const [remember,setRemember] = useState(false), [restoring,setRestoring] = useState(true);
@@ -151,9 +153,10 @@ function LoginScreen({onLogin,error}:{onLogin:(value:Login)=>void;error:string})
         try { await saveRememberedLogin({username:value.account.username,password}); }
         catch { await accountRequest('/api/account/logout',value.token,{}).catch(()=>{});throw new Error('账号密码未能保存，请取消“记住账号密码”后重试'); }
       }
+      let warning='';
       try { await saveSessionLogin(value); }
-      catch { await accountRequest('/api/account/logout',value.token,{}).catch(()=>{});throw new Error('登录会话未能保存，请检查浏览器站点存储权限后重试'); }
-      onLogin(value);setPassword('');
+      catch { await clearSessionLogin().catch(()=>{}); warning='本次登录未保存，刷新后需重新登录。使用 HTTPS 并允许站点存储可保持登录。'; }
+      onLogin(value,warning);setPassword('');
     } catch(e) {setFailure((e as Error).message);} finally {setBusy(false);}
   }
   return <div className="login-page"><div className="login-layout">

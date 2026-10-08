@@ -5,6 +5,10 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -63,6 +67,39 @@ class NotificationNodeService : Service() {
     private var outageId: String? = null
     private var outageAccepted = false
     private var lastTickAt = 0L
+    private lateinit var connectivity: ConnectivityManager
+    private lateinit var networks: DefaultNetworkChanges<Network>
+    private var networkCallbackRegistered = false
+    private var underlyingCallbackRegistered = false
+    private val underlyingNetworks = mutableSetOf<Network>()
+    private fun networkRestored(reason: String) {
+        if (stopped || terminal) return
+        diagnostic(reason)
+        recovery.networkChanged(SystemClock.elapsedRealtime())
+        probeId = null
+        reconnect("网络已恢复，正在重新连接", immediate = true)
+        connect()
+    }
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            if (stopped || !networks.available(network) || terminal) return
+            // A restored or replaced route must not wait for an old failure's 30-second backoff.
+            networkRestored("default-network-available")
+        }
+        override fun onLost(network: Network) {
+            if (!stopped && networks.lost(network)) diagnostic("default-network-lost")
+        }
+    }
+    // A VPN's default Network can stay available while its physical route is disconnected.
+    // Observe route restoration only; all sockets still use the system default (including VPN).
+    private val underlyingCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            if (!stopped && underlyingNetworks.add(network) && !authenticated) networkRestored("underlying-network-available")
+        }
+        override fun onLost(network: Network) {
+            if (!stopped && underlyingNetworks.remove(network)) diagnostic("underlying-network-lost")
+        }
+    }
     private fun diagnostic(event: String) {
         val power = getSystemService(android.os.PowerManager::class.java)
         NotificationLogger.i(this, "NotificationNode", "$event generation=$generation authenticated=$authenticated interactive=${power.isInteractive} idle=${power.isDeviceIdleMode}")
@@ -107,6 +144,24 @@ class NotificationNodeService : Service() {
             .setContentText("后台接收统一服务报警").setContentIntent(launch).setOngoing(true).build())
         lastResponse = SystemClock.elapsedRealtime()
         diagnostic("service-created")
+        connectivity = getSystemService(ConnectivityManager::class.java)
+        networks = DefaultNetworkChanges(connectivity.activeNetwork)
+        @Suppress("DEPRECATION")
+        connectivity.allNetworks.forEach { network ->
+            connectivity.getNetworkCapabilities(network)?.let { caps ->
+                if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)) underlyingNetworks.add(network)
+            }
+        }
+        runCatching {
+            connectivity.registerDefaultNetworkCallback(networkCallback, handler)
+            networkCallbackRegistered = true
+        }.onFailure { diagnostic("network-observer-unavailable errorType=${it.javaClass.simpleName}") }
+        runCatching {
+            connectivity.registerNetworkCallback(NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN).build(), underlyingCallback, handler)
+            underlyingCallbackRegistered = true
+        }.onFailure { diagnostic("route-observer-unavailable errorType=${it.javaClass.simpleName}") }
         serviceScope.launch { account.session.collect { value ->
             if (value == null) { alarms.clearAccountData(); stopService(Intent(this@NotificationNodeService, AlarmPlaybackService::class.java)); stopSelf() }
             else if (currentToken.isNotEmpty() && currentToken != value.token) { reconnect("更新登录凭证"); connect() }
@@ -272,17 +327,19 @@ class NotificationNodeService : Service() {
         if (recovery.failed(SystemClock.elapsedRealtime()) == ConnectionRecovery.Action.CONFIRM_FAILURE) confirmOutage()
         reconnect(reason)
     }
-    private fun reconnect(reason: String) {
-        diagnostic("reconnect reason=$reason retryMs=$retryMs")
+    private fun reconnect(reason: String, immediate: Boolean = false) {
+        diagnostic("reconnect reason=$reason retryMs=${if (immediate) 0 else retryMs}")
         ++generation
         socket?.cancel(); socket = null; authenticated = false
-        nextAttempt = SystemClock.elapsedRealtime() + retryMs
-        retryMs = (retryMs * 2).coerceAtMost(30_000)
+        nextAttempt = SystemClock.elapsedRealtime() + if (immediate) 0 else retryMs
+        retryMs = if (immediate) 1_000 else (retryMs * 2).coerceAtMost(30_000)
         mutableState.value = mutableState.value.copy(status = reason, connected = false)
     }
     override fun onDestroy() {
         diagnostic("service-destroyed")
         stopped = true
+        if (networkCallbackRegistered) runCatching { connectivity.unregisterNetworkCallback(networkCallback) }
+        if (underlyingCallbackRegistered) runCatching { connectivity.unregisterNetworkCallback(underlyingCallback) }
         ++generation
         serviceScope.cancel()
         handler.removeCallbacksAndMessages(null)

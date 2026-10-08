@@ -12,6 +12,13 @@ class ConnectionRecovery {
     private var verificationStarted = false
     val probing: Boolean get() = phase == Phase.PROBING
 
+    fun networkChanged(now: Long) {
+        phase = Phase.CONNECTING
+        verificationStarted = false
+        lastTick = now
+        attempt(now)
+    }
+
     fun attempt(now: Long) {
         attemptAt = now
         responseAt = now
