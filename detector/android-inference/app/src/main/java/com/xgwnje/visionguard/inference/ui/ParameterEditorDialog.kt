@@ -227,23 +227,35 @@ fun ParameterEditorDialog(
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = {
-                    val failure = onSave(
-                        initial.copy(
-                            confidencePercent = confidence,
-                            targetFps = targetFps,
-                            cooldownSeconds = cooldown,
-                            modelKey = modelKey,
-                            watchedClasses = watched
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(UiTokens.Gap)) {
+                // 保存被禁用时必须说明原因，不能只留一个点不动的按钮；运行中由正文提示说明。
+                val blockedReason = when {
+                    !modelValid -> "当前模型未下载"
+                    !targetsValid -> "请至少选择一个检测目标"
+                    confidenceError != null || fpsError != null || cooldownError != null -> "参数超出范围"
+                    else -> null
+                }
+                blockedReason?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = VisionGuardStatusColors.warning)
+                }
+                TextButton(
+                    onClick = {
+                        val failure = onSave(
+                            initial.copy(
+                                confidencePercent = confidence,
+                                targetFps = targetFps,
+                                cooldownSeconds = cooldown,
+                                modelKey = modelKey,
+                                watchedClasses = watched
+                            )
                         )
-                    )
-                    if (failure == null) onMessage("检测规则已保存，重新启动来源后生效") else error = failure
-                },
-                enabled = canSave,
-                modifier = Modifier.heightIn(min = 48.dp),
-                colors = VisionGuardControlColors.textButton()
-            ) { Text("保存参数") }
+                        if (failure == null) onMessage("检测规则已保存，重新启动来源后生效") else error = failure
+                    },
+                    enabled = canSave,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    colors = VisionGuardControlColors.textButton()
+                ) { Text("保存参数") }
+            }
         },
         dismissButton = {
             Row {

@@ -30,6 +30,8 @@ data class ControlState(
     val authenticated: Boolean = false,
     /** 服务端已接收本连接的心跳，报警发件箱此时才允许发送。 */
     val sourcesRegistered: Boolean = false,
+    /** 本连接至少成功登记过一次来源；来源数组因上限被整组拒绝时仍保持为真，报警继续投递。 */
+    val heartbeatAccepted: Boolean = false,
     val maxSources: Int = 4,
     val statusText: String = "正在连接",
     val serverTimeIso: String? = null,
@@ -94,7 +96,7 @@ class ControlClient(
     init {
         scope.launch {
             account.session.collect { value ->
-                if (value == null) close()
+                if (value == null) reset()
                 else if (credential != value.endpoint + "|" + value.token) connect(value)
             }
         }
@@ -196,7 +198,7 @@ class ControlClient(
                     update { it.copy(sourcesRegistered = false, statusText = "来源未被服务端接受（${body.string("reason") ?: "未知原因"}）") }
                     return
                 }
-                update { it.copy(sourcesRegistered = true, statusText = "已连接") }
+                update { it.copy(sourcesRegistered = true, heartbeatAccepted = true, statusText = "已连接") }
                 registeredSourceIds = lastHeartbeatSourceIds
                 onFlushAlerts()
             }
@@ -295,7 +297,23 @@ class ControlClient(
         retryIndex = (retryIndex + 1).coerceAtMost(BACKOFF_MS.lastIndex)
         nextRetryAt = SystemClock.elapsedRealtime() + delayMs
         registeredSourceIds = emptySet()
-        update { it.copy(connected = false, authenticated = false, sourcesRegistered = false, statusText = "连接中断，正在重连") }
+        update { it.copy(connected = false, authenticated = false, sourcesRegistered = false, heartbeatAccepted = false, statusText = "连接中断，正在重连") }
+    }
+
+    /**
+     * 退出登录或凭据失效时脱离连接，但保留客户端与轮询协程：
+     * 推理端是进程级单例，若在这里彻底关闭，重新登录后不会再建立控制通道。
+     */
+    fun reset() {
+        if (closed) return
+        ++generation
+        socket?.cancel()
+        socket = null
+        credential = ""
+        registeredSourceIds = emptySet()
+        retryIndex = 0
+        nextRetryAt = 0L
+        update { it.copy(connected = false, authenticated = false, sourcesRegistered = false, heartbeatAccepted = false, statusText = "未登录") }
     }
 
     fun close() {
@@ -307,7 +325,7 @@ class ControlClient(
         scope.cancel()
         http.connectionPool.evictAll()
         http.dispatcher.executorService.shutdown()
-        update { it.copy(connected = false, authenticated = false, sourcesRegistered = false, statusText = "未连接") }
+        update { it.copy(connected = false, authenticated = false, sourcesRegistered = false, heartbeatAccepted = false, statusText = "未连接") }
     }
 
     private inline fun update(transform: (ControlState) -> ControlState) {

@@ -41,10 +41,14 @@ class LocalCameraSource {
     private val mutableStatus = MutableStateFlow(LocalCameraStatus())
     val status = mutableStatus.asStateFlow()
 
-    private val owner = object : LifecycleOwner {
+    /**
+     * 每次启动都新建：LifecycleRegistry 一旦进入 DESTROYED 就不会再复活，
+     * 复用同一个 owner 会让第二次绑定静默收不到任何帧。
+     */
+    private class CameraLifecycleOwner : LifecycleOwner {
         private val registry = LifecycleRegistry(this)
         override val lifecycle: Lifecycle get() = registry
-        fun create() {
+        fun resume() {
             registry.currentState = Lifecycle.State.CREATED
             registry.currentState = Lifecycle.State.RESUMED
         }
@@ -53,6 +57,7 @@ class LocalCameraSource {
         }
     }
 
+    private var owner: CameraLifecycleOwner? = null
     private var executor: ExecutorService? = null
     private var provider: ProcessCameraProvider? = null
     private var analysis: ImageAnalysis? = null
@@ -70,7 +75,9 @@ class LocalCameraSource {
         val own = ++generation
         val worker = Executors.newSingleThreadExecutor()
         executor = worker
-        owner.create()
+        val cameraOwner = CameraLifecycleOwner()
+        owner = cameraOwner
+        cameraOwner.resume()
 
         val future = ProcessCameraProvider.getInstance(appContext)
         // 绑定必须在主线程发起，用主线程执行器回调。
@@ -102,7 +109,7 @@ class LocalCameraSource {
             }
             try {
                 resolved.unbindAll()
-                resolved.bindToLifecycle(owner, selector, cameraAnalysis)
+                resolved.bindToLifecycle(cameraOwner, selector, cameraAnalysis)
                 provider = resolved
                 analysis = cameraAnalysis
                 mutableStatus.value = LocalCameraStatus(running = true)
@@ -127,7 +134,8 @@ class LocalCameraSource {
         runCatching { provider?.unbindAll() }
         provider = null
         latest = null
-        runCatching { owner.destroy() }
+        runCatching { owner?.destroy() }
+        owner = null
         executor?.shutdown()
         executor = null
     }

@@ -98,8 +98,12 @@ class MainActivity : ComponentActivity() {
                             // 有来源在运行时保持前台服务；Android 13+ 先确认通知权限。
                             LaunchedEffect(state.runningSourceCount) {
                                 if (state.runningSourceCount > 0) {
-                                    InferenceService.start(this@MainActivity)
                                     requestNotificationPermissionIfNeeded()
+                                    // 远控恢复可能在应用处于后台时触发，系统会拒绝启动前台服务：
+                                    // 这时明确提示，而不是让异常打断界面线程。
+                                    if (!InferenceService.start(this@MainActivity)) {
+                                        runtime.setMessage("系统不允许在后台启动前台服务，请回到应用后重新开始检测")
+                                    }
                                 } else {
                                     InferenceService.stop(this@MainActivity)
                                 }

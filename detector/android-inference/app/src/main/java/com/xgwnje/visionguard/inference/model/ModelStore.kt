@@ -103,6 +103,11 @@ class ModelStore(private val modelsDir: File, private val serverUrl: String) {
                 return@withContext "下载失败：${error.message ?: error::class.java.simpleName}"
             }
 
+            // 与 Windows 一致：替换前先删旧文件；目标已存在时 File.renameTo 会直接失败。
+            if (target.exists() && !target.delete()) {
+                temporary.delete()
+                return@withContext "无法替换已有模型文件"
+            }
             if (!temporary.renameTo(target)) {
                 temporary.delete()
                 return@withContext "无法保存模型文件"

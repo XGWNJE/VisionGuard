@@ -48,6 +48,10 @@ class InferenceService : Service() {
                 }
             }
         }
+        scope.launch {
+            // 退出登录后没有可推理的账号，保留空转的前台服务只会占着通知。
+            runtime.account.session.collect { session -> if (session == null) stopSelf() }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -81,10 +85,15 @@ class InferenceService : Service() {
     companion object {
         private const val NOTIFICATION_ID = 4101
 
-        /** 幂等启动：已在运行时不会重复创建服务。 */
-        fun start(context: Context) {
+        /**
+         * 幂等启动：已在运行时不会重复创建服务。
+         * 返回是否成功发起启动；应用在后台时系统会拒绝启动前台服务（Android 12+），
+         * 这里必须返回失败而不是抛异常打挂界面线程。
+         */
+        fun start(context: Context): Boolean = runCatching {
             ContextCompat.startForegroundService(context, Intent(context, InferenceService::class.java))
-        }
+            true
+        }.getOrDefault(false)
 
         fun stop(context: Context) {
             context.stopService(Intent(context, InferenceService::class.java))

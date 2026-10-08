@@ -96,10 +96,11 @@ class InferenceRuntime private constructor(private val context: Context) {
 
     private val runtimes = LinkedHashMap<String, SourceRuntime>()
     private val collectors = HashMap<String, Job>()
-    private var settings: SettingsStore = SettingsStore.open(context, null)
-    private var outbox = AlertOutbox(File(context.filesDir, "alert-outbox.json"), NtpSync::utcNowMs)
-    private var snapshots = AlertSnapshotStore(File(context.filesDir, "alert-snapshots"))
-    private var scopeKey: String? = null
+    // 会话切换在主线程改写这些字段，报警处理在 Default 线程读取，必须可见性明确。
+    @Volatile private var settings: SettingsStore = SettingsStore.open(context, null)
+    @Volatile private var outbox = AlertOutbox(File(context.filesDir, "alert-outbox.json"), NtpSync::utcNowMs)
+    @Volatile private var snapshots = AlertSnapshotStore(File(context.filesDir, "alert-snapshots"))
+    @Volatile private var scopeKey: String? = null
 
     private val control: ControlClient = ControlClient(
         account = account,
@@ -164,6 +165,9 @@ class InferenceRuntime private constructor(private val context: Context) {
         collectors.values.forEach { it.cancel() }
         collectors.clear()
         media.setWanted(false)
+        // 控制与媒体客户端是进程级单例，只脱离连接，不销毁，否则重新登录后无法再建立通道。
+        control.reset()
+        media.reset()
         scopeKey = null
         updateState {
             it.copy(sources = emptyList(), selectedSourceId = null, runningSourceCount = 0, outboxSize = 0, recoveryWarning = null)
@@ -182,6 +186,8 @@ class InferenceRuntime private constructor(private val context: Context) {
     private fun rebuildRuntimes() {
         val configured = settings.sources()
         val configuredIds = configured.map { it.sourceId }.toSet()
+        // 重建前记下正在运行的来源：重建只换配置对象，不能把用户正在跑的来源静默停掉。
+        val wasRunning = runtimes.filterValues { it.state.value.isRunning }.keys.toSet()
 
         val stale = runtimes.keys.filter { !configuredIds.contains(it) }
         for (sourceId in stale) {
@@ -211,6 +217,12 @@ class InferenceRuntime private constructor(private val context: Context) {
         }
         if (settings.sources().none { it.mode == SourceCaptureMode.LocalCamera }) camera.stop()
         publishSources()
+
+        // 仍在配置里的来源按原运行意图恢复，避免服务端增删一路流把其它来源连带停掉。
+        val restart = wasRunning.intersect(configuredIds)
+        if (restart.isNotEmpty()) scope.launch {
+            for (sourceId in restart) startSource(sourceId)
+        }
     }
 
     private fun publishSources() {
@@ -285,12 +297,13 @@ class InferenceRuntime private constructor(private val context: Context) {
     }
 
     fun renameSource(sourceId: String, name: String): String? {
-        val error = SourceConfig.validateName(name) ?: run {
-            settings.renameSource(sourceId, name)
-            rebuildRuntimes()
-            null
-        }
-        return error
+        val error = SourceConfig.validateName(name)
+        if (error != null) return error
+        if (!settings.renameSource(sourceId, name)) return "来源不存在"
+        // 运行中改名只改展示名，不重建运行时：Windows 同样是就地更新名称。
+        runtimes[sourceId]?.rename(SourceConfig.normalizeName(name))
+        publishSources()
+        return null
     }
 
     fun updateParams(sourceId: String, params: DetectionParams): String? {
@@ -335,9 +348,11 @@ class InferenceRuntime private constructor(private val context: Context) {
 
     private suspend fun stopSource(sourceId: String, clearIntent: Boolean) {
         val runtime = runtimes[sourceId] ?: return
+        // 必须在停止之前判断：停完之后 isRunning 已经是 false，条件永远不会成立。
+        val wasLocalCamera = runtime.captureMode == SourceCaptureMode.LocalCamera && runtime.state.value.isRunning
         runtime.stop()
         if (clearIntent) settings.setMonitoringExpected(sourceId, false)
-        if (settings.sources().none { it.mode == SourceCaptureMode.LocalCamera && runtimes[it.sourceId]?.state?.value?.isRunning == true }) {
+        if (wasLocalCamera && settings.sources().none { it.mode == SourceCaptureMode.LocalCamera && runtimes[it.sourceId]?.state?.value?.isRunning == true }) {
             camera.stop()
         }
         publishSources()
@@ -407,7 +422,7 @@ class InferenceRuntime private constructor(private val context: Context) {
             sources = runtimes.values.map { it.heartbeatSource() },
             modelOptions = models.downloadedKeys(),
             modelLabels = HeartbeatPayload.standardModelLabels(ModelKeys.keys),
-            components = mapOf("detectorApp" to if (mutableState.value.runningSourceCount > 0) "running" else "idle")
+            components = mapOf("detectorApp" to if (mutableState.value.runningSourceCount > 0) "running" else "stopped")
         )
     }
 
@@ -552,13 +567,22 @@ class InferenceRuntime private constructor(private val context: Context) {
     // ── 报警 ────────────────────────────────────────────────────────
 
     private fun onAlert(event: AlertEvent, frame: ArgbImage) {
+        val ownerScope = scopeKey
         scope.launch(Dispatchers.Default) {
-            val rendered = AlertSnapshotRenderer.renderAndEncode(frame, event.detections)
-            if (rendered != null) snapshots.save(event.alertId, rendered.jpeg)
+            // 报警处理期间可能已退出登录或切换账号：此时不能再写旧分区的发件箱。
+            if (scopeKey != ownerScope) return@launch
+            val rendered = runCatching { AlertSnapshotRenderer.renderAndEncode(frame, event.detections) }.getOrNull()
+            if (rendered != null) runCatching { snapshots.save(event.alertId, rendered.jpeg) }
 
             val session = account.session.value ?: return@launch
+            if (scopeKey != ownerScope) return@launch
             val payload = AlertPayload.build(gson, event, session.deviceId, session.deviceName, NtpSync.utcNowIso())
-            outbox.enqueue(event.alertId, payload, event.expiresAtMs)
+            val stored = runCatching { outbox.enqueue(event.alertId, payload, event.expiresAtMs) }
+            if (stored.isFailure) {
+                // 本机存储失败不能连带打挂进程：报警已生成，明确报错并保留重试机会。
+                updateState { it.copy(message = "报警写入本机发件箱失败：${stored.exceptionOrNull()?.message ?: "未知原因"}") }
+                return@launch
+            }
             updateState {
                 it.copy(
                     alertCount = it.alertCount + 1,
@@ -568,28 +592,30 @@ class InferenceRuntime private constructor(private val context: Context) {
                 )
             }
             flushAlerts()
-            snapshots.maintain(NtpSync.utcNowMs())
+            runCatching { snapshots.maintain(NtpSync.utcNowMs()) }
         }
     }
 
     private fun flushAlerts() {
-        if (!control.state.value.sourcesRegistered) return
-        for (entry in outbox.snapshot()) {
+        // 来源数组被整组拒绝（如服务端上限变化）不应连带停掉报警投递；只在从未成功登记过时等待。
+        if (!control.state.value.heartbeatAccepted) return
+        val pending = runCatching { outbox.snapshot() }.getOrElse { return }
+        for (entry in pending) {
             if (!control.sendAlert(entry.payloadJson)) break
         }
     }
 
     private fun handleAlertAck(alertId: String, accepted: Boolean, duplicate: Boolean, reason: String) {
         if (accepted) {
-            if (outbox.acknowledge(alertId)) sendScreenshot(alertId)
+            if (runCatching { outbox.acknowledge(alertId) }.getOrDefault(false)) sendScreenshot(alertId)
         } else if (reason == "alert-id-conflict" || reason == "invalid-or-expired-event") {
-            outbox.acknowledge(alertId)
+            runCatching { outbox.acknowledge(alertId) }
         }
-        updateState { it.copy(outboxSize = outbox.size()) }
+        updateState { it.copy(outboxSize = runCatching { outbox.size() }.getOrDefault(it.outboxSize)) }
     }
 
     private fun sendScreenshot(alertId: String) {
-        val jpeg = snapshots.read(alertId) ?: return
+        val jpeg = runCatching { snapshots.read(alertId) }.getOrNull() ?: return
         // 发送宽度/高度取截图文件真实尺寸，避免回执里出现与实际不符的 0×0。
         val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
         android.graphics.BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)

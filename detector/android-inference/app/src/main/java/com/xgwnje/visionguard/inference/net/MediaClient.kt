@@ -71,7 +71,7 @@ class MediaClient(
     init {
         scope.launch {
             account.session.collect { value ->
-                if (value == null) close()
+                if (value == null) reset()
                 else if (credential != value.endpoint + "|" + value.token) {
                     credential = value.endpoint + "|" + value.token
                     drop()
@@ -237,6 +237,15 @@ class MediaClient(
         streamToSource = emptyMap()
         store.clear()
         update { it.copy(connected = false, authenticated = false, statusText = "媒体连接中断，正在重连", streams = emptyList()) }
+    }
+
+    /** 退出登录时脱离媒体连接但保留客户端本身，重新登录后仍能重新订阅。 */
+    fun reset() {
+        if (closed) return
+        wanted = false
+        credential = ""
+        drop()
+        update { it.copy(connected = false, authenticated = false, statusText = "媒体未连接", streams = emptyList()) }
     }
 
     fun close() {

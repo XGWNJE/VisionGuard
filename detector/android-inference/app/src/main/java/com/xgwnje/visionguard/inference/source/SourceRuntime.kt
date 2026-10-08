@@ -58,10 +58,20 @@ class SourceRuntime(
     private var lastAlertAtMs: Long? = null
 
     val sourceId: String get() = config.sourceId
-    val sourceName: String get() = config.sourceName
     val captureMode: SourceCaptureMode get() = config.mode
     val params get() = config.params
     val masks get() = config.masks
+
+    /**
+     * 来源显示名。运行中改名的语义与 Windows 一致：只改展示名，不重建运行中的运行时。
+     */
+    @Volatile
+    var sourceName: String = config.sourceName
+        private set
+
+    fun rename(name: String) {
+        sourceName = name
+    }
 
     /** 启动本路推理；返回 null 表示成功，否则返回可读失败原因。 */
     suspend fun start(): String? {
@@ -140,7 +150,7 @@ class SourceRuntime(
         val snapshot = mutableState.value
         return com.xgwnje.visionguard.inference.net.HeartbeatSource(
             sourceId = config.sourceId,
-            sourceName = config.sourceName,
+            sourceName = sourceName,
             isMonitoring = snapshot.isRunning,
             isReady = snapshot.isReady,
             modelKey = config.params.modelKey,
@@ -152,7 +162,7 @@ class SourceRuntime(
             targets = config.params.watchedClassesText(),
             targetSamplingRate = config.params.targetFps,
             monitoringExpected = snapshot.monitoringExpected,
-            lastProgressAtIso = snapshot.lastProgressAtMs?.toIsoOrNull(),
+            lastProgressAtIso = snapshot.lastProgressWallMs?.toIsoOrNull(),
             performanceWarning = snapshot.performanceWarning
         )
     }
@@ -214,6 +224,8 @@ class SourceRuntime(
         SourceCaptureMode.RemoteStream -> {
             val frame = remoteFrames.readFresh(config.sourceId) ?: return null
             if (frame.sequence == lastRemoteSequence) return null
+            // 先记账再解码：解不开的帧不能每个循环都重试一次。
+            lastRemoteSequence = frame.sequence
             val bitmap = BitmapFactory.decodeByteArray(frame.jpeg, 0, frame.jpeg.size) ?: return null
             val width = bitmap.width
             val height = bitmap.height
@@ -225,16 +237,18 @@ class SourceRuntime(
         }
     }
 
-    private fun process(image: ArgbImage, loopStartedAtMs: Long) {
+    private fun process(frame: ArgbImage, loopStartedAtMs: Long) {
         val active = engine ?: return
         try {
             val captureMs = clockMs() - loopStartedAtMs
 
+            // 本机相机的最新帧由采集侧持有并可能被界面读取，复制一份再涂黑，避免跨读取方共享可变像素。
+            val working = if (config.mode == SourceCaptureMode.LocalCamera) frame.copy() else frame
             // 遮罩就地涂黑：推理、报警截图与本机预览共用同一张已涂黑的画面。
-            image.applyMasks(config.masks)
+            working.applyMasks(config.masks)
 
             val preprocessStarted = clockMs()
-            val preprocessed = image.toLetterboxTensor(active.modelSize)
+            val preprocessed = working.toLetterboxTensor(active.modelSize)
             val preprocessMs = clockMs() - preprocessStarted
 
             val inferenceStarted = clockMs()
@@ -251,7 +265,7 @@ class SourceRuntime(
             val parseMs = clockMs() - parseStarted
 
             val finishedAt = clockMs()
-            recordSuccess(finishedAt, detections, image, inferMs, active.backend)
+            recordSuccess(finishedAt, detections, working, inferMs, active.backend)
 
             if (gate.shouldAlert(detections, NtpSync.utcNowMs(), config.params.cooldownSeconds)) {
                 lastAlertAtMs = finishedAt
@@ -259,7 +273,7 @@ class SourceRuntime(
                 val event = AlertEvent(
                     alertId = UUID.randomUUID().toString(),
                     sourceId = config.sourceId,
-                    sourceName = config.sourceName,
+                    sourceName = sourceName,
                     detections = detections,
                     timingsMs = linkedMapOf(
                         "captureMs" to captureMs,
@@ -270,7 +284,7 @@ class SourceRuntime(
                     ),
                     timestampMs = NtpSync.utcNowMs()
                 )
-                onAlert(event, image)
+                onAlert(event, working)
             }
         } catch (error: Exception) {
             markFault("处理失败：${error.message ?: error::class.java.simpleName}")
@@ -305,7 +319,9 @@ class SourceRuntime(
                 actualFps = fpsRounded,
                 backend = backend,
                 inferenceMs = inferMs,
-                lastProgressAtMs = NtpSync.utcNowMs(),
+                // 界面按下标时钟算新鲜度，心跳按 NTP 墙钟上报，两者分开保存避免混用。
+                lastProgressAtMs = nowMs,
+                lastProgressWallMs = NtpSync.utcNowMs(),
                 performanceWarning = warning,
                 processedFrames = it.processedFrames + 1,
                 preview = image,

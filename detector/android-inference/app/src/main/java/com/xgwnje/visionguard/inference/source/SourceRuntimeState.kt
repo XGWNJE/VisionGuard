@@ -17,7 +17,11 @@ data class SourceRuntimeState(
     val actualFps: Double = 0.0,
     val backend: String = "",
     val inferenceMs: Long = 0,
+    /** 最后成功处理时间，本机单调时钟（与控制流同源，供界面算新鲜度）。 */
     val lastProgressAtMs: Long? = null,
+    /** 同一时刻的 NTP 校正墙钟，只用于心跳上报 ISO 时间。 */
+    val lastProgressWallMs: Long? = null,
+    /** 最后一次报警时间，本机单调时钟。 */
     val lastAlertAtMs: Long? = null,
     val monitoringExpected: Boolean = false,
     val performanceWarning: String? = null,
