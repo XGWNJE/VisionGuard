@@ -36,15 +36,18 @@ if (!$RepositoryRoot) {
     }
 }
 if (!$RepositoryRoot) { throw 'Cannot find a VisionGuard checkout; specify -RepositoryRoot.' }
-$root = (Resolve-Path -LiteralPath $RepositoryRoot).Path.TrimEnd('\', '/')
+$resolvedRoot = Resolve-Path -LiteralPath $RepositoryRoot
+if ($resolvedRoot.Provider.Name -ne 'FileSystem') { throw 'RepositoryRoot must be a filesystem directory.' }
+$root = [IO.Path]::GetFullPath($resolvedRoot.ProviderPath).TrimEnd('\', '/')
 if (!(Test-Path -LiteralPath (Join-Path $root 'VERSION') -PathType Leaf) -or
     !(Test-Path -LiteralPath (Join-Path $root 'server/package.json') -PathType Leaf)) {
     throw 'The target is not a VisionGuard checkout.'
 }
 $gitRoot = @(& git -C $root rev-parse --show-toplevel 2>$null)
-if ($LASTEXITCODE -ne 0 -or $gitRoot.Count -ne 1 -or
+$gitRootExitCode = $LASTEXITCODE
+if ($gitRootExitCode -ne 0 -or $gitRoot.Count -ne 1 -or
     [IO.Path]::GetFullPath($gitRoot[0]).TrimEnd('\', '/') -ine $root) {
-    throw 'RepositoryRoot must be the actual Git checkout root.'
+    throw "RepositoryRoot must be the actual Git checkout root. Requested: $root; Git: $($gitRoot -join ', '); exit: $gitRootExitCode."
 }
 
 # Fingerprints from the read-only inventory on 2026-10-09. Changed files stay.

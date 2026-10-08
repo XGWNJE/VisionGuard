@@ -14,7 +14,7 @@ const directories = [
 ];
 
 // Replace fingerprints only in an isolated script copy; never read real residue.
-function fixture(t, { busy = false, inspectFails = false } = {}) {
+function fixture(t, { busy = false, inspectFails = false, providerQualified = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vg-pending-cleanup-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const write = (relative, content = 'keep') => {
@@ -51,8 +51,9 @@ function fixture(t, { busy = false, inspectFails = false } = {}) {
   fixtureScript = fixtureScript.replace("$ErrorActionPreference = 'Stop'",
     `$ErrorActionPreference = 'Stop'\nfunction Get-CimInstance { param($ClassName) ${processResult} }`);
   const script = write('scripts/cleanup-pending-resources.ps1', fixtureScript);
+  const repositoryRoot = providerQualified ? `Microsoft.PowerShell.Core\\FileSystem::${root}` : root;
   const run = (...args) => spawnSync('powershell.exe', [
-    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-RepositoryRoot', root, ...args
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-RepositoryRoot', repositoryRoot, ...args
   ], { encoding: 'utf8' });
   const exists = relative => fs.existsSync(path.join(root, relative));
   const allPresent = () => [...files.map(match => match[1]), ...directories].forEach(relative => assert.ok(exists(relative), relative));
@@ -84,6 +85,15 @@ test('Apply removes exact fingerprinted files and empty trees; rerun is harmless
     assert.equal(result.status, 0, result.stderr + result.stdout);
     [...files.map(match => match[1]), ...directories].forEach(relative => assert.equal(f.exists(relative), false, relative));
     f.retained();
+  }
+});
+
+test('a provider-qualified filesystem root supports preview and WhatIf safely', t => {
+  const f = fixture(t, { providerQualified: true });
+  for (const args of [[], ['-Apply', '-WhatIf']]) {
+    const result = f.run(...args);
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    f.allPresent(); f.retained();
   }
 });
 
