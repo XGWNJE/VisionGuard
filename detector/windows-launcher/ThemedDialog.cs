@@ -17,7 +17,7 @@ namespace VisionGuard.Detector.Windows.Launcher
             var palette = Palette.Read(); Exception failure = null; bool complete = false, cancelled = false;
             using (var cancel = new CancellationTokenSource())
             using (var applicationIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath))
-            using (var dialog = new Form { Icon = applicationIcon, Text = "下载视觉节点更新", StartPosition = FormStartPosition.CenterScreen, ClientSize = new Size(480, 160), BackColor = palette.Page, ForeColor = palette.Text, Font = new Font("Microsoft YaHei UI", 10.5f), FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false }) {
+            using (var dialog = new Form { Icon = applicationIcon, Text = "下载视觉推理节点更新", StartPosition = FormStartPosition.CenterScreen, ClientSize = new Size(480, 160), BackColor = palette.Page, ForeColor = palette.Text, Font = new Font("Microsoft YaHei UI", 10.5f), FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false }) {
                 var status = new Label { Text = "正在下载并校验…", AutoSize = true, Location = new Point(24, 24) };
                 var bar = new ProgressBar { Location = new Point(24, 58), Size = new Size(432, 12) };
                 var button = new ThemeButton(palette, false) { Text = "取消下载", Location = new Point(320, 96), Size = new Size(136, 40) };

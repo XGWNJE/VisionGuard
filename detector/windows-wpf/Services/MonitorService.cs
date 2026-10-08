@@ -73,7 +73,7 @@ namespace VisionGuard.Detector.Windows.Services
                     || (config.WindowSubRegion != Rectangle.Empty && !CaptureSizeConstraints.IsValid(config.WindowSubRegion))))
                 throw new InvalidOperationException("目标窗口或窗口选区无效，宽度和高度必须都大于 100 像素。");
             if (config.CaptureMode == CaptureMode.RemoteStream && !RemoteFrameStore.Shared.IsBound(config.RemoteStreamId))
-                throw new InvalidOperationException("远程镜头尚未绑定到此视觉节点。");
+                throw new InvalidOperationException("远程镜头尚未绑定到此视觉推理节点。");
             _lastRemoteSession = ""; _lastRemoteSequence = -1;
 
             // 启动阶段的预加载若遇到短暂文件占用，这里会重试；仍失败时必须在触发 ORT

@@ -9,7 +9,7 @@ const DEFAULT_ROOT = path.resolve(__dirname, '..');
 const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 
 const COMPONENTS = [
-  { label: '视觉节点', platform: 'Windows', relativePath: 'detector/windows-wpf', source: 'detector/windows-wpf/App.xaml.cs' },
+  { label: '视觉推理节点', platform: 'Windows', relativePath: 'detector/windows-wpf', source: 'detector/windows-wpf/App.xaml.cs' },
   { label: '相机推流节点', platform: 'Android', relativePath: 'detector/android', source: 'detector/android/app/build.gradle.kts' },
   { label: '控制台', platform: 'Web', relativePath: 'receiver/web', source: 'receiver/web/src/main.tsx' },
   { label: '通知节点', platform: 'Android', relativePath: 'notifier/android', source: 'notifier/android/app/build.gradle.kts' },
@@ -332,8 +332,8 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
   requireText(naming, '品牌简称 **VG**', namingPath, 'the canonical brand abbreviation', errors);
   const protocolRows = tableRows(naming, '## 登录组件与协议身份').slice(1).map(cells);
   const expectedProtocol = [
-    ['视觉节点（Windows）', 'windows-inference', 'detector', 'visual', 'windows'],
-    ['视觉节点（驻留子进程）', 'windows-resident', 'lifecycle', 'resident', 'windows'],
+    ['视觉推理节点（Windows）', 'windows-inference', 'detector', 'visual', 'windows'],
+    ['视觉推理节点（驻留子进程）', 'windows-resident', 'lifecycle', 'resident', 'windows'],
     ['相机推流节点（Android）', 'android-camera', 'detector', 'visual', 'android'],
     ['控制台（Web）', 'web-console', 'console', 'console', 'web'],
     ['通知节点（Android）', 'android-notifier', 'notifier', 'notification', 'android']
@@ -344,8 +344,8 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
   const engineeringRows = tableRows(naming, '## 工程与安装身份').slice(1).map(cells);
   const buildRows = tableRows(naming, '## 构建与更新标识').slice(1).map(rawCells);
   const expectedBuild = [
-    ['视觉节点（Windows）', ['Windows', 'WPF'], ['wpf'], 'detector/windows-package/bin/Release/VisionGuard.Detector.Windows.exe'],
-    ['视觉节点（驻留子进程）', ['WindowsResident'], ['wpf'], 'detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe'],
+    ['视觉推理节点（Windows）', ['Windows', 'WPF'], ['wpf'], 'detector/windows-package/bin/Release/VisionGuard.Detector.Windows.exe'],
+    ['视觉推理节点（驻留子进程）', ['WindowsResident'], ['wpf'], 'detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe'],
     ['相机推流节点（Android）', ['AndroidDetector'], ['android-detector'], 'detector/android/app/build/outputs/apk/release/app-release.apk'],
     ['控制台（Web）', ['Server'], [], 'server/dist/console/index.html'],
     ['通知节点（Android）', ['AndroidNotifier'], ['android-notifier'], 'notifier/android/app/build/outputs/apk/release/app-release.apk'],
@@ -427,9 +427,9 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
     requireText(row.join('|'), engineering, namingPath, 'the engineering name mapped to ' + name, errors);
   }
   for (const [project, assembly, title, product] of [
-    ['detector/windows-wpf/VisionGuard.Detector.Windows.csproj', 'VisionGuard.Detector.Windows', '视觉节点', '视觉节点'],
-    ['detector/windows-launcher/VisionGuard.Detector.Windows.Launcher.csproj', 'VisionGuard.Detector.Windows', '视觉节点', '视觉节点'],
-    ['detector/windows-resident/VisionGuard.Resident.Windows.csproj', 'VisionGuard.Resident.Windows', '视觉节点驻留程序', '视觉节点']
+    ['detector/windows-wpf/VisionGuard.Detector.Windows.csproj', 'VisionGuard.Detector.Windows', '视觉推理节点', '视觉推理节点'],
+    ['detector/windows-launcher/VisionGuard.Detector.Windows.Launcher.csproj', 'VisionGuard.Detector.Windows', '视觉推理节点', '视觉推理节点'],
+    ['detector/windows-resident/VisionGuard.Resident.Windows.csproj', 'VisionGuard.Resident.Windows', '视觉推理节点驻留程序', '视觉推理节点']
   ]) {
     const content = readUtf8(root, project, errors, { checkBom: false });
     requireText(content, '<AssemblyName>' + assembly + '</AssemblyName>', project, 'the canonical executable identity', errors);
@@ -438,7 +438,7 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
     requireText(content, '<Title>' + title + '</Title>', project, 'the application title', errors);
     requireText(content, '<AssemblyTitle>' + title + '</AssemblyTitle>', project, 'the Windows file description', errors);
     requireText(content, '<Product>' + product + '</Product>', project, 'the Windows product name', errors);
-    const row = engineeringRows.find(cells => cells[0] === '视觉节点（Windows）') || [];
+    const row = engineeringRows.find(cells => cells[0] === '视觉推理节点（Windows）') || [];
     for (const identifier of [rootNamespace, assembly + '.exe']) {
       requireText(row.join('|'), identifier, namingPath, 'the Windows engineering identity mapped to ' + title, errors);
     }

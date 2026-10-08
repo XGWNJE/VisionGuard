@@ -41,7 +41,7 @@ The script currently accepts `All`, `Server`, `Windows`, `WPF`, `WindowsResident
 - Windows unified package: `detector/windows-package/bin/Release/VisionGuard.Detector.Windows.exe`
 - Internal modern runtime: `detector/windows-package/bin/Release/runtimes/modern/VisionGuard.Detector.Windows.exe`
 - Internal legacy runtime: `detector/windows-package/bin/Release/runtimes/legacy/VisionGuard.Detector.Windows.exe`
-- 视觉节点内部驻留程序： `detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe`
+- 视觉推理节点内部驻留程序： `detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe`
 - 相机推流节点： `detector/android/app/build/outputs/apk/release/app-release.apk`
 - 通知节点： `notifier/android/app/build/outputs/apk/release/app-release.apk`
 

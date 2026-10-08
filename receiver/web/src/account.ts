@@ -60,7 +60,7 @@ export function parseLogin(value: unknown): Login {
   return item as Login;
 }
 
-export async function accountRequest<T>(path: string, token?: string, body?: unknown, method?: string): Promise<T> {
+export async function accountRequest<T>(path: string, token?: string, body?: unknown, method?: string, signal?: AbortSignal): Promise<T> {
   if (method === 'PATCH' && path.startsWith('/api/devices/') && body && typeof body === 'object' && 'deviceName' in body) {
     body = { ...body, deviceName: normalizeDisplayName((body as {deviceName: unknown}).deviceName) };
   }
@@ -68,7 +68,7 @@ export async function accountRequest<T>(path: string, token?: string, body?: unk
     method: method ?? (body === undefined ? 'GET' : 'POST'),
     headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    cache: 'no-store', credentials: 'omit',
+    cache: 'no-store', credentials: 'omit', ...(signal ? { signal } : {}),
   }).catch((error: unknown) => {
     if (error instanceof TypeError) throw new Error('连接失败，请检查网络后重试');
     throw error;
@@ -83,13 +83,4 @@ export async function accountRequest<T>(path: string, token?: string, body?: unk
     throw new AccountRequestError(response.status, messages[response.status] || (response.status >= 500 ? '服务暂不可用' : '请检查填写内容后重试'));
   }
   return data as T;
-}
-
-/** Detach the old socket before rotation; revoke a replacement that arrived after local logout. */
-export async function rotateLogin(login: Login, adopt: (replacement: Login) => boolean, suspend: () => void): Promise<Login | null> {
-  suspend();
-  const replacement = parseLogin(await accountRequest('/api/account/refresh', login.token, {}));
-  if (adopt(replacement)) return replacement;
-  await accountRequest('/api/account/logout', replacement.token, {});
-  return null;
 }

@@ -85,6 +85,49 @@ test('expired sessions fail after restart and a failed revoke never changes the 
   assert.equal(store.authenticate(login.token), undefined); assert.equal(new AccountStore(file).authenticate(login.token), undefined);
 });
 
+test('web lifetime is exactly 24 hours across rotations and restarts; native sessions retain 30 days', async t => {
+  const file = path.join(directory, 'web-lifetime', 'accounts.json');
+  let store = new AccountStore(file), now = Date.parse('2026-10-08T00:00:00Z');
+  t.mock.method(Date, 'now', () => now);
+  store.createAccount('web-lifetime', 'private-lifetime-password');
+  const credentials = { ...registration(), username: 'web-lifetime', password: 'private-lifetime-password' };
+  const web = await store.login({ ...credentials, component: 'web-console' });
+  const native = await store.login({ ...credentials, component: 'android-notifier' });
+  assert.equal(Date.parse(web.expiresAt) - now, 24 * 3600_000);
+  assert.equal(Date.parse(native.expiresAt) - now, 30 * 24 * 3600_000);
+  now += 12 * 3600_000;
+  const rotated = store.refresh({ ...store.authenticate(web.token)!, expiresAt: native.expiresAt });
+  assert.equal(rotated.expiresAt, web.expiresAt); // Caller metadata cannot extend the persisted deadline.
+  assert.equal(store.authenticate(web.token), undefined);
+  store = new AccountStore(file);
+  now = Date.parse(web.expiresAt) - 1;
+  const last = store.refresh(store.authenticate(rotated.token)!);
+  assert.equal(last.expiresAt, web.expiresAt); assert.ok(store.authenticate(last.token));
+  const session = store.authenticate(last.token)!;
+  now++;
+  assert.equal(store.authenticate(last.token), undefined);
+  assert.equal(new AccountStore(file).authenticate(last.token), undefined);
+  assert.throws(() => store.refresh(session), /revoked/);
+  assert.ok(store.authenticate(native.token));
+  const renewedNative = store.refresh(store.authenticate(native.token)!);
+  assert.equal(Date.parse(renewedNative.expiresAt) - now, 30 * 24 * 3600_000);
+});
+
+test('persisted web sessions without a fixed login origin are invalidated; native sessions are unaffected', async () => {
+  const file = path.join(directory, 'legacy-web-session', 'accounts.json'), store = new AccountStore(file);
+  store.createAccount('session-origin', 'private-origin-password');
+  const credentials = { ...registration(), username: 'session-origin', password: 'private-origin-password' };
+  const web = await store.login({ ...credentials, component: 'web-console' });
+  const native = await store.login({ ...credentials, component: 'android-notifier' });
+  const persisted = JSON.parse(fs.readFileSync(file, 'utf8'));
+  delete persisted.sessions.find((item: any) => item.sessionId === web.sessionId).loginStartedAt;
+  fs.writeFileSync(file, JSON.stringify(persisted));
+  const restarted = new AccountStore(file);
+  assert.equal(restarted.authenticate(web.token), undefined);
+  assert.throws(() => restarted.refresh(web), /revoked/);
+  assert.ok(restarted.authenticate(native.token));
+});
+
 test('real login derives identity and HTTP permissions; no legacy key or anonymous test session exists', async t => {
   const f = await fixture(t);
   assert.equal((await f.request('/console/test-session', 'POST')).status, 404);
@@ -107,9 +150,9 @@ test('device ownership, lifecycle child, names and credential rotation are enfor
   assert.equal((await f.request('/api/devices/' + windows.device.deviceId, 'PATCH', { deviceName: 'stolen' }, other.token)).status, 404);
   assert.equal((await f.request('/api/devices/' + windows.device.deviceId, 'DELETE', undefined, other.token)).status, 404);
   assert.equal((await f.request('/api/account/login', 'POST', { username: 'account-b', password: 'private-test-password-b', component: 'windows-inference', deviceId: windows.device.deviceId })).status, 403);
-  assert.equal((await f.request('/api/devices/' + windows.device.deviceId, 'PATCH', { deviceName: '门口视觉节点' }, windows.token)).status, 200);
+  assert.equal((await f.request('/api/devices/' + windows.device.deviceId, 'PATCH', { deviceName: '门口视觉推理节点' }, windows.token)).status, 200);
   const next = await f.request('/api/account/refresh', 'POST', undefined, windows.token);
-  assert.equal(next.status, 200); assert.equal(next.data.device.deviceName, '门口视觉节点');
+  assert.equal(next.status, 200); assert.equal(next.data.device.deviceName, '门口视觉推理节点');
   for (const token of [windows.token, windows.resident.token]) assert.equal((await f.request('/api/account/session', 'GET', undefined, token)).status, 401);
   const child = await f.request('/api/account/refresh', 'POST', undefined, next.data.resident.token);
   assert.equal(child.status, 200);

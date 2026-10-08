@@ -15,7 +15,7 @@ const { requireVersionAuthorization } = require('./project-guards');
  * releases.json 里各平台条目应指向的产物文件名。
  *
  * 必须与 scripts/publish-release.ps1 实际生成的包名逐字一致，否则更新接口会指向不存在的文件。
- * 视觉节点（Windows）只发布一个整包，启动器按操作系统选择内部推理运行时。
+ * 视觉推理节点（Windows）只发布一个整包，启动器按操作系统选择内部推理运行时。
  */
 function releaseFileName(key, version) {
   if (key === 'android-detector') return `VisionGuard-Detector-v${version}.apk`;
@@ -44,7 +44,7 @@ function main() {
   // 1. 根目录 VERSION
   writeFile(path.join(ROOT, 'VERSION'), newVersion + '\n');
 
-  // 2. 视觉节点（Windows） AppConfig.cs
+  // 2. 视觉推理节点（Windows） AppConfig.cs
   replaceInFile(
     path.join(ROOT, 'detector', 'windows-wpf', 'Utils', 'AppConfig.cs'),
     /Version\s*=\s*"[\d.]+"/,
@@ -90,7 +90,7 @@ function main() {
     `v${newVersion}`
   );
 
-  // 10. 视觉节点（Windows） .csproj (Version/FileVersion/AssemblyVersion)
+  // 10. 视觉推理节点（Windows） .csproj (Version/FileVersion/AssemblyVersion)
   replaceInFile(
     path.join(ROOT, 'detector', 'windows-wpf', 'VisionGuard.Detector.Windows.csproj'),
     /<Version>[\d.]+<\/Version>/,

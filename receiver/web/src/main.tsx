@@ -4,9 +4,10 @@ import { createRoot } from 'react-dom/client';
 import { Activity, ArrowLeft, Bell, BellOff, Camera, ChevronRight, CircleHelp, Clock, LogOut, Monitor, Pause, Play, Radio, RefreshCw, Search, Settings, ShieldCheck, Square, Users, X } from 'lucide-react';
 import { eventLabel, formatTime, isWithinEventTime, mergeDevices, parseEventTime, timeStandardLabel, typeLabel, websocketURL, type Ack, type AlarmTimeZone, type Alert, type Device, type Notifier, type Scope, type Stream, type Target, type TimeStandard } from './protocol';
 import { useRelay } from './useRelay';
-import { accountRequest, AccountRequestError, browserDeviceIdentity, browserDeviceModel, normalizeDisplayName, parseLogin, rotateLogin, type Login } from './account';
+import { accountRequest, AccountRequestError, browserDeviceIdentity, browserDeviceModel, normalizeDisplayName, parseLogin, type Login } from './account';
 import { AccountManagement } from './AccountManagement';
 import { clearRememberedLogin, readRememberedLogin, saveRememberedLogin } from './rememberedLogin';
+import { clearSessionLogin, restoreSessionLogin, saveSessionLogin } from './sessionLogin';
 import { AppearanceSelector, useAppearance } from './appearance';
 import { Parameters, type ParameterDrafts } from './Parameters';
 import { RemoteSettings } from './RemoteSettings';
@@ -26,7 +27,7 @@ function App() {
   const parameterDrafts = useRef<ParameterDrafts>(new Map());
   const [login, setLogin] = useState<Login | null>(null);
   const loginRef = useRef<Login | null>(null);
-  const refreshFlight = useRef<Promise<Login | null> | null>(null);
+  const [restoringSession, setRestoringSession] = useState(true);
   function updateLogin(value: Login | null) { loginRef.current = value; setLogin(value); }
   const [loginError, setLoginError] = useState('');
   const relay = useRelay(login);
@@ -43,29 +44,34 @@ function App() {
   const [eventStart,setEventStart] = useState('');
   const [eventEnd,setEventEnd] = useState('');
   const [scopeSelected,setScopeSelected]=useState('');
-  function clearSession(error = '') { parameterDrafts.current.clear(); updateLogin(null); setLoginError(error); setEvent(null); setSelected(''); setSearch(''); setTypeFilter(''); setOnlineOnly(false); setEventSearch(''); setEventKind(''); setEventStart(''); setEventEnd(''); setNodeDetailOpen(false); setScopeSelected(''); setSettingsSection('account'); setPage('节点'); }
+  function clearSession(error = '') { void clearSessionLogin().catch(() => setLoginError('无法清除保存的登录会话，请检查浏览器站点存储权限')); parameterDrafts.current.clear(); updateLogin(null); setLoginError(error); setEvent(null); setSelected(''); setSearch(''); setTypeFilter(''); setOnlineOnly(false); setEventSearch(''); setEventKind(''); setEventStart(''); setEventEnd(''); setNodeDetailOpen(false); setScopeSelected(''); setSettingsSection('account'); setPage('节点'); }
   useEffect(() => { if (relay.authExpired && loginRef.current?.token === login?.token) clearSession('登录已失效，请重新登录'); }, [relay.authExpired, login?.token]);
   useEffect(() => {
-    if (!login) return;
     let active = true;
-    const delay = Math.min(24 * 60 * 60 * 1000, Math.max(1000, Date.parse(login.expiresAt) - Date.now() - 60_000));
-    const timer = setTimeout(() => {
-      const flight = rotateLogin(login, replacement => {
-        if (!active || loginRef.current?.token !== login.token) return false;
-        updateLogin(replacement); return true;
-      }, relay.suspend);
-      refreshFlight.current = flight;
-      void flight.catch(() => { if (active && loginRef.current?.token === login.token) clearSession('登录已过期，请重新登录'); });
-      const complete = () => { if (refreshFlight.current === flight) refreshFlight.current = null; };
-      void flight.then(complete, complete);
-    }, delay);
-    return () => { active = false; clearTimeout(timer); };
+    const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 10_000);
+    void restoreSessionLogin(abort.signal).then(restored => {
+      if (active && restored && Date.parse(restored.expiresAt) > Date.now()) updateLogin(restored);
+    }).catch(() => { if (active) setLoginError('无法恢复登录会话，请检查浏览器站点存储权限'); })
+      .finally(() => { clearTimeout(timer); if (active) setRestoringSession(false); });
+    return () => { active = false; clearTimeout(timer); abort.abort(); };
+  }, []);
+  useEffect(() => {
+    if (!login) return;
+    const expire = () => {
+      if (loginRef.current?.token === login.token && Date.parse(login.expiresAt) <= Date.now()) {
+        relay.suspend(); clearSession('登录已满 24 小时，请重新登录');
+        void accountRequest('/api/account/logout', login.token, {}).catch(() => {});
+      }
+    };
+    const timer = setTimeout(expire, Math.max(0, Date.parse(login.expiresAt) - Date.now()));
+    window.addEventListener('focus', expire); document.addEventListener('visibilitychange', expire);
+    return () => { clearTimeout(timer); window.removeEventListener('focus', expire); document.removeEventListener('visibilitychange', expire); };
   }, [login]);
   async function logout() {
-    const current = loginRef.current, pending = refreshFlight.current;
+    const current = loginRef.current;
     relay.suspend(); clearSession();
-    const results = await Promise.allSettled([...(current ? [accountRequest('/api/account/logout', current.token, {})] : []), ...(pending ? [pending] : [])]);
-    if (!loginRef.current && results.some(result => result.status === 'rejected' && !(result.reason instanceof AccountRequestError && result.reason.status === 401))) setLoginError('已退出本地会话，服务暂不可达');
+    try { if (current) await accountRequest('/api/account/logout', current.token, {}); }
+    catch (error) { if (!loginRef.current && !(error instanceof AccountRequestError && error.status === 401)) setLoginError('已退出本地会话，服务暂不可达'); }
   }
   const timeZone = relay.timeStandard?.timeZone ?? 'Asia/Shanghai';
   useEffect(() => { setEventStart(''); setEventEnd(''); }, [timeZone]);
@@ -77,6 +83,7 @@ function App() {
   const rangeStart = parseEventTime(eventStart,timeZone), rangeEnd = parseEventTime(eventEnd,timeZone);
   const eventTimeError = Number.isNaN(rangeStart) || Number.isNaN(rangeEnd) ? '请输入有效时间' : rangeStart !== null && rangeEnd !== null && rangeStart > rangeEnd ? '结束时间不能早于开始时间' : '';
   const filteredEvents = relay.alerts.filter(a=>!eventTimeError && isWithinEventTime(a.timestamp,rangeStart,rangeEnd) && (!eventKind || a.eventKind===eventKind) && `${a.deviceName} ${a.sourceName} ${a.summary}`.toLowerCase().includes(eventSearch.trim().toLowerCase()));
+  if (restoringSession) return <div className="login-page" role="status">正在恢复登录…</div>;
   if (!login) return <><div className="login-appearance"><AppearanceSelector preference={appearance} showIcons={false}/></div><LoginScreen error={loginError} onLogin={value => { updateLogin(value); setLoginError(''); setPage('节点'); setEvent(null); }} /></>;
   return <div className={'app-shell '+(page!=='账号管理' ? 'workspace-page ' : '')+(page==='节点' ? 'nodes-page ' : '')+(page==='节点' && nodeDetailOpen ? 'node-detail-open' : '')}>
     <aside className="sidebar">
@@ -87,7 +94,7 @@ function App() {
     <main className={page==='设置'?'settings-page':undefined}>
       <header className="page-header"><div><span className="eyebrow">控制台 / {page}</span><h1>{({节点:'节点工作区',事件:'事件记录',通知范围:'通知范围',设置:'设置',账号管理:'账号管理'} as Record<Page,string>)[page]}</h1></div><div className="toolbar"><span className="connection" role="status"><span className={'dot '+(relay.connected ? 'online' : '')}/>{relay.status}</span><button className="icon-button" aria-label="刷新" title="刷新节点与事件" onClick={relay.refresh} disabled={!relay.connected}><RefreshCw size={18}/></button></div></header>
       {page === '节点' && <><div className="master-detail">
-        <section className="panel node-list"><div className="overview-bar" aria-label="账号运行概览"><span><span>节点在线</span><strong>{nodes.filter(n=>n.online).length}<small> / {nodes.length}</small></strong></span><span><span>检测中</span><strong>{nodes.filter(n=>n.online&&n.component!=='android-camera'&&n.nodeType!=='notification'&&n.isMonitoring).length}</strong></span><span><span>推流中</span><strong>{relay.streams.filter(s=>s.isStreaming).length}</strong></span><button className="text-button" aria-label={`${relay.alerts.length} 条最近事件`} onClick={()=>setPage('事件')}><span>最近事件</span><strong>{relay.alerts.length}</strong><ChevronRight size={12}/></button></div><div className="section-title"><h2>节点目录</h2><span className="count-badge">{visibleNodes.length}</span></div><div className="directory-filters"><label className="search-field"><Search size={16}/><input aria-label="搜索节点名称" placeholder="搜索名称或设备 ID" value={search} onChange={e => setSearch(e.target.value)}/></label><div className="filter-row"><select aria-label="节点类型" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}><option value="">全部类型</option><option value="visual">视觉节点</option><option value="sensor">传感器节点</option><option value="notification">通知节点</option></select><button type="button" className={'filter-toggle '+(onlineOnly?'active':'')} aria-pressed={onlineOnly} onClick={()=>setOnlineOnly(!onlineOnly)}>仅在线</button></div></div><div className="node-directory">
+        <section className="panel node-list"><div className="overview-bar" aria-label="账号运行概览"><span><span>节点在线</span><strong>{nodes.filter(n=>n.online).length}<small> / {nodes.length}</small></strong></span><span><span>检测中</span><strong>{nodes.filter(n=>n.online&&n.component!=='android-camera'&&n.nodeType!=='notification'&&n.isMonitoring).length}</strong></span><span><span>推流中</span><strong>{relay.streams.filter(s=>s.isStreaming).length}</strong></span><button className="text-button" aria-label={`${relay.alerts.length} 条最近事件`} onClick={()=>setPage('事件')}><span>最近事件</span><strong>{relay.alerts.length}</strong><ChevronRight size={12}/></button></div><div className="section-title"><h2>节点目录</h2><span className="count-badge">{visibleNodes.length}</span></div><div className="directory-filters"><label className="search-field"><Search size={16}/><input aria-label="搜索节点名称" placeholder="搜索名称或设备 ID" value={search} onChange={e => setSearch(e.target.value)}/></label><div className="filter-row"><select aria-label="节点类型" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}><option value="">全部类型</option><option value="visual">视觉类型（推理 / 相机）</option><option value="sensor">传感器节点</option><option value="notification">通知节点</option></select><button type="button" className={'filter-toggle '+(onlineOnly?'active':'')} aria-pressed={onlineOnly} onClick={()=>setOnlineOnly(!onlineOnly)}>仅在线</button></div></div><div className="node-directory">
           {visibleNodes.length === 0 && <Empty text={nodes.length ? '没有匹配的节点' : '尚无已登记节点'} />}
           {visibleNodes.map(device => <button key={device.deviceId} aria-pressed={node?.deviceId === device.deviceId} className={'node-row '+(node?.deviceId === device.deviceId ? 'selected' : '')} onClick={() => { setSelected(device.deviceId); setNodeDetailOpen(true); }}>
             <span className="node-identity"><NodeIcon node={device}/><span><strong title={device.deviceName}>{device.deviceName}</strong><small>{device.component==='android-camera'?'相机推流节点':typeLabel(device.nodeType)} · {device.platform}</small></span></span><span className="node-work"><span className={'dot '+(device.online ? 'online' : '')}/>{!device.online ? '离线' : device.component === 'android-camera' ? (relay.streams.find(s=>s.publisherDeviceId===device.deviceId)?.isStreaming ? '正在推流' : '等待推流') : device.nodeType === 'notification' ? '通知服务已连接' : device.isMonitoring ? '检测中' : device.isReady ? '已就绪' : '未检测'}</span><ChevronRight className="node-chevron" size={16} aria-hidden="true"/>
@@ -106,7 +113,7 @@ function App() {
         {eventTimeError ? null : filteredEvents.length===0?<Empty text={relay.alerts.length?'没有匹配的事件':'暂无事件'}/>:<div className="event-table"><div className="event-table-heading" aria-hidden="true"><span>事件类型</span><span>节点 / 来源与摘要</span><span>时间 / 收件状态</span><span/></div>{filteredEvents.map(a=><button className="event-row" key={a.alertId} onClick={()=>setEvent(a)}><span className={'event-kind '+(a.eventKind==='visual-detection'||a.eventKind==='sensor-detection'?'':'warning')}><Activity size={16}/>{eventLabel(a.eventKind)}</span><span><strong>{a.deviceName||a.deviceId}{a.sourceName&&` · ${a.sourceName}`}</strong><small>{a.summary||'查看检测详情'}</small></span><span className="event-time"><time>{formatTime(a.timestamp,timeZone)}</time><small>{(relay.receipts[a.alertId]??[]).length>0?`${relay.receipts[a.alertId].length} 个通知节点已收件`:'未观测到收件回执'}</small></span><ChevronRight size={16} aria-hidden="true"/></button>)}</div>}
       </section>}
       {page === '通知范围' && <ScopeWorkspace initialSelected={scopeSelected} notifiers={relay.notifiers} nodes={nodes.filter(n=>n.role==='detector')} connected={relay.connected} acks={relay.acks} send={relay.send}/>}
-      {page === '设置' && <div className="settings-workspace" data-section={settingsSection}><div className="settings-section-nav" role="group" aria-label="设置分区">{([{value:"account",label:"账号与本机"},{value:"general",label:"常规设置"},{value:"cache",label:"缓存"}] as const).map(item=><button type="button" key={item.value} aria-pressed={settingsSection===item.value} aria-controls={`settings-${item.value}`} onClick={()=>setSettingsSection(item.value)}>{item.label}</button>)}</div><div className="settings-grid"><div className="settings-stack"><AccountSettings login={login} onDeviceNameChanged={name=>{if(loginRef.current?.token===login.token)updateLogin({...login,device:{...login.device,deviceName:name}});}} onLogout={() => { void logout(); }} onPasswordChanged={warning => { if (loginRef.current?.token === login.token) clearSession(warning || '密码已修改，请重新登录'); }}/></div><div className="settings-stack"><section className="panel settings-panel general-settings" id="settings-general"><div className="section-title"><h2>常规设置</h2><Settings size={18} aria-hidden="true"/></div><div className="settings-field-row settings-appearance-row"><span>外观</span><AppearanceSelector preference={appearance}/></div><TimeStandardSettings standard={relay.timeStandard} connected={relay.connected} acks={relay.acks} send={relay.send}/></section><ServerCacheMaintenance key={login.token} login={login}/></div></div></div>}
+      {page === '设置' && <div className="settings-workspace" data-section={settingsSection}><div className="settings-section-nav" role="group" aria-label="设置分区">{([{value:"account",label:"账号与本机"},{value:"general",label:"常规设置"},{value:"cache",label:"缓存"}] as const).map(item=><button type="button" key={item.value} aria-pressed={settingsSection===item.value} aria-controls={`settings-${item.value}`} onClick={()=>setSettingsSection(item.value)}>{item.label}</button>)}</div><div className="settings-grid"><div className="settings-stack"><AccountSettings login={login} onDeviceNameChanged={name=>{if(loginRef.current?.token===login.token){const renamed={...login,device:{...login.device,deviceName:name}};updateLogin(renamed);void saveSessionLogin(renamed).catch(()=>{});}}} onLogout={() => { void logout(); }} onPasswordChanged={warning => { if (loginRef.current?.token === login.token) clearSession(warning || '密码已修改，请重新登录'); }}/></div><div className="settings-stack"><section className="panel settings-panel general-settings" id="settings-general"><div className="section-title"><h2>常规设置</h2><Settings size={18} aria-hidden="true"/></div><div className="settings-field-row settings-appearance-row"><span>外观</span><AppearanceSelector preference={appearance}/></div><TimeStandardSettings standard={relay.timeStandard} connected={relay.connected} acks={relay.acks} send={relay.send}/></section><ServerCacheMaintenance key={login.token} login={login}/></div></div></div>}
       {page === '账号管理' && login.account.isAdmin && <AccountManagement login={login}/>}
     </main>
     {visibleEvent && <EventDialog key={visibleEvent.alertId} alert={visibleEvent} timeZone={timeZone} login={login} receipts={relay.receipts[visibleEvent.alertId] ?? []} onClose={() => setEvent(null)}/>}
@@ -144,6 +151,8 @@ function LoginScreen({onLogin,error}:{onLogin:(value:Login)=>void;error:string})
         try { await saveRememberedLogin({username:value.account.username,password}); }
         catch { await accountRequest('/api/account/logout',value.token,{}).catch(()=>{});throw new Error('账号密码未能保存，请取消“记住账号密码”后重试'); }
       }
+      try { await saveSessionLogin(value); }
+      catch { await accountRequest('/api/account/logout',value.token,{}).catch(()=>{});throw new Error('登录会话未能保存，请检查浏览器站点存储权限后重试'); }
       onLogin(value);setPassword('');
     } catch(e) {setFailure((e as Error).message);} finally {setBusy(false);}
   }
@@ -195,7 +204,7 @@ function DeviceSettings({node,nodes,streams,login,onChanged}:{node:Device;nodes:
 }
 function NodeContext({node,nodes,stream,notifier,onScope}:{node:Device;nodes:Device[];stream?:Stream;notifier?:Notifier;alerts:Alert[];login:Login;timeZone:AlarmTimeZone;onOpen:(alert:Alert)=>void;onScope:()=>void}) {
   if(node.nodeType==='notification')return <section className="panel"><div className="section-title"><h2>接收范围</h2><Bell size={18} aria-hidden="true"/></div><p>{!notifier?'等待服务报告接收范围':notifier.scope.mode==='all'?'接收全部检测节点':notifier.scope.targets.length?`接收指定的 ${notifier.scope.targets.length} 个节点 / 来源`:'尚未选择检测节点与来源，不接收检测事件'}</p><div className="actions"><button className="button secondary" onClick={onScope}>配置接收范围<ChevronRight size={16}/></button></div><p>收件确认只表示报警已保存，声音播放需在通知设备核对。</p></section>;
-  if(node.component==='android-camera')return <section className="panel"><div className="section-title"><h2>推流关联</h2><Camera size={18} aria-hidden="true"/></div><dl><dt>目标视觉节点</dt><dd>{nodes.find(n=>n.deviceId===stream?.targetDeviceId)?.deviceName||stream?.targetDeviceId||'未关联'}</dd><dt>检测来源</dt><dd>{stream?.sourceName||'未上报'}</dd><dt>推流状态</dt><dd>{stream?.isStreaming?'正在推流':'未推流'}</dd></dl><p>在「设备管理」调整关联，在「参数与配置」调整规格、预览和屏幕亮度。</p><p>相机前台、摄像头权限与设备解锁须在本机处理。</p></section>;
+  if(node.component==='android-camera')return <section className="panel"><div className="section-title"><h2>推流关联</h2><Camera size={18} aria-hidden="true"/></div><dl><dt>目标视觉推理节点</dt><dd>{nodes.find(n=>n.deviceId===stream?.targetDeviceId)?.deviceName||stream?.targetDeviceId||'未关联'}</dd><dt>检测来源</dt><dd>{stream?.sourceName||'未上报'}</dd><dt>推流状态</dt><dd>{stream?.isStreaming?'正在推流':'未推流'}</dd></dl><p>在「设备管理」调整关联，在「参数与配置」调整规格、预览和屏幕亮度。</p><p>相机前台、摄像头权限与设备解锁须在本机处理。</p></section>;
   return null;
 }
 function LatestNodeEvent({node,alerts,login,timeZone,onOpen}:{node:Device;alerts:Alert[];login:Login;timeZone:AlarmTimeZone;onOpen:(alert:Alert)=>void}) {
@@ -216,7 +225,7 @@ function NodeDetail({node,stream,connected,send,timeZone,acks,drafts,children,ma
   const source = node.sources.find(s => s.sourceId === sourceId);
   const can = (value:string) => node.capabilities.includes(value);
   const ready = connected && node.online && !controlPending;
-  const cameraStartReason = !stream?.targetDeviceId ? '请先关联视觉节点' : node.components?.cameraApp!=='foreground' ? '请在设备上打开相机应用并保持前台' : node.components?.cameraPermission!=='granted' ? '请在设备上授予摄像头权限' : '';
+  const cameraStartReason = !stream?.targetDeviceId ? '请先关联视觉推理节点' : node.components?.cameraApp!=='foreground' ? '请在设备上打开相机应用并保持前台' : node.components?.cameraPermission!=='granted' ? '请在设备上授予摄像头权限' : '';
   const sendCommand = (command:string) => issueCommand(command,source?.sourceId);
   const nodeAcks=acks.filter(ack=>ack.targetDeviceId===node.deviceId);
   return <div className="node-detail-layout"><div className="node-primary"><section className="panel node-summary">
@@ -226,10 +235,10 @@ function NodeDetail({node,stream,connected,send,timeZone,acks,drafts,children,ma
       {can('monitor-control') && (!source || can('source-control')) && <button className="button secondary" disabled={!ready} onClick={() => sendCommand('stop-alarm')}><BellOff size={16}/>停止报警</button>}
       {can('stream-control') && <><button className="button" disabled={!ready || !!stream?.isStreaming || !!cameraStartReason} onClick={()=>issueCommand('start-stream')}><Play size={16}/>开始推流</button><button className="button secondary" disabled={!ready} onClick={()=>issueCommand('stop-stream')}><Square size={16}/>停止推流</button></>}
       {can('alarm-control') && <button className="button" disabled={!ready} onClick={()=>issueCommand('stop-alarm')}><BellOff size={16}/>确认当前报警</button>}
-      {can('app-lifecycle-control') && <div className="app-actions"><button className="text-button" disabled={!ready} onClick={() => issueCommand('open-detector')}>打开视觉节点</button><button className="text-button" disabled={!ready} onClick={() => issueCommand('close-detector')}>关闭视觉节点</button></div>}
+      {can('app-lifecycle-control') && <div className="app-actions"><button className="text-button" disabled={!ready} onClick={() => issueCommand('open-detector')}>打开视觉推理节点</button><button className="text-button" disabled={!ready} onClick={() => issueCommand('close-detector')}>关闭视觉推理节点</button></div>}
     </div></div>
     <div className="node-summary-footer"><div className="control-context"><span>控制对象：<strong>{source ? source.sourceName || source.sourceId : '节点整体'}</strong></span>{source&&<button className="text-button" onClick={()=>setSourceId('')}>切回节点整体</button>}</div>
-    {node.components && <div className="component-line">{Object.entries(node.components).map(([key,value]) => <span key={key}>{['resident','residentApp'].includes(key) ? '驻留' : ['detector','detectorApp'].includes(key) ? '视觉节点' : key === 'camera' ? '镜头' : key === 'cameraApp' ? '相机状态' : key === 'cameraPermission' ? '摄像头权限' : key}：{value === 'running' ? '运行中' : value === 'stopped' ? '已停止' : value === 'foreground' ? '前台' : value === 'background' ? '后台' : value === 'granted' ? '已授权' : value === 'required' ? '待授权' : value}</span>)}</div>}{node.lastSeen&&<span className="node-last-seen">最近响应 <time>{formatTime(node.lastSeen,timeZone)}</time></span>}</div>
+    {node.components && <div className="component-line">{Object.entries(node.components).map(([key,value]) => <span key={key}>{['resident','residentApp'].includes(key) ? '驻留' : ['detector','detectorApp'].includes(key) ? '视觉推理节点' : key === 'camera' ? '镜头' : key === 'cameraApp' ? '相机状态' : key === 'cameraPermission' ? '摄像头权限' : key}：{value === 'running' ? '运行中' : value === 'stopped' ? '已停止' : value === 'foreground' ? '前台' : value === 'background' ? '后台' : value === 'granted' ? '已授权' : value === 'required' ? '待授权' : value}</span>)}</div>}{node.lastSeen&&<span className="node-last-seen">最近响应 <time>{formatTime(node.lastSeen,timeZone)}</time></span>}</div>
     {!node.online && <p className="subtle">离线时保留登记身份和本次编辑草稿；参数将在重新连接后显示。</p>}
     {can('stream-control') && !stream?.isStreaming && cameraStartReason && <p className="subtle">{cameraStartReason}</p>}
     {can('alarm-control') && <p className="subtle">仅确认当前报警；如有排队报警，将继续播放。通知服务离线时需在设备上开启。</p>}
@@ -252,7 +261,7 @@ function NodeDetail({node,stream,connected,send,timeZone,acks,drafts,children,ma
 }
 function commandLabel(command?:string) {
   if(command?.startsWith('set-config:'))return `保存${({modelKey:'推理模型',confidence:'置信度',cooldown:'报警冷却',targetSamplingRate:'采样频率',targets:'检测目标',cameraResolution:'推流规格',cameraHidePreview:'预览设置',cameraDimScreen:'屏幕亮度',soundSelection:'默认铃声',soundLoopCount:'播放次数',audioRename:'音频名称',audioImport:'导入音频',audioDelete:'删除音频',audioPreview:'音频试听',audioStopPreview:'停止试听'} as Record<string,string>)[command.slice(11)]||'节点配置'}`;
-  return ({pause:'暂停检测',resume:'开始检测','stop-alarm':'停止 / 确认报警','start-stream':'开始推流','stop-stream':'停止推流','open-detector':'打开视觉节点','close-detector':'关闭视觉节点','set-config':'保存配置','set-notification-scope':'保存通知范围','cache-inspect':'盘点缓存','cache-clean':'清理缓存'} as Record<string,string>)[command??'']||'节点操作';
+  return ({pause:'暂停检测',resume:'开始检测','stop-alarm':'停止 / 确认报警','start-stream':'开始推流','stop-stream':'停止推流','open-detector':'打开视觉推理节点','close-detector':'关闭视觉推理节点','set-config':'保存配置','set-notification-scope':'保存通知范围','cache-inspect':'盘点缓存','cache-clean':'清理缓存'} as Record<string,string>)[command??'']||'节点操作';
 }
 function ScopeWorkspace({initialSelected='',notifiers,nodes,connected,acks,send}:{initialSelected?:string;notifiers:Notifier[];nodes:Device[];connected:boolean;acks:Ack[];send:(m:Record<string,unknown>)=>string}) {
   const [selected,setSelected]=useState(initialSelected);
@@ -278,7 +287,7 @@ function ScopeEditor({notifier,nodes,connected,acks,send}:{notifier:Notifier;nod
   function toggle(target:Target) { updateScope({...scope,targets:contains(target) ? scope.targets.filter(t => !(t.deviceId === target.deviceId && t.sourceId === target.sourceId)) : [...scope.targets,target]}); }
   return <section className="panel scope-editor"><div className="section-title"><div><h2>{notifier.deviceName}</h2><p>{notifier.deviceId}</p></div><span className={'status-tag '+(notifier.online ? 'good' : '')}>{notifier.online ? '在线' : '离线'}</span></div><fieldset disabled={!connected || saving}><legend>接收范围</legend><div className="scope-mode-bar"><div className="radio-options"><label><input type="radio" name={`scope-${notifier.deviceId}`} checked={scope.mode === 'all'} onChange={() => updateScope({mode:'all',targets:[]})}/>全部节点</label><label><input type="radio" name={`scope-${notifier.deviceId}`} checked={scope.mode === 'selected'} onChange={() => updateScope({mode:'selected',targets:[]})}/>指定节点与来源</label></div><button className="button" onClick={()=>setRequestId(send({type:'set-notification-scope',targetNotifierId:notifier.deviceId,scope}))} disabled={scope.targets.length>100}>{saving?'正在保存…':'保存接收范围'}</button></div>
     {scope.mode === 'selected' && <div className="scope-targets">{nodes.map(n => <div className="scope-node" key={n.deviceId}><label><input type="checkbox" checked={contains({deviceId:n.deviceId})} onChange={() => toggle({deviceId:n.deviceId})}/>{n.deviceName}<small>{typeLabel(n.nodeType)} · {n.online ? '在线' : '离线'}</small></label>{n.nodeType === 'visual' && [...new Map([...scope.targets.filter(t => t.deviceId === n.deviceId && t.sourceId).map(t => ({sourceId:t.sourceId!,sourceName:t.sourceId!})),...n.sources.map(s => ({sourceId:s.sourceId,sourceName:s.sourceName}))].map(s => [s.sourceId,s])).values()].map(s => <label className="source-check" key={s.sourceId}><input type="checkbox" checked={contains({deviceId:n.deviceId,sourceId:s.sourceId})} onChange={() => toggle({deviceId:n.deviceId,sourceId:s.sourceId})}/>{s.sourceName || s.sourceId}</label>)}</div>)}
-      <details className="offline-source-details"><summary>添加未上报的离线来源</summary><div className="offline-source"><label>离线视觉来源<select value={offlineDevice} aria-describedby={offlineSourceHintId} onChange={e => setOfflineDevice(e.target.value)}><option value="">选择视觉节点</option>{nodes.filter(n => n.nodeType === 'visual' && !n.online).map(n => <option key={n.deviceId} value={n.deviceId}>{n.deviceName}</option>)}</select></label><label>来源 ID<input value={offlineSource} pattern={'[A-Za-z0-9_\\-]{1,64}'} aria-describedby={offlineSourceHintId} aria-invalid={invalidOfflineSource} maxLength={64} onChange={e => setOfflineSource(e.target.value)}/></label><button className="button secondary" type="button" disabled={!offlineDevice || !validOfflineSource || contains({deviceId:offlineDevice,sourceId:offlineSource})} onClick={() => { toggle({deviceId:offlineDevice,sourceId:offlineSource}); setOfflineSource(''); }}>添加</button></div>
+      <details className="offline-source-details"><summary>添加未上报的离线来源</summary><div className="offline-source"><label>离线视觉来源<select value={offlineDevice} aria-describedby={offlineSourceHintId} onChange={e => setOfflineDevice(e.target.value)}><option value="">选择视觉推理节点</option>{nodes.filter(n => n.nodeType === 'visual' && !n.online).map(n => <option key={n.deviceId} value={n.deviceId}>{n.deviceName}</option>)}</select></label><label>来源 ID<input value={offlineSource} pattern={'[A-Za-z0-9_\\-]{1,64}'} aria-describedby={offlineSourceHintId} aria-invalid={invalidOfflineSource} maxLength={64} onChange={e => setOfflineSource(e.target.value)}/></label><button className="button secondary" type="button" disabled={!offlineDevice || !validOfflineSource || contains({deviceId:offlineDevice,sourceId:offlineSource})} onClick={() => { toggle({deviceId:offlineDevice,sourceId:offlineSource}); setOfflineSource(''); }}>添加</button></div>
       <p id={offlineSourceHintId} className={invalidOfflineSource ? 'error' : 'subtle'} role={invalidOfflineSource ? 'alert' : undefined}>{invalidOfflineSource ? '来源 ID 只能使用字母、数字、下划线或短横线，最多 64 个字符。' : '选择离线节点，填写 1–64 个字母、数字、下划线或短横线组成的来源 ID，点击添加加入范围。'}</p></details>
       {scope.targets.length === 0 && <p className="subtle">未勾选时不接收检测事件，节点仍独立监测服务响应。</p>}
     </div>}

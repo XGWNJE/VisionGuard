@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!-- 与 detector/windows-wpf 保持同一目标框架：视觉节点（Windows）统一为 net472。 -->
+    <!-- 与 detector/windows-wpf 保持同一目标框架：视觉推理节点（Windows）统一为 net472。 -->
     <OutputType>Exe</OutputType>
     <TargetFramework>net472</TargetFramework>
     <PlatformTarget>x64</PlatformTarget>

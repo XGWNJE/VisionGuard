@@ -82,7 +82,7 @@ test('invalid stable identities and model boundaries reject registration without
 test('known historical registration is claimed explicitly; unidentified duplicate rows are not guessed or deleted',async t=>{
   const {store,file,credentials}=fixture(t);
   const original=await store.login({...credentials,component:'windows-inference'});
-  store.rename(original.account.accountId,original.device.deviceId,'保留配置的视觉节点');
+  store.rename(original.account.accountId,original.device.deviceId,'保留配置的视觉推理节点');
   const data=JSON.parse(fs.readFileSync(file,'utf8'));
   for(const device of data.devices) delete device.identityKey;
   data.devices.push({...data.devices[0],deviceId:'unidentified-historical-duplicate'});
@@ -90,7 +90,7 @@ test('known historical registration is claimed explicitly; unidentified duplicat
   const restored=new AccountStore(file);
   const claimed=await restored.login({...credentials,component:'windows-inference',deviceId:original.device.deviceId});
   assert.equal(claimed.device.deviceId,original.device.deviceId);
-  assert.equal(claimed.device.deviceName,'保留配置的视觉节点');
+  assert.equal(claimed.device.deviceName,'保留配置的视觉推理节点');
   assert.equal(restored.devices(original.account.accountId).length,2);
   const missingLocalId=await restored.login({...credentials,component:'windows-inference'});
   assert.equal(missingLocalId.device.deviceId,original.device.deviceId);

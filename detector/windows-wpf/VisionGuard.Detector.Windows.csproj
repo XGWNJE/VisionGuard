@@ -5,11 +5,11 @@
     <OutputType>WinExe</OutputType>
     <AssemblyName>VisionGuard.Detector.Windows</AssemblyName>
     <RootNamespace>VisionGuard.Detector.Windows</RootNamespace>
-    <Title>视觉节点</Title>
-    <AssemblyTitle>视觉节点</AssemblyTitle>
-    <Product>视觉节点</Product>
-    <Description>视觉节点，本地画面与远程镜头推理</Description>
-    <!-- 视觉节点统一为单一 net472 构建：Windows 7 SP1 x64 与 Windows 10/11 共用同一份
+    <Title>视觉推理节点</Title>
+    <AssemblyTitle>视觉推理节点</AssemblyTitle>
+    <Product>视觉推理节点</Product>
+    <Description>视觉推理节点，本地画面与远程镜头推理</Description>
+    <!-- 视觉推理节点统一为单一 net472 构建：Windows 7 SP1 x64 与 Windows 10/11 共用同一份
          WPF 源码。两平台的差异只在推理档位（原生 ONNX Runtime 版本、是否启用 DirectML）
          与模型清单，由 Runtime/NativeLibrarySelector.cs 在启动时按运行环境选择。 -->
     <TargetFramework>net472</TargetFramework>

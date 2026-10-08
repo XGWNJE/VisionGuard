@@ -182,7 +182,7 @@ test('camera and inference identities cannot be exchanged despite a shared node 
   checkComponentContract(root, read('README.md'), read('docs/10-当前架构.md'), read('docs/60-构建验证与发布.md'), errors,
     read('docs/15-命名规范.md')
       .replace('| 相机推流节点（Android） | `android-camera` |', '| 相机推流节点（Android） | `windows-inference` |')
-      .replace('| 视觉节点（Windows） | `windows-inference` |', '| 视觉节点（Windows） | `android-camera` |'));
+      .replace('| 视觉推理节点（Windows） | `windows-inference` |', '| 视觉推理节点（Windows） | `android-camera` |'));
   assert.ok(errors.some(message => message.includes('component/role/nodeType/platform mappings')));
 });
 

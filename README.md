@@ -4,7 +4,7 @@
 
 # VisionGuard
 
-VisionGuard 由检测节点、统一服务和控制台协作。视觉节点在 Windows 电脑上检测画面中的目标，经服务转发告警和截图；控制台管理节点，通知节点在 Android 后台接警与响铃。
+VisionGuard 由检测节点、统一服务和控制台协作。视觉推理节点在 Windows 电脑上检测画面中的目标，经服务转发告警和截图；控制台管理节点，通知节点在 Android 后台接警与响铃。
 
 [使用方式](#使用方式) · [快速开始](#快速开始) · [当前组件](#当前组件) · [路线规划](#路线规划) · [文档与许可](#文档与许可)
 
@@ -20,8 +20,8 @@ VisionGuard 由检测节点、统一服务和控制台协作。视觉节点在 W
 
 **使用边界**：连接状态不等于通知收件确认，通知收件确认不等于声音播放。漏报风险是检测效果与故障处置的最高优先级，人员检测以 `person` 类验证。实际覆盖与未覆盖项见[验证记录](./docs/90-验证记录.md)。
 
-1. 各组件登录同一账号后自动登记和匹配；相机推流节点以前台摄像头采集画面，经服务交给 Windows 视觉节点推理，也可继续使用本地屏幕或窗口来源。
-2. 视觉节点把告警、截图和状态发往统一服务；所有公网业务数据统一通过统一服务转发，不使用 P2P、ICE、STUN 或 TURN。正式服务地址为 `https://visionguard.xgwnje.cn`。
+1. 各组件登录同一账号后自动登记和匹配；相机推流节点以前台摄像头采集画面，经服务交给 Windows 视觉推理节点推理，也可继续使用本地屏幕或窗口来源。
+2. 视觉推理节点把告警、截图和状态发往统一服务；所有公网业务数据统一通过统一服务转发，不使用 P2P、ICE、STUN 或 TURN。正式服务地址为 `https://visionguard.xgwnje.cn`。
 3. Web 控制台展示事件、截图和设备状态，按能力提供节点/来源启停与参数配置、相机规格及预览、通知声音策略、音频库管理和临时缓存盘点 / 清理，并分配各通知节点的全部或指定接收范围。通知节点保存实时报警后确认收件，再进入本地声音队列。新增能力需服务、Web 与节点使用同一契约。
 
 Windows 发行包使用统一目录：从目录根启动 `VisionGuard.Detector.Windows.exe`，Win7 SP1 x64 选择 legacy 内部运行时，Windows 10/11 选择 modern。
@@ -47,7 +47,7 @@ npm run build
 cd ..
 ```
 
-成功后应生成 `server/dist/index.js` 和 `server/dist/console/index.html`；启动服务后从同一服务的 `/console/` 打开控制台，外部访问须使用 HTTPS。构建视觉节点、驻留程序与统一包：
+成功后应生成 `server/dist/index.js` 和 `server/dist/console/index.html`；启动服务后从同一服务的 `/console/` 打开控制台，外部访问须使用 HTTPS。构建视觉推理节点、驻留程序与统一包：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scripts\build-all.ps1 -Target Windows
@@ -59,7 +59,7 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scri
 
 | 组件 | 平台 | 当前范围 | 源码入口 |
 |---|---|---|---|
-| 视觉节点 | Windows | 本地画面及远程镜头推理；统一入口、modern / legacy 运行时与内部后台驻留 | [启动器](./detector/windows-launcher/) · [WPF 运行时](./detector/windows-wpf/) · [内部驻留](./detector/windows-resident/) |
+| 视觉推理节点 | Windows | 本地画面及远程镜头推理；统一入口、modern / legacy 运行时与内部后台驻留 | [启动器](./detector/windows-launcher/) · [WPF 运行时](./detector/windows-wpf/) · [内部驻留](./detector/windows-resident/) |
 | 相机推流节点 | Android | 前台摄像头推流，最高 720P；通过统一服务接入 Windows 推理来源 | [`detector/android/`](./detector/android) |
 | 控制台 | Web | 唯一控制台，左导航、右内容；节点/来源、事件、账号与通知范围；三种外观 | [`receiver/web/`](./receiver/web) |
 | 通知节点 | Android | VG 后台接警、声音队列、收件确认与告警记录 | [`notifier/android/`](./notifier/android) |

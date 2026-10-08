@@ -11,16 +11,22 @@ export interface AccountDevice {
 export interface AccountSession { sessionId: string; account: Account; device: AccountDevice; expiresAt: string; parentId?: string }
 interface StoredAccount extends Account { salt: string; passwordHash: string; disabled?: boolean }
 interface StoredDevice extends AccountDevice { identityKey?: string }
-interface StoredSession { sessionId: string; tokenHash: string; accountId: string; deviceId: string; component: Component; expiresAt: string; parentId?: string }
+interface StoredSession { sessionId: string; tokenHash: string; accountId: string; deviceId: string; component: Component; expiresAt: string; loginStartedAt?: number; parentId?: string }
 interface Data { accounts: StoredAccount[]; devices: StoredDevice[]; sessions: StoredSession[] }
 const SESSION_MS = 30 * 24 * 3600 * 1000;
+const WEB_SESSION_MS = 24 * 3600 * 1000;
 const COMPONENTS: Record<Exclude<Component, 'windows-resident'>, Pick<AccountDevice, 'role' | 'nodeType' | 'platform'>> = {
   'web-console': { role: 'console', nodeType: 'console', platform: 'web' },
   'android-notifier': { role: 'notifier', nodeType: 'notification', platform: 'android' },
   'android-camera': { role: 'detector', nodeType: 'visual', platform: 'android' },
   'windows-inference': { role: 'detector', nodeType: 'visual', platform: 'windows' },
 };
-const DEVICE_NAMES = { 'web-console': '控制台', 'android-notifier': '通知节点', 'android-camera': '相机推流节点', 'windows-inference': '视觉节点' };
+function activeSession(session: StoredSession): boolean {
+  const expiry = Date.parse(session.expiresAt);
+  return expiry > Date.now() && (session.component !== 'web-console'
+    || typeof session.loginStartedAt === 'number' && Number.isFinite(session.loginStartedAt) && expiry === session.loginStartedAt + WEB_SESSION_MS);
+}
+const DEVICE_NAMES = { 'web-console': '控制台', 'android-notifier': '通知节点', 'android-camera': '相机推流节点', 'windows-inference': '视觉推理节点' };
 function publicDevice(device: StoredDevice): AccountDevice { const { identityKey: _private, ...value } = device; return value; }
 const tokenHash = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
 export class AccountError extends Error { constructor(readonly status: number, message: string) { super(message); } }
@@ -99,10 +105,12 @@ export class AccountStore {
     const revoke = next.disabled || changes.password !== undefined || !!next.isAdmin !== !!account.isAdmin;
     this.commit({ ...this.data, accounts: this.data.accounts.map(item => item.accountId === accountId ? next : item), sessions: revoke ? this.data.sessions.filter(item => item.accountId !== accountId) : this.data.sessions });
   }
-  private issue(account: StoredAccount, device: AccountDevice, parentId?: string): { stored: StoredSession; result: AccountSession & { token: string } } {
+  private issue(account: StoredAccount, device: AccountDevice, parentId?: string, webLoginStartedAt?: number): { stored: StoredSession; result: AccountSession & { token: string } } {
     const token = crypto.randomBytes(32).toString('base64url');
+    const loginStartedAt = device.component === 'web-console' ? webLoginStartedAt ?? Date.now() : undefined;
     const stored = { sessionId: crypto.randomUUID(), tokenHash: tokenHash(token), accountId: account.accountId, deviceId: device.deviceId,
-      component: device.component, expiresAt: new Date(Date.now() + SESSION_MS).toISOString(), ...(parentId ? { parentId } : {}) };
+      component: device.component, expiresAt: new Date(loginStartedAt === undefined ? Date.now() + SESSION_MS : loginStartedAt + WEB_SESSION_MS).toISOString(),
+      ...(loginStartedAt === undefined ? {} : { loginStartedAt }), ...(parentId ? { parentId } : {}) };
     return { stored, result: { sessionId: stored.sessionId, token, expiresAt: stored.expiresAt,
       account: { accountId: account.accountId, username: account.username, isAdmin: !!account.isAdmin }, device: publicDevice(device), ...(parentId ? { parentId } : {}) } };
   }
@@ -144,23 +152,24 @@ export class AccountStore {
     }
     // 浏览器设备登记可复用；登录会话彼此独立。硬件身份仍只保留最新凭证。
     const replaced = new Set(this.data.sessions.filter(item => component !== 'web-console' && item.accountId === account.accountId && item.deviceId === device!.deviceId && item.component === component).map(item => item.sessionId));
-    this.commit({ ...this.data, accounts: this.data.accounts.map(item => item.accountId === account.accountId ? nextAccount : item), devices, sessions: [...this.data.sessions.filter(item => Date.parse(item.expiresAt) > Date.now() && !replaced.has(item.sessionId) && !replaced.has(item.parentId ?? '')), session.stored, ...(resident ? [resident.stored] : [])] });
+    this.commit({ ...this.data, accounts: this.data.accounts.map(item => item.accountId === account.accountId ? nextAccount : item), devices, sessions: [...this.data.sessions.filter(item => activeSession(item) && !replaced.has(item.sessionId) && !replaced.has(item.parentId ?? '')), session.stored, ...(resident ? [resident.stored] : [])] });
     return { ...session.result, ...(resident ? { resident: resident.result } : {}) };
   }
   authenticate(token: unknown): AccountSession | undefined {
     if (typeof token !== 'string' || token.length < 32 || token.length > 256) return undefined;
-    const session = this.data.sessions.find(item => item.tokenHash === tokenHash(token) && Date.parse(item.expiresAt) > Date.now());
+    const session = this.data.sessions.find(item => item.tokenHash === tokenHash(token) && activeSession(item));
     if (!session || (session.component !== 'windows-resident' && !Object.prototype.hasOwnProperty.call(COMPONENTS, session.component))) return undefined;
-    if (session.parentId && !this.data.sessions.some(item => item.sessionId === session.parentId && item.accountId === session.accountId && Date.parse(item.expiresAt) > Date.now())) return undefined;
+    if (session.parentId && !this.data.sessions.some(item => item.sessionId === session.parentId && item.accountId === session.accountId && activeSession(item))) return undefined;
     const account = this.data.accounts.find(item => item.accountId === session.accountId);
     const device = this.data.devices.find(item => item.accountId === session.accountId && item.deviceId === session.deviceId && item.component === session.component);
     if (!account || account.disabled || !device) return undefined;
     return { sessionId: session.sessionId, account: { accountId: account.accountId, username: account.username, isAdmin: !!account.isAdmin }, device: publicDevice(device), expiresAt: session.expiresAt, ...(session.parentId ? { parentId: session.parentId } : {}) };
   }
   refresh(session: AccountSession): AccountSession & { token: string; resident?: AccountSession & { token: string } } {
-    if (!this.data.sessions.some(item => item.sessionId === session.sessionId && item.accountId === session.account.accountId && Date.parse(item.expiresAt) > Date.now())) throw new AccountError(401, 'Session has been revoked');
+    const stored = this.data.sessions.find(item => item.sessionId === session.sessionId && item.accountId === session.account.accountId && activeSession(item));
+    if (!stored) throw new AccountError(401, 'Session has been revoked');
     const account = this.data.accounts.find(item => item.accountId === session.account.accountId)!;
-    const issued = this.issue(account, session.device, session.parentId);
+    const issued = this.issue(account, session.device, session.parentId, stored.component === 'web-console' ? stored.loginStartedAt : undefined);
     const resident = session.device.component === 'windows-inference' ? this.issue(account, { ...session.device, component: 'windows-resident', role: 'lifecycle', nodeType: 'resident' }, issued.stored.sessionId) : undefined;
     this.commit({ ...this.data, sessions: [...this.data.sessions.filter(item => item.sessionId !== session.sessionId && item.parentId !== session.sessionId), issued.stored, ...(resident ? [resident.stored] : [])] });
     return { ...issued.result, ...(resident ? { resident: resident.result } : {}) };

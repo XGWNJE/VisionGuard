@@ -171,7 +171,7 @@ class MainActivity : ComponentActivity() {
         val state = publisher?.state?.value
         if (!policy.foreground) { completed?.invoke(false, "请先在设备上打开相机应用并保持前台"); return }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) { completed?.invoke(false, "请先在设备上授予摄像头权限"); return }
-        if (state?.connected != true || state.stream?.targetDeviceId == null) { policy.cancelPermissionRequest(); completed?.invoke(false, "请先关联视觉节点并连接服务"); return }
+        if (state?.connected != true || state.stream?.targetDeviceId == null) { policy.cancelPermissionRequest(); completed?.invoke(false, "请先关联视觉推理节点并连接服务"); return }
         if (streaming) { completed?.invoke(true, "已在推流"); return }
         if (!policy.start()) { completed?.invoke(false, "当前状态不允许启动推流"); return }
         streaming = true; captureSize = null; sentSize = null; applyScreen(); publisher?.start()

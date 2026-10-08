@@ -83,7 +83,7 @@ namespace VisionGuard.Detector.Windows.Views
                 var currentBounds = WindowEnumerator.GetWindowBounds(win.Handle);
                 if (!CaptureSizeConstraints.IsValid(currentBounds))
                 {
-                    VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show("该窗口当前尺寸过小，宽度和高度必须都大于 100 像素。", "视觉节点",
+                    VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show("该窗口当前尺寸过小，宽度和高度必须都大于 100 像素。", "视觉推理节点",
                         MessageBoxButton.OK, MessageBoxImage.Information);
                     _ = LoadWindowsAsync();
                     return;

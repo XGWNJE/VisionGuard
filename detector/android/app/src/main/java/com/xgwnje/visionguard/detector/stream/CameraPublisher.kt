@@ -173,7 +173,7 @@ class CameraPublisher(private val account: AccountStore,
             refreshTargets()
             if (wanted && media == null) connectMedia(value)
         }.onFailure { failure ->
-            update { state -> state.copy(status = "选择视觉节点失败：${failure.message?.takeIf { it.isNotBlank() } ?: "请稍后重试"}") }
+            update { state -> state.copy(status = "选择视觉推理节点失败：${failure.message?.takeIf { it.isNotBlank() } ?: "请稍后重试"}") }
         }
     } }
     private fun updateStreams(streams: JSONArray) {

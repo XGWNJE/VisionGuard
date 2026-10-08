@@ -21,9 +21,9 @@ const originalSources = new Map();
 const sessions = [];
 const source = (id, name, mode='running', fps=4.8) => ({sourceId:id, sourceName:name, isMonitoring:mode==='running', isReady:mode!=='error', modelKey:'yolo26n_320', actualFps:mode==='running'?fps:0, cooldown:20, confidence:0.65, targets:'person', targetSamplingRate:5, activeBackend:'DirectML', ...(mode==='error'?{error:'模拟：视频来源暂时不可用'}:{})});
 const specs = [
-  {key:'entrance', component:'windows-inference', name:'【模拟】门厅视觉节点', sources:[source('front','正门入口'),source('desk','前台区域', 'running',4.6),source('hall','一楼走廊','running',4.9),source('lift','电梯大厅','paused'),source('side','侧门通道','error')]},
-  {key:'warehouse', component:'windows-inference', name:'【模拟】仓库视觉节点', sources:[source('stock','仓库通道','running',4.4),source('loading','装卸区域','running',4.2),source('rear','后门入口','paused')]},
-  {key:'offline', component:'windows-inference', name:'【模拟】停车场视觉节点（离线）', offline:true, sources:[]},
+  {key:'entrance', component:'windows-inference', name:'【模拟】门厅视觉推理节点', sources:[source('front','正门入口'),source('desk','前台区域', 'running',4.6),source('hall','一楼走廊','running',4.9),source('lift','电梯大厅','paused'),source('side','侧门通道','error')]},
+  {key:'warehouse', component:'windows-inference', name:'【模拟】仓库视觉推理节点', sources:[source('stock','仓库通道','running',4.4),source('loading','装卸区域','running',4.2),source('rear','后门入口','paused')]},
+  {key:'offline', component:'windows-inference', name:'【模拟】停车场视觉推理节点（离线）', offline:true, sources:[]},
   {key:'camera', component:'android-camera', name:'【模拟】移动巡检相机', sources:[]},
   {key:'phone', component:'android-notifier', name:'【模拟】值班手机'},
   {key:'tablet', component:'android-notifier', name:'【模拟】备用平板（离线）', offline:true},

@@ -117,7 +117,7 @@ private fun CameraTarget(state: PublisherState, streaming: Boolean, onBind: (Str
                         state.targetsLoading -> "加载中…"
                         state.targetsLoadFailed -> "加载失败"
                         state.targets.isEmpty() -> "暂无节点"
-                        else -> "选择视觉节点"
+                        else -> "选择视觉推理节点"
                     }
                     Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -234,7 +234,7 @@ internal fun CameraHelpButton(state: PublisherState, captureSize: Pair<Int, Int>
                 }
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).widthIn(max = 720.dp)
                     .padding(vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    CameraHelpSection("开始推流", "相机与视觉节点登录同一账号，选择目标后开始。首次使用需要允许摄像头；暂无目标时先在视觉节点登录，加载失败可刷新。推流期间不能更换目标或规格。")
+                    CameraHelpSection("开始推流", "相机与视觉推理节点登录同一账号，选择目标后开始。首次使用需要允许摄像头；暂无目标时先在视觉推理节点登录，加载失败可刷新。推流期间不能更换目标或规格。")
                     Text("当前状态：${state.status}", style = MaterialTheme.typography.bodySmall)
                     CameraHelpSection("画面与规格", "640×480 / 720P 是规格上限，最高 5 帧/秒。实际采集和发送尺寸由摄像头能力决定，不支持时会回退；画面等比显示，横竖屏切换保持推流并更新方向。")
                     if (captureSize != null && sentSize != null) {
@@ -242,7 +242,7 @@ internal fun CameraHelpButton(state: PublisherState, captureSize: Pair<Int, Int>
                         Text("采集 ${captureSize.first}×${captureSize.second} · 发送 ${sentSize.first}×${sentSize.second}" + if (fallback) " · 回退" else "", style = MaterialTheme.typography.bodySmall)
                     }
                     CameraHelpSection("亮度与预览", "降低亮度仅在推流时调整当前窗口；停止后恢复。关闭预览只隐藏本机画面，推流继续，区域尺寸和位置不变。外观在设置中独立选择。")
-                    CameraHelpSection("统计", "入队表示本机发送队列接纳；收帧只表示服务中继收件，不代表视觉节点已接收或完成推理。丢弃的两个数值依次为本机 / 服务；主动限帧未采样不算丢弃。")
+                    CameraHelpSection("统计", "入队表示本机发送队列接纳；收帧只表示服务中继收件，不代表视觉推理节点已接收或完成推理。丢弃的两个数值依次为本机 / 服务；主动限帧未采样不算丢弃。")
                     Text("入队 ${state.sentFrames} · 收帧 ${state.acknowledgedFrames} · 丢弃 ${state.droppedFrames}/${state.relayDroppedFrames}", style = MaterialTheme.typography.bodySmall)
                     Text("当前主动未采样 ${state.sampledOutFrames} 帧", style = MaterialTheme.typography.bodySmall)
                     state.stream?.sourceName?.takeIf { it.isNotBlank() }?.let {

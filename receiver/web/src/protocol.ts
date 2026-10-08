@@ -64,4 +64,4 @@ export function mergeAlerts(existing: Alert[], incoming: Alert[]): Alert[] {
   return [...events.values()].sort((a,b) => Date.parse(b.timestamp)-Date.parse(a.timestamp)).slice(0,100);
 }
 export function eventLabel(kind: string) { return ({ 'visual-detection': '视觉检测', 'sensor-detection': '传感器检测', 'connection-lost': '连接中断', 'detection-interrupted': '检测中断' } as Record<string,string>)[kind] ?? '检测事件'; }
-export function typeLabel(kind: string) { return ({ visual: '视觉节点', sensor: '传感器节点', notification: '通知节点' } as Record<string,string>)[kind] ?? '节点'; }
+export function typeLabel(kind: string) { return ({ visual: '视觉推理节点', sensor: '传感器节点', notification: '通知节点' } as Record<string,string>)[kind] ?? '节点'; }
