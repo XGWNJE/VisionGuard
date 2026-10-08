@@ -8,7 +8,7 @@ VisionGuard 由检测节点、统一服务和控制台协作。视觉推理节�
 
 [使用方式](#使用方式) · [快速开始](#快速开始) · [当前组件](#当前组件) · [路线规划](#路线规划) · [文档与许可](#文档与许可)
 
-[![Version](https://img.shields.io/badge/version-0.6.10-1f6feb)](./VERSION) [![License](https://img.shields.io/badge/license-MIT-7c3aed)](./LICENSE)
+[![Version](https://img.shields.io/badge/version-0.6.11-1f6feb)](./VERSION) [![License](https://img.shields.io/badge/license-MIT-7c3aed)](./LICENSE)
 
 </div>
 

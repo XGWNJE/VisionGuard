@@ -3,7 +3,7 @@ namespace VisionGuard.Detector.Windows.Utils
     /// <summary>应用级常量配置。</summary>
     internal static class AppConfig
     {
-        public const string Version = "0.6.10";
+        public const string Version = "0.6.11";
         public static string ServerUrl => AccountSession.ServiceUrl;
         public static string Channel => AccountSession.Current?.channel ?? "signed-out";
         public static string SessionToken => AccountSession.Current?.token ?? "";

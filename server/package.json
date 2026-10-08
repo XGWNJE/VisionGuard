@@ -1,6 +1,6 @@
 {
   "name": "visionguard-relay",
-  "version": "0.6.10",
+  "version": "0.6.11",
   "description": "统一服务（内部工程标识 VisionGuard.Relay，HTTP + WebSocket）",
   "main": "dist/index.js",
   "scripts": {
