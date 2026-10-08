@@ -73,6 +73,8 @@ jobs:
           node-version: 24
       - name: Git hooks and PowerShell release authorization
         run: node --test scripts/project-guards.test.js
+      - name: Pending resource cleanup safety in isolated fixtures
+        run: node --test scripts/cleanup-pending-resources.test.js
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
