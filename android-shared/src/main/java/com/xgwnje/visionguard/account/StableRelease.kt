@@ -20,7 +20,12 @@ object StableReleasePolicy {
     private fun time(value: String) = runCatching { Instant.parse(value) }.getOrNull()
     fun select(releases: List<StableRelease>, installed: String, client: String): ClientUpdate? {
         val current = requireNotNull(version(installed)) { "当前客户端版本无效" }
-        val prefix = when (client) { "android-camera" -> "VisionGuard-Detector-v"; "android-notifier" -> "VisionGuard-Notifier-v"; else -> error("不支持此客户端更新") }
+        val prefix = when (client) {
+            "android-camera" -> "VisionGuard-Detector-v"
+            "android-notifier" -> "VisionGuard-Notifier-v"
+            "android-inference" -> "VisionGuard-Inference-v"
+            else -> error("不支持此客户端更新")
+        }
         val stable = releases.filter { !it.draft && !it.prerelease && version(it.tag.removePrefix("v")) != null && time(it.published) != null }.sortedByDescending { time(it.published) }
         val baseline = stable.filter { it.tag.removePrefix("v") == installed }.maxOfOrNull { time(it.published)!! }
         for (release in stable) {

@@ -12,6 +12,7 @@ process.env.VISIONGUARD_DATA_DIR = directory;
 const { AccountFixture } = require('./helpers/accounts') as typeof import('./helpers/accounts');
 const owner = new AccountFixture([{ name: 'camera', component: 'android-camera' }, { name: 'inference', component: 'windows-inference' }, { name: 'console', component: 'web-console' }], 'media-owner');
 const foreign = new AccountFixture([{ name: 'foreign-inference', component: 'windows-inference' }, { name: 'foreign-console', component: 'web-console' }], 'media-other');
+const androidOnly = new AccountFixture([{ name: 'android-only-camera', component: 'android-camera' }, { name: 'android-only-inference', component: 'android-inference' }], 'media-android-owner');
 const { mediaRelay, parseFrame, framePacket, jpegDimensions } = require('../src/services/MediaRelay') as typeof import('../src/services/MediaRelay');
 const { accountStore } = require('../src/services/AccountStore') as typeof import('../src/services/AccountStore');
 const { websocketLimits } = require('../src/services/WebSocketLimits') as typeof import('../src/services/WebSocketLimits');
@@ -19,7 +20,7 @@ const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDB
 test.after(() => fs.rmSync(directory, { recursive: true, force: true }));
 
 async function fixture(t: any) {
-  await Promise.all([owner.ready, foreign.ready]);
+  await Promise.all([owner.ready, foreign.ready, androidOnly.ready]);
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0, ...websocketLimits }); server.on('connection', ws => mediaRelay.handleConnection(ws));
   await new Promise<void>(resolve => server.once('listening', resolve));
   const sockets: WebSocket[] = [];
@@ -195,6 +196,35 @@ test('sampling follows each bound source and idle sources drop to one FPS withou
     assert.equal(message.targetSamplingRate, rate); assert.equal(message.sessionId, ready.sessionId);
   }
   mediaRelay.updateSamplingRates(owner.accountId, foreign.id('foreign-inference'), [{ sourceId: stream.sourceId!, isMonitoring: true, targetSamplingRate: 2 }]);
+  producer.send({ type: 'media-heartbeat' }); await producer.take('media-heartbeat-ack');
+  assert.equal(producer.messages.some(message => message.type === 'media-rate'), false);
+});
+
+test('android inference auto-binds as the only inference node and cannot publish while cameras cannot subscribe', async t => {
+  const f = await fixture(t), stream = mediaRelay.streams(androidOnly.accountId)[0];
+  assert.equal(stream.targetDeviceId, androidOnly.id('android-only-inference')); assert.ok(stream.sourceId);
+  const producer = await f.connect(androidOnly.session('android-only-camera').token, 'publish'), ready = await producer.take('media-ready');
+  assert.equal(ready.targetDeviceId, androidOnly.id('android-only-inference'));
+  const consumer = await f.connect(androidOnly.session('android-only-inference').token, 'subscribe'); await consumer.take('media-ready');
+  producer.ws.send(packet(ready, 1)); assert.equal((await producer.take('frame-ack')).sequence, 1);
+  assert.equal((await consumer.take('frame')).frame.header.sequence, 1);
+  const publishing = await f.connect(androidOnly.session('android-only-inference').token, 'publish'); assert.equal(await publishing.closed, 4001);
+  const subscribing = await f.connect(androidOnly.session('android-only-camera').token, 'subscribe'); assert.equal(await subscribing.closed, 4001);
+});
+
+test('android inference receives per-source sampling updates only for its own account', async t => {
+  const f = await fixture(t);
+  const stream = mediaRelay.streams(androidOnly.accountId)[0];
+  assert.equal(stream.targetDeviceId, androidOnly.id('android-only-inference'));
+  const producer = await f.connect(androidOnly.session('android-only-camera').token, 'publish'), ready = await producer.take('media-ready');
+  const consumer = await f.connect(androidOnly.session('android-only-inference').token, 'subscribe'); await consumer.take('media-ready');
+  for (const rate of [4, 1, 5]) {
+    mediaRelay.updateSamplingRates(androidOnly.accountId, androidOnly.id('android-only-inference'), [{ sourceId: stream.sourceId!, isMonitoring: rate !== 1, targetSamplingRate: rate }]);
+    const message = await producer.take('media-rate');
+    assert.equal(message.targetSamplingRate, rate); assert.equal(message.sessionId, ready.sessionId);
+  }
+  mediaRelay.updateSamplingRates(androidOnly.accountId, foreign.id('foreign-inference'), [{ sourceId: stream.sourceId!, isMonitoring: true, targetSamplingRate: 2 }]);
+  mediaRelay.updateSamplingRates(owner.accountId, owner.id('inference'), [{ sourceId: stream.sourceId!, isMonitoring: true, targetSamplingRate: 2 }]);
   producer.send({ type: 'media-heartbeat' }); await producer.take('media-heartbeat-ack');
   assert.equal(producer.messages.some(message => message.type === 'media-rate'), false);
 });

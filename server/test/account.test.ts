@@ -191,6 +191,22 @@ test('hardware re-login still revokes its earlier credential and parent-bound re
   assert.ok(accountStore.authenticate(second.token));
 });
 
+test('android inference derives detector identity without a resident child session', async t => {
+  const f = await fixture(t);
+  const first = await f.login('android-inference', 'a', { deviceModel: 'Pixel 9' });
+  assert.equal(first.device.role, 'detector'); assert.equal(first.device.nodeType, 'visual');
+  assert.equal(first.device.platform, 'android'); assert.equal(first.device.component, 'android-inference');
+  assert.ok(first.device.deviceName.startsWith('视觉推理节点'));
+  assert.equal(first.resident, undefined);
+  const peer = await f.peer(first.token);
+  assert.equal(peer.auth.component, 'android-inference'); assert.equal(peer.auth.nodeType, 'visual');
+  const closed = new Promise(resolve => peer.ws.once('close', resolve));
+  const second = await f.login('android-inference', 'a', { deviceModel: 'Pixel 9', deviceId: first.device.deviceId }); await closed;
+  assert.equal(accountStore.authenticate(first.token), undefined);
+  assert.ok(accountStore.authenticate(second.token));
+  assert.equal(second.device.deviceId, first.device.deviceId); assert.equal(second.resident, undefined);
+});
+
 test('screenshot queues belong to each connection and stale timers cannot drain a replacement', async t => {
   const f = await fixture(t), first = await f.login();
   const second = await f.login('web-console', 'a', { deviceId: first.device.deviceId });

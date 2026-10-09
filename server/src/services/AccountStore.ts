@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-export type Component = 'web-console' | 'android-notifier' | 'android-camera' | 'windows-inference' | 'windows-resident';
+export type Component = 'web-console' | 'android-notifier' | 'android-camera' | 'windows-inference' | 'android-inference' | 'windows-resident';
 export interface Account { accountId: string; username: string; isAdmin?: boolean }
 export interface AccountDevice {
   accountId: string; deviceId: string; deviceName: string; role: 'detector' | 'console' | 'notifier' | 'lifecycle';
@@ -20,13 +20,14 @@ const COMPONENTS: Record<Exclude<Component, 'windows-resident'>, Pick<AccountDev
   'android-notifier': { role: 'notifier', nodeType: 'notification', platform: 'android' },
   'android-camera': { role: 'detector', nodeType: 'visual', platform: 'android' },
   'windows-inference': { role: 'detector', nodeType: 'visual', platform: 'windows' },
+  'android-inference': { role: 'detector', nodeType: 'visual', platform: 'android' },
 };
 function activeSession(session: StoredSession): boolean {
   const expiry = Date.parse(session.expiresAt);
   return expiry > Date.now() && (session.component !== 'web-console'
     || typeof session.loginStartedAt === 'number' && Number.isFinite(session.loginStartedAt) && expiry === session.loginStartedAt + WEB_SESSION_MS);
 }
-const DEVICE_NAMES = { 'web-console': '控制台', 'android-notifier': '通知节点', 'android-camera': '相机推流节点', 'windows-inference': '视觉推理节点' };
+const DEVICE_NAMES = { 'web-console': '控制台', 'android-notifier': '通知节点', 'android-camera': '相机推流节点', 'windows-inference': '视觉推理节点', 'android-inference': '视觉推理节点' };
 function publicDevice(device: StoredDevice): AccountDevice { const { identityKey: _private, ...value } = device; return value; }
 const tokenHash = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
 export class AccountError extends Error { constructor(readonly status: number, message: string) { super(message); } }

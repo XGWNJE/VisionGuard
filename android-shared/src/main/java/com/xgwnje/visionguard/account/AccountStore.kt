@@ -114,7 +114,7 @@ class AccountStore private constructor(private val prefs: android.content.Shared
     }
     private fun rememberedKey(endpoint: String, component: String): String {
         val base = if (allowsTestEndpoint) normalizeEndpoint(endpoint) else DEFAULT_ENDPOINT
-        require(component == "android-camera" || component == "android-notifier")
+        require(component == "android-camera" || component == "android-notifier" || component == "android-inference")
         return "remembered:$base:$component"
     }
     @Synchronized fun rememberedLogin(endpoint: String, component: String): RememberedLogin? = runCatching {

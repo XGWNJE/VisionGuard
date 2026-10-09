@@ -24,7 +24,11 @@ export function authenticateNode(value: any): NodeIdentity | undefined {
 export function authenticateToken(token: unknown): NodeIdentity | undefined { return accountStore.authenticate(token)?.device; }
 
 export function clientType(identity: NodeIdentity): string {
-  return identity.nodeType === 'visual' ? (identity.platform === 'windows' ? 'windows' : 'android-camera') : identity.nodeType;
+  // 组件直接决定客户端类型；未知视觉节点仍沿用原有的 Windows / Android 相机回退判断。
+  return identity.component === 'android-inference' ? 'android-inference'
+    : identity.component === 'windows-inference' ? 'windows'
+    : identity.component === 'android-camera' ? 'android-camera'
+    : identity.nodeType === 'visual' ? (identity.platform === 'windows' ? 'windows' : 'android-camera') : identity.nodeType;
 }
 
 export type EventKind = 'visual-detection' | 'sensor-detection' | 'connection-lost' | 'detection-interrupted';
@@ -52,7 +56,8 @@ export function allowedCapabilities(identity: NodeIdentity, values: unknown): st
   const common = ['monitor-control', 'config-control', 'request-correlation', 'cache-maintenance'];
   const allowed = identity.component === 'android-camera' ? ['video-publish', 'stream-control', 'camera-config', 'request-correlation', 'cache-maintenance']
     : identity.role === 'notifier' ? ['alarm-control', 'sound-config', 'audio-library', 'request-correlation', 'cache-maintenance']
-    : identity.nodeType === 'visual' ? [...common, 'screenshot-on-demand', 'source-control', 'directml', 'video-subscribe', 'visual-inference']
+    // directml 只描述 Windows 上的 DirectML 推理后端，Android 推理节点不申请该能力。
+    : identity.nodeType === 'visual' ? [...common, 'screenshot-on-demand', 'source-control', ...(identity.component === 'android-inference' ? [] : ['directml']), 'video-subscribe', 'visual-inference']
     : identity.nodeType === 'sensor' ? common : [];
   return Array.isArray(values) ? [...new Set(values.filter((v): v is string => typeof v === 'string' && allowed.includes(v)))] : [];
 }

@@ -63,6 +63,7 @@ function withVersionFixture(callback) {
     'detector/windows-resident/VisionGuard.Resident.Windows.csproj',
     'detector/android/app/build.gradle.kts',
     'detector/android/app/src/main/java/com/xgwnje/visionguard/detector/AppConstants.kt',
+    'detector/android-inference/app/build.gradle.kts',
     'notifier/android/app/build.gradle.kts',
     'server/package.json', 'server/package-lock.json', 'server/src/index.ts',
     'server/data/releases.json', 'receiver/web/package.json', 'receiver/web/package-lock.json'

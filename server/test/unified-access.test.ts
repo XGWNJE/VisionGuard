@@ -19,6 +19,8 @@ const identities = [
 ];
 const { AccountFixture } = require('./helpers/accounts') as typeof import('./helpers/accounts');
 const fixtures = new AccountFixture(identities.map(identity => ({ name: identity.deviceId, component: identity.role === 'detector' ? 'windows-inference' : identity.role === 'lifecycle' ? 'windows-resident' : identity.role === 'notifier' ? 'android-notifier' : 'web-console' })));
+/** 新增的 android 推理节点单独登记，避免改动既有 identities 索引。 */
+const androidInference = new AccountFixture([{ name: 'android', component: 'android-inference' }], 'android-inference-owner');
 test.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
 const { handleConnection, maintainRealtime } = require('../src/services/ConnectionManager') as typeof import('../src/services/ConnectionManager');
 const { authenticateNode, allowedCapabilities, validateEvent } = require('../src/services/NodeProtocol') as typeof import('../src/services/NodeProtocol');
@@ -73,6 +75,18 @@ test('account credentials derive role, type, platform and ID rather than trustin
   for (const override of [{ role: 'console' }, { role: '__proto__' }, { deviceId: 'other' }, { nodeType: 'sensor' }, { platform: 'android' }]) assert.deepEqual(authenticateNode({ ...auth, ...override }), identity);
   assert.equal(authenticateNode({ token: 'old-shared-http-key' }), undefined);
   assert.deepEqual(allowedCapabilities(identities[1] as any, ['source-control', 'screenshot-on-demand', 'monitor-control']), ['monitor-control']);
+});
+
+test('android inference subscribes to video and controls sources without claiming the DirectML backend', async () => {
+  await androidInference.ready;
+  const identity = authenticateNode(androidInference.auth('android'))!;
+  assert.equal(identity.component, 'android-inference'); assert.equal(identity.nodeType, 'visual'); assert.equal(identity.platform, 'android');
+  const requested = ['monitor-control', 'config-control', 'request-correlation', 'cache-maintenance', 'screenshot-on-demand',
+    'source-control', 'directml', 'video-subscribe', 'visual-inference', 'video-publish', 'stream-control'];
+  const granted = allowedCapabilities(identity, requested);
+  for (const capability of ['monitor-control', 'config-control', 'request-correlation', 'cache-maintenance',
+    'screenshot-on-demand', 'source-control', 'video-subscribe', 'visual-inference']) assert.ok(granted.includes(capability), `missing ${capability}`);
+  for (const capability of ['directml', 'video-publish', 'stream-control']) assert.equal(granted.includes(capability), false, `unexpected ${capability}`);
 });
 
 test('event deadline rejects expired, future and overlong sensor events without requiring a picture', () => {

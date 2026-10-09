@@ -17,6 +17,11 @@ artifacts/
 .zcode/
 .local/
 
+# ===== Web 概念预览原型 =====
+# 只忽略构建与依赖产物；原型源码与概念图作为设计交付物入库。
+prototypes/*/node_modules/
+prototypes/*/dist/
+
 # ===== Server =====
 server/node_modules/
 server/dist/
@@ -99,3 +104,16 @@ notifier/android/keystore.properties
 notifier/android/key/
 notifier/android/keystore/
 notifier/android/**/*.jks
+
+# ===== Android 视觉推理节点 =====
+detector/android-inference/.gradle/
+detector/android-inference/.idea/
+detector/android-inference/.kotlin/
+detector/android-inference/local.properties
+detector/android-inference/build/
+detector/android-inference/app/build/
+detector/android-inference/app/release/
+detector/android-inference/keystore.properties
+detector/android-inference/key/
+detector/android-inference/keystore/
+detector/android-inference/**/*.jks

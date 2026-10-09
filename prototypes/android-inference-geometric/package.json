@@ -1,0 +1,21 @@
+{
+  "name": "android-inference-geometric",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/prepare-sites-build.mjs",
+    "preview": "vite preview",
+    "test:sites": "node --test tests/sites-worker.test.mjs",
+    "test": "node --test tests/contract.test.mjs"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "6.1.1",
+    "vite": "8.3.2",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "lucide-react": "1.49.0"
+  },
+  "devDependencies": {}
+}

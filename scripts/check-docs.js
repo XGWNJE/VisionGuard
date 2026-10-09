@@ -10,6 +10,7 @@ const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 
 const COMPONENTS = [
   { label: '视觉推理节点', platform: 'Windows', relativePath: 'detector/windows-wpf', source: 'detector/windows-wpf/App.xaml.cs' },
+  { label: '视觉推理节点', platform: 'Android', relativePath: 'detector/android-inference', source: 'detector/android-inference/app/build.gradle.kts' },
   { label: '相机推流节点', platform: 'Android', relativePath: 'detector/android', source: 'detector/android/app/build.gradle.kts' },
   { label: '控制台', platform: 'Web', relativePath: 'receiver/web', source: 'receiver/web/src/main.tsx' },
   { label: '通知节点', platform: 'Android', relativePath: 'notifier/android', source: 'notifier/android/app/build.gradle.kts' },
@@ -19,7 +20,7 @@ const COMPONENTS = [
 const WS_ROLES = ['detector', 'console', 'notifier', 'lifecycle'];
 
 const RETAINED_SKILLS = [
-  { name: 'visionguard-build', script: '.agents/skills/visionguard-build/scripts/build-all.ps1', modes: ['All', 'Server', 'Windows', 'WPF', 'WindowsResident', 'Android', 'AndroidDetector', 'AndroidNotifier'] },
+  { name: 'visionguard-build', script: '.agents/skills/visionguard-build/scripts/build-all.ps1', modes: ['All', 'Server', 'Windows', 'WPF', 'WindowsResident', 'Android', 'AndroidDetector', 'AndroidInference', 'AndroidNotifier'] },
   { name: 'visionguard-e2e', script: '.agents/skills/visionguard-e2e/scripts/e2e-smoke.ps1', modes: ['Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'WpfPersonDetection', 'WpfParserContract', 'ResidentLaunch', 'ModelDownload', 'SourceAutoSave', 'CardLayoutPlan', 'PerformanceWatchdog'] },
   { name: 'visionguard-release', script: 'scripts/publish-release.ps1', modes: ['-PreflightOnly', '-SkipServerDeploy', '-UploadVps'] }
 ];
@@ -120,6 +121,12 @@ function checkVersionSources(root, version, errors) {
     'versionCode = notificationVersionCode', 'versionName = notificationVersion'
   ]) {
     exactChecks.push(['notifier/android/app/build.gradle.kts', expected]);
+  }
+  for (const expected of [
+    'repositoryRoot.resolve("VERSION").readText().trim()',
+    'versionCode = inferenceVersionCode', 'versionName = inferenceVersion'
+  ]) {
+    exactChecks.push(['detector/android-inference/app/build.gradle.kts', expected]);
   }
 
   const cache = new Map();
@@ -334,6 +341,7 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
   const expectedProtocol = [
     ['视觉推理节点（Windows）', 'windows-inference', 'detector', 'visual', 'windows'],
     ['视觉推理节点（驻留子进程）', 'windows-resident', 'lifecycle', 'resident', 'windows'],
+    ['视觉推理节点（Android）', 'android-inference', 'detector', 'visual', 'android'],
     ['相机推流节点（Android）', 'android-camera', 'detector', 'visual', 'android'],
     ['控制台（Web）', 'web-console', 'console', 'console', 'web'],
     ['通知节点（Android）', 'android-notifier', 'notifier', 'notification', 'android']
@@ -346,6 +354,7 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
   const expectedBuild = [
     ['视觉推理节点（Windows）', ['Windows', 'WPF'], ['wpf'], 'detector/windows-package/bin/Release/VisionGuard.Detector.Windows.exe'],
     ['视觉推理节点（驻留子进程）', ['WindowsResident'], ['wpf'], 'detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe'],
+    ['视觉推理节点（Android）', ['AndroidInference'], ['android-inference'], 'detector/android-inference/app/build/outputs/apk/release/app-release.apk'],
     ['相机推流节点（Android）', ['AndroidDetector'], ['android-detector'], 'detector/android/app/build/outputs/apk/release/app-release.apk'],
     ['控制台（Web）', ['Server'], [], 'server/dist/console/index.html'],
     ['通知节点（Android）', ['AndroidNotifier'], ['android-notifier'], 'notifier/android/app/build/outputs/apk/release/app-release.apk'],
@@ -407,11 +416,11 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
     requireText(operations, `\`${command}\``, 'docs/60-构建验证与发布.md', `the resident command ${command}`, errors);
   }
 
-  for (const [directory, role, name, engineering, rowName] of [
-    ['detector', 'detector', '相机推流节点', 'VisionGuard.Detector.Android', '相机推流节点（Android）'],
-    ['notifier', 'notifier', '通知节点', 'VisionGuard.Notifier.Android', '通知节点（Android）']
+  for (const [base, role, name, engineering, rowName] of [
+    ['detector/android', 'detector', '相机推流节点', 'VisionGuard.Detector.Android', '相机推流节点（Android）'],
+    ['notifier/android', 'notifier', '通知节点', 'VisionGuard.Notifier.Android', '通知节点（Android）'],
+    ['detector/android-inference', 'inference', '视觉推理节点', 'VisionGuard.Inference.Android', '视觉推理节点（Android）']
   ]) {
-    const base = directory + '/android';
     const packageName = 'com.xgwnje.visionguard.' + role;
     const gradlePath = base + '/app/build.gradle.kts';
     const gradle = readUtf8(root, gradlePath, errors, { checkBom: false });
@@ -714,6 +723,7 @@ function checkDomainAlignment(root, operations, readme, overview, errors) {
     ['docs/10-当前架构.md', overview],
     ['detector/windows-shared/Utils/AccountSession.cs', readUtf8(root, 'detector/windows-shared/Utils/AccountSession.cs', errors, { checkBom: false })],
     ['detector/android/app/build.gradle.kts', readUtf8(root, 'detector/android/app/build.gradle.kts', errors, { checkBom: false })],
+    ['detector/android-inference/app/build.gradle.kts', readUtf8(root, 'detector/android-inference/app/build.gradle.kts', errors, { checkBom: false })],
     ['android-shared/src/main/java/com/xgwnje/visionguard/account/AccountStore.kt', readUtf8(root, 'android-shared/src/main/java/com/xgwnje/visionguard/account/AccountStore.kt', errors, { checkBom: false })]
   ]) {
     requireText(content, domain, relativePath, 'the canonical service domain', errors);

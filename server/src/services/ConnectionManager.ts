@@ -20,7 +20,7 @@ import { NotificationScopeStore, parseNotificationScope, scopeAccepts } from './
 import { TimeStandardStore, validAlarmTimeZone } from './TimeStandardStore';
 import { authenticateNode, clientType, allowedCapabilities, validateEvent, registeredNodes, REALTIME_TTL_MS, DETECTION_STALL_MS, type NodeIdentity, type NodeRole } from './NodeProtocol';
 import { addAlert, getAlertById, markAlertScreenshot, type AddAlertResult } from '../services/AlertStore';
-import { isValidSetConfigKey, validateSetConfigValue, MAX_TARGETS_LENGTH } from '../services/ControlProtocol';
+import { isValidSetConfigKey, validateSetConfigValue, usesIntegerPercentConfidence, MAX_TARGETS_LENGTH } from '../services/ControlProtocol';
 import { remoteConfigRole, sanitizeRemoteSettings, validateRemoteConfig } from './RemoteSettings';
 import { getSafeScreenshotPath, isSafeAlertId, validateAlertMeta, validateImageMagic } from '../utils/security';
 import type {
@@ -82,6 +82,14 @@ function associateScreenshotPayload(
 
 function getConnectionCount(): number {
   return detectorClients.size + notifierClients.size + residentWindowsClients.size + receiverClients.size;
+}
+
+/** 日志角色名由服务端签发的组件身份决定，客户端自报字段不参与。 */
+function detectorRoleLabel(identity: NodeIdentity): string {
+  return identity.component === 'android-camera' ? '相机推流节点（Android）'
+    : identity.component === 'android-inference' ? '视觉推理节点（Android）'
+    : identity.component === 'windows-inference' ? '视觉推理节点（Windows）'
+    : identity.nodeType === 'sensor' ? '传感器节点' : '视觉推理节点（Windows）';
 }
 
 function detectorRemovalKey(clientType: string, deviceId: string): string {
@@ -816,7 +824,7 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   _heartbeatCounter.set(msg.deviceId, count);
   if (count === 1 || (process.env.VISIONGUARD_MEDIA_DIAGNOSTICS === '1' && count % 60 === 0)) {
     const silentSec = Math.round((Date.now() - client.lastSeen.getTime()) / 1000);
-    const roleLabel = client.identity.component === 'android-camera' ? '相机推流节点（Android）' : client.identity.nodeType === 'sensor' ? '传感器节点' : '视觉推理节点（Windows）';
+    const roleLabel = detectorRoleLabel(client.identity);
     console.log(`[ws][${new Date().toISOString()}] ${roleLabel} 心跳: ${client.deviceName} (${msg.deviceId}) monitoring=${msg.isMonitoring} 静默${silentSec}s`);
   }
 
@@ -991,7 +999,7 @@ function handleSetConfig(senderWs: WebSocket, msg: WsSetConfig): void {
 
   const model = msg.targetSourceId ? target.sources.find(item => item.sourceId === msg.targetSourceId)?.modelKey : target.modelKey;
   const labels = target.modelLabels?.[model ?? '']?.map(item => item.value);
-  const validation = validateSetConfigValue(msg.key, msg.value, target.modelOptions, target.identity.component === 'windows-inference', labels);
+  const validation = validateSetConfigValue(msg.key, msg.value, target.modelOptions, usesIntegerPercentConfidence(target.identity.component), labels);
   if (!validation.ok) {
     sendJson(senderWs, { type: 'command-ack', requestId: msg.requestId, phase: 'completed', targetDeviceId: msg.targetDeviceId, command: `set-config:${msg.key}`, success: false, reason: validation.reason }, 'set-config-ack->sender');
     return;
@@ -1367,7 +1375,7 @@ const maintenanceTimer = setInterval(() => {
     for (const [id, client] of clients) {
       if (client.lastSeen.getTime() <= detectorDeadline) {
         const silentSec = Math.round((now - client.lastSeen.getTime()) / 1000);
-        const roleLabel = client.identity.component === 'android-camera' ? '相机推流节点（Android）' : client.identity.nodeType === 'sensor' ? '传感器节点' : '视觉推理节点（Windows）';
+        const roleLabel = detectorRoleLabel(client.identity);
         console.log(`[ws][${ts}] ${roleLabel} 幽灵清理: ${client.deviceName} (${id}) 静默 ${silentSec}s 阈值 ${config.deviceOfflineMs / 1000}s`);
         client.ws.terminate();
         emitFault(client, 'connection-lost');
@@ -1398,11 +1406,14 @@ const maintenanceTimer = setInterval(() => {
 maintenanceTimer.unref();
 
 function revokeAndRefresh(): void {
+  // 待移除计时器按 clientType:deviceId 记录，撤销时必须按客户端自己的类型清理，否则计时器会泄漏。
+  // 检测端有身份可直接推导类型，其他角色没有待移除计时器，交给 clientType 的既有回退分支即可。
+  const removalKey = (identity?: NodeIdentity): string => (identity ? clientType(identity) : 'windows');
   for (const clients of [detectorClients, receiverClients, notifierClients, residentWindowsClients]) {
     for (const [id, client] of clients) {
       const live = accountStore.authenticate(socketTokens.get(client.ws));
       if (!live) {
-        clients.delete(id); clearPendingDetectorRemoval('windows', id); clearPendingDetectorRemoval('android-camera', id);
+        clients.delete(id); clearPendingDetectorRemoval(removalKey(client.identity), id);
         clearConnectionWork(id, client.ws); dropDeliveries(id);
         for (const [key, delivery] of deliveries) if (delivery.alert.deviceId === id) deliveries.delete(key);
         for (const [key, fault] of faultOutbox) if (fault.deviceId === id) faultOutbox.delete(key);

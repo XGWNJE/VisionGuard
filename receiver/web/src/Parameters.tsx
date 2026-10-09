@@ -37,10 +37,12 @@ function ParameterField({name,label,value,model,node,source,disabled,send,acks,e
   const modelMissing=name==='modelKey' && !node.modelOptions?.length;
   const labelsMissing=name==='targets' && !labels.length;
   const numeric=!['modelKey','targets'].includes(name);
-  const min=name==='confidence' ? node.platform==='windows' ? .1 : .01 : 1;
-  const max=name==='confidence' ? node.platform==='windows' ? .95 : 1 : name==='targetSamplingRate' ? 5 : 300;
+  // 置信度契约由节点身份决定：Windows 推理节点与 Android 推理节点都是 0.10–0.95 整数百分比（与服务端 ControlProtocol 一致）。
+  const integerPercentConfidence=node.platform==='windows'||node.component==='android-inference';
+  const min=name==='confidence' ? integerPercentConfidence ? .1 : .01 : 1;
+  const max=name==='confidence' ? integerPercentConfidence ? .95 : 1 : name==='targetSamplingRate' ? 5 : 300;
   const draft=entry?.draft ?? current, number=Number(draft);
-  const valid=name==='modelKey' ? !!node.modelOptions?.includes(draft) : name==='targets' ? targets.length>0 && targets.every(item=>labels.some(label=>label.value===item)) : draft.trim()!=='' && Number.isFinite(number) && number>=min && number<=max && (name==='confidence' ? node.platform!=='windows' || Math.abs(number*100-Math.round(number*100))<.000001 : Number.isInteger(number));
+  const valid=name==='modelKey' ? !!node.modelOptions?.includes(draft) : name==='targets' ? targets.length>0 && targets.every(item=>labels.some(label=>label.value===item)) : draft.trim()!=='' && Number.isFinite(number) && number>=min && number<=max && (name==='confidence' ? !integerPercentConfidence || Math.abs(number*100-Math.round(number*100))<.000001 : Number.isInteger(number));
   const matches=name==='targets' ? targets.slice().sort().join(',')===current.split(',').filter(Boolean).sort().join(',') : numeric ? Number(draft)===Number(current) : draft===current;
   const feedback=entry?.status==='confirmed' ? matches ? '已保存' : '执行端已保存，等待读回' : entry?.status==='pending' ? '等待执行端结果…' : entry?.message;
   function change(next:string) { if(entry)write({...entry,draft:next,status:undefined,message:''}); }

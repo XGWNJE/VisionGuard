@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+   账号会话、模型与报警发件箱属于本机凭据和业务数据，不随云备份或设备转移复制。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="account_session.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="account_session.xml" />
+    </device-transfer>
+</data-extraction-rules>

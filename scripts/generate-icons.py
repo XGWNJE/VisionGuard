@@ -47,8 +47,9 @@ def exports():
     for size in (16,24,32,48,64,128,192,256,512):
         yield f"icon/png/{size}.png",launcher(size),"PNG",{"optimize":True}
     yield "receiver/web/public/icon.png",launcher(192),"PNG",{"optimize":True}
-    for component in ("detector","notifier"):
-        base=f"{component}/android/app/src/main/res"
+    for project in ("detector/android","notifier/android","detector/android-inference"):
+        main=f"{project}/app/src/main"
+        base=f"{main}/res"
         for density,size in DENSITIES.items():
             directory=f"{base}/mipmap-{density}"
             yield f"{directory}/ic_launcher.webp",launcher(size),"WEBP",{"lossless":True}
@@ -61,7 +62,7 @@ def exports():
         # apply their own masks. Do not bake transparent rounded corners here.
         store=Image.new("RGBA",(512,512),BACKGROUND)
         store.alpha_composite(foreground(512))
-        yield f"{component}/android/app/src/main/ic_launcher-playstore.png",store,"PNG",{"optimize":True}
+        yield f"{main}/ic_launcher-playstore.png",store,"PNG",{"optimize":True}
 
 def same_pixels(actual,expected,format):
     with Image.open(actual) as left, Image.open(BytesIO(expected)) as right:
