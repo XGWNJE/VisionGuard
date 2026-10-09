@@ -7,5 +7,5 @@ detector/windows-wpf/Icons/LucideGeometry.g.cs text eol=lf
 android-shared/src/main/assets/third-party/lucide-license.txt text eol=lf
 receiver/web/public/third-party/lucide-license.txt text eol=lf
 
-# Web 概念预览原型：源码、测试与构建脚本统一 LF，避免 Windows 检出产生无意义差异。
-prototypes/** text eol=lf
+# Web 概念预览原型：文本统一 LF，二进制按内容自动识别，避免 Windows 检出产生无意义差异。
+prototypes/** text=auto eol=lf
