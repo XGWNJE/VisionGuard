@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 import { COCO } from "../src/coco.mjs";
-import { CATALOGUE, SHEETS } from "../src/catalogue.mjs";
+import { CATALOGUE, ZONES } from "../src/catalogue.mjs";
 import {
   LIMITS,
   MODEL_KEYS,
@@ -160,33 +160,66 @@ test("滚筒吸附把位置限制在合法档位", () => {
   assert.equal(bounded(2.6, 1, 5), 3);
 });
 
-test("业务控件清单完整覆盖 32 项并挂到概念图", () => {
+test("控件清单完整覆盖 32 项并挂到落地分区", () => {
   assert.equal(CATALOGUE.length, 32);
   assert.equal(new Set(CATALOGUE.map(c => c.id)).size, 32);
-  const sheets = Object.keys(SHEETS);
-  assert.equal(sheets.length, 5);
-  const files = new Set();
+  const zones = Object.keys(ZONES);
+  assert.deepEqual(zones, ["main", "params", "sources", "settings", "motion"]);
+  const used = new Set();
   for (const c of CATALOGUE) {
     assert.match(c.id, /^C\d{2}$/);
     for (const field of ["name", "metaphor", "contract", "interaction", "coverage"]) {
       assert.ok(c[field] && c[field].trim().length > 0, `${c.id}.${field} 不能为空`);
     }
-    assert.ok(sheets.includes(c.sheet), `${c.id} 指向未知概念图 ${c.sheet}`);
-    files.add(SHEETS[c.sheet].file);
+    assert.ok(zones.includes(c.zone), `${c.id} 指向未知分区 ${c.zone}`);
+    used.add(c.zone);
   }
-  assert.equal(files.size, 5, "五张概念图不能重复引用同一文件");
-  for (const sheet of Object.values(SHEETS)) {
-    assert.match(sheet.file, /^\d{2}-[a-z-]+\.png$/);
-    assert.ok(sheet.title.trim().length > 0);
+  assert.equal(used.size, 5, "五个分区都要有控件覆盖");
+  for (const zone of Object.values(ZONES)) {
+    assert.ok(zone.label.trim().length > 0 && zone.where.trim().length > 0);
   }
 });
 
-test("五张概念图与预览资产实际存在", async () => {
-  for (const sheet of Object.values(SHEETS)) {
-    await access(new URL(`public/concepts/${sheet.file}`, root));
-  }
+test("概念素材已丢弃，只保留落地资产", async () => {
+  await assert.rejects(access(new URL("public/concepts", root)), "概念图目录不应再存在");
+  const catalogue = await readFile(new URL("src/catalogue.mjs", root), "utf8");
+  assert.ok(!/\.png/.test(catalogue), "控件清单不应再引用概念图文件");
+  assert.ok(!/Concepts/.test(await readFile(new URL("src/DesignLab.jsx", root), "utf8")), "概念图画廊组件应已删除");
   await access(new URL("public/assets/brand.png", root));
   await access(new URL("public/assets/camera-frame.png", root));
+});
+
+test("规范数字与实际样式一致", async () => {
+  const css = await readFile(new URL("src/styles.css", root), "utf8");
+  const spec = [
+    [".drawer--wide{width:min(760px,100vw)}", "参数 / 遮罩抽屉宽度 760"],
+    [".drawer{width:min(560px,100vw)", "普通抽屉宽度 560"],
+    [".mask-canvas-frame{--mask-handle:48px;--mask-handle-offset:-25px;padding:26px", "遮罩内衬 26 与把手 48"],
+    [".parameter-strip>span,.parameter-strip>button{padding:8px 12px;white-space:nowrap;border-right:1px solid var(--border);min-height:48px", "底部参数条触点 48"],
+    [".wheel{width:112px;height:220px", "采样滚筒 112 × 220"],
+    [".wheel-assembly--compact .wheel{width:60px;height:146px}", "冷却滚筒每位 60 × 146"],
+    [".main-paddle{flex:1;font-size:30px;min-width:0;min-height:80px", "启停压板高 80"],
+    [".square-key{width:80px;min-height:80px", "参数 / 遮罩方键 80"],
+    [".source-stop{display:flex;align-items:center;gap:12px;width:100%;border-bottom:1px solid var(--border);border-left:3px solid transparent;min-height:94px", "来源行高 94 与左缘 3px"],
+    [".mask-plane{position:relative;aspect-ratio:1672/941;width:100%;background:#202020;touch-action:none;overflow:hidden", "遮罩画布溢出裁剪"],
+    [".tablet-frame{background:var(--page);width:100%;max-width:1280px;aspect-ratio:16/10;padding:20px 24px;display:flex;flex-direction:column;border:1px solid var(--border);min-height:700px", "平板帧 1280×800、内高下限 700"],
+  ];
+  for (const [needle, label] of spec) {
+    assert.ok(css.includes(needle), `样式与规范不一致：${label}`);
+  }
+  assert.ok(!css.includes("920px"), "旧的 920px 抽屉宽度应已收回");
+  assert.ok(!css.includes("min-height:560px"), "平板帧内高下限不应退回 560");
+  assert.ok(!css.includes("concept-gallery"), "概念图画廊样式应已删除");
+});
+
+test("遮罩把手贴边时内移，四角都有规则", async () => {
+  const css = await readFile(new URL("src/styles.css", root), "utf8");
+  for (const edge of ["l", "r", "t", "b"]) {
+    assert.ok(css.includes(`data-edge~="${edge}"`), `缺少 ${edge} 边内移规则`);
+  }
+  const editor = await readFile(new URL("src/MaskEditor.jsx", root), "utf8");
+  assert.ok(editor.includes("data-edge="), "遮罩把手应带上贴边标记");
+  assert.ok(editor.includes('className="mask-canvas-frame"'), "遮罩画布应带内衬容器");
 });
 
 test("原型只使用项目主题色与 Lucide 资源", async () => {
