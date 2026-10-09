@@ -17,6 +17,11 @@ artifacts/
 .zcode/
 .local/
 
+# ===== Web 概念预览原型 =====
+# 只忽略构建与依赖产物；原型源码与概念图作为设计交付物入库。
+prototypes/*/node_modules/
+prototypes/*/dist/
+
 # ===== Server =====
 server/node_modules/
 server/dist/
