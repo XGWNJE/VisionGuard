@@ -10,8 +10,9 @@ allprojects {
         p.layout.buildDirectory.set(new File(repository, '.local/console-preview/android/' + rootProject.name + '/' + p.name))
         def previewResources = new File(p.layout.buildDirectory.get().asFile, 'preview-res/values')
         previewResources.mkdirs()
-        def names = ['detector':'相机推流节点', 'notifier':'通知节点', 'android-inference':'视觉推理节点']
-        def component = rootDir.parentFile.name
+        def names = ['detector/android':'相机推流节点', 'notifier/android':'通知节点', 'detector/android-inference':'视觉推理节点']
+        // 用相对仓库根的工程路径做键：detector/ 下现在有两个 Android 工程，只看父目录名会撞在一起。
+        def component = repository.toPath().relativize(rootDir.toPath()).toString().replace('\\', '/')
         if (!names.containsKey(component)) throw new GradleException('Unknown Android component for UI preview: ' + component)
         new File(previewResources, 'strings.xml').setText('<resources><string name="app_name">' + names[component] + ' UI预览</string></resources>', 'UTF-8')
         p.android.sourceSets.release.res.srcDir(previewResources.parentFile)

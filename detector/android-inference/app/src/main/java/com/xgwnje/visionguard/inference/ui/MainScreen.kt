@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -366,7 +367,8 @@ private fun MainPreviewCard(
             )
         }
         Surface(
-            modifier = Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(min = 200.dp),
+            // 主预览放在可滚动列里，高度不受父约束，用固定比例盒而不是 weight（weight 在无界高度下会塌成 0）。
+            modifier = Modifier.fillMaxWidth().aspectRatio(4f / 3f),
             shape = RoundedCornerShape(8.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             color = FrameBackdrop
