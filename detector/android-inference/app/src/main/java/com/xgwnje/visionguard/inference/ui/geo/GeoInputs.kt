@@ -51,6 +51,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -120,6 +121,7 @@ fun GeoDrawer(
                     .fillMaxHeight()
                     .background(MaterialTheme.colorScheme.surface, RectangleShape)
                     .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape)
+                    .clip(RectangleShape)
                     .focusRequester(focusRequester)
                     .focusable()
                     .onPreviewKeyEvent { event ->
@@ -213,6 +215,7 @@ fun GeoWheel(
                     .height(height)
                     .background(MaterialTheme.colorScheme.surface, RectangleShape)
                     .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape)
+                    .clip(RectangleShape)
                     .focusRequester(focusRequester)
                     .focusable(enabled = enabled)
                     .onPreviewKeyEvent { event ->
@@ -268,7 +271,7 @@ fun GeoWheel(
                     if (number < min || number > max) continue
                     val d = (number - position) / step
                     val clamped = d.coerceIn(-3f, 3f)
-                    val y = sin(clamped * 0.43f) * Geo.WheelStep.value
+                    val y = sin(clamped * 0.43f) * (height * 0.45f).value
                     val scale = 1f - minOf(abs(d), 3f) * 0.15f
                     val alpha = maxOf(0.18f, 1f - abs(d) * 0.26f)
                     Text(

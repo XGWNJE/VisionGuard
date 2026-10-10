@@ -85,7 +85,6 @@ object Geo {
     val WheelWidth = 112.dp
     val WheelHeight = 220.dp
     val WheelNumber = 40.sp
-    val WheelStep = 108.dp
 
     /** 冷却三位滚筒。 */
     val DigitWidth = 60.dp

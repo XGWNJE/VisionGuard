@@ -42,6 +42,7 @@ import com.xgwnje.visionguard.inference.ui.geo.GeoDivider
 import com.xgwnje.visionguard.inference.ui.geo.GeoHint
 import com.xgwnje.visionguard.inference.ui.geo.GeoLampTone
 import com.xgwnje.visionguard.inference.ui.geo.GeoMessageRibbon
+import com.xgwnje.visionguard.inference.ui.geo.GeoParameterDrawer
 import com.xgwnje.visionguard.inference.ui.geo.GeoNodeHeader
 import com.xgwnje.visionguard.inference.ui.geo.ParameterStrip
 import com.xgwnje.visionguard.inference.ui.geo.PreviewComposition
@@ -197,7 +198,7 @@ fun MainScreen(
     
         val editingParams = state.sources.firstOrNull { it.sourceId == parameterEditorFor }
         if (editingParams != null) {
-            ParameterEditorDialog(
+            GeoParameterDrawer(
                 sourceName = editingParams.sourceName,
                 initial = editingParams.params,
                 running = editingParams.state.isRunning,
