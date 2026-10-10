@@ -79,7 +79,8 @@
       "symbol": "Camera",
       "platforms": [
         "web",
-        "windows"
+        "windows",
+        "android"
       ],
       "autoMirror": false,
       "notification": false,
@@ -99,7 +100,8 @@
       "name": "check",
       "symbol": "Check",
       "platforms": [
-        "windows"
+        "windows",
+        "android"
       ],
       "autoMirror": false,
       "notification": false,
@@ -109,7 +111,8 @@
       "name": "chevron-down",
       "symbol": "ChevronDown",
       "platforms": [
-        "windows"
+        "windows",
+        "android"
       ],
       "autoMirror": false,
       "notification": false,
@@ -135,6 +138,17 @@
       "autoMirror": true,
       "notification": false,
       "sha256": "ac41487b7ceea933b0f036a4b9d9c18c972285159528a7ddd8d7d81b6476fd34"
+    },
+    {
+      "name": "chevron-up",
+      "symbol": "ChevronUp",
+      "platforms": [
+        "android",
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "e7c0f5229a9b40bfc598f38e4c76099780bdd0747927c98322e816772d929b63"
     },
     {
       "name": "circle-alert",
@@ -198,6 +212,39 @@
       "sha256": "9d0c453ec383a9ed9204e4699ac91d3dacc45b342ba62809206ddd0c6d25ec28"
     },
     {
+      "name": "external-link",
+      "symbol": "ExternalLink",
+      "platforms": [
+        "android",
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "65f9dfdd9cbaf6209ce987a2b55f53752fd3ff9dacb821b7b39077f9c4dda211"
+    },
+    {
+      "name": "eye",
+      "symbol": "Eye",
+      "platforms": [
+        "android",
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "00a0323072f501a008a1a21e900df21b0d6b8bb78f4678a41de636a7a8886a4c"
+    },
+    {
+      "name": "eye-off",
+      "symbol": "EyeOff",
+      "platforms": [
+        "android",
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "50740c99c98756a852e98f20232fc8cf7a1467026cd42b5623fc411fa40cddc6"
+    },
+    {
       "name": "grip-horizontal",
       "symbol": "GripHorizontal",
       "platforms": [
@@ -218,10 +265,33 @@
       "sha256": "ad8e009893383a9937982d3d5aa27d22feba9238fab124eecace69e6974a0de1"
     },
     {
+      "name": "loader-circle",
+      "symbol": "LoaderCircle",
+      "platforms": [
+        "android",
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "e3be2408834cf3061c7b786fef2d5ec484f53b37d8f4803c44752b47a9600387"
+    },
+    {
+      "name": "lock-keyhole",
+      "symbol": "LockKeyhole",
+      "platforms": [
+        "android",
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "39252d6f3adaa0c7bb90b262cdbb4192dd2295531bdaf4784aacf27203f66dac"
+    },
+    {
       "name": "log-out",
       "symbol": "LogOut",
       "platforms": [
-        "web"
+        "web",
+        "android"
       ],
       "autoMirror": true,
       "notification": false,
@@ -231,7 +301,8 @@
       "name": "minus",
       "symbol": "Minus",
       "platforms": [
-        "windows"
+        "windows",
+        "android"
       ],
       "autoMirror": false,
       "notification": false,
@@ -302,7 +373,8 @@
       "name": "plus",
       "symbol": "Plus",
       "platforms": [
-        "windows"
+        "windows",
+        "android"
       ],
       "autoMirror": false,
       "notification": false,
@@ -322,7 +394,8 @@
       "name": "radio",
       "symbol": "Radio",
       "platforms": [
-        "web"
+        "web",
+        "android"
       ],
       "autoMirror": false,
       "notification": false,
@@ -340,10 +413,33 @@
       "sha256": "1106bb56a814a423edd1c03c6935c1a16f048f365eb43a567840da3f1e8e3fa4"
     },
     {
+      "name": "rotate-ccw",
+      "symbol": "RotateCcw",
+      "platforms": [
+        "android",
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "02f2a0344ebca39676cc64a9b78472744cc18904123affb99e05aae5c06e34b6"
+    },
+    {
+      "name": "scan",
+      "symbol": "Scan",
+      "platforms": [
+        "android",
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "e4626421a68e768736a30436b7994e7b9dfe2a3230cf6417d636a9204b416297"
+    },
+    {
       "name": "search",
       "symbol": "Search",
       "platforms": [
-        "web"
+        "web",
+        "android"
       ],
       "autoMirror": false,
       "notification": false,
@@ -354,7 +450,8 @@
       "symbol": "Settings",
       "platforms": [
         "web",
-        "windows"
+        "windows",
+        "android"
       ],
       "autoMirror": false,
       "notification": false,

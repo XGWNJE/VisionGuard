@@ -59,6 +59,9 @@ data class ModelDownloadState(val received: Long, val total: Long) {
     val percent: Int get() = if (total <= 0L) 0 else ((received * 100) / total).toInt().coerceIn(0, 100)
 }
 
+/** 界面提示语义：失败、等待、成功与一般信息分开表达。 */
+enum class MessageTone { Info, Success, Warning, Error }
+
 /** 推理端对外状态，界面只读这一份快照。 */
 data class RuntimeUiState(
     val sources: List<SourceView> = emptyList(),
@@ -71,7 +74,8 @@ data class RuntimeUiState(
     val lastAlertAtMs: Long? = null,
     val cameraStatus: LocalCameraStatus = LocalCameraStatus(),
     val runningSourceCount: Int = 0,
-    val message: String? = null
+    val message: String? = null,
+    val messageTone: MessageTone = MessageTone.Info
 )
 
 /**
@@ -656,7 +660,10 @@ class InferenceRuntime private constructor(private val context: Context) {
 
     fun clearMessage() = updateState { it.copy(message = null) }
 
-    fun setMessage(message: String?) = updateState { it.copy(message = message) }
+    fun setMessage(message: String?) = updateState { it.copy(message = message, messageTone = MessageTone.Info) }
+
+    /** 带语义的提示：失败、等待与成功在信息带上分别表达。 */
+    fun setMessage(message: String?, tone: MessageTone) = updateState { it.copy(message = message, messageTone = tone) }
 
     /** 应用级关闭（退出登录时也会走会话回收，不必显式调用）。 */
     fun shutdown() {

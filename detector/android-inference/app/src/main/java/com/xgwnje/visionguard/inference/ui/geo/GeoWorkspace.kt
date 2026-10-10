@@ -1,0 +1,487 @@
+package com.xgwnje.visionguard.inference.ui.geo
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.xgwnje.visionguard.account.VisionGuardStatusColors
+import com.xgwnje.visionguard.icons.LucideIcons
+import com.xgwnje.visionguard.inference.model.ModelKeys
+import com.xgwnje.visionguard.inference.source.SourceCaptureMode
+import com.xgwnje.visionguard.inference.source.SourceView
+import com.xgwnje.visionguard.inference.ui.EmptyFramePlaceholder
+import com.xgwnje.visionguard.inference.ui.FrameBackdrop
+import com.xgwnje.visionguard.inference.ui.FrameCanvas
+import com.xgwnje.visionguard.inference.ui.argbToImageBitmap
+
+/** 节点头部：品牌、连接状态、帮助 / 设置 / 账号入口。 */
+@Composable
+fun GeoNodeHeader(
+    connectionText: String,
+    connectionTone: GeoLampTone,
+    onConnection: () -> Unit,
+    onHelp: () -> Unit,
+    onSettings: () -> Unit,
+    onAccount: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = Geo.ScreenPadding),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Geo.Gap)
+    ) {
+        Box(
+            Modifier
+                .size(width = 6.dp, height = 24.dp)
+                .background(MaterialTheme.colorScheme.primary, RectangleShape)
+        )
+        Spacer(Modifier.width(2.dp))
+        Text(
+            "VisionGuard",
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+        )
+        Spacer(Modifier.width(4.dp))
+        Box(Modifier.width(Geo.Border).height(20.dp).background(MaterialTheme.colorScheme.outlineVariant))
+        Spacer(Modifier.width(4.dp))
+        Text(
+            "视觉推理节点",
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f)
+        )
+        Box(Modifier.clickable(onClick = onConnection).padding(horizontal = 4.dp)) {
+            GeoLamp(connectionText, connectionTone)
+        }
+        GeoIconKey(LucideIcons.CircleHelp, "使用帮助", onHelp)
+        GeoIconKey(LucideIcons.Settings, "全局设置", onSettings)
+        GeoIconKey(LucideIcons.UserRound, "账号菜单", onAccount)
+    }
+}
+
+/** 主预览：等比画面、遮罩与检测框、身份条与画面闸门。 */
+@Composable
+fun PreviewComposition(
+    source: SourceView?,
+    freshness: String,
+    shutterHidden: Boolean,
+    onToggleShutter: () -> Unit,
+    onInspect: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val frame = source?.state?.preview
+    val image by com.xgwnje.visionguard.inference.ui.rememberFrameBitmap(frame, maxWidth = 1600)
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(Geo.Gap)) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                source?.sourceName ?: "主预览",
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            Text(freshness, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+        }
+        Row(Modifier.fillMaxWidth().weight(1f)) {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape)
+                    .background(FrameBackdrop, RectangleShape)
+            ) {
+                if (image == null || shutterHidden) {
+                    EmptyFramePlaceholder(Modifier.fillMaxSize())
+                } else {
+                    FrameCanvas(
+                        image = image,
+                        detections = source?.state?.detections.orEmpty(),
+                        maskRegions = source?.masks.orEmpty(),
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                GeoIconKey(
+                    if (shutterHidden) LucideIcons.Eye else LucideIcons.EyeOff,
+                    if (shutterHidden) "展开预览" else "收起预览",
+                    onClick = onToggleShutter,
+                    modifier = Modifier.align(Alignment.BottomStart).padding(12.dp)
+                )
+                if (source?.state?.error != null && !shutterHidden) {
+                    Text(
+                        source.state.error,
+                        color = VisionGuardStatusColors.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)
+                    )
+                }
+            }
+            IdentityStrap(source, onInspect)
+        }
+    }
+}
+
+/** 身份条：竖排来源名、序号与来源检查入口。 */
+@Composable
+private fun IdentityStrap(source: SourceView?, onInspect: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier
+            .width(64.dp)
+            .fillMaxHeight()
+            .clickable(onClick = onInspect)
+            .background(MaterialTheme.colorScheme.surfaceVariant, RectangleShape)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(
+            Modifier.weight(1f).fillMaxHeight(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                source?.sourceName ?: "来源检查",
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.graphicsLayerRotate()
+            )
+        }
+        Column(
+            Modifier.fillMaxHeight(),
+            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                if (source?.mode == SourceCaptureMode.LocalCamera) "本机" else "远程",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+            Icon(
+                LucideIcons.Camera,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+private fun Modifier.graphicsLayerRotate(): Modifier = this.rotate(-90f)
+
+/** 来源滑架：序号、名称、运行状态与添加入口。 */
+@Composable
+fun SourceCarriage(
+    sources: List<SourceView>,
+    selectedSourceId: String?,
+    maxSources: Int,
+    nowElapsedMs: Long,
+    onSelect: (String) -> Unit,
+    onAdd: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier
+            .background(MaterialTheme.colorScheme.surface, RectangleShape)
+            .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "来源 / ${sources.size} · $maxSources",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f)
+            )
+            Text("SELECT", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall.copy(fontSize = Geo.FontMeta))
+        }
+        GeoDivider()
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            sources.forEachIndexed { index, source ->
+                SourceStop(
+                    index = index + 1,
+                    source = source,
+                    selected = source.sourceId == selectedSourceId,
+                    nowElapsedMs = nowElapsedMs,
+                    onSelect = { onSelect(source.sourceId) }
+                )
+            }
+        }
+        GeoDivider()
+        GeoKey(
+            onClick = onAdd,
+            label = "添加来源",
+            icon = LucideIcons.Plus,
+            modifier = Modifier.fillMaxWidth().padding(12.dp)
+        )
+    }
+}
+
+@Composable
+private fun SourceStop(
+    index: Int,
+    source: SourceView,
+    selected: Boolean,
+    nowElapsedMs: Long,
+    onSelect: () -> Unit
+) {
+    val lamp = when {
+        source.state.error != null -> GeoLampTone.Error
+        source.state.isRunning -> GeoLampTone.Success
+        source.state.isReady -> GeoLampTone.Neutral
+        else -> GeoLampTone.Warning
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = Geo.SourceRowMin, max = Geo.SourceRowMax)
+            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
+            .clickable(onClick = onSelect),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .width(Geo.SourceBar)
+                .fillMaxHeight()
+                .background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface)
+        )
+        Text(
+            index.toString().padStart(2, '0'),
+            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.titleLarge.copy(fontSize = 28.sp, fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.padding(horizontal = 12.dp)
+        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                source.sourceName,
+                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            GeoLamp(source.state.error ?: source.state.statusText, lamp)
+        }
+        Icon(
+            LucideIcons.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(end = 8.dp).size(20.dp)
+        )
+    }
+    GeoDivider()
+}
+
+/** 操作台：后端 / 帧率 / 目标读数、启停压板与参数、遮罩方键。 */
+@Composable
+fun ActionDeck(
+    source: SourceView?,
+    busy: Boolean,
+    wide: Boolean,
+    onToggle: () -> Unit,
+    onParams: () -> Unit,
+    onMasks: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val running = source?.state?.isRunning == true
+    val ready = source?.state?.isReady == true
+    val topConfidence = source?.state?.detections?.maxByOrNull { it.confidence }?.confidence
+    val readouts: @Composable (Modifier) -> Unit = { readoutModifier ->
+        Row(readoutModifier, horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
+            Readout("推理后端", source?.state?.backend?.ifEmpty { "未报告" } ?: "未报告", null, Modifier.weight(1f))
+            Readout("实际帧率", if (running) "%.1f".format(source?.state?.actualFps ?: 0.0) else "0.0", "FPS", Modifier.weight(1f))
+            Readout(
+                "检测目标",
+                if (running && topConfidence != null) "${(topConfidence * 100).toInt()}" else "—",
+                if (running && topConfidence != null) "%" else null,
+                Modifier.weight(1f)
+            )
+        }
+    }
+    val keys: @Composable (Modifier) -> Unit = { keyModifier ->
+        Row(keyModifier, horizontalArrangement = Arrangement.spacedBy(Geo.Gap), verticalAlignment = Alignment.CenterVertically) {
+            GeoKey(
+                onClick = onToggle,
+                tone = GeoTone.Primary,
+                enabled = ready,
+                busy = busy,
+                icon = if (running) LucideIcons.Pause else LucideIcons.Play,
+                label = if (busy) "处理中…" else if (running) "停止检测" else "开始检测",
+                labelStyle = MaterialTheme.typography.titleMedium,
+                minHeight = Geo.PaddleHeight,
+                modifier = Modifier.weight(1f)
+            )
+            GeoKey(
+                onClick = onParams,
+                icon = LucideIcons.SlidersHorizontal,
+                label = "参数",
+                minWidth = Geo.SquareKey,
+                minHeight = Geo.PaddleHeight
+            )
+            GeoKey(
+                onClick = onMasks,
+                icon = LucideIcons.Scan,
+                label = "遮罩",
+                minWidth = Geo.SquareKey,
+                minHeight = Geo.PaddleHeight
+            )
+        }
+    }
+    Column(
+        modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = Geo.ScreenPadding, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(Geo.Gap)
+    ) {
+        if (wide) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
+                readouts(Modifier.width(340.dp))
+                keys(Modifier.weight(1f))
+            }
+        } else {
+            readouts(Modifier.fillMaxWidth())
+            keys(Modifier.fillMaxWidth())
+        }
+    }
+}
+
+@Composable
+private fun Readout(label: String, value: String, unit: String?, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                value,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            unit?.let {
+                Spacer(Modifier.width(2.dp))
+                Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+/** 技术信息带：只读标识与参数摘要，点任意项进入参数抽屉。 */
+@Composable
+fun ParameterStrip(
+    source: SourceView?,
+    onParams: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val running = source?.state?.isRunning == true
+    Row(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = Geo.Touch)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = Geo.ScreenPadding),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Geo.Gap)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                if (running) LucideIcons.LockKeyhole else LucideIcons.Pencil,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                if (running) "运行中只读" else "已停止 · 可编辑",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        source?.let { view ->
+            StripItem("置信度", "${view.params.confidencePercent}%", onParams)
+            StripItem("采样", "${view.params.targetFps} FPS", onParams)
+            StripItem("冷却", "${view.params.cooldownSeconds} 秒", onParams)
+            StripItem(null, ModelKeys.displayName(view.params.modelKey), onParams)
+            StripItem(null, "${view.params.watchedClasses.size} 个目标", onParams)
+        }
+    }
+}
+
+@Composable
+private fun StripItem(label: String?, value: String, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .heightIn(min = Geo.Touch)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (label != null) {
+            Text("$label ", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
+        Text(value, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
+    }
+}
+
+/** 空来源态：几何数字占位与唯一添加入口。 */
+@Composable
+fun EmptyWorkspace(onAdd: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier.fillMaxSize().padding(Geo.ScreenPadding),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            "00",
+            color = MaterialTheme.colorScheme.outlineVariant,
+            style = MaterialTheme.typography.titleLarge.copy(fontSize = 96.sp, fontWeight = FontWeight.Bold)
+        )
+        Text("还没有来源", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "添加本机相机，或创建远程槽位等待控制台绑定。",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(16.dp))
+        GeoKey(onClick = onAdd, icon = LucideIcons.Plus, label = "添加来源", tone = GeoTone.Primary, minWidth = 160.dp)
+    }
+}

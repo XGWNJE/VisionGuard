@@ -56,10 +56,11 @@ fun FrameCanvas(
     val measurer = rememberTextMeasurer()
     val labelStyle = MaterialTheme.typography.bodySmall
     val boxColor = MaterialTheme.colorScheme.primary
-    val labelBackground = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f)
-    val labelText = MaterialTheme.colorScheme.onSurface
-    val maskFill = Color.Black.copy(alpha = 0.62f)
-    val maskEdge = MaterialTheme.colorScheme.tertiary
+    // 检测框标签与遮罩边都用主色：语义色只表达状态，不做装饰。
+    val labelBackground = MaterialTheme.colorScheme.primary
+    val labelText = MaterialTheme.colorScheme.onPrimary
+    val maskFill = Color.Black
+    val maskEdge = MaterialTheme.colorScheme.primary
 
     Canvas(modifier.background(FrameBackdrop)) {
         val frame = image ?: return@Canvas
@@ -150,9 +151,13 @@ fun ThumbnailCanvas(
 @Composable
 fun EmptyFramePlaceholder(modifier: Modifier = Modifier) {
     Box(modifier.background(FrameBackdrop), contentAlignment = Alignment.Center) {
-        Text("暂无画面", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodyMedium)
+        Text("暂无画面", color = FrameText, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
-/** 画面容器底色，避免空态与留边闪烁。 */
-val FrameBackdrop: Color = Color.Black
+/** 画面容器底色：固定深色，浅深色主题下都不与画面留边冲突。 */
+val FrameBackdrop: Color = Color(0xFF202020)
+
+/** 画面上的正文与辅助文字：底色固定深色，因此固定用浅色。 */
+val FrameText: Color = Color(0xFFF2F2F2)
+val FrameSubText: Color = Color(0xFFB3B3B3)

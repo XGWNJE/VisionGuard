@@ -72,6 +72,13 @@ object LucideIcons {
         ))
     }
 
+    val Camera: ImageVector by lazy {
+        vector("camera", false, listOf(
+            "M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z",
+            "M9 13a3 3 0 1 0 6 0a3 3 0 1 0 -6 0Z"
+        ))
+    }
+
     val Car: ImageVector by lazy {
         vector("car", false, listOf(
             "M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2",
@@ -81,9 +88,27 @@ object LucideIcons {
         ))
     }
 
+    val Check: ImageVector by lazy {
+        vector("check", false, listOf(
+            "M20 6 9 17l-5-5"
+        ))
+    }
+
+    val ChevronDown: ImageVector by lazy {
+        vector("chevron-down", false, listOf(
+            "m6 9 6 6 6-6"
+        ))
+    }
+
     val ChevronRight: ImageVector by lazy {
         vector("chevron-right", true, listOf(
             "m9 18 6-6-6-6"
+        ))
+    }
+
+    val ChevronUp: ImageVector by lazy {
+        vector("chevron-up", false, listOf(
+            "m18 15-6-6-6 6"
         ))
     }
 
@@ -126,6 +151,30 @@ object LucideIcons {
         ))
     }
 
+    val ExternalLink: ImageVector by lazy {
+        vector("external-link", false, listOf(
+            "M15 3h6v6",
+            "M10 14 21 3",
+            "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"
+        ))
+    }
+
+    val Eye: ImageVector by lazy {
+        vector("eye", false, listOf(
+            "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0",
+            "M9 12a3 3 0 1 0 6 0a3 3 0 1 0 -6 0Z"
+        ))
+    }
+
+    val EyeOff: ImageVector by lazy {
+        vector("eye-off", false, listOf(
+            "M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49",
+            "M14.084 14.158a3 3 0 0 1-4.242-4.242",
+            "M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143",
+            "m2 2 20 20"
+        ))
+    }
+
     val GripHorizontal: ImageVector by lazy {
         vector("grip-horizontal", false, listOf(
             "M11 9a1 1 0 1 0 2 0a1 1 0 1 0 -2 0Z",
@@ -145,6 +194,34 @@ object LucideIcons {
             "M18 12L21 15",
             "M3.59 3.59A1.99 1.99 0 0 0 3 5v14a2 2 0 0 0 2 2h14c.55 0 1.052-.22 1.41-.59",
             "M21 15V5a2 2 0 0 0-2-2H9"
+        ))
+    }
+
+    val LoaderCircle: ImageVector by lazy {
+        vector("loader-circle", false, listOf(
+            "M21 12a9 9 0 1 1-6.219-8.56"
+        ))
+    }
+
+    val LockKeyhole: ImageVector by lazy {
+        vector("lock-keyhole", false, listOf(
+            "M11 16a1 1 0 1 0 2 0a1 1 0 1 0 -2 0Z",
+            "M5 10H19a2 2 0 0 1 2 2V20a2 2 0 0 1 -2 2H5a2 2 0 0 1 -2 -2V12a2 2 0 0 1 2 -2Z",
+            "M7 10V7a5 5 0 0 1 10 0v3"
+        ))
+    }
+
+    val LogOut: ImageVector by lazy {
+        vector("log-out", true, listOf(
+            "m16 17 5-5-5-5",
+            "M21 12H9",
+            "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"
+        ))
+    }
+
+    val Minus: ImageVector by lazy {
+        vector("minus", false, listOf(
+            "M5 12h14"
         ))
     }
 
@@ -194,10 +271,27 @@ object LucideIcons {
         ))
     }
 
+    val Plus: ImageVector by lazy {
+        vector("plus", false, listOf(
+            "M5 12h14",
+            "M12 5v14"
+        ))
+    }
+
     val Power: ImageVector by lazy {
         vector("power", false, listOf(
             "M12 2v10",
             "M18.4 6.6a9 9 0 1 1-12.77.04"
+        ))
+    }
+
+    val Radio: ImageVector by lazy {
+        vector("radio", false, listOf(
+            "M16.247 7.761a6 6 0 0 1 0 8.478",
+            "M19.075 4.933a10 10 0 0 1 0 14.134",
+            "M4.925 19.067a10 10 0 0 1 0-14.134",
+            "M7.753 16.239a6 6 0 0 1 0-8.478",
+            "M10 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0Z"
         ))
     }
 
@@ -207,6 +301,36 @@ object LucideIcons {
             "M21 3v5h-5",
             "M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16",
             "M8 16H3v5"
+        ))
+    }
+
+    val RotateCcw: ImageVector by lazy {
+        vector("rotate-ccw", false, listOf(
+            "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8",
+            "M3 3v5h5"
+        ))
+    }
+
+    val Scan: ImageVector by lazy {
+        vector("scan", false, listOf(
+            "M3 7V5a2 2 0 0 1 2-2h2",
+            "M17 3h2a2 2 0 0 1 2 2v2",
+            "M21 17v2a2 2 0 0 1-2 2h-2",
+            "M7 21H5a2 2 0 0 1-2-2v-2"
+        ))
+    }
+
+    val Search: ImageVector by lazy {
+        vector("search", false, listOf(
+            "m21 21-4.34-4.34",
+            "M3 11a8 8 0 1 0 16 0a8 8 0 1 0 -16 0Z"
+        ))
+    }
+
+    val Settings: ImageVector by lazy {
+        vector("settings", false, listOf(
+            "M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915",
+            "M9 12a3 3 0 1 0 6 0a3 3 0 1 0 -6 0Z"
         ))
     }
 

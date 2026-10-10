@@ -26,6 +26,7 @@ import com.xgwnje.visionguard.account.ApplicationOptions
 import com.xgwnje.visionguard.account.dark
 import com.xgwnje.visionguard.account.rememberAppearance
 import com.xgwnje.visionguard.inference.runtime.InferenceRuntime
+import com.xgwnje.visionguard.inference.runtime.MessageTone
 import com.xgwnje.visionguard.inference.service.InferenceService
 import com.xgwnje.visionguard.inference.source.SourceCaptureMode
 import com.xgwnje.visionguard.inference.ui.MainScreen
@@ -52,16 +53,16 @@ class MainActivity : ComponentActivity() {
         if (pending != null) {
             if (granted) {
                 val runtime = InferenceRuntime.get(this)
-                runtime.setMessage("已授予相机权限，正在启动来源")
+                runtime.setMessage("已授予相机权限，正在启动来源", MessageTone.Success)
                 lifecycleScope.launch { runtime.startSource(pending)?.let(runtime::setMessage) }
             } else {
-                InferenceRuntime.get(this).setMessage("请先授予相机权限")
+                InferenceRuntime.get(this).setMessage("请先授予相机权限", MessageTone.Warning)
             }
         }
     }
 
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (!granted) InferenceRuntime.get(this).setMessage("未授予通知权限，前台服务通知可能不显示")
+        if (!granted) InferenceRuntime.get(this).setMessage("未授予通知权限，前台服务通知可能不显示", MessageTone.Warning)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -102,7 +103,7 @@ class MainActivity : ComponentActivity() {
                                     // 远控恢复可能在应用处于后台时触发，系统会拒绝启动前台服务：
                                     // 这时明确提示，而不是让异常打断界面线程。
                                     if (!InferenceService.start(this@MainActivity)) {
-                                        runtime.setMessage("系统不允许在后台启动前台服务，请回到应用后重新开始检测")
+                                        runtime.setMessage("系统不允许在后台启动前台服务，请回到应用后重新开始检测", MessageTone.Error)
                                     }
                                 } else {
                                     InferenceService.stop(this@MainActivity)
