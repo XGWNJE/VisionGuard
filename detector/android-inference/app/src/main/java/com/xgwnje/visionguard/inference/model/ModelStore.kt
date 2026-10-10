@@ -13,25 +13,61 @@ import java.util.concurrent.TimeUnit
  * 与 Windows modern 档同一套 YOLO26 模型（`[1,300,6]`，模型内含 NMS）：Android 的
  * ONNX Runtime 属于现代档，不需要 Win7 legacy 的 YOLOv5 模型；解析器仍保留 YOLOv5 分支，
  * 以便与 Windows 端对拍并容纳旧模型文件。
+ *
+ * 量化版**并存**而不是替换：服务端 `/models` 是静态目录，同一基名额外分发
+ * `<基名>_int8.onnx` 即可，推理链与解析器都不用改（量化前后 I/O 契约一致，已核对）。
+ * 之所以并存：Windows 端量化是否可用尚未确定，替换会让两端行为不一致；而且真机实测
+ * 最优组合就是 **ONNX Runtime · CPU + INT8**（见 [InferenceProvider.production]），
+ * 保留 FP32 作为回退有助于排查。
  */
 object ModelKeys {
-    val keys: List<String> = listOf(
+    /** 原始（FP32）模型键，顺序即默认选择顺序。 */
+    val baseKeys: List<String> = listOf(
         "yolo26n_320", "yolo26n_640",
         "yolo26s_320", "yolo26s_640",
         "yolo26m_320", "yolo26m_640"
     )
 
-    val defaultKey: String = keys.first()
+    /** 量化版后缀。 */
+    const val INT8_SUFFIX = "_int8"
+
+    /**
+     * 全部可选键：**每个 FP32 键之后紧跟它的量化版**。
+     *
+     * 顺序不能随意调整：[InferenceRuntime.defaultModelKey] 取"第一个已下载的键"，
+     * 量化版排在各自本体之后，才能保证新装设备的默认模型仍是 FP32。
+     */
+    val keys: List<String> = baseKeys.flatMap { listOf(it, it + INT8_SUFFIX) }
+
+    val defaultKey: String = baseKeys.first()
 
     fun isSupported(key: String): Boolean = keys.contains(key)
 
-    /** 界面展示名，例如 `YOLO26n · 320`。 */
+    /** 是否为量化版键。 */
+    fun isQuantized(key: String): Boolean = key.endsWith(INT8_SUFFIX)
+
+    /** 量化版键对应的本体键。 */
+    fun baseOf(key: String): String = key.removeSuffix(INT8_SUFFIX)
+
+    /**
+     * 模型文件名。
+     *
+     * 服务端 `/models` 按文件名静态分发，因此量化版键天然对应 `<键>.onnx`，不需要额外映射。
+     */
+    fun fileName(key: String): String = "$key.onnx"
+
+    /**
+     * 界面展示名，例如 `YOLO26n · 320`、`YOLO26n · 320 INT8`。
+     *
+     * 无法识别的键原样返回，不做猜测。
+     */
     fun displayName(key: String): String {
-        val parts = key.split('_')
+        val quantized = isQuantized(key)
+        val parts = baseOf(key).split('_')
         if (parts.size != 2 || !parts[0].startsWith("yolo26")) return key
         val size = parts[1]
         val variant = parts[0].removePrefix("yolo26").uppercase()
-        return "YOLO26$variant · $size"
+        return "YOLO26$variant · $size" + if (quantized) " INT8" else ""
     }
 }
 
@@ -49,7 +85,7 @@ class ModelStore(private val modelsDir: File, private val serverUrl: String) {
         .readTimeout(DOWNLOAD_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .build()
 
-    fun file(key: String): File = File(modelsDir, "$key.onnx")
+    fun file(key: String): File = File(modelsDir, ModelKeys.fileName(key))
 
     fun isDownloaded(key: String): Boolean {
         val target = file(key)
@@ -68,8 +104,8 @@ class ModelStore(private val modelsDir: File, private val serverUrl: String) {
             if (!ModelKeys.isSupported(key)) return@withContext "本端不支持模型 $key"
             modelsDir.mkdirs()
             val target = file(key)
-            val temporary = File(modelsDir, "$key.onnx.tmp")
-            val request = Request.Builder().url("$serverUrl/models/$key.onnx").get().build()
+            val temporary = File(modelsDir, "${ModelKeys.fileName(key)}.tmp")
+            val request = Request.Builder().url("$serverUrl/models/${ModelKeys.fileName(key)}").get().build()
 
             try {
                 http.newCall(request).execute().use { response ->

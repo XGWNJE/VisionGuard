@@ -2,7 +2,9 @@ package com.xgwnje.visionguard.inference.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 /**
  * 量化产物的形态契约：端侧按这些约定找文件、运行时按这些约定接受图。
@@ -14,6 +16,9 @@ import org.junit.Test
  * 原样记进报告。
  */
 class QuantizedModelContractTest {
+
+    @get:Rule
+    val temporary = TemporaryFolder()
 
     private val probeBytes: ByteArray
         get() = javaClass.getResourceAsStream("/int8-probe.onnx")?.use { it.readBytes() }
@@ -41,10 +46,21 @@ class QuantizedModelContractTest {
     @Test
     fun `量化产物命名规则与模型键一致`() {
         // 端侧按 `<键>_int8.onnx` 找量化产物；名字变了这里先失败。
-        val key = ModelKeys.keys.first()
+        val key = ModelKeys.baseKeys.first()
         assertEquals("yolo26n_320", key)
-        assertEquals("${key}_int8", "yolo26n_320_int8")
-        assertTrue("量化键不在可选清单里，说明还没接入选择入口", !ModelKeys.isSupported("${key}_int8"))
+
+        val modelsDir = temporary.newFolder("models")
+        java.io.File(modelsDir, "${key}.onnx").writeText("x")
+        java.io.File(modelsDir, "${key}_int8.onnx").writeText("x")
+
+        val store = ModelStore(modelsDir, "http://127.0.0.1:1")
+        assertEquals("${key}.onnx", store.file(key).name)
+        assertEquals("${key}_int8.onnx", store.file("${key}_int8").name)
+
+        // 量化键必须已接入选择入口，并且是有区分度的展示名。
+        assertTrue("量化键未接入可选清单", ModelKeys.isSupported("${key}_int8"))
+        assertTrue(ModelKeys.isQuantized("${key}_int8"))
+        assertTrue(ModelKeys.displayName("${key}_int8").contains("INT8"))
     }
 
     /**
