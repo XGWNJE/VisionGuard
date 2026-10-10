@@ -10,6 +10,8 @@ camerax = "1.4.2"
 okhttp = "4.12.0"
 gson = "2.11.0"
 onnxruntime = "1.30.0"
+litert = "2.3.0"
+tflitePlay = "16.5.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -27,6 +29,13 @@ camerax-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", vers
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
+litert = { group = "com.google.ai.edge.litert", name = "litert", version.ref = "litert" }
+litert-api = { group = "com.google.ai.edge.litert", name = "litert-api", version.ref = "litert" }
+litert-gpu = { group = "com.google.ai.edge.litert", name = "litert-gpu", version.ref = "litert" }
+# 预编译的 TFLite 运行时与 GPU delegate：Google Maven 上仍有带 org.tensorflow.lite API 的分发。
+# LiteRT 2.x 的新 API（CompiledModel）把 delegate 换成加速器插件，此处先用这套可编译的入口。
+play-tflite-java = { group = "com.google.android.gms", name = "play-services-tflite-java", version.ref = "tflitePlay" }
+play-tflite-gpu = { group = "com.google.android.gms", name = "play-services-tflite-gpu", version.ref = "tflitePlay" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

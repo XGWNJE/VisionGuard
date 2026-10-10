@@ -104,9 +104,9 @@ class OnnxEngine private constructor(
 
         /** NNAPI 档位到标志位的映射；默认档不附加任何标志。 */
         private fun nnapiFlags(provider: InferenceProvider): EnumSet<NNAPIFlags> = when (provider) {
-            InferenceProvider.NNAPI_FP16 -> EnumSet.of(NNAPIFlags.USE_FP16)
-            InferenceProvider.NNAPI_NCHW -> EnumSet.of(NNAPIFlags.USE_NCHW)
-            InferenceProvider.NNAPI_ACCEL_ONLY -> EnumSet.of(NNAPIFlags.CPU_DISABLED)
+            InferenceProvider.ONNX_NNAPI_FP16 -> EnumSet.of(NNAPIFlags.USE_FP16)
+            InferenceProvider.ONNX_NNAPI_NCHW -> EnumSet.of(NNAPIFlags.USE_NCHW)
+            InferenceProvider.ONNX_NNAPI_ACCEL_ONLY -> EnumSet.of(NNAPIFlags.CPU_DISABLED)
             else -> EnumSet.noneOf(NNAPIFlags::class.java)
         }
 

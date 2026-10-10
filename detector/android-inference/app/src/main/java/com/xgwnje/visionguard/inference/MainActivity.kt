@@ -178,10 +178,10 @@ class MainActivity : ComponentActivity() {
 
         Thread {
             val dir = File(filesDir, AccelerationBenchmark.MODEL_DIR)
-            val models = if (requested.isEmpty()) {
-                AccelerationMeasure.modelsIn(dir)
+            val requestedNames = if (requested.isEmpty()) {
+                AccelerationMeasure.modelsIn(dir).map { it.name }
             } else {
-                requested.map { File(dir, it) }
+                requested
             }
             val device = "${Build.MANUFACTURER} ${Build.MODEL} / API ${Build.VERSION.SDK_INT}"
             val results = mutableListOf<AccelerationMeasure.Result>()
@@ -196,19 +196,29 @@ class MainActivity : ComponentActivity() {
                     }
             }
 
-            if (models.isEmpty()) {
+            if (requestedNames.isEmpty()) {
                 failures += "没有待测模型：$dir（用 run-as 推送到该目录）"
             }
-            models.forEach { model ->
-                if (!model.isFile) {
-                    failures += "${model.name}：文件不存在"
+            requestedNames.forEach { name ->
+                // 同一个模型基名下的 .onnx 与 .tflite 会各跑自己运行时的档位。
+                val base = name.substringBeforeLast('.')
+                val onnx = File(dir, "$base.onnx")
+                val tflite = File(dir, "$base.tflite")
+                val usable = listOfNotNull(
+                    onnx.takeIf { it.isFile && it.length() >= OnnxEngine.MIN_MODEL_BYTES },
+                    tflite.takeIf { it.isFile && it.length() >= OnnxEngine.MIN_MODEL_BYTES }
+                )
+                if (usable.isEmpty()) {
+                    failures += "$base：既没有可用的 .onnx 也没有 .tflite"
                     return@forEach
                 }
-                if (model.length() < OnnxEngine.MIN_MODEL_BYTES) {
-                    failures += "${model.name}：体积不足 ${OnnxEngine.MIN_MODEL_BYTES} 字节"
-                    return@forEach
-                }
-                val (rows, errors) = AccelerationBenchmark.run(model, InferenceProvider.benchmarkOrder, frame)
+                val (rows, errors) = AccelerationBenchmark.run(
+                    modelName = base,
+                    onnxFile = onnx.takeIf { it.isFile },
+                    tfliteFile = tflite.takeIf { it.isFile },
+                    providers = InferenceProvider.benchmarkOrder,
+                    argb = frame
+                )
                 results += rows
                 failures += errors
             }

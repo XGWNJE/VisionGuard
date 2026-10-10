@@ -13,24 +13,39 @@ class AccelerationMeasureTest {
     val temporary = TemporaryFolder()
 
     @Test
-    fun `正式运行固定走 CPU 四线程`() {
-        assertEquals(InferenceProvider.CPU4, InferenceProvider.production)
+    fun `正式运行固定走 ONNX CPU 四线程`() {
+        assertEquals(InferenceProvider.ONNX_CPU4, InferenceProvider.production)
         assertEquals(4, InferenceProvider.production.cpuThreads)
-        assertEquals("cpu_4threads", InferenceProvider.production.id)
-        assertTrue(!InferenceProvider.production.usesNnapi)
+        assertEquals("onnx_cpu_4threads", InferenceProvider.production.id)
+        assertEquals(InferenceRuntimeKind.ONNX, InferenceProvider.production.runtime)
+        assertTrue(!InferenceProvider.production.usesAccelerator)
     }
 
     @Test
-    fun `测量档位先 CPU 后加速档且覆盖七个档位`() {
+    fun `两个运行时各有自己的 CPU 基线`() {
+        assertEquals(InferenceProvider.ONNX_CPU4, InferenceProvider.cpuBaseline(InferenceRuntimeKind.ONNX))
+        assertEquals(InferenceProvider.LITERT_CPU4, InferenceProvider.cpuBaseline(InferenceRuntimeKind.LITERT))
+        // 门槛只在同运行时内比较：基线不能跨运行时借用。
+        InferenceRuntimeKind.entries.forEach { runtime ->
+            assertEquals(runtime, InferenceProvider.cpuBaseline(runtime).runtime)
+            assertTrue(!InferenceProvider.cpuBaseline(runtime).usesAccelerator)
+        }
+    }
+
+    @Test
+    fun `测量档位先 CPU 后加速档且每个运行时都覆盖`() {
         val order = InferenceProvider.benchmarkOrder
-        assertEquals(7, order.size)
+        assertEquals(InferenceProvider.entries.size, order.size)
         assertEquals(order.size, order.toSet().size)
-        assertEquals(InferenceProvider.CPU1, order.first())
         assertTrue(order.contains(InferenceProvider.production))
-        // 读数是「加速档 / 同精度 CPU」，CPU 基线必须先测出来，排在加速档之前。
-        val lastCpu = order.indexOfLast { !it.usesNnapi }
-        val firstAccelerated = order.indexOfFirst { it.usesNnapi }
-        assertTrue(firstAccelerated > lastCpu)
+        // 每个运行时都要有 CPU 基线与至少一个加速档，否则比值算不出来。
+        InferenceRuntimeKind.entries.forEach { runtime ->
+            assertTrue(order.any { it.runtime == runtime && !it.usesAccelerator })
+            assertTrue(order.any { it.runtime == runtime && it.usesAccelerator })
+            val lastCpu = order.indexOfLast { it.runtime == runtime && !it.usesAccelerator }
+            val firstAccelerated = order.indexOfFirst { it.runtime == runtime && it.usesAccelerator }
+            assertTrue("$runtime 的 CPU 基线应排在加速档之前", firstAccelerated > lastCpu)
+        }
     }
 
     @Test
@@ -81,35 +96,53 @@ class AccelerationMeasureTest {
         val report = AccelerationMeasure.Report(
             device = "Test Device / API 36",
             results = listOf(
-                result(InferenceProvider.CPU4, medianMs = 100.0),
-                result(InferenceProvider.NNAPI_DEFAULT, medianMs = 70.0),
-                result(InferenceProvider.NNAPI_FP16, medianMs = 70.5),
-                result(InferenceProvider.NNAPI_NCHW, medianMs = 250.0)
+                result(InferenceProvider.ONNX_CPU4, medianMs = 100.0),
+                result(InferenceProvider.ONNX_NNAPI_DEFAULT, medianMs = 70.0),
+                result(InferenceProvider.ONNX_NNAPI_FP16, medianMs = 70.5),
+                result(InferenceProvider.ONNX_NNAPI_NCHW, medianMs = 250.0)
             ),
-            failures = listOf("yolo26n_320.onnx · NNAPI · 仅加速器：no NNAPI device")
+            failures = listOf("yolo26n_320 · ONNX · NNAPI 仅加速器：no NNAPI device")
         )
         val text = report.lines().joinToString("\n")
 
         // 恰好 0.70 达标，0.705 未达标——门槛是 ≤，不是 <。
-        assertTrue(text.contains("NNAPI · 默认 / CPU · 4 线程 = 0.70×（门槛 ≤ 0.70×，达标）"))
-        assertTrue(text.contains("NNAPI · FP16 / CPU · 4 线程 = 0.71×（门槛 ≤ 0.70×，未达标）"))
-        assertTrue(text.contains("NNAPI · NCHW / CPU · 4 线程 = 2.50×（门槛 ≤ 0.70×，未达标）"))
+        assertTrue(text.contains("ONNX · NNAPI 默认 / ONNX · CPU 4 线程 = 0.70×（门槛 ≤ 0.70×，达标）"))
+        assertTrue(text.contains("ONNX · NNAPI FP16 / ONNX · CPU 4 线程 = 0.71×（门槛 ≤ 0.70×，未达标）"))
+        assertTrue(text.contains("ONNX · NNAPI NCHW / ONNX · CPU 4 线程 = 2.50×（门槛 ≤ 0.70×，未达标）"))
         assertTrue(text.contains("设备：Test Device / API 36"))
-        assertTrue(text.contains("失败：yolo26n_320.onnx · NNAPI · 仅加速器：no NNAPI device"))
+        assertTrue(text.contains("失败：yolo26n_320 · ONNX · NNAPI 仅加速器：no NNAPI device"))
+    }
+
+    @Test
+    fun `LiteRT 加速档只与 LiteRT 的 CPU 基线比较`() {
+        val report = AccelerationMeasure.Report(
+            device = "d",
+            results = listOf(
+                result(InferenceProvider.ONNX_CPU4, medianMs = 100.0),
+                result(InferenceProvider.LITERT_CPU8, medianMs = 200.0),
+                result(InferenceProvider.LITERT_GPU, medianMs = 50.0)
+            ),
+            failures = emptyList()
+        )
+        val text = report.lines().joinToString("\n")
+
+        // 50 / 200 = 0.25 达标；绝不能拿 ONNX CPU4=100 去比（那会得到未达标的错误结论）。
+        assertTrue(text.contains("LiteRT · GPU delegate / LiteRT · CPU 8 线程 = 0.25×（门槛 ≤ 0.70×，达标）"))
+        assertTrue(!text.contains("LiteRT · GPU delegate / ONNX · CPU 4 线程"))
     }
 
     @Test
     fun `没有 CPU 基线时不给结论`() {
         val report = AccelerationMeasure.Report(
             device = "d",
-            results = listOf(result(InferenceProvider.NNAPI_DEFAULT, medianMs = 5.0)),
+            results = listOf(result(InferenceProvider.ONNX_NNAPI_DEFAULT, medianMs = 5.0)),
             failures = emptyList()
         )
         assertTrue(report.lines().none { it.contains("×") })
     }
 
     private fun result(provider: InferenceProvider, medianMs: Double) = AccelerationMeasure.Result(
-        model = "yolo26n_320.onnx",
+        model = "yolo26n_320",
         provider = provider,
         runs = 3,
         medianMs = medianMs,

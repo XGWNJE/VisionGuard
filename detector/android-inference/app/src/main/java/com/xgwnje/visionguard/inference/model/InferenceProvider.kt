@@ -1,42 +1,83 @@
 package com.xgwnje.visionguard.inference.model
 
+/** 推理运行时。同一台设备上可并存，用于真机对比测量；正式跑哪一个由测量结论决定。 */
+enum class InferenceRuntimeKind(val id: String, val title: String) {
+    /** ONNX Runtime：现有主线运行时，提供器为 CPU / NNAPI。 */
+    ONNX("onnx", "ONNX Runtime"),
+
+    /** LiteRT（原 TFLite）：提供 CPU 与 GPU delegate，是 NNAPI 之外唯一公开可得的加速路线。 */
+    LITERT("litert", "LiteRT")
+}
+
 /**
- * 可选的推理执行提供器。正式运行固定用 [CPU4]；其余档位只服务于推理加速测量。
+ * 可选的推理档位：运行时 + 执行提供器。正式运行固定用 [ONNX.CPU4]；其余档位只服务于推理加速测量。
  *
  * 为什么需要这张表：ONNX Runtime 官方 Android 包在 Java 侧只有 CPU、NNAPI、XNNPACK
- * 三个提供器（GPU 提供器全是桌面向）。主线曾实测 NNAPI 在 FP32 模型上比 CPU 慢 5–6 倍，
- * 因此把加速档位移除、固定走 CPU。现在要验证的是**量化模型**：加速器对 INT8 的接受度
- * 高于 FP32，所以需要按同一门槛（≤ 同精度 CPU 的 70%）重新实测，而不是沿用 FP32 的结论。
+ * 三个提供器（GPU 提供器全是桌面向），而真机实测 NNAPI 在 FP32 模型上比 CPU 慢 5–6 倍，
+ * 因此主线把加速档位移除、固定走 CPU。现在要验证的是**量化模型 + 换运行时**：
+ * 加速器对 INT8 的接受度高于 FP32，LiteRT 又有独立的 GPU delegate，因此需要按同一门槛
+ * （≤ 同精度 CPU 的 70%）重新实测，而不是沿用 FP32 或 NNAPI 的结论。
  *
- * 这里只保存枚举与显示名，不引用 ONNX Runtime 类型，方便在 JVM 单元测试里固定档位契约。
+ * 这里只保存枚举与显示名，不引用任何运行时类型，方便在 JVM 单元测试里固定档位契约。
  */
-enum class InferenceProvider(val id: String, val title: String) {
-    CPU1("cpu_1thread", "CPU · 1 线程"),
-    CPU4("cpu_4threads", "CPU · 4 线程"),
-    CPU8("cpu_8threads", "CPU · 8 线程"),
-    NNAPI_DEFAULT("nnapi", "NNAPI · 默认"),
-    NNAPI_FP16("nnapi_fp16", "NNAPI · FP16"),
-    NNAPI_NCHW("nnapi_nchw", "NNAPI · NCHW"),
-    NNAPI_ACCEL_ONLY("nnapi_only", "NNAPI · 仅加速器");
+enum class InferenceProvider(val id: String, val title: String, val runtime: InferenceRuntimeKind) {
+    // ── ONNX Runtime ───────────────────────────────────────────────
+    ONNX_CPU1("onnx_cpu_1thread", "ONNX · CPU 1 线程", InferenceRuntimeKind.ONNX),
+    ONNX_CPU4("onnx_cpu_4threads", "ONNX · CPU 4 线程", InferenceRuntimeKind.ONNX),
+    ONNX_CPU8("onnx_cpu_8threads", "ONNX · CPU 8 线程", InferenceRuntimeKind.ONNX),
+    ONNX_NNAPI_DEFAULT("onnx_nnapi", "ONNX · NNAPI 默认", InferenceRuntimeKind.ONNX),
+    ONNX_NNAPI_FP16("onnx_nnapi_fp16", "ONNX · NNAPI FP16", InferenceRuntimeKind.ONNX),
+    ONNX_NNAPI_NCHW("onnx_nnapi_nchw", "ONNX · NNAPI NCHW", InferenceRuntimeKind.ONNX),
+    ONNX_NNAPI_ACCEL_ONLY("onnx_nnapi_only", "ONNX · NNAPI 仅加速器", InferenceRuntimeKind.ONNX),
 
-    val usesNnapi: Boolean get() = this != CPU1 && this != CPU4 && this != CPU8
+    // ── LiteRT ─────────────────────────────────────────────────────
+    LITERT_CPU1("litert_cpu_1thread", "LiteRT · CPU 1 线程", InferenceRuntimeKind.LITERT),
+    LITERT_CPU4("litert_cpu_4threads", "LiteRT · CPU 4 线程", InferenceRuntimeKind.LITERT),
+    LITERT_CPU8("litert_cpu_8threads", "LiteRT · CPU 8 线程", InferenceRuntimeKind.LITERT),
+    LITERT_GPU("litert_gpu", "LiteRT · GPU delegate", InferenceRuntimeKind.LITERT),
+    LITERT_GPU_FP16("litert_gpu_fp16", "LiteRT · GPU delegate FP16", InferenceRuntimeKind.LITERT);
 
-    /** CPU 档位的线程数；NNAPI 档位返回 null。 */
+    /** 是否使用 NNAPI。 */
+    val usesNnapi: Boolean
+        get() = this == ONNX_NNAPI_DEFAULT || this == ONNX_NNAPI_FP16 ||
+            this == ONNX_NNAPI_NCHW || this == ONNX_NNAPI_ACCEL_ONLY
+
+    /** 是否使用 LiteRT 的 GPU delegate。 */
+    val usesGpuDelegate: Boolean get() = this == LITERT_GPU || this == LITERT_GPU_FP16
+
+    /** 是否走硬件加速（判定门槛时与同精度 CPU 对照的就是这些档位）。 */
+    val usesAccelerator: Boolean get() = usesNnapi || usesGpuDelegate
+
+    /** CPU 档位的线程数；加速档位返回 null。 */
     val cpuThreads: Int?
         get() = when (this) {
-            CPU1 -> 1
-            CPU4 -> 4
-            CPU8 -> 8
+            ONNX_CPU1, LITERT_CPU1 -> 1
+            ONNX_CPU4, LITERT_CPU4 -> 4
+            ONNX_CPU8, LITERT_CPU8 -> 8
             else -> null
         }
 
     companion object {
         /** 正式运行使用的档位。 */
-        val production: InferenceProvider = CPU4
+        val production: InferenceProvider = ONNX_CPU4
 
-        /** 测量顺序：先 CPU 基线，再加速档，便于按顺序读数。 */
+        /**
+         * 每个运行时的 CPU 基线档（判定门槛时的对照）。
+         *
+         * 门槛只在「同运行时、同精度」之间比较才有意义：LiteRT 的 GPU delegate 要与 LiteRT 的
+         * CPU 比，不能拿 ONNX 的 CPU 读数当对照。
+         */
+        fun cpuBaseline(runtime: InferenceRuntimeKind): InferenceProvider = when (runtime) {
+            InferenceRuntimeKind.ONNX -> ONNX_CPU4
+            InferenceRuntimeKind.LITERT -> LITERT_CPU4
+        }
+
+        /** 测量顺序：先各运行时的 CPU 基线，再加速档。 */
         val benchmarkOrder: List<InferenceProvider> = listOf(
-            CPU1, CPU4, CPU8, NNAPI_DEFAULT, NNAPI_FP16, NNAPI_NCHW, NNAPI_ACCEL_ONLY
+            ONNX_CPU1, ONNX_CPU4, ONNX_CPU8,
+            ONNX_NNAPI_DEFAULT, ONNX_NNAPI_FP16, ONNX_NNAPI_NCHW, ONNX_NNAPI_ACCEL_ONLY,
+            LITERT_CPU1, LITERT_CPU4, LITERT_CPU8,
+            LITERT_GPU, LITERT_GPU_FP16
         )
 
         fun fromId(id: String): InferenceProvider? = entries.firstOrNull { it.id == id }

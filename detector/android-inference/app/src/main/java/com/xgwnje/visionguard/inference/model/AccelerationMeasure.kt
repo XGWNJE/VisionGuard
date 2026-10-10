@@ -41,17 +41,23 @@ object AccelerationMeasure {
                             .format(row.medianMs, row.minMs, row.maxMs, row.runs, note)
                     )
                 }
-                // 门槛只对同模型、同精度有意义：基线取该模型的 CPU 档（正式运行档位）。
-                val baseline = rows.firstOrNull { it.provider == InferenceProvider.production }
-                if (baseline != null) {
-                    rows.filter { it.provider.usesNnapi }.forEach { row ->
-                        val ratio = row.medianMs / baseline.medianMs
-                        val verdict = if (ratio <= ACCELERATION_RATIO_LIMIT) "达标" else "未达标"
-                        add(
-                            "  ${row.provider.title} / ${baseline.provider.title} = %.2f×（门槛 ≤ %.2f×，%s）"
-                                .format(ratio, ACCELERATION_RATIO_LIMIT, verdict)
-                        )
-                    }
+                // 门槛只在「同运行时、同精度」之间比才有意义：NNAPI 对 ONNX 的 CPU 基线，
+                // GPU/NPU 对各自运行时的 CPU 基线。基线优先取正式档位（CPU · 4 线程），
+                // 该档没有读数时退到同一运行时里有的其它 CPU 档。
+                InferenceRuntimeKind.entries.forEach { runtime ->
+                    val cpuTiers = rows.filter { it.provider.runtime == runtime && !it.provider.usesAccelerator }
+                    val baseline = cpuTiers.firstOrNull { it.provider == InferenceProvider.cpuBaseline(runtime) }
+                        ?: cpuTiers.firstOrNull()
+                        ?: return@forEach
+                    rows.filter { it.provider.usesAccelerator && it.provider.runtime == runtime }
+                        .forEach { row ->
+                            val ratio = row.medianMs / baseline.medianMs
+                            val verdict = if (ratio <= ACCELERATION_RATIO_LIMIT) "达标" else "未达标"
+                            add(
+                                "  ${row.provider.title} / ${baseline.provider.title} = %.2f×（门槛 ≤ %.2f×，%s）"
+                                    .format(ratio, ACCELERATION_RATIO_LIMIT, verdict)
+                            )
+                        }
                 }
             }
             failures.forEach { add("失败：$it") }
