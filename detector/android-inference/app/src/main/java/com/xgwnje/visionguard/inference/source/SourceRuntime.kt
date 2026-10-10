@@ -20,10 +20,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * 一路来源的独立推理运行时。
@@ -51,6 +54,8 @@ class SourceRuntime(
     private val gate = AlertGate()
     private val frameTimes = ArrayDeque<Long>()
     private var engine: OnnxEngine? = null
+    /** 保护会话的使用与关闭：推理是不可中断的原生调用，关闭必须等它返回，否则会撞上已释放的会话。 */
+    private val engineLock = ReentrantLock()
     private var scope: CoroutineScope? = null
     private var job: Job? = null
 
@@ -121,12 +126,17 @@ class SourceRuntime(
 
     /** 停止本路推理；主动停止会清除运行意图。 */
     suspend fun stop() {
-        job?.cancel()
+        // 先等推理协程真正退出：`run` 是不可中断的原生调用，发出取消信号后它可能仍在执行。
+        job?.cancelAndJoin()
         job = null
         scope?.cancel()
         scope = null
-        withContext(Dispatchers.IO) { engine?.close() }
-        engine = null
+        withContext(Dispatchers.IO) {
+            engineLock.withLock {
+                runCatching { engine?.close() }
+                engine = null
+            }
+        }
         lastLocalFrame = null
         lastRemoteSequence = -1L
         frameTimes.clear()
@@ -145,8 +155,11 @@ class SourceRuntime(
     fun close() {
         job?.cancel()
         scope?.cancel()
-        runCatching { engine?.close() }
-        engine = null
+        // 锁内关闭：即使协程还在收尾，也不会与 `run` 并发访问同一个会话。
+        engineLock.withLock {
+            runCatching { engine?.close() }
+            engine = null
+        }
         job = null
         scope = null
     }
@@ -258,7 +271,7 @@ class SourceRuntime(
             val preprocessMs = clockMs() - preprocessStarted
 
             val inferenceStarted = clockMs()
-            val raw = active.run(preprocessed.tensor)
+            val raw = engineLock.withLock { active.run(preprocessed.tensor) }
             val inferMs = clockMs() - inferenceStarted
 
             val parseStarted = clockMs()

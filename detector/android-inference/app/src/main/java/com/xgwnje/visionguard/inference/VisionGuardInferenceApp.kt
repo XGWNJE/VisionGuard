@@ -3,12 +3,14 @@ package com.xgwnje.visionguard.inference
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import com.xgwnje.visionguard.inference.runtime.CrashReporter
 
 /** 应用入口：只创建长期存在的通知渠道，运行状态由推理服务维护。 */
 class VisionGuardInferenceApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        CrashReporter.install(this)
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(

@@ -52,6 +52,7 @@ import com.xgwnje.visionguard.inference.net.MediaState
 import com.xgwnje.visionguard.inference.model.AccelerationDiagnostics
 import com.xgwnje.visionguard.inference.model.AccelerationMode
 import com.xgwnje.visionguard.inference.runtime.AcceleratorSettings
+import com.xgwnje.visionguard.inference.runtime.CrashReporter
 import com.xgwnje.visionguard.inference.runtime.InferenceRuntime
 import com.xgwnje.visionguard.inference.runtime.RuntimeUiState
 import com.xgwnje.visionguard.inference.source.SourceCaptureMode
@@ -576,6 +577,73 @@ private fun AccelerationDiagnostics(state: RuntimeUiState, onMessage: (String?) 
     }
 }
 
+/** 崩溃与异常退出：本机记录 + 系统退出原因（含 native 崩溃与 ANR），可导出反馈。 */
+@Composable
+private fun CrashSection(onMessage: (String?) -> Unit) {
+    val context = LocalContext.current
+    var entries by remember { mutableStateOf<List<CrashReporter.Entry>>(emptyList()) }
+    var loaded by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf<Int?>(null) }
+
+    LaunchedEffect(Unit) {
+        entries = CrashReporter.history(context)
+        loaded = true
+    }
+
+    GeoSectionLabel("05", "崩溃与退出记录", if (loaded) "${entries.size} 条" else "读取中")
+    GeoHint("未捕获异常由本机处理器记录；native 崩溃、ANR 与内存回收从系统退出原因读取，并摘出与推理库相关的帧。")
+    Row(horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
+        GeoKey(
+            onClick = { entries = CrashReporter.history(context) },
+            label = "刷新",
+            icon = LucideIcons.RefreshCw
+        )
+        GeoKey(
+            onClick = {
+                val path = CrashReporter.export(context, entries)
+                onMessage(if (path != null) "已写入 $path" else "写入失败")
+            },
+            label = "写入日志",
+            icon = LucideIcons.Pencil,
+            enabled = entries.isNotEmpty()
+        )
+    }
+    if (loaded && entries.isEmpty()) {
+        Text("没有崩溃或异常退出记录。", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+    }
+    entries.take(6).forEachIndexed { index, entry ->
+        val stamp = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date(entry.time))
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surface, RectangleShape)
+                .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape)
+                .clickable { expanded = if (expanded == index) null else index }
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Text("$stamp · ${entry.kind}", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                entry.summary,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = if (expanded == index) 40 else 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (expanded == index) {
+                entry.detail?.let { detail ->
+                    Spacer(Modifier.height(Geo.Gap))
+                    Text(
+                        detail.take(1600),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(Geo.Gap))
+    }
+}
+
 @Composable
 private fun MaintenanceSection(runtime: InferenceRuntime, onMessage: (String?) -> Unit) {
     val scope = rememberCoroutineScope()
@@ -626,6 +694,9 @@ private fun MaintenanceSection(runtime: InferenceRuntime, onMessage: (String?) -
         )
     }
     report?.let { CacheReport(it) }
+
+    GeoDivider()
+    CrashSection(onMessage)
 
     if (confirmClean) {
         GeoConfirm(
