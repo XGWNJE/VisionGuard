@@ -17,10 +17,11 @@ export function validAudioId(value: unknown): value is string {
 function validName(value: unknown): value is string {
   return typeof value === 'string' && !!value.trim() && value.trim().length <= 64 && !/[\x00-\x1f]/.test(value);
 }
+/** 相机配置在所有相机组件上共用同一套字段与校验；`android-camera` 只是沿用至今的配置角色字面量。 */
 export function sanitizeRemoteSettings(value: unknown, component: string): RemoteSettings | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const v = value as RemoteSettings;
-  if (component === 'android-camera') return (v.cameraResolution === '480p' || v.cameraResolution === '720p') &&
+  if (component === 'android-camera' || component === 'web-camera') return (v.cameraResolution === '480p' || v.cameraResolution === '720p') &&
     typeof v.cameraDimScreen === 'boolean' && typeof v.cameraHidePreview === 'boolean' ? {
       cameraResolution: v.cameraResolution, cameraDimScreen: v.cameraDimScreen, cameraHidePreview: v.cameraHidePreview } : undefined;
   if (component !== 'android-notifier' || !Number.isInteger(v.soundLoopCount) || v.soundLoopCount! < 1 || v.soundLoopCount! > 10 ||

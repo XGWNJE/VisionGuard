@@ -9,7 +9,7 @@ const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-camera-faul
 process.env.VISIONGUARD_DATA_DIR = directory;
 const { AccountFixture } = require('./helpers/accounts') as typeof import('./helpers/accounts');
 const names = ['idle', 'user', 'background', 'locked'];
-const account = new AccountFixture([...names.map(name => ({ name, component: 'android-camera' as const })), { name: 'inference', component: 'windows-inference' }, { name: 'forged-stop-inference', component: 'windows-inference' }, { name: 'console', component: 'web-console' }]);
+const account = new AccountFixture([...names.map(name => ({ name, component: 'android-camera' as const })), { name: 'web-camera-user', component: 'web-camera' as const }, { name: 'inference', component: 'windows-inference' }, { name: 'forged-stop-inference', component: 'windows-inference' }, { name: 'console', component: 'web-console' }]);
 const { handleConnection, maintainRealtime } = require('../src/services/ConnectionManager') as typeof import('../src/services/ConnectionManager');
 const { getAlerts } = require('../src/services/AlertStore') as typeof import('../src/services/AlertStore');
 test.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -32,13 +32,13 @@ test('camera control exits never emit inference faults; Windows source interrupt
     throw new Error('Expected contract result missing');
   }
   await connect('console');
-  for (const name of names) {
+  for (const name of [...names, 'web-camera-user']) {
     const camera = await connect(name);
     camera.send(JSON.stringify({ type: 'heartbeat', isMonitoring: false, isReady: true, monitoringExpected: true,
       sources: [{ sourceId: 'untrusted-inference', sourceName: 'Untrusted', modelKey: '', isMonitoring: false, isReady: true, monitoringExpected: true, lastProgressAt: new Date(Date.now() - 16_000).toISOString() }] }));
     await take(message => message.name === name && message.type === 'heartbeat-ack');
     maintainRealtime();
-    if (name !== 'idle') camera.send(JSON.stringify({ type: 'disconnect-reason', reason: name }));
+    if (name !== 'idle') camera.send(JSON.stringify({ type: 'disconnect-reason', reason: name === 'web-camera-user' ? 'user' : name }));
     camera.close();
   }
   const inference = await connect('inference');
@@ -50,5 +50,5 @@ test('camera control exits never emit inference faults; Windows source interrupt
   forged.send(JSON.stringify({ type: 'disconnect-reason', reason: 'background' })); forged.close();
   await take(message => message.name === 'console' && message.deviceId === account.id('forged-stop-inference') && message.eventKind === 'connection-lost', 12_000);
   const stored = getAlerts(account.accountId, undefined, undefined, 200);
-  for (const name of names) assert.equal(stored.some(alert => alert.deviceId === account.id(name)), false, `${name} camera exit must not create an inference alarm`);
+  for (const name of [...names, 'web-camera-user']) assert.equal(stored.some(alert => alert.deviceId === account.id(name)), false, `${name} camera exit must not create an inference alarm`);
 });

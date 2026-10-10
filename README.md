@@ -20,7 +20,7 @@ VisionGuard 由检测节点、统一服务和控制台协作。视觉推理节�
 
 **使用边界**：连接状态不等于通知收件确认，通知收件确认不等于声音播放。漏报风险是检测效果与故障处置的最高优先级，人员检测以 `person` 类验证。实际覆盖与未覆盖项见[验证记录](./docs/90-验证记录.md)。
 
-1. 各组件登录同一账号后自动登记和匹配；相机推流节点以前台摄像头采集画面，经服务交给 Windows 视觉推理节点推理，也可继续使用本地屏幕或窗口来源。
+1. 各组件登录同一账号后自动登记和匹配；相机推流节点在 Android 应用或同源 `/camera/` 页面以前台摄像头采集画面，经服务交给 Windows 视觉推理节点推理，也可继续使用本地屏幕或窗口来源。
 2. 视觉推理节点把告警、截图和状态发往统一服务；所有公网业务数据统一通过统一服务转发，不使用 P2P、ICE、STUN 或 TURN。正式服务地址为 `https://visionguard.xgwnje.cn`。
 3. Web 控制台展示事件、截图和设备状态，按能力提供节点/来源启停与参数配置、相机规格及预览、通知声音策略、音频库管理和临时缓存盘点 / 清理，并分配各通知节点的全部或指定接收范围。通知节点保存实时报警后确认收件，再进入本地声音队列。新增能力需服务、Web 与节点使用同一契约。
 
@@ -28,7 +28,7 @@ Windows 发行包使用统一目录：从目录根启动 `VisionGuard.Detector.W
 
 ## 快速开始
 
-[客户端发行包](https://github.com/XGWNJE/VisionGuard/releases/latest) · [线上控制台](https://visionguard.xgwnje.cn/console/) · [发行说明](./docs/releases/README.md)
+[客户端发行包](https://github.com/XGWNJE/VisionGuard/releases/latest) · [线上控制台](https://visionguard.xgwnje.cn/console/) · [线上相机推流节点](https://visionguard.xgwnje.cn/camera/) · [发行说明](./docs/releases/README.md)
 
 各组件的发行版内置正式服务地址，只需登录同一账号；进入程序后可修改自动生成的本机名称。初始管理员为 `xgwnje`，已有账号沿用密码；全新服务的随机初始密码仅存私有数据目录，见[账号管理](./docs/60-构建验证与发布.md#基础账号与客户端登录)。管理员可在控制台创建账号、禁用账号、重置密码及设置权限。开发验收使用[隔离测试入口](./docs/60-构建验证与发布.md#本机隔离测试)。
 
@@ -40,6 +40,7 @@ Windows 发行包使用统一目录：从目录根启动 `VisionGuard.Detector.W
 
 ```powershell
 npm --prefix receiver/web ci
+npm --prefix detector/web ci
 cd server
 npm ci
 npm test
@@ -47,7 +48,7 @@ npm run build
 cd ..
 ```
 
-成功后应生成 `server/dist/index.js` 和 `server/dist/console/index.html`；启动服务后从同一服务的 `/console/` 打开控制台，外部访问须使用 HTTPS。构建视觉推理节点、驻留程序与统一包：
+成功后应生成 `server/dist/index.js`、`server/dist/console/index.html` 和 `server/dist/camera/index.html`；启动服务后从同一服务的 `/console/` 打开控制台，相机推流节点从 `/camera/` 打开，外部访问须使用 HTTPS（浏览器只在安全上下文提供摄像头）。构建视觉推理节点、驻留程序与统一包：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scripts\build-all.ps1 -Target Windows
@@ -62,6 +63,7 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scri
 | 视觉推理节点 | Windows | 本地画面及远程镜头推理；统一入口、modern / legacy 运行时与内部后台驻留 | [启动器](./detector/windows-launcher/) · [WPF 运行时](./detector/windows-wpf/) · [内部驻留](./detector/windows-resident/) |
 | 视觉推理节点 | Android | 本机相机与远程镜头推理、NNAPI / CPU、前台服务；已合入主线，未发布 | [`detector/android-inference/`](./detector/android-inference) |
 | 相机推流节点 | Android | 前台摄像头推流，最高 720P；通过统一服务接入 Windows 推理来源 | [`detector/android/`](./detector/android) |
+| 相机推流节点 | Web | 同源页面采集浏览器摄像头推流，最高 720P；页面隐藏即停，须 HTTPS | [`detector/web/`](./detector/web) |
 | 控制台 | Web | 唯一控制台，左导航、右内容；节点/来源、事件、账号与通知范围；三种外观 | [`receiver/web/`](./receiver/web) |
 | 通知节点 | Android | VG 后台接警、声音队列、收件确认与告警记录 | [`notifier/android/`](./notifier/android) |
 | 统一服务 | 服务端 | 基础账号、设备隔离、实时画面转发、状态、告警和控制 | [`server/`](./server) |

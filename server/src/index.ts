@@ -72,6 +72,16 @@ app.use('/console', express.static(path.resolve(__dirname, 'console'), {
   },
 }));
 
+// Web 相机推流节点：与控制台同源同策略，媒体与 API 走同源 WebSocket。
+app.use('/camera', express.static(path.resolve(__dirname, 'camera'), {
+  setHeaders: res => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+  },
+}));
+
 // 更新包静态文件下载
 app.use('/releases', express.static(path.resolve(__dirname, '..', 'data', 'releases')));
 // 模型文件静态服务

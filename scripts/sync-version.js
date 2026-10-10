@@ -71,7 +71,7 @@ function main() {
   );
 
   // Server 与 Web 的工程及锁文件版本。
-  for (const directory of ['server', 'receiver/web']) {
+  for (const directory of ['server', 'receiver/web', 'detector/web']) {
     for (const fileName of ['package.json', 'package-lock.json']) {
       const filePath = path.join(ROOT, directory, fileName);
       const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));

@@ -103,6 +103,14 @@ for (const file of ['detector/android/app/src/main/java/com/xgwnje/visionguard/d
 }
 checks++;
 if (/window\.(?:confirm|alert)\(/.test(read('receiver/web/src/main.tsx'))) errors.push('Web app dialog bypasses theme');
+// Web 相机推流节点与 Web 控制台共用同一套主题变量，关键面板不得退回浏览器默认样式。
+const webCameraCss = read('detector/web/src/style.css');
+checks++;
+if (/window\.(?:confirm|alert)\(/.test(read('detector/web/src/main.tsx'))) errors.push('Web camera dialog bypasses theme');
+for (const token of ['--panel', '--accent', '--on-accent', '--error', '--on-error', '--selected', '--on-selected']) {
+  checks++;
+  if ((webCameraCss.match(new RegExp(`${token}:\\s*#[0-9A-F]{6}`, 'gi')) ?? []).length < 2) errors.push(`Web camera style.css: missing light/dark ${token}`);
+}
 for (const [selector, token] of [['.button', 'on-accent'], ['.button.danger', 'on-error'], ['.nav-item.active', 'on-selected'], ['.status-tag.good', 'on-selected'], ['.event-kind', 'error']]) {
   checks++;
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

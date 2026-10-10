@@ -90,7 +90,9 @@ try {
                 npm --prefix server run build
                 if ($LASTEXITCODE -ne 0) { throw "Server/Web build failed" }
                 if (-not (Test-Path -LiteralPath (Join-Path $repoRoot "server/dist/console/index.html"))) { throw "Web console artifact is missing" }
+                if (-not (Test-Path -LiteralPath (Join-Path $repoRoot "server/dist/camera/index.html"))) { throw "Web camera artifact is missing" }
                 Get-ChildItem -LiteralPath (Join-Path $repoRoot "server/dist/console") -Recurse
+                Get-ChildItem -LiteralPath (Join-Path $repoRoot "server/dist/camera") -Recurse
             }
     }
 

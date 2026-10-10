@@ -33,10 +33,10 @@ test('Windows confidence matches integer percent editor and complete label lists
 
 test('integer-percent confidence contract covers both inference components and leaves others lax',()=>{
   for(const component of ['windows-inference','android-inference']) assert.equal(usesIntegerPercentConfidence(component),true);
-  for(const component of ['android-camera','android-notifier','web-console']) assert.equal(usesIntegerPercentConfidence(component),false);
+  for(const component of ['android-camera','web-camera','android-notifier','web-console']) assert.equal(usesIntegerPercentConfidence(component),false);
   for(const component of ['windows-inference','android-inference']) {
     for(const value of ['0.09','0.96','0.455']) assert.equal(validateSetConfigValue('confidence',value,[],usesIntegerPercentConfidence(component)).ok,false);
     assert.deepEqual(validateSetConfigValue('confidence','0.45',[],usesIntegerPercentConfidence(component)),{ok:true,value:'0.45'});
   }
-  assert.deepEqual(validateSetConfigValue('confidence','0.455',[],usesIntegerPercentConfidence('android-camera')),{ok:true,value:'0.455'});
+  assert.deepEqual(validateSetConfigValue('confidence','0.455',[],usesIntegerPercentConfidence('web-camera')),{ok:true,value:'0.455'});
 });

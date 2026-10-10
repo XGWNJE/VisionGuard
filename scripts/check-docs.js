@@ -12,6 +12,7 @@ const COMPONENTS = [
   { label: '视觉推理节点', platform: 'Windows', relativePath: 'detector/windows-wpf', source: 'detector/windows-wpf/App.xaml.cs' },
   { label: '视觉推理节点', platform: 'Android', relativePath: 'detector/android-inference', source: 'detector/android-inference/app/build.gradle.kts' },
   { label: '相机推流节点', platform: 'Android', relativePath: 'detector/android', source: 'detector/android/app/build.gradle.kts' },
+  { label: '相机推流节点', platform: 'Web', relativePath: 'detector/web', source: 'detector/web/src/main.tsx' },
   { label: '控制台', platform: 'Web', relativePath: 'receiver/web', source: 'receiver/web/src/main.tsx' },
   { label: '通知节点', platform: 'Android', relativePath: 'notifier/android', source: 'notifier/android/app/build.gradle.kts' },
   { label: '统一服务', platform: '服务端', relativePath: 'server', source: 'server/src/index.ts' }
@@ -137,7 +138,7 @@ function checkVersionSources(root, version, errors) {
     requireText(cache.get(relativePath), expected, relativePath, 'the VERSION-aligned value', errors);
   }
 
-  for (const relativePath of ['server/package.json', 'server/package-lock.json', 'receiver/web/package.json', 'receiver/web/package-lock.json', 'server/data/releases.json']) {
+  for (const relativePath of ['server/package.json', 'server/package-lock.json', 'receiver/web/package.json', 'receiver/web/package-lock.json', 'detector/web/package.json', 'detector/web/package-lock.json', 'server/data/releases.json']) {
     const content = readUtf8(root, relativePath, errors, { checkBom: false });
     if (!content) {
       continue;
@@ -343,6 +344,7 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
     ['视觉推理节点（驻留子进程）', 'windows-resident', 'lifecycle', 'resident', 'windows'],
     ['视觉推理节点（Android）', 'android-inference', 'detector', 'visual', 'android'],
     ['相机推流节点（Android）', 'android-camera', 'detector', 'visual', 'android'],
+    ['相机推流节点（Web）', 'web-camera', 'detector', 'visual', 'web'],
     ['控制台（Web）', 'web-console', 'console', 'console', 'web'],
     ['通知节点（Android）', 'android-notifier', 'notifier', 'notification', 'android']
   ];
@@ -356,6 +358,7 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
     ['视觉推理节点（驻留子进程）', ['WindowsResident'], ['wpf'], 'detector/windows-resident/bin/Release/net472/VisionGuard.Resident.Windows.exe'],
     ['视觉推理节点（Android）', ['AndroidInference'], ['android-inference'], 'detector/android-inference/app/build/outputs/apk/release/app-release.apk'],
     ['相机推流节点（Android）', ['AndroidDetector'], ['android-detector'], 'detector/android/app/build/outputs/apk/release/app-release.apk'],
+    ['相机推流节点（Web）', ['Server'], [], 'server/dist/camera/index.html'],
     ['控制台（Web）', ['Server'], [], 'server/dist/console/index.html'],
     ['通知节点（Android）', ['AndroidNotifier'], ['android-notifier'], 'notifier/android/app/build/outputs/apk/release/app-release.apk'],
     ['统一服务（服务端）', ['Server'], [], 'server/dist/index.js']
@@ -459,8 +462,11 @@ function checkComponentContract(root, readme, overview, operations, errors, nami
   }
   const webPackage = JSON.parse(readUtf8(root, 'receiver/web/package.json', errors, { checkBom: false }));
   if (webPackage.name !== 'visionguard-web-console') errors.push('[component] receiver/web/package.json must use the canonical console package name');
+  const webCameraPackage = JSON.parse(readUtf8(root, 'detector/web/package.json', errors, { checkBom: false }));
+  if (webCameraPackage.name !== 'visionguard-web-camera') errors.push('[component] detector/web/package.json must use the canonical web camera package name');
   for (const [rowName, identifiers] of [
     ['控制台（Web）', ['receiver/web/', webPackage.name, '/console/']],
+    ['相机推流节点（Web）', ['detector/web/', webCameraPackage.name, '/camera/']],
     ['统一服务（服务端）', ['server/', 'VisionGuard.Relay', packageJson.name, 'server/dist/index.js']]
   ]) {
     const row = engineeringRows.find(cells => cells[0] === rowName) || [];

@@ -71,6 +71,7 @@ detector/android/.key/det
 
 # ===== Android 接收端 =====
 receiver/web/node_modules/
+detector/web/node_modules/
 receiver/android/*.iml
 receiver/android/.gradle/
 receiver/android/.idea/

@@ -49,8 +49,10 @@ const icons = manifest.icons.map(icon => {
   if (!data.length) throw new Error(`Empty official SVG: ${icon.name}`);
   return { ...icon, data };
 });
-const webPackage = JSON.parse(fs.readFileSync(path.join(root, 'receiver/web/package.json'), 'utf8'));
-if (webPackage.dependencies['lucide-react'] !== manifest.version) throw new Error('Lucide versions differ across platforms');
+const webPackages = ['receiver/web', 'detector/web'].map(directory => [directory, JSON.parse(fs.readFileSync(path.join(root, directory, 'package.json'), 'utf8'))]);
+for (const [directory, webPackage] of webPackages) {
+  if (webPackage.dependencies['lucide-react'] !== manifest.version) throw new Error(`Lucide versions differ across platforms: ${directory}`);
+}
 for (const directory of ['android-shared/src/main/java', ...['detector/android', 'notifier/android', 'detector/android-inference'].map(app => `${app}/app/src/main/java`)]) {
   for (const file of fs.readdirSync(path.join(root, directory), { recursive: true }).filter(name => name.endsWith('.kt'))) {
     const source = fs.readFileSync(path.join(root, directory, file), 'utf8');

@@ -22,6 +22,7 @@ import { authenticateNode, clientType, allowedCapabilities, validateEvent, regis
 import { addAlert, getAlertById, markAlertScreenshot, type AddAlertResult } from '../services/AlertStore';
 import { isValidSetConfigKey, validateSetConfigValue, usesIntegerPercentConfidence, MAX_TARGETS_LENGTH } from '../services/ControlProtocol';
 import { remoteConfigRole, sanitizeRemoteSettings, validateRemoteConfig } from './RemoteSettings';
+import { isCameraComponent } from './NodeComponents';
 import { getSafeScreenshotPath, isSafeAlertId, validateAlertMeta, validateImageMagic } from '../utils/security';
 import type {
   WsAuthMessage, WsHeartbeat, WsHeartbeatAndroid, WsCommand, WsSetConfig,
@@ -87,6 +88,7 @@ function getConnectionCount(): number {
 /** 日志角色名由服务端签发的组件身份决定，客户端自报字段不参与。 */
 function detectorRoleLabel(identity: NodeIdentity): string {
   return identity.component === 'android-camera' ? '相机推流节点（Android）'
+    : identity.component === 'web-camera' ? '相机推流节点（Web）'
     : identity.component === 'android-inference' ? '视觉推理节点（Android）'
     : identity.component === 'windows-inference' ? '视觉推理节点（Windows）'
     : identity.nodeType === 'sensor' ? '传感器节点' : '视觉推理节点（Windows）';
@@ -930,7 +932,7 @@ function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
   if (!cacheCommand && notifierCommand && !(target as ReceiverClient).capabilities?.includes('alarm-control')) {
     ack.reason = '通知节点未提供报警控制'; sendJson(senderWs, ack); return;
   }
-  if (streamCommand && ((target as DetectorClient).identity.component !== 'android-camera' || !(target as DetectorClient).capabilities.includes('stream-control'))) {
+  if (streamCommand && (!isCameraComponent((target as DetectorClient).identity.component) || !(target as DetectorClient).capabilities.includes('stream-control'))) {
     ack.reason = '目标不支持推流控制'; sendJson(senderWs, ack); return;
   }
   if (detectorCommand && !notifierCommand && !(target as DetectorClient).capabilities.includes('monitor-control')) {
@@ -1037,7 +1039,7 @@ function handleRemoteConfig(senderWs: WebSocket, msg: WsSetConfig): void {
   if (!isValidRequestId(msg.requestId) || msg.targetSourceId !== undefined) { reject('无效的请求或来源'); return; }
   const role = remoteConfigRole(msg.key)!;
   const target = role === 'android-notifier' ? notifierClients.get(msg.targetDeviceId) : findDetector(msg.targetDeviceId);
-  if (!target || target.ws.readyState !== WebSocket.OPEN || target.identity?.component !== role) { reject('目标离线或类型不符'); return; }
+  if (!target || target.ws.readyState !== WebSocket.OPEN || (role === 'android-notifier' ? target.identity?.component !== role : !isCameraComponent(target.identity?.component))) { reject('目标离线或类型不符'); return; }
   const capability = role === 'android-camera' ? 'camera-config' : msg.key.startsWith('audio') ? 'audio-library' : 'sound-config';
   if (!target.capabilities?.includes(capability)) { reject('节点不支持该配置'); return; }
   const validation = validateRemoteConfig(msg.key, msg.value, target.remoteSettings, role === 'android-camera' && (target as DetectorClient).isMonitoring);
@@ -1292,7 +1294,7 @@ function handleTimeStandard(ws: WebSocket, msg: any): void {
 function emitFault(client: DetectorClient, eventKind: 'connection-lost' | 'detection-interrupted', source?: SourceStatus): void {
   // Camera control connectivity does not imply inference intent. Media failures are
   // reported through the bound Windows source, while idle/background camera exits are normal.
-  if (client.identity.component === 'android-camera') return;
+  if (isCameraComponent(client.identity.component)) return;
   const key = `${client.deviceId}:${source?.sourceId ?? ''}:${eventKind}`;
   if (activeFaults.has(key)) return;
   const now = Date.now();

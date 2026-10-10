@@ -22,6 +22,8 @@ test('remote configuration is bounded and does not expose arbitrary files or mal
 test('camera updates require valid values and stopped streaming for resolution',()=>{
   const camera={cameraResolution:'480p' as const,cameraDimScreen:false,cameraHidePreview:false};
   assert.equal(sanitizeRemoteSettings(camera,'android-camera')?.cameraResolution,'480p');
+  assert.equal(sanitizeRemoteSettings(camera,'web-camera')?.cameraResolution,'480p');
+  assert.equal(sanitizeRemoteSettings(camera,'windows-inference'),undefined);
   assert.equal(sanitizeRemoteSettings({...camera,cameraDimScreen:'true'},'android-camera'),undefined);
   assert.deepEqual(validateRemoteConfig('cameraResolution','720p',camera,false),{ok:true,value:'720p'});
   assert.equal(validateRemoteConfig('cameraResolution','720p',camera,true).ok,false);
