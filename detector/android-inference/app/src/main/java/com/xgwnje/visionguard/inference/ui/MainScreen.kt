@@ -50,14 +50,15 @@ import com.xgwnje.visionguard.inference.ui.geo.GeoLampTone
 import com.xgwnje.visionguard.inference.ui.geo.GeoMaskDrawer
 import com.xgwnje.visionguard.inference.ui.geo.GeoMessageRibbon
 import com.xgwnje.visionguard.inference.ui.geo.GeoParameterDrawer
+import com.xgwnje.visionguard.inference.ui.geo.ParamAnchor
+import com.xgwnje.visionguard.inference.ui.geo.ParamSection
 import com.xgwnje.visionguard.inference.ui.geo.GeoSettingsDrawer
 import com.xgwnje.visionguard.inference.ui.geo.ParameterStrip
 import com.xgwnje.visionguard.inference.ui.geo.PreviewComposition
 import com.xgwnje.visionguard.inference.ui.geo.SourceCarriage
-import com.xgwnje.visionguard.inference.ui.geo.SourceInspectDrawer
 import kotlinx.coroutines.launch
 
-private enum class Overlay { NONE, SETTINGS, HELP, INSPECT, ADD }
+private enum class Overlay { NONE, SETTINGS, HELP, ADD }
 
 /**
  * 主界面：几何空间布局。
@@ -80,6 +81,8 @@ fun MainScreen(
     var parameterEditorFor by remember { mutableStateOf<String?>(null) }
     var maskEditorFor by remember { mutableStateOf<String?>(null) }
     var shutterHidden by remember { mutableStateOf(false) }
+    var paramSection by remember { mutableStateOf(ParamSection.DETECTION) }
+    var paramAnchor by remember { mutableStateOf<ParamAnchor?>(null) }
     var busySourceId by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -162,7 +165,13 @@ fun MainScreen(
                             onSelect = runtime::selectSource,
                             onAdd = { callerFocus = addFocus; overlay = Overlay.ADD },
                             onToggleShutter = { shutterHidden = !shutterHidden },
-                            onInspect = { callerFocus = null; overlay = Overlay.INSPECT },
+                            onSourceInspect = { id ->
+                                runtime.selectSource(id)
+                                callerFocus = paramsFocus
+                                paramSection = ParamSection.SOURCE
+                                paramAnchor = null
+                                parameterEditorFor = id
+                            },
                             onToggle = {
                                 val source = selected
                                 if (source != null && busySourceId == null) {
@@ -174,7 +183,12 @@ fun MainScreen(
                                     }
                                 }
                             },
-                            onParams = { callerFocus = paramsFocus; parameterEditorFor = selected?.sourceId },
+                            onParams = {
+                                callerFocus = paramsFocus
+                                paramSection = ParamSection.DETECTION
+                                paramAnchor = ParamAnchor.MACHINES
+                                parameterEditorFor = selected?.sourceId
+                            },
                             onMasks = { callerFocus = masksFocus; maskEditorFor = selected?.sourceId },
                             connectionText = connectionText,
                             connectionTone = connectionTone,
@@ -187,7 +201,13 @@ fun MainScreen(
                             accountFocus = accountFocus,
                             paramsFocus = paramsFocus,
                             masksFocus = masksFocus,
-                            addFocus = addFocus
+                            addFocus = addFocus,
+                            onParamAnchor = { anchor ->
+                                callerFocus = paramsFocus
+                                paramSection = ParamSection.DETECTION
+                                paramAnchor = anchor
+                                parameterEditorFor = state.selectedSourceId
+                            }
                         )
                     }
                 }
@@ -208,28 +228,11 @@ fun MainScreen(
     
             Overlay.HELP -> GeoHelpDrawer(onClose = { overlay = Overlay.NONE })
     
-            Overlay.INSPECT -> SourceInspectDrawer(
-                source = selected,
-                nowWallMs = nowWallMs,
-                nowElapsedMs = nowElapsedMs,
-                onRename = { runtime.renameSource(selected?.sourceId.orEmpty(), it) },
-                onSetLens = { runtime.setCameraLensFacing(selected?.sourceId.orEmpty(), it) },
-                onDelete = {
-                    scope.launch {
-                        runtime.removeSource(selected?.sourceId.orEmpty())?.let(runtime::setMessage)
-                        overlay = Overlay.NONE
-                    }
-                },
-                onClose = closeOverlay,
-                onMessage = onMessage
-            )
-    
             Overlay.ADD -> AddSourceDrawer(
                 sources = state.sources,
                 maxSources = maxSources,
                 localLimit = 1,
                 onAddLocal = runtime::addLocalCameraSource,
-                onAddRemote = runtime::addRemotePlaceholderSource,
                 onClose = closeOverlay,
                 onMessage = onMessage
             )
@@ -240,12 +243,22 @@ fun MainScreen(
         val editingParams = state.sources.firstOrNull { it.sourceId == parameterEditorFor }
         if (editingParams != null) {
             GeoParameterDrawer(
-                sourceName = editingParams.sourceName,
-                initial = editingParams.params,
-                running = editingParams.state.isRunning,
+                source = editingParams,
+                nowWallMs = nowWallMs,
+                nowElapsedMs = nowElapsedMs,
+                initialSection = paramSection,
+                scrollTo = paramAnchor,
                 models = state.models,
                 downloads = state.downloads,
-                onDismiss = { parameterEditorFor = null; restoreFocus() },
+                onDismiss = { parameterEditorFor = null; paramAnchor = null; restoreFocus() },
+                onRename = { runtime.renameSource(editingParams.sourceId, it) },
+                onSetLens = { runtime.setCameraLensFacing(editingParams.sourceId, it) },
+                onDelete = {
+                    scope.launch {
+                        runtime.removeSource(editingParams.sourceId)?.let(runtime::setMessage)
+                        parameterEditorFor = null
+                    }
+                },
                 onDownloadModel = { runtime.downloadModel(it) },
                 onSave = { params ->
                     val failure = runtime.updateParams(editingParams.sourceId, params)
@@ -288,7 +301,8 @@ private fun Workspace(
     onSelect: (String) -> Unit,
     onAdd: () -> Unit,
     onToggleShutter: () -> Unit,
-    onInspect: () -> Unit,
+    onSourceInspect: (String) -> Unit,
+    onParamAnchor: (ParamAnchor) -> Unit,
     onToggle: () -> Unit,
     onParams: () -> Unit,
     onMasks: () -> Unit,
@@ -323,7 +337,6 @@ private fun Workspace(
                     freshness = freshness,
                     shutterHidden = shutterHidden,
                     onToggleShutter = onToggleShutter,
-                    onInspect = onInspect,
                     modifier = Modifier.weight(1f).fillMaxHeight()
                 )
                 SourceCarriage(
@@ -332,6 +345,7 @@ private fun Workspace(
                     maxSources = maxSources,
                     nowElapsedMs = nowElapsedMs,
                     onSelect = onSelect,
+                    onInspect = onSourceInspect,
                     onAdd = onAdd,
                     addFocus = addFocus,
                     modifier = Modifier.width(300.dp).fillMaxHeight()
@@ -343,7 +357,6 @@ private fun Workspace(
                 freshness = freshness,
                 shutterHidden = shutterHidden,
                 onToggleShutter = onToggleShutter,
-                onInspect = onInspect,
                 modifier = Modifier.weight(1f).fillMaxWidth()
             )
             SourceCarriage(
@@ -352,6 +365,7 @@ private fun Workspace(
                 maxSources = maxSources,
                 nowElapsedMs = nowElapsedMs,
                 onSelect = onSelect,
+                onInspect = onSourceInspect,
                 onAdd = onAdd,
                 addFocus = addFocus,
                 modifier = Modifier.fillMaxWidth().height(220.dp)
@@ -371,7 +385,7 @@ private fun Workspace(
             source = selected,
             connectionText = connectionText,
             connectionTone = connectionTone,
-            onParams = onParams,
+            onParams = onParamAnchor,
             onConnection = onConnection,
             onHelp = onHelp,
             onSettings = onSettings,

@@ -47,14 +47,13 @@ import com.xgwnje.visionguard.inference.ui.EmptyFramePlaceholder
 import com.xgwnje.visionguard.inference.ui.FrameBackdrop
 import com.xgwnje.visionguard.inference.ui.FrameCanvas
 
-/** 主预览：等比画面、遮罩与检测框、身份条与画面闸门。 */
+/** 主预览：等比画面、遮罩与检测框、画面闸门。来源检查改由参数抽屉承载，预览旁不再放入口。 */
 @Composable
 fun PreviewComposition(
     source: SourceView?,
     freshness: String,
     shutterHidden: Boolean,
     onToggleShutter: () -> Unit,
-    onInspect: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val frame = source?.state?.preview
@@ -104,59 +103,9 @@ fun PreviewComposition(
                     )
                 }
             }
-            IdentityStrap(source, onInspect)
         }
     }
 }
-
-/** 身份条：竖排来源名、序号与来源检查入口。 */
-@Composable
-private fun IdentityStrap(source: SourceView?, onInspect: () -> Unit, modifier: Modifier = Modifier) {
-    Row(
-        modifier
-            .width(64.dp)
-            .fillMaxHeight()
-            .clickable(onClick = onInspect)
-            .background(MaterialTheme.colorScheme.surfaceVariant, RectangleShape)
-            .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column(
-            Modifier.weight(1f).fillMaxHeight(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                source?.sourceName ?: "来源检查",
-                color = MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.graphicsLayerRotate()
-            )
-        }
-        Column(
-            Modifier.fillMaxHeight(),
-            verticalArrangement = Arrangement.SpaceBetween,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                if (source?.mode == SourceCaptureMode.LocalCamera) "本机" else "远程",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall
-            )
-            Icon(
-                LucideIcons.Camera,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(20.dp)
-            )
-        }
-    }
-}
-
-private fun Modifier.graphicsLayerRotate(): Modifier = this.rotate(-90f)
 
 /** 来源滑架：序号、名称、运行状态与添加入口。 */
 @Composable
@@ -166,6 +115,7 @@ fun SourceCarriage(
     maxSources: Int,
     nowElapsedMs: Long,
     onSelect: (String) -> Unit,
+    onInspect: (String) -> Unit,
     onAdd: () -> Unit,
     addFocus: FocusRequester,
     modifier: Modifier = Modifier
@@ -195,7 +145,8 @@ fun SourceCarriage(
                     source = source,
                     selected = source.sourceId == selectedSourceId,
                     nowElapsedMs = nowElapsedMs,
-                    onSelect = { onSelect(source.sourceId) }
+                    onSelect = { onSelect(source.sourceId) },
+                    onInspect = { onInspect(source.sourceId) }
                 )
             }
         }
@@ -215,7 +166,8 @@ private fun SourceStop(
     source: SourceView,
     selected: Boolean,
     nowElapsedMs: Long,
-    onSelect: () -> Unit
+    onSelect: () -> Unit,
+    onInspect: () -> Unit
 ) {
     val lamp = when {
         source.state.error != null -> GeoLampTone.Error
@@ -253,11 +205,11 @@ private fun SourceStop(
             )
             GeoLamp(source.state.error ?: source.state.statusText, lamp)
         }
-        Icon(
+        GeoIconKey(
             LucideIcons.ChevronRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(end = 8.dp).size(20.dp)
+            "检查 ${source.sourceName}",
+            onClick = onInspect,
+            modifier = Modifier.padding(end = 4.dp)
         )
     }
     GeoDivider()
@@ -372,7 +324,7 @@ fun ParameterStrip(
     source: SourceView?,
     connectionText: String,
     connectionTone: GeoLampTone,
-    onParams: () -> Unit,
+    onParams: (ParamAnchor) -> Unit,
     onConnection: () -> Unit,
     onHelp: () -> Unit,
     onSettings: () -> Unit,
@@ -411,11 +363,11 @@ fun ParameterStrip(
                 )
             }
             source?.let { view ->
-                StripItem("置信度", "${view.params.confidencePercent}%", onParams)
-                StripItem("采样", "${view.params.targetFps} FPS", onParams)
-                StripItem("冷却", "${view.params.cooldownSeconds} 秒", onParams)
-                StripItem(null, ModelKeys.displayName(view.params.modelKey), onParams)
-                StripItem(null, "${view.params.watchedClasses.size} 个目标", onParams)
+                StripItem("置信度", "${view.params.confidencePercent}%") { onParams(ParamAnchor.MACHINES) }
+                StripItem("采样", "${view.params.targetFps} FPS") { onParams(ParamAnchor.MACHINES) }
+                StripItem("冷却", "${view.params.cooldownSeconds} 秒") { onParams(ParamAnchor.MACHINES) }
+                StripItem(null, ModelKeys.displayName(view.params.modelKey)) { onParams(ParamAnchor.MODELS) }
+                StripItem(null, "${view.params.watchedClasses.size} 个目标") { onParams(ParamAnchor.TARGETS) }
             }
         }
         Box(Modifier.clickable(onClick = onConnection).padding(horizontal = 8.dp)) {

@@ -270,25 +270,6 @@ class InferenceRuntime private constructor(private val context: Context) {
     private fun defaultModelKey(): String =
         models.downloadedKeys().firstOrNull() ?: ModelKeys.defaultKey
 
-    /** 添加一路仅用于远程镜头推理的来源槽位（服务端会按绑定把流指过来）。 */
-    fun addRemotePlaceholderSource(): String? {
-        if (!settings.canAddSource(control.state.value.maxSources)) return "已达到服务端来源上限"
-        var index = 1
-        while (settings.sources().any { it.sourceId == "signal-$index" }) index++
-        val sourceId = "signal-$index"
-        settings.upsertSource(
-            SourceConfig(
-                sourceId = sourceId,
-                sourceName = "远程镜头 $index",
-                mode = SourceCaptureMode.RemoteStream,
-                params = DetectionParams(modelKey = defaultModelKey())
-            )
-        )
-        rebuildRuntimes()
-        media.setWanted(true)
-        return null
-    }
-
     suspend fun removeSource(sourceId: String): String? {
         val runtime = runtimes[sourceId] ?: return "来源不存在"
         if (runtime.state.value.isRunning) stopSource(sourceId)

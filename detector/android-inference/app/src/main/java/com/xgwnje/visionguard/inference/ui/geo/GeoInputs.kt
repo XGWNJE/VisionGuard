@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -93,6 +94,7 @@ fun GeoDrawer(
     modifier: Modifier = Modifier,
     width: Dp = Geo.Drawer,
     footer: (@Composable () -> Unit)? = null,
+    scrollState: ScrollState = rememberScrollState(),
     content: @Composable ColumnScope.() -> Unit
 ) {
     val reduced = rememberReducedMotion()
@@ -161,7 +163,7 @@ fun GeoDrawer(
                 }
                 GeoDivider()
                 Column(
-                    Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
+                    Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState).padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(Geo.GroupGap),
                     content = content
                 )
