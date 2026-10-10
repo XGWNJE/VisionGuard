@@ -211,6 +211,7 @@ fun GeoKey(
             .widthIn(min = minWidth)
             .background(colors.container, RectangleShape)
             .border(Geo.Border, colors.border, RectangleShape)
+            .geoFocusable()
             .clickable(
                 enabled = enabled && !busy,
                 role = Role.Button,
@@ -253,6 +254,7 @@ fun GeoIconKey(
             .size(size)
             .background(fill, RectangleShape)
             .border(Geo.Border, colors.border, RectangleShape)
+            .geoFocusable()
             .clickable(
                 enabled = enabled,
                 role = Role.Button,
@@ -452,6 +454,7 @@ fun GeoShifter(
                     Modifier
                         .weight(1f)
                         .fillMaxHeight()
+                        .geoFocusable()
                         .clickable(enabled = enabled, role = Role.RadioButton) { onSelect(option.first) },
                     contentAlignment = Alignment.Center
                 ) {

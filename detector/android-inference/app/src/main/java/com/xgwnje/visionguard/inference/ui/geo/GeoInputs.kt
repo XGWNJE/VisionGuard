@@ -38,6 +38,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
@@ -61,6 +62,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -98,6 +100,7 @@ fun GeoDrawer(
     val available = configuration.screenWidthDp.dp
     val drawerWidth = minOf(width, available)
     val focusRequester = remember { FocusRequester() }
+    val focusRing = remember { GeoFocusRing() }
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         shown = true
@@ -110,7 +113,8 @@ fun GeoDrawer(
             Modifier
                 .fillMaxSize()
                 .background(Color.Black.copy(alpha = 0.32f))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onClose() }
+                // 遮罩层只响应触摸关闭，不进入键盘焦点（否则 Tab 会离开抽屉的焦点环）。
+                .pointerInput(Unit) { detectTapGestures { onClose() } }
         )
         AnimatedVisibility(
             visible = shown,
@@ -128,14 +132,19 @@ fun GeoDrawer(
                     .focusRequester(focusRequester)
                     .focusable()
                     .onPreviewKeyEvent { event ->
-                        if (event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                            onClose()
-                            true
-                        } else {
-                            false
+                        if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                        when {
+                            event.key == Key.Escape -> {
+                                onClose()
+                                true
+                            }
+                            // Tab / Shift+Tab 在抽屉内环绕，不把焦点漏到主界面。
+                            event.key == Key.Tab -> focusRing.move(forward = !event.isShiftPressed)
+                            else -> false
                         }
                     }
             ) {
+                CompositionLocalProvider(LocalGeoFocusRing provides focusRing) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -163,6 +172,7 @@ fun GeoDrawer(
                         horizontalArrangement = Arrangement.spacedBy(Geo.Gap, Alignment.End),
                         verticalAlignment = Alignment.CenterVertically
                     ) { it() }
+                }
                 }
             }
         }
@@ -219,7 +229,7 @@ fun GeoWheel(
                     .background(MaterialTheme.colorScheme.surface, RectangleShape)
                     .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape)
                     .clip(RectangleShape)
-                    .focusRequester(focusRequester)
+                    .geoFocusable()
                     .focusable(enabled = enabled)
                     .onPreviewKeyEvent { event ->
                         if (!enabled || event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
@@ -391,6 +401,7 @@ fun GeoCounterInput(
                 keyboardActions = KeyboardActions(onDone = { commit() }),
                 modifier = Modifier
                     .weight(1f)
+                    .geoFocusable()
                     .onFocusChanged { state ->
                         if (state.isFocused) {
                             focused = true
@@ -555,6 +566,7 @@ fun GeoSlotCard(
             .heightIn(min = 72.dp)
             .background(background, RectangleShape)
             .border(if (selected) 2.dp else Geo.Border, borderColor, RectangleShape)
+            .geoFocusable()
             .clickable(enabled = enabled, onClick = onClick)
             .padding(12.dp)
     ) {
