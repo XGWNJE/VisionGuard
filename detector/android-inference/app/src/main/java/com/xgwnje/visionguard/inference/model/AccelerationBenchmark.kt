@@ -116,6 +116,7 @@ object AccelerationBenchmark {
                                 repeat(WARMUP_RUNS) { engine.run(tensor) }
                                 measure(samples, startedAt, maxTotalMs) { engine.run(tensor) }
                                     .also { if (it.isNotEmpty()) note = it }
+                                if (note.isEmpty()) note = engine.quantizationNote
                             } finally {
                                 engine.close()
                             }

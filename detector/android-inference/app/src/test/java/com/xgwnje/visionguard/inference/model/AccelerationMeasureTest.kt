@@ -20,7 +20,24 @@ class AccelerationMeasureTest {
         assertEquals(4, InferenceProvider.production.cpuThreads)
         assertEquals("onnx_cpu_4threads", InferenceProvider.production.id)
         assertEquals(InferenceRuntimeKind.ONNX, InferenceProvider.production.runtime)
+        assertEquals("ONNX · CPU 4 线程", InferenceProvider.production.title)
         assertTrue(!InferenceProvider.production.usesAccelerator)
+        assertTrue(!InferenceProvider.production.usesLitertAcceleratorApi)
+        assertTrue(InferenceProvider.production.litertAccelerator == null)
+    }
+
+    @Test
+    fun `正式路径只依赖 ONNX Runtime 的 CPU 提供器`() {
+        // 硬件加速档位全部不达标（真机实测），因此正式档位必须落在 CPU 上，
+        // 且不能是 NNAPI / LiteRT 任一档——换档等于换发布行为，这里守住。
+        val production = InferenceProvider.production
+        assertEquals(InferenceRuntimeKind.ONNX, production.runtime)
+        assertTrue(!production.usesNnapi)
+        assertTrue(!production.usesGpuDelegate)
+        assertTrue(!production.usesNpu)
+        assertTrue(!production.usesXnnpack)
+        assertTrue(!production.disablesXnnpack)
+        assertEquals(4, production.cpuThreads)
     }
 
     @Test

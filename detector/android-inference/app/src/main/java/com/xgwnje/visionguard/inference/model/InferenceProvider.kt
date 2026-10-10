@@ -137,7 +137,19 @@ enum class InferenceProvider(val id: String, val title: String, val runtime: Inf
         }
 
     companion object {
-        /** 正式运行使用的档位。 */
+        /**
+         * 正式运行档位：**ONNX Runtime · CPU 4 线程 + INT8 量化模型**。
+         *
+         * 这是 2026-10-11 真机实测（Xiaomi 26048RP6AC / API 37）得出的最优组合，三条依据：
+         * 1. 运行时——ORT 的 NNAPI 提供器拒绝 `uint8` 量化图（四档全失败）；LiteRT 的 GPU 四档
+         *    在三种模型结构下全部 `Failed to compile model`，NPU 因 MT8910 不在官方支持 SoC
+         *    列表内而不可用；LiteRT 的 CPU 最好档为 37.2 ms，是 ORT 的 6.3 倍。
+         * 2. 精度——INT8 在 640 上把 4 线程耗时从 356.4 ms（同结构 FP32）降到 131.6 ms（2.7 倍），
+         *    生产模型 4 线程 112.6 ms / 8 线程 102.5 ms。
+         * 3. 线程——真机 CPU 4 线程 5.9 ms（320）优于 1 线程 8.8 ms；8 线程在 320 上更差（6.5 ms）。
+         *
+         * 改这一行等于改发布行为，必须同时改 `AccelerationMeasureTest` 里的固定断言。
+         */
         val production: InferenceProvider = ONNX_CPU4
 
         /**

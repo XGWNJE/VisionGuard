@@ -119,3 +119,8 @@ detector/android-inference/keystore.properties
 detector/android-inference/key/
 detector/android-inference/keystore/
 detector/android-inference/**/*.jks
+
+# 推理加速测量自带模型：与生产模型一样不入版本控制（单个 640 模型就有几十 MiB）。
+# 本地复现方式：把模型放进该目录后跑 :app:assembleDebug，说明见该目录 README.md。
+detector/android-inference/app/src/main/assets/bench-models/
+detector/android-inference/app/src/main/assets/bench-frames/
