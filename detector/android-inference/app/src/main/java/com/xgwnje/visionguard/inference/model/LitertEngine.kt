@@ -88,6 +88,8 @@ class LitertEngine private constructor(
 
             val options = Interpreter.Options()
             provider.cpuThreads?.let { options.setNumThreads(it) }
+            // XNNPACK 是官方 LiteRT 的 CPU 加速路径，显式开一档（不要靠构建默认值）。
+            options.setUseXNNPACK(provider.usesXnnpack)
 
             val interpreter = Interpreter(modelFile, options)
             val shape = interpreter.getInputTensor(0).shape() // NHWC

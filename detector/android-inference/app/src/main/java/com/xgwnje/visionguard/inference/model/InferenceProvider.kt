@@ -34,6 +34,8 @@ enum class InferenceProvider(val id: String, val title: String, val runtime: Inf
     LITERT_CPU1("litert_cpu_1thread", "LiteRT · CPU 1 线程", InferenceRuntimeKind.LITERT),
     LITERT_CPU4("litert_cpu_4threads", "LiteRT · CPU 4 线程", InferenceRuntimeKind.LITERT),
     LITERT_CPU8("litert_cpu_8threads", "LiteRT · CPU 8 线程", InferenceRuntimeKind.LITERT),
+    LITERT_CPU2_XNNPACK("litert_cpu_xnnpack_2", "LiteRT · CPU XNNPACK 2 线程", InferenceRuntimeKind.LITERT),
+    LITERT_CPU4_XNNPACK("litert_cpu_xnnpack_4", "LiteRT · CPU XNNPACK 4 线程", InferenceRuntimeKind.LITERT),
     LITERT_ACCEL_CPU("litert_accel_cpu", "LiteRT · 加速器 API CPU", InferenceRuntimeKind.LITERT),
     LITERT_GPU("litert_gpu", "LiteRT · GPU 加速器", InferenceRuntimeKind.LITERT),
     LITERT_GPU_FP16("litert_gpu_fp16", "LiteRT · GPU 加速器 FP16", InferenceRuntimeKind.LITERT),
@@ -45,6 +47,19 @@ enum class InferenceProvider(val id: String, val title: String, val runtime: Inf
     val usesNnapi: Boolean
         get() = this == ONNX_NNAPI_DEFAULT || this == ONNX_NNAPI_FP16 ||
             this == ONNX_NNAPI_NCHW || this == ONNX_NNAPI_ACCEL_ONLY
+
+    /** LiteRT 老 `Interpreter` 档位（非加速器 API）。 */
+    val usesLitertInterpreter: Boolean
+        get() = runtime == InferenceRuntimeKind.LITERT && !usesLitertAcceleratorApi
+
+    /**
+     * 是否显式开启 XNNPACK。
+     *
+     * 官方 LiteRT 的 CPU 路径就是 XNNPACK；老 `Interpreter` 档默认是否启用取决于构建，
+     * 显式开一档才能确认官方推荐的 CPU 加速在这台设备上到底值多少。
+     */
+    val usesXnnpack: Boolean
+        get() = this == LITERT_CPU2_XNNPACK || this == LITERT_CPU4_XNNPACK
 
     /**
      * 走 LiteRT `CompiledModel` 加速器 API 的档位。
@@ -107,6 +122,8 @@ enum class InferenceProvider(val id: String, val title: String, val runtime: Inf
             ONNX_CPU1, LITERT_CPU1 -> 1
             ONNX_CPU4, LITERT_CPU4 -> 4
             ONNX_CPU8, LITERT_CPU8 -> 8
+            LITERT_CPU2_XNNPACK -> 2
+            LITERT_CPU4_XNNPACK -> 4
             else -> null
         }
 
@@ -130,6 +147,7 @@ enum class InferenceProvider(val id: String, val title: String, val runtime: Inf
             ONNX_CPU1, ONNX_CPU4, ONNX_CPU8,
             ONNX_NNAPI_DEFAULT, ONNX_NNAPI_FP16, ONNX_NNAPI_NCHW, ONNX_NNAPI_ACCEL_ONLY,
             LITERT_CPU1, LITERT_CPU4, LITERT_CPU8,
+            LITERT_CPU2_XNNPACK, LITERT_CPU4_XNNPACK,
             LITERT_ACCEL_CPU,
             LITERT_GPU, LITERT_GPU_FP16, LITERT_GPU_TEXTURE, LITERT_GPU_NO_EXT,
             LITERT_NPU
