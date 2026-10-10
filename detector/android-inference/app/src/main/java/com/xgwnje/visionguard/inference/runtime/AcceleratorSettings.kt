@@ -22,7 +22,7 @@ object AcceleratorSettings {
     private var prefs: SharedPreferences? = null
     private var resolvedId: String? = null
 
-    private val mutableMode = MutableStateFlow(AccelerationMode.AUTO)
+    private val mutableMode = MutableStateFlow(AccelerationMode.CPU_THREADS4)
     val mode = mutableMode.asStateFlow()
 
     private val mutableResolved = MutableStateFlow<AccelerationMode?>(null)
@@ -35,7 +35,7 @@ object AcceleratorSettings {
         val store = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         android.util.Log.i("VisionGuardAccel", "attach raw=${store.getString(KEY_MODE, null)} resolved=${store.getString(KEY_RESOLVED, null)}")
         prefs = store
-        mutableMode.value = AccelerationMode.fromId(store.getString(KEY_MODE, null)) ?: AccelerationMode.AUTO
+        mutableMode.value = AccelerationMode.fromId(store.getString(KEY_MODE, null)) ?: AccelerationMode.CPU_THREADS4
         resolvedId = store.getString(KEY_RESOLVED, null)
         mutableResolved.value = AccelerationMode.fromId(resolvedId)
     }
@@ -66,28 +66,11 @@ object AcceleratorSettings {
         prefs?.edit()?.putString(KEY_RESOLVED, effective.id)?.apply()
     }
 
-    private fun modelKeyOf(key: String) = "resolved_$key"
-
-    /** 某个模型上次自动择优的结果；不同模型的最优档可能不同，因此按模型分开记。 */
-    fun resolvedForModel(modelKey: String): AccelerationMode? =
-        AccelerationMode.fromId(prefs?.getString(modelKeyOf(modelKey), null))
-
-    /** 记录某个模型的择优结果与实测耗时（毫秒），供设置页显示。 */
-    fun rememberForModel(modelKey: String, mode: AccelerationMode, averageMs: Double) {
-        prefs?.edit()?.putString(modelKeyOf(modelKey), "${mode.id}|${averageMs.toInt()}")?.apply()
-    }
-
-    /** 某个模型择优时测到的耗时（毫秒），没有记录返回 null。 */
-    fun measuredMsForModel(modelKey: String): Int? =
-        prefs?.getString(modelKeyOf(modelKey), null)?.split("|")?.getOrNull(1)?.toIntOrNull()
 
     /** 清掉自动探测记录，下次启动重新逐档探测。 */
     fun forgetResolved() {
         resolvedId = null
         mutableResolved.value = null
-        val store = prefs ?: return
-        val editor = store.edit().remove(KEY_RESOLVED)
-        store.all.keys.filter { it.startsWith("resolved_") }.forEach { editor.remove(it) }
-        editor.apply()
+        prefs?.edit()?.remove(KEY_RESOLVED)?.apply()
     }
 }

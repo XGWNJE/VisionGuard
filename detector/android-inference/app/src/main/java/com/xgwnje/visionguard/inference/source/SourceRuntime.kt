@@ -95,30 +95,8 @@ class SourceRuntime(
         }
 
         val modelFile = models.file(config.params.modelKey)
-        val requested = acceleration()
         val created = withContext(Dispatchers.IO) {
-            runCatching {
-                when {
-                    requested != AccelerationMode.AUTO -> OnnxEngine.create(modelFile, requested)
-                    // 自动模式按当前模型实测择优：加速器与 CPU 多线程各测两帧，取更快的一档并记住。
-                    else -> {
-                        val cached = AcceleratorSettings.resolvedForModel(config.params.modelKey)
-                        if (cached != null) {
-                            OnnxEngine.create(modelFile, cached)
-                        } else {
-                            update { it.copy(statusText = "正在择优加速方案…") }
-                            val best = AccelerationDiagnostics.pickFastest(modelFile)
-                            if (best.usable) {
-                                AcceleratorSettings.rememberForModel(config.params.modelKey, best.mode, best.averageMs)
-                                OnnxEngine.create(modelFile, best.mode)
-                            } else {
-                                // 两档都建不起来时回到原有降档链，把失败原因留给引擎报出。
-                                OnnxEngine.create(modelFile, AccelerationMode.AUTO)
-                            }
-                        }
-                    }
-                }
-            }
+            runCatching { OnnxEngine.create(modelFile, acceleration()) }
         }
         val loaded = created.getOrElse { error ->
             val message = "模型加载失败：${error.message ?: error::class.java.simpleName}"

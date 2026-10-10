@@ -476,18 +476,15 @@ private fun AccelerationSection(state: RuntimeUiState, onMessage: (String?) -> U
     }
 
     GeoDivider()
-    val currentModel = state.sources.firstOrNull { it.state.isRunning }?.params?.modelKey
-        ?: state.sources.firstOrNull()?.params?.modelKey
-    val picked = currentModel?.let { AcceleratorSettings.resolvedForModel(it) }
-    val pickedMs = currentModel?.let { AcceleratorSettings.measuredMsForModel(it) }
-    GeoSectionLabel("03", "自动探测", picked?.title ?: resolved?.title ?: "未记录")
+    GeoSectionLabel("03", "自动探测", resolved?.title ?: "未记录")
     GeoHint(
-        if (picked != null) {
-            "自动模式已按当前模型实测择优为 ${picked.title}" + (pickedMs?.let { "（实测 $it ms / 帧）" } ?: "") + "；换模型或重新探测会重新测。"
+        if (resolved != null) {
+            "自动模式复用上次探测成功的方案（${resolved?.title}）；设备或模型变化后可以重新探测。"
         } else {
-            "自动模式对当前模型实测两档：NNAPI · FP16 与 CPU · 4 线程各跑两帧，取更快的一档并记住；手动指定时不做探测。"
+            "自动模式按 NNAPI · FP16、NNAPI、NNAPI · NCHW、CPU · XNNPACK、CPU · 4 线程、NNAPI · 仅加速器的顺序取首个可用，不逐个比较快慢。"
         }
     )
+    GeoHint("本机实测（MT8910，yolo26m · 640）：NNAPI 各档 1738–2252 ms，CPU 约 335 ms——该设备上的 NNAPI 没有加速收益，因此默认档已设为 CPU · 4 线程。要确认自己设备的情况，跑上面的加速诊断。", GeoLampTone.Neutral)
     GeoDivider()
     AccelerationDiagnostics(state, onMessage)
 

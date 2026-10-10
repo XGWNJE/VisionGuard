@@ -86,19 +86,6 @@ object AccelerationDiagnostics {
             }
         }
 
-    /**
-     * 自动模式择优：只在「加速器」与「CPU 多线程」两档之间各测 [frames] 帧，取更快的一档。
-     *
-     * 只比这两档是因为真机实测出现过加速器反而慢数倍的情况（大模型上 NNAPI 要频繁回退并
-     * 额外付出拷贝开销），逐档全测又太慢；两档足以判断该走加速器还是 CPU。
-     */
-    suspend fun pickFastest(modelFile: File, frames: Int = 2): Probe {
-        val candidates = listOf(AccelerationMode.NNAPI_FP16, AccelerationMode.CPU_THREADS4)
-        val probes = candidates.map { measure(modelFile, it, frames) }
-        Log.i(TAG, "pick fastest: " + probes.joinToString("; ") { "${it.mode.title}=${if (it.usable) "%.1fms".format(it.averageMs) else "不可用"}" })
-        return probes.filter { it.usable }.minByOrNull { it.averageMs } ?: probes.first()
-    }
-
     private fun probe(modelFile: File, mode: AccelerationMode): String {
         val created = runCatching { OnnxEngine.create(modelFile, mode) }
         val engine = created.getOrNull()
