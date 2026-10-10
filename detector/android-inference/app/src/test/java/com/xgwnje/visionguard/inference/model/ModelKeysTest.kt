@@ -7,11 +7,11 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 /**
- * 模型清单契约：量化版与本体**并存**时不能悄悄改变默认行为。
+ * 模型清单契约。
  *
- * 之所以要这一组用例：`ModelKeys.keys` 是端侧的可选模型单一来源，它同时决定默认选择的模型、
- * 心跳上报的选项与标签、以及下载路径。量化版一旦插错位置，新装设备的默认模型就会从 FP32
- * 变成 INT8，而这属于发布行为变化，必须在这里先失败。
+ * `ModelKeys.keys` 直接驱动参数抽屉的模型选择器（未下载的会显示下载入口），也决定默认选择的
+ * 模型、心跳上报的选项与标签、以及下载路径。所以「清单里有哪些键」是**用户可见且影响发布行为**
+ * 的约定：量化版没投放时不能出现在清单里，否则用户点了下载必然失败。
  */
 class ModelKeysTest {
 
@@ -19,21 +19,36 @@ class ModelKeysTest {
     val temporary = TemporaryFolder()
 
     @Test
-    fun `量化版与本体并存且紧跟本体之后`() {
+    fun `可选清单只有本体，量化版未投放就不列出来`() {
         assertEquals(6, ModelKeys.baseKeys.size)
-        assertEquals(ModelKeys.baseKeys.size * 2, ModelKeys.keys.size)
-        assertTrue(ModelKeys.keys.all { ModelKeys.isSupported(it) })
-
-        // 每个本体之后必须紧跟它自己的量化版——defaultModelKey 取「第一个已下载的键」，
-        // 顺序错了会把默认模型改成量化版。
-        ModelKeys.baseKeys.forEachIndexed { index, base ->
-            assertEquals(base, ModelKeys.keys[index * 2])
-            assertEquals("${base}${ModelKeys.INT8_SUFFIX}", ModelKeys.keys[index * 2 + 1])
+        assertEquals(ModelKeys.baseKeys, ModelKeys.keys)
+        ModelKeys.keys.forEach { key ->
+            assertTrue("可选清单里不该出现量化版：$key", !ModelKeys.isQuantized(key))
+            assertTrue(ModelKeys.isSupported(key))
+        }
+        ModelKeys.baseKeys.forEach { base ->
+            assertTrue(
+                "服务端没有量化文件，列出来就是坏入口",
+                !ModelKeys.isSupported(base + ModelKeys.INT8_SUFFIX)
+            )
         }
     }
 
     @Test
-    fun `默认模型仍是 FP32 本体`() {
+    fun `派生清单保留本体与量化版交替的顺序`() {
+        // 将来启用时把 keys 改成 derivedKeys()：顺序必须保持这样，
+        // 因为 defaultModelKey 取「第一个已下载的键」，量化版排在各自本体之后，
+        // 新装设备的默认模型才仍是 FP32。
+        val derived = ModelKeys.derivedKeys()
+        assertEquals(ModelKeys.baseKeys.size * 2, derived.size)
+        ModelKeys.baseKeys.forEachIndexed { index, base ->
+            assertEquals(base, derived[index * 2])
+            assertEquals("${base}${ModelKeys.INT8_SUFFIX}", derived[index * 2 + 1])
+        }
+    }
+
+    @Test
+    fun `默认模型仍是首个 FP32 本体`() {
         assertEquals("yolo26n_320", ModelKeys.defaultKey)
         assertTrue(!ModelKeys.isQuantized(ModelKeys.defaultKey))
         assertEquals(ModelKeys.baseKeys.first(), ModelKeys.defaultKey)

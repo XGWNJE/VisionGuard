@@ -14,11 +14,10 @@ import java.util.concurrent.TimeUnit
  * ONNX Runtime 属于现代档，不需要 Win7 legacy 的 YOLOv5 模型；解析器仍保留 YOLOv5 分支，
  * 以便与 Windows 端对拍并容纳旧模型文件。
  *
- * 量化版**并存**而不是替换：服务端 `/models` 是静态目录，同一基名额外分发
- * `<基名>_int8.onnx` 即可，推理链与解析器都不用改（量化前后 I/O 契约一致，已核对）。
- * 之所以并存：Windows 端量化是否可用尚未确定，替换会让两端行为不一致；而且真机实测
- * 最优组合就是 **ONNX Runtime · CPU + INT8**（见 [InferenceProvider.production]），
- * 保留 FP32 作为回退有助于排查。
+ * 量化版暂**不进可选清单**：模型清单直接驱动参数抽屉的模型选择器，未下载的会显示下载入口，
+ * 服务端没有对应文件时用户点了必然失败。owner 已决定在推理路线重新梳理前不投放量化模型，
+ * 因此这里只列本体键；`INT8_SUFFIX` 等派生工具保留并在单测里固定，将来要开只需把 [keys]
+ * 改回 [derivedKeys]。
  */
 object ModelKeys {
     /** 原始（FP32）模型键，顺序即默认选择顺序。 */
@@ -31,13 +30,16 @@ object ModelKeys {
     /** 量化版后缀。 */
     const val INT8_SUFFIX = "_int8"
 
+    /** 当前可选键：只列本体（量化模型未投放）。 */
+    val keys: List<String> = baseKeys
+
     /**
-     * 全部可选键：**每个 FP32 键之后紧跟它的量化版**。
+     * 本体与量化版交替的全量清单（`本体、量化版、本体、量化版…`）。
      *
-     * 顺序不能随意调整：[InferenceRuntime.defaultModelKey] 取"第一个已下载的键"，
-     * 量化版排在各自本体之后，才能保证新装设备的默认模型仍是 FP32。
+     * 顺序不能随意调整：[InferenceRuntime.defaultModelKey] 取「第一个已下载的键」，
+     * 量化版排在各自本体之后，新装设备的默认模型才仍是 FP32。当前未启用，保留备用。
      */
-    val keys: List<String> = baseKeys.flatMap { listOf(it, it + INT8_SUFFIX) }
+    fun derivedKeys(): List<String> = baseKeys.flatMap { listOf(it, it + INT8_SUFFIX) }
 
     val defaultKey: String = baseKeys.first()
 
