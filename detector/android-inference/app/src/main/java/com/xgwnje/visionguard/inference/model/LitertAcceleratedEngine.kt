@@ -88,8 +88,22 @@ class LitertAcceleratedEngine private constructor(
             }
 
             val options = CompiledModel.Options(accelerator)
-            provider.gpuPrecision?.let { precision ->
-                options.gpuOptions = CompiledModel.GpuOptions(precision = precision)
+            when (provider) {
+                InferenceProvider.LITERT_GPU_FP16 ->
+                    options.gpuOptions = CompiledModel.GpuOptions(
+                        precision = CompiledModel.GpuOptions.Precision.FP16
+                    )
+
+                InferenceProvider.LITERT_GPU_TEXTURE ->
+                    options.gpuOptions = CompiledModel.GpuOptions(
+                        preferTextureWeights = true,
+                        externalTensorsMode = false
+                    )
+
+                InferenceProvider.LITERT_GPU_NO_EXT ->
+                    options.gpuOptions = CompiledModel.GpuOptions(externalTensorsMode = false)
+
+                else -> Unit
             }
 
             val model = CompiledModel.create(modelFile.absolutePath, options, environment)

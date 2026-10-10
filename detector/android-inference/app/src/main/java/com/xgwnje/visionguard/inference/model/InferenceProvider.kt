@@ -37,6 +37,8 @@ enum class InferenceProvider(val id: String, val title: String, val runtime: Inf
     LITERT_ACCEL_CPU("litert_accel_cpu", "LiteRT · 加速器 API CPU", InferenceRuntimeKind.LITERT),
     LITERT_GPU("litert_gpu", "LiteRT · GPU 加速器", InferenceRuntimeKind.LITERT),
     LITERT_GPU_FP16("litert_gpu_fp16", "LiteRT · GPU 加速器 FP16", InferenceRuntimeKind.LITERT),
+    LITERT_GPU_TEXTURE("litert_gpu_texture", "LiteRT · GPU 纹理权重", InferenceRuntimeKind.LITERT),
+    LITERT_GPU_NO_EXT("litert_gpu_no_ext", "LiteRT · GPU 关外部张量", InferenceRuntimeKind.LITERT),
     LITERT_NPU("litert_npu", "LiteRT · NPU 加速器", InferenceRuntimeKind.LITERT);
 
     /** 是否使用 NNAPI。 */
@@ -52,10 +54,13 @@ enum class InferenceProvider(val id: String, val title: String, val runtime: Inf
      */
     val usesLitertAcceleratorApi: Boolean
         get() = this == LITERT_ACCEL_CPU || this == LITERT_GPU ||
-            this == LITERT_GPU_FP16 || this == LITERT_NPU
+            this == LITERT_GPU_FP16 || this == LITERT_GPU_TEXTURE ||
+            this == LITERT_GPU_NO_EXT || this == LITERT_NPU
 
     /** 是否使用 LiteRT 的 GPU 加速器。 */
-    val usesGpuDelegate: Boolean get() = this == LITERT_GPU || this == LITERT_GPU_FP16
+    val usesGpuDelegate: Boolean
+        get() = this == LITERT_GPU || this == LITERT_GPU_FP16 ||
+            this == LITERT_GPU_TEXTURE || this == LITERT_GPU_NO_EXT
 
     /** 是否使用 LiteRT 的 NPU 加速器。 */
     val usesNpu: Boolean get() = this == LITERT_NPU
@@ -67,17 +72,33 @@ enum class InferenceProvider(val id: String, val title: String, val runtime: Inf
     val litertAccelerator: com.google.ai.edge.litert.Accelerator?
         get() = when (this) {
             LITERT_ACCEL_CPU -> com.google.ai.edge.litert.Accelerator.CPU
-            LITERT_GPU, LITERT_GPU_FP16 -> com.google.ai.edge.litert.Accelerator.GPU
+            LITERT_GPU, LITERT_GPU_FP16, LITERT_GPU_TEXTURE, LITERT_GPU_NO_EXT ->
+                com.google.ai.edge.litert.Accelerator.GPU
             LITERT_NPU -> com.google.ai.edge.litert.Accelerator.NPU
             else -> null
         }
 
-    /** GPU 档位的精度；非 GPU 档位返回 null。 */
+    /** GPU 档位的精度；非 FP16 档位返回 null（即使用库默认精度）。 */
     val gpuPrecision: com.google.ai.edge.litert.CompiledModel.GpuOptions.Precision?
         get() = if (this == LITERT_GPU_FP16) {
             com.google.ai.edge.litert.CompiledModel.GpuOptions.Precision.FP16
         } else {
             null
+        }
+
+    /**
+     * GPU 档位的配置说明，写进报告便于区分失败的到底是哪一种配置。
+     *
+     * 之所以要这几种变体：真机上 GPU 档报 `Failed to compile model`，而 FP32 与 INT8 两种图都失败，
+     * 说明卡在配置或算子支持上。逐个变体试才能把「模型结构问题」和「GPU 配置问题」分开。
+     */
+    val gpuVariantNote: String
+        get() = when (this) {
+            LITERT_GPU_FP16 -> "精度 FP16"
+            LITERT_GPU_TEXTURE -> "权重用纹理存储、关外部张量"
+            LITERT_GPU_NO_EXT -> "关外部张量模式"
+            LITERT_GPU -> "库默认配置"
+            else -> ""
         }
 
     /** CPU 档位的线程数；加速档位返回 null。 */
@@ -109,7 +130,9 @@ enum class InferenceProvider(val id: String, val title: String, val runtime: Inf
             ONNX_CPU1, ONNX_CPU4, ONNX_CPU8,
             ONNX_NNAPI_DEFAULT, ONNX_NNAPI_FP16, ONNX_NNAPI_NCHW, ONNX_NNAPI_ACCEL_ONLY,
             LITERT_CPU1, LITERT_CPU4, LITERT_CPU8,
-            LITERT_ACCEL_CPU, LITERT_GPU, LITERT_GPU_FP16, LITERT_NPU
+            LITERT_ACCEL_CPU,
+            LITERT_GPU, LITERT_GPU_FP16, LITERT_GPU_TEXTURE, LITERT_GPU_NO_EXT,
+            LITERT_NPU
         )
 
         fun fromId(id: String): InferenceProvider? = entries.firstOrNull { it.id == id }

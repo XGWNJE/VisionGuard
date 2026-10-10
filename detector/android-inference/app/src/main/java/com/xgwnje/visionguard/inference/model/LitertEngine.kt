@@ -1,5 +1,6 @@
 package com.xgwnje.visionguard.inference.model
 
+import com.google.ai.edge.litert.Accelerator
 import org.tensorflow.lite.Interpreter
 import java.io.File
 import java.nio.ByteBuffer
@@ -22,6 +23,8 @@ import java.nio.ByteOrder
  */
 class LitertEngine private constructor(
     private val interpreter: Interpreter,
+    /** 输出缓冲字节数：按模型实际输出张量算，不能写死。 */
+    private val outputBytes: Int,
     val modelSize: Int,
     val provider: InferenceProvider
 ) {
@@ -34,7 +37,7 @@ class LitertEngine private constructor(
         .order(ByteOrder.nativeOrder())
 
     private val outputBuffer: ByteBuffer = ByteBuffer
-        .allocateDirect(OUTPUT_TENSOR_BYTES)
+        .allocateDirect(outputBytes)
         .order(ByteOrder.nativeOrder())
 
     /** 运行一次推理；[tensor] 为 CHW `float[3 * modelSize * modelSize]`。 */
@@ -68,8 +71,8 @@ class LitertEngine private constructor(
     }
 
     companion object {
-        /** 输出张量预留字节数：`yolo26` 是 `[1,300,6]`（1800 float），留余量给其它形态。 */
-        private const val OUTPUT_TENSOR_BYTES = 300 * 6 * Float.SIZE_BYTES * 4
+        /** 输出缓冲上限：`yolo26` 端到端是 `[1,300,6]`，锚点档是 `[1,84,2100]`，留足余量。 */
+        private const val MAX_OUTPUT_BYTES = 84 * 8400 * Float.SIZE_BYTES
 
         /** 支持的模型扩展名：LiteRT 只吃 `.tflite`。 */
         const val MODEL_EXTENSION = ".tflite"
@@ -90,7 +93,18 @@ class LitertEngine private constructor(
             val shape = interpreter.getInputTensor(0).shape() // NHWC
             val size = if (shape.size >= 3 && shape[1] > 0) shape[1] else DEFAULT_MODEL_SIZE
 
-            return LitertEngine(interpreter = interpreter, modelSize = size, provider = provider)
+            // 输出缓冲按实际输出张量算：锚点档输出比端到端档大得多，写死会直接报
+            // `Cannot copy from a TensorFlowLite tensor ... to a Java Buffer`。
+            val outputShape = interpreter.getOutputTensor(0).shape()
+            val elements = outputShape.fold(1L) { acc, dim -> acc * dim.coerceAtLeast(0) }.coerceAtLeast(1L)
+            val bytes = (elements * Float.SIZE_BYTES).coerceAtMost(MAX_OUTPUT_BYTES.toLong()).toInt()
+
+            return LitertEngine(
+                interpreter = interpreter,
+                outputBytes = bytes,
+                modelSize = size,
+                provider = provider
+            )
         }
 
         private const val DEFAULT_MODEL_SIZE = 320

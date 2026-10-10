@@ -119,8 +119,10 @@ object AccelerationBenchmark {
                 }
             } catch (error: Throwable) {
                 val reason = error.message ?: error::class.java.simpleName
-                failures += "$modelName · ${provider.title}：$reason"
-                log("失败 $modelName · ${provider.title}：$reason")
+                // 加速器档位带上配置说明：失败时才能分清是哪种 GPU 配置、哪个模型结构的问题。
+                val variant = provider.gpuVariantNote.takeIf { it.isNotEmpty() }?.let { "（$it）" } ?: ""
+                failures += "$modelName · ${provider.title}$variant：$reason"
+                log("失败 $modelName · ${provider.title}$variant：$reason")
                 return@forEach
             }
 
