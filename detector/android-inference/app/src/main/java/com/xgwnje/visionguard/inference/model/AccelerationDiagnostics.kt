@@ -50,6 +50,55 @@ object AccelerationDiagnostics {
             lines.joinToString("\n")
         }
 
+    /** 单个方案的测量结果。 */
+    data class Probe(
+        val mode: AccelerationMode,
+        val backend: String?,
+        val averageMs: Double,
+        val minMs: Long,
+        val maxMs: Long,
+        val message: String?
+    ) {
+        val usable: Boolean get() = backend != null
+    }
+
+    /** 按方案建会话并测 [frames] 帧；建会话失败时返回不可用原因。 */
+    suspend fun measure(modelFile: File, mode: AccelerationMode, frames: Int = MEASURE_FRAMES): Probe =
+        withContext(Dispatchers.Default) {
+            val created = runCatching { OnnxEngine.create(modelFile, mode) }
+            val engine = created.getOrNull()
+                ?: return@withContext Probe(mode, null, 0.0, 0, 0, created.exceptionOrNull()?.message?.take(120))
+            try {
+                val size = engine.modelSize
+                val input = FloatArray(3 * size * size) { ((it % 255) / 255f) }
+                runCatching { engine.run(input) }
+                val samples = LongArray(frames)
+                for (i in 0 until frames) {
+                    val started = System.nanoTime()
+                    engine.run(input)
+                    samples[i] = (System.nanoTime() - started) / 1_000_000
+                }
+                Probe(mode, engine.backend, samples.average(), samples.min(), samples.max(), null)
+            } catch (error: Exception) {
+                Probe(mode, null, 0.0, 0, 0, error.message?.take(120))
+            } finally {
+                engine.close()
+            }
+        }
+
+    /**
+     * 自动模式择优：只在「加速器」与「CPU 多线程」两档之间各测 [frames] 帧，取更快的一档。
+     *
+     * 只比这两档是因为真机实测出现过加速器反而慢数倍的情况（大模型上 NNAPI 要频繁回退并
+     * 额外付出拷贝开销），逐档全测又太慢；两档足以判断该走加速器还是 CPU。
+     */
+    suspend fun pickFastest(modelFile: File, frames: Int = 2): Probe {
+        val candidates = listOf(AccelerationMode.NNAPI_FP16, AccelerationMode.CPU_THREADS4)
+        val probes = candidates.map { measure(modelFile, it, frames) }
+        Log.i(TAG, "pick fastest: " + probes.joinToString("; ") { "${it.mode.title}=${if (it.usable) "%.1fms".format(it.averageMs) else "不可用"}" })
+        return probes.filter { it.usable }.minByOrNull { it.averageMs } ?: probes.first()
+    }
+
     private fun probe(modelFile: File, mode: AccelerationMode): String {
         val created = runCatching { OnnxEngine.create(modelFile, mode) }
         val engine = created.getOrNull()

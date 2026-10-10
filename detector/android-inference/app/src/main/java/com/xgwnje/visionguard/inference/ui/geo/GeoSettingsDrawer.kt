@@ -476,12 +476,16 @@ private fun AccelerationSection(state: RuntimeUiState, onMessage: (String?) -> U
     }
 
     GeoDivider()
-    GeoSectionLabel("03", "自动探测", resolved?.title ?: "未记录")
+    val currentModel = state.sources.firstOrNull { it.state.isRunning }?.params?.modelKey
+        ?: state.sources.firstOrNull()?.params?.modelKey
+    val picked = currentModel?.let { AcceleratorSettings.resolvedForModel(it) }
+    val pickedMs = currentModel?.let { AcceleratorSettings.measuredMsForModel(it) }
+    GeoSectionLabel("03", "自动探测", picked?.title ?: resolved?.title ?: "未记录")
     GeoHint(
-        if (resolved != null) {
-            "自动模式复用上次探测成功的方案；设备或模型变化后可以重新探测。"
+        if (picked != null) {
+            "自动模式已按当前模型实测择优为 ${picked.title}" + (pickedMs?.let { "（实测 $it ms / 帧）" } ?: "") + "；换模型或重新探测会重新测。"
         } else {
-            "自动模式按 NNAPI · FP16、NNAPI、NNAPI · NCHW、CPU · XNNPACK、CPU · 4 线程、NNAPI · 仅加速器的顺序探测，首个能建起会话的胜出并记住。"
+            "自动模式对当前模型实测两档：NNAPI · FP16 与 CPU · 4 线程各跑两帧，取更快的一档并记住；手动指定时不做探测。"
         }
     )
     GeoDivider()
