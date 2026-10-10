@@ -39,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -100,6 +101,8 @@ fun GeoDrawer(
     var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         shown = true
+        // 等一帧再要焦点：抽屉刚组合时还没布局，直接 requestFocus 会静默失败。
+        withFrameNanos { }
         runCatching { focusRequester.requestFocus() }
     }
     Box(Modifier.fillMaxSize()) {

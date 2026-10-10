@@ -24,6 +24,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -81,6 +87,23 @@ fun MainScreen(
     val nowElapsedMs = android.os.SystemClock.elapsedRealtime()
     val onMessage: (String?) -> Unit = { runtime.setMessage(it) }
 
+    // 每个入口记住自己的焦点位置：关闭抽屉后把焦点还回去（键盘与无障碍可达性）。
+    val helpFocus = remember { FocusRequester() }
+    val settingsFocus = remember { FocusRequester() }
+    val accountFocus = remember { FocusRequester() }
+    val paramsFocus = remember { FocusRequester() }
+    val masksFocus = remember { FocusRequester() }
+    val addFocus = remember { FocusRequester() }
+    var callerFocus by remember { mutableStateOf<FocusRequester?>(null) }
+    val restoreFocus: () -> Unit = {
+        callerFocus?.let { requester -> runCatching { requester.requestFocus() } }
+        callerFocus = null
+    }
+    val closeOverlay: () -> Unit = {
+        overlay = Overlay.NONE
+        restoreFocus()
+    }
+
     val selected = state.sources.firstOrNull { it.sourceId == state.selectedSourceId }
     val maxSources = control.maxSources
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -91,7 +114,22 @@ fun MainScreen(
         else -> "服务已断开" to GeoLampTone.Error
     }
 
-    Box(Modifier.fillMaxSize()) {
+    // 根层兜底：抽屉或确认框打开时按 Escape 一律关闭，不依赖焦点是否已经进抽屉。
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onPreviewKeyEvent { event ->
+                val modalOpen = overlay != Overlay.NONE || parameterEditorFor != null || maskEditorFor != null
+                if (modalOpen && event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                    parameterEditorFor = null
+                    maskEditorFor = null
+                    closeOverlay()
+                    true
+                } else {
+                    false
+                }
+            }
+    ) {
         Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().navigationBarsPadding()) {
                 state.message?.let { message ->
@@ -111,7 +149,7 @@ fun MainScreen(
                     val wide = (maxWidth >= 840.dp || landscape && maxWidth >= 600.dp) &&
                         LocalDensity.current.fontScale <= 1.3f
                     if (state.sources.isEmpty()) {
-                        EmptyWorkspace(onAdd = { overlay = Overlay.ADD })
+                        EmptyWorkspace(onAdd = { callerFocus = addFocus; overlay = Overlay.ADD })
                     } else {
                         Workspace(
                             state = state,
@@ -122,9 +160,9 @@ fun MainScreen(
                             nowElapsedMs = nowElapsedMs,
                             maxSources = maxSources,
                             onSelect = runtime::selectSource,
-                            onAdd = { overlay = Overlay.ADD },
+                            onAdd = { callerFocus = addFocus; overlay = Overlay.ADD },
                             onToggleShutter = { shutterHidden = !shutterHidden },
-                            onInspect = { overlay = Overlay.INSPECT },
+                            onInspect = { callerFocus = null; overlay = Overlay.INSPECT },
                             onToggle = {
                                 val source = selected
                                 if (source != null && busySourceId == null) {
@@ -136,14 +174,20 @@ fun MainScreen(
                                     }
                                 }
                             },
-                            onParams = { parameterEditorFor = selected?.sourceId },
-                            onMasks = { maskEditorFor = selected?.sourceId },
+                            onParams = { callerFocus = paramsFocus; parameterEditorFor = selected?.sourceId },
+                            onMasks = { callerFocus = masksFocus; maskEditorFor = selected?.sourceId },
                             connectionText = connectionText,
                             connectionTone = connectionTone,
-                            onConnection = { overlay = Overlay.SETTINGS },
-                            onHelp = { overlay = Overlay.HELP },
-                            onSettings = { overlay = Overlay.SETTINGS },
-                            onAccount = { overlay = Overlay.SETTINGS }
+                            onConnection = { callerFocus = settingsFocus; overlay = Overlay.SETTINGS },
+                            onHelp = { callerFocus = helpFocus; overlay = Overlay.HELP },
+                            onSettings = { callerFocus = settingsFocus; overlay = Overlay.SETTINGS },
+                            onAccount = { callerFocus = accountFocus; overlay = Overlay.SETTINGS },
+                            helpFocus = helpFocus,
+                            settingsFocus = settingsFocus,
+                            accountFocus = accountFocus,
+                            paramsFocus = paramsFocus,
+                            masksFocus = masksFocus,
+                            addFocus = addFocus
                         )
                     }
                 }
@@ -176,7 +220,7 @@ fun MainScreen(
                         overlay = Overlay.NONE
                     }
                 },
-                onClose = { overlay = Overlay.NONE },
+                onClose = closeOverlay,
                 onMessage = onMessage
             )
     
@@ -186,7 +230,7 @@ fun MainScreen(
                 localLimit = 1,
                 onAddLocal = runtime::addLocalCameraSource,
                 onAddRemote = runtime::addRemotePlaceholderSource,
-                onClose = { overlay = Overlay.NONE },
+                onClose = closeOverlay,
                 onMessage = onMessage
             )
     
@@ -201,7 +245,7 @@ fun MainScreen(
                 running = editingParams.state.isRunning,
                 models = state.models,
                 downloads = state.downloads,
-                onDismiss = { parameterEditorFor = null },
+                onDismiss = { parameterEditorFor = null; restoreFocus() },
                 onDownloadModel = { runtime.downloadModel(it) },
                 onSave = { params ->
                     val failure = runtime.updateParams(editingParams.sourceId, params)
@@ -219,7 +263,7 @@ fun MainScreen(
                 frame = editingMasks.state.preview,
                 initial = editingMasks.masks,
                 running = editingMasks.state.isRunning,
-                onDismiss = { maskEditorFor = null },
+                onDismiss = { maskEditorFor = null; restoreFocus() },
                 onSave = { masks ->
                     val failure = runtime.updateMasks(editingMasks.sourceId, masks)
                     if (failure == null) maskEditorFor = null
@@ -253,7 +297,13 @@ private fun Workspace(
     onConnection: () -> Unit,
     onHelp: () -> Unit,
     onSettings: () -> Unit,
-    onAccount: () -> Unit
+    onAccount: () -> Unit,
+    helpFocus: FocusRequester,
+    settingsFocus: FocusRequester,
+    accountFocus: FocusRequester,
+    paramsFocus: FocusRequester,
+    masksFocus: FocusRequester,
+    addFocus: FocusRequester
 ) {
     val freshness = when {
         selected == null -> "没有来源"
@@ -283,6 +333,7 @@ private fun Workspace(
                     nowElapsedMs = nowElapsedMs,
                     onSelect = onSelect,
                     onAdd = onAdd,
+                    addFocus = addFocus,
                     modifier = Modifier.width(300.dp).fillMaxHeight()
                 )
             }
@@ -302,6 +353,7 @@ private fun Workspace(
                 nowElapsedMs = nowElapsedMs,
                 onSelect = onSelect,
                 onAdd = onAdd,
+                addFocus = addFocus,
                 modifier = Modifier.fillMaxWidth().height(220.dp)
             )
         }
@@ -311,7 +363,9 @@ private fun Workspace(
             wide = wide,
             onToggle = onToggle,
             onParams = onParams,
-            onMasks = onMasks
+            onMasks = onMasks,
+            paramsFocus = paramsFocus,
+            masksFocus = masksFocus
         )
         ParameterStrip(
             source = selected,
@@ -321,7 +375,10 @@ private fun Workspace(
             onConnection = onConnection,
             onHelp = onHelp,
             onSettings = onSettings,
-            onAccount = onAccount
+            onAccount = onAccount,
+            helpFocus = helpFocus,
+            settingsFocus = settingsFocus,
+            accountFocus = accountFocus
         )
         selected?.state?.error?.let { GeoHint(it, GeoLampTone.Error) }
         selected?.state?.performanceWarning?.let { GeoHint(it, GeoLampTone.Warning) }

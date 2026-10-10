@@ -30,6 +30,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -165,6 +167,7 @@ fun SourceCarriage(
     nowElapsedMs: Long,
     onSelect: (String) -> Unit,
     onAdd: () -> Unit,
+    addFocus: FocusRequester,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -201,7 +204,7 @@ fun SourceCarriage(
             onClick = onAdd,
             label = "添加来源",
             icon = LucideIcons.Plus,
-            modifier = Modifier.fillMaxWidth().padding(12.dp)
+            modifier = Modifier.fillMaxWidth().padding(12.dp).focusRequester(addFocus)
         )
     }
 }
@@ -269,6 +272,8 @@ fun ActionDeck(
     onToggle: () -> Unit,
     onParams: () -> Unit,
     onMasks: () -> Unit,
+    paramsFocus: FocusRequester,
+    masksFocus: FocusRequester,
     modifier: Modifier = Modifier
 ) {
     val running = source?.state?.isRunning == true
@@ -305,14 +310,16 @@ fun ActionDeck(
                 icon = LucideIcons.SlidersHorizontal,
                 label = "参数",
                 minWidth = Geo.SquareKey,
-                minHeight = Geo.PaddleHeight
+                minHeight = Geo.PaddleHeight,
+                modifier = Modifier.focusRequester(paramsFocus)
             )
             GeoKey(
                 onClick = onMasks,
                 icon = LucideIcons.Scan,
                 label = "遮罩",
                 minWidth = Geo.SquareKey,
-                minHeight = Geo.PaddleHeight
+                minHeight = Geo.PaddleHeight,
+                modifier = Modifier.focusRequester(masksFocus)
             )
         }
     }
@@ -370,6 +377,9 @@ fun ParameterStrip(
     onHelp: () -> Unit,
     onSettings: () -> Unit,
     onAccount: () -> Unit,
+    helpFocus: FocusRequester,
+    settingsFocus: FocusRequester,
+    accountFocus: FocusRequester,
     modifier: Modifier = Modifier
 ) {
     val running = source?.state?.isRunning == true
@@ -411,9 +421,9 @@ fun ParameterStrip(
         Box(Modifier.clickable(onClick = onConnection).padding(horizontal = 8.dp)) {
             GeoLamp(connectionText, connectionTone)
         }
-        GeoIconKey(LucideIcons.CircleHelp, "使用帮助", onHelp)
-        GeoIconKey(LucideIcons.Settings, "全局设置", onSettings)
-        GeoIconKey(LucideIcons.UserRound, "账号菜单", onAccount)
+        GeoIconKey(LucideIcons.CircleHelp, "使用帮助", onHelp, modifier = Modifier.focusRequester(helpFocus))
+        GeoIconKey(LucideIcons.Settings, "全局设置", onSettings, modifier = Modifier.focusRequester(settingsFocus))
+        GeoIconKey(LucideIcons.UserRound, "账号菜单", onAccount, modifier = Modifier.focusRequester(accountFocus))
     }
 }
 
