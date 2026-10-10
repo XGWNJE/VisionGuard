@@ -37,6 +37,8 @@ enum class InferenceProvider(val id: String, val title: String, val runtime: Inf
     LITERT_CPU2_XNNPACK("litert_cpu_xnnpack_2", "LiteRT · CPU XNNPACK 2 线程", InferenceRuntimeKind.LITERT),
     LITERT_CPU4_XNNPACK("litert_cpu_xnnpack_4", "LiteRT · CPU XNNPACK 4 线程", InferenceRuntimeKind.LITERT),
     LITERT_ACCEL_CPU("litert_accel_cpu", "LiteRT · 加速器 API CPU", InferenceRuntimeKind.LITERT),
+    LITERT_ACCEL_CPU_XNNPACK("litert_accel_cpu_xnnpack", "LiteRT · 加速器 API CPU + XNNPACK 4 线程", InferenceRuntimeKind.LITERT),
+    LITERT_ACCEL_CPU_NO_XNNPACK("litert_accel_cpu_no_xnnpack", "LiteRT · 加速器 API CPU 关 XNNPACK", InferenceRuntimeKind.LITERT),
     LITERT_GPU("litert_gpu", "LiteRT · GPU 加速器", InferenceRuntimeKind.LITERT),
     LITERT_GPU_FP16("litert_gpu_fp16", "LiteRT · GPU 加速器 FP16", InferenceRuntimeKind.LITERT),
     LITERT_GPU_TEXTURE("litert_gpu_texture", "LiteRT · GPU 纹理权重", InferenceRuntimeKind.LITERT),
@@ -59,7 +61,11 @@ enum class InferenceProvider(val id: String, val title: String, val runtime: Inf
      * 显式开一档才能确认官方推荐的 CPU 加速在这台设备上到底值多少。
      */
     val usesXnnpack: Boolean
-        get() = this == LITERT_CPU2_XNNPACK || this == LITERT_CPU4_XNNPACK
+        get() = this == LITERT_CPU2_XNNPACK || this == LITERT_CPU4_XNNPACK ||
+            this == LITERT_ACCEL_CPU_XNNPACK
+
+    /** 是否显式关闭 XNNPACK（用于反向确认这一档确实依赖它）。 */
+    val disablesXnnpack: Boolean get() = this == LITERT_ACCEL_CPU_NO_XNNPACK
 
     /**
      * 走 LiteRT `CompiledModel` 加速器 API 的档位。
@@ -68,7 +74,8 @@ enum class InferenceProvider(val id: String, val title: String, val runtime: Inf
      * 单列一档 CPU 是为了让 GPU 有「同 API 的 CPU 基线」可对照。
      */
     val usesLitertAcceleratorApi: Boolean
-        get() = this == LITERT_ACCEL_CPU || this == LITERT_GPU ||
+        get() = this == LITERT_ACCEL_CPU || this == LITERT_ACCEL_CPU_XNNPACK ||
+            this == LITERT_ACCEL_CPU_NO_XNNPACK || this == LITERT_GPU ||
             this == LITERT_GPU_FP16 || this == LITERT_GPU_TEXTURE ||
             this == LITERT_GPU_NO_EXT || this == LITERT_NPU
 
@@ -86,7 +93,8 @@ enum class InferenceProvider(val id: String, val title: String, val runtime: Inf
     /** LiteRT 加速器档位对应的加速器枚举值；非该 API 的档位返回 null。 */
     val litertAccelerator: com.google.ai.edge.litert.Accelerator?
         get() = when (this) {
-            LITERT_ACCEL_CPU -> com.google.ai.edge.litert.Accelerator.CPU
+            LITERT_ACCEL_CPU, LITERT_ACCEL_CPU_XNNPACK, LITERT_ACCEL_CPU_NO_XNNPACK ->
+                com.google.ai.edge.litert.Accelerator.CPU
             LITERT_GPU, LITERT_GPU_FP16, LITERT_GPU_TEXTURE, LITERT_GPU_NO_EXT ->
                 com.google.ai.edge.litert.Accelerator.GPU
             LITERT_NPU -> com.google.ai.edge.litert.Accelerator.NPU
@@ -124,6 +132,7 @@ enum class InferenceProvider(val id: String, val title: String, val runtime: Inf
             ONNX_CPU8, LITERT_CPU8 -> 8
             LITERT_CPU2_XNNPACK -> 2
             LITERT_CPU4_XNNPACK -> 4
+            LITERT_ACCEL_CPU_XNNPACK -> 4
             else -> null
         }
 
@@ -148,7 +157,7 @@ enum class InferenceProvider(val id: String, val title: String, val runtime: Inf
             ONNX_NNAPI_DEFAULT, ONNX_NNAPI_FP16, ONNX_NNAPI_NCHW, ONNX_NNAPI_ACCEL_ONLY,
             LITERT_CPU1, LITERT_CPU4, LITERT_CPU8,
             LITERT_CPU2_XNNPACK, LITERT_CPU4_XNNPACK,
-            LITERT_ACCEL_CPU,
+            LITERT_ACCEL_CPU, LITERT_ACCEL_CPU_XNNPACK, LITERT_ACCEL_CPU_NO_XNNPACK,
             LITERT_GPU, LITERT_GPU_FP16, LITERT_GPU_TEXTURE, LITERT_GPU_NO_EXT,
             LITERT_NPU
         )

@@ -99,7 +99,12 @@ object AccelerationBenchmark {
                                 repeat(WARMUP_RUNS) { engine.run(tensor) }
                                 measure(samples, startedAt, maxTotalMs) { engine.run(tensor) }
                                     .also { if (it.isNotEmpty()) note = it }
-                                if (note.isEmpty()) note = "可用加速器 ${engine.availableAccelerators}"
+                                if (note.isEmpty()) {
+                                    note = listOfNotNull(
+                                        engine.cpuNote.takeIf { it.isNotEmpty() },
+                                        "可用加速器 ${engine.availableAccelerators}"
+                                    ).joinToString("；")
+                                }
                             } finally {
                                 engine.close()
                             }

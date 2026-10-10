@@ -134,12 +134,29 @@ object BundledAccelerationBenchmark {
      * 不做"文件已存在就复用"的缓存：实测残留的半个文件会被当成有效模型，报出
      * `does not encode a valid TensorFlow Lite model`，而且会一直错下去。解包只要几百毫秒，
      * 相对整轮测量可以忽略，换来的是"读到的就是包里的那份"。
+     *
+     * 带同名 `.data` 的模型（ONNX 外部数据格式）会把数据文件一并解到同一目录——ONNX Runtime
+     * 按"模型路径 + .data"找它，少一个文件会直接加载失败。
      */
     private fun unpack(context: Context, asset: String, target: File): File? = runCatching {
         target.delete()
         context.assets.open(asset).use { input ->
             target.outputStream().use { output -> input.copyTo(output) }
         }
+
+        val sidecar = "$asset.data"
+        val hasSidecar = runCatching {
+            context.assets.open(sidecar).use { } // 打不开就说明没有
+            true
+        }.getOrDefault(false)
+        if (hasSidecar) {
+            val sidecarTarget = File(target.parentFile, "${target.name}.data")
+            context.assets.open(sidecar).use { input ->
+                sidecarTarget.outputStream().use { output -> input.copyTo(output) }
+            }
+            Log.i(TAG, "已解包外部数据 $sidecar -> ${sidecarTarget.name}（${sidecarTarget.length()} 字节）")
+        }
+
         check(target.length() > MIN_ASSET_BYTES) {
             "$asset 解包后只有 ${target.length()} 字节，疑似损坏"
         }

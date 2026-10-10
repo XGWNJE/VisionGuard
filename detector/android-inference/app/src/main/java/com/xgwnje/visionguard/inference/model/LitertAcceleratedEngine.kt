@@ -27,7 +27,9 @@ class LitertAcceleratedEngine private constructor(
     val modelSize: Int,
     val provider: InferenceProvider,
     /** 环境实际报告的可用加速器，写进报告便于判断档位是否真的生效。 */
-    val availableAccelerators: String
+    val availableAccelerators: String,
+    /** CPU 档实际生效的 XNNPACK / 线程设置，写进报告避免「有没有开」靠猜。 */
+    val cpuNote: String = ""
 ) {
 
     /** 后端标识：测量报告与心跳按它显示。 */
@@ -106,6 +108,32 @@ class LitertAcceleratedEngine private constructor(
                 else -> Unit
             }
 
+            // CPU 加速器：官方 CPU 路径是 XNNPACK，这里显式给 flags 或显式关掉，
+            // 不靠库默认值——否则「XNNPACK 到底有没有生效」只能猜。
+            val cpuNote = if (accelerator == Accelerator.CPU) {
+                when {
+                    provider.disablesXnnpack -> {
+                        options.cpuOptions = CompiledModel.CpuOptions(
+                            numThreads = DEFAULT_CPU_THREADS,
+                            xnnPackFlags = XNNPACK_DISABLED_FLAGS
+                        )
+                        "XNNPACK 关闭，线程 $DEFAULT_CPU_THREADS"
+                    }
+
+                    provider.usesXnnpack -> {
+                        options.cpuOptions = CompiledModel.CpuOptions(
+                            numThreads = provider.cpuThreads ?: DEFAULT_CPU_THREADS,
+                            xnnPackFlags = XNNPACK_DEFAULT_FLAGS
+                        )
+                        "XNNPACK flags=$XNNPACK_DEFAULT_FLAGS，线程 ${provider.cpuThreads ?: DEFAULT_CPU_THREADS}"
+                    }
+
+                    else -> ""
+                }
+            } else {
+                ""
+            }
+
             val model = CompiledModel.create(modelFile.absolutePath, options, environment)
             // 用带签名与张量名的重载：无参重载在不同构建里对默认名的解析不一致，
             // 实测无参重载会报 `Input tensor not found`。
@@ -120,10 +148,18 @@ class LitertAcceleratedEngine private constructor(
                 outputs = model.createOutputBuffers(signature),
                 modelSize = size,
                 provider = provider,
-                availableAccelerators = availableText
+                availableAccelerators = availableText,
+                cpuNote = cpuNote
             )
         }
 
+        /** XNNPACK 默认配置：交给库按位掩码决定（全位置位）。 */
+        private const val XNNPACK_DEFAULT_FLAGS = -1
+
+        /** 关闭 XNNPACK：位掩码为 0。 */
+        private const val XNNPACK_DISABLED_FLAGS = 0
+
+        private const val DEFAULT_CPU_THREADS = 4
         private const val DEFAULT_MODEL_SIZE = 320
     }
 }
