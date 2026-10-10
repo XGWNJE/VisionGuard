@@ -122,6 +122,28 @@ class AccelerationMeasureTest {
     }
 
     @Test
+    fun `报告首行带芯片与核心数，缺芯片时不编造`() {
+        // 完整指纹：厂商 型号 / API / 芯片 / 核数。
+        assertEquals(
+            "Xiaomi 26048RP6AC / API 37 / MT8910 / 8 核",
+            AccelerationMeasure.deviceFingerprint("Xiaomi", "26048RP6AC", 37, "MT8910", 8)
+        )
+        // API 31 以下取不到 SOC_MODEL，或系统返回 unknown —— 都跳过这一段，不用占位符。
+        assertEquals(
+            "Generic Device / API 29 / 4 核",
+            AccelerationMeasure.deviceFingerprint("Generic", "Device", 29, null, 4)
+        )
+        assertEquals(
+            "Generic Device / API 33 / 8 核",
+            AccelerationMeasure.deviceFingerprint("Generic", "Device", 33, "unknown", 8)
+        )
+        assertEquals(
+            "Generic Device / API 33 / 8 核",
+            AccelerationMeasure.deviceFingerprint("Generic", "Device", 33, "  ", 8)
+        )
+    }
+
+    @Test
     fun `LiteRT 加速器档位映射到 CPU GPU NPU`() {
         assertEquals(Accelerator.CPU, InferenceProvider.LITERT_ACCEL_CPU.litertAccelerator)
         assertEquals(Accelerator.GPU, InferenceProvider.LITERT_GPU.litertAccelerator)

@@ -17,6 +17,25 @@ object AccelerationMeasure {
     /** 加速档判定门槛：加速档 / CPU 基线 必须 ≤ 该比值。 */
     const val ACCELERATION_RATIO_LIMIT = 0.70
 
+    /**
+     * 报告首行的设备指纹。
+     *
+     * 除厂商/型号/API 外要带上**芯片型号与核心数**：档位结论里的「CPU 4 线程最优」是否与核心
+     * 拓扑绑定，只能靠这两个字段判断。`soc` 取不到时跳过，不用占位符编造。
+     */
+    fun deviceFingerprint(
+        manufacturer: String,
+        model: String,
+        apiLevel: Int,
+        soc: String?,
+        cores: Int
+    ): String = buildString {
+        append("$manufacturer $model".trim())
+        append(" / API $apiLevel")
+        if (!soc.isNullOrBlank() && !soc.equals("unknown", ignoreCase = true)) append(" / $soc")
+        append(" / $cores 核")
+    }
+
     data class Result(
         val model: String,
         val provider: InferenceProvider,

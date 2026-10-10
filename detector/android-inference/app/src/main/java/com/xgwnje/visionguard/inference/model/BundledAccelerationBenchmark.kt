@@ -65,7 +65,7 @@ object BundledAccelerationBenchmark {
                 check(models.isNotEmpty()) { "APK 里没有自带模型（assets/$ASSET_MODELS）" }
                 val frame = loadFrame(context)
 
-                val device = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} / API ${android.os.Build.VERSION.SDK_INT}"
+                val device = deviceFingerprint()
                 val results = mutableListOf<AccelerationMeasure.Result>()
                 val failures = mutableListOf<String>()
                 if (frame == null) failures += "画面 assets/$ASSET_FRAME：不存在或无法解码"
@@ -173,4 +173,24 @@ object BundledAccelerationBenchmark {
         bitmap.recycle()
         ArgbImage(width, height, pixels)
     }.getOrNull()
+
+    /**
+     * 报告首行的设备指纹，拼装规则在 [AccelerationMeasure.deviceFingerprint]（有单测守住格式）。
+     *
+     * `SOC_MODEL` 需要 API 31+，取不到就不带这一段。
+     */
+    private fun deviceFingerprint(): String {
+        val soc = if (android.os.Build.VERSION.SDK_INT >= 31) {
+            runCatching { android.os.Build.SOC_MODEL }.getOrNull()
+        } else {
+            null
+        }
+        return AccelerationMeasure.deviceFingerprint(
+            manufacturer = android.os.Build.MANUFACTURER,
+            model = android.os.Build.MODEL,
+            apiLevel = android.os.Build.VERSION.SDK_INT,
+            soc = soc,
+            cores = Runtime.getRuntime().availableProcessors()
+        )
+    }
 }
