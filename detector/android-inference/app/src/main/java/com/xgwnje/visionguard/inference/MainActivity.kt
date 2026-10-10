@@ -31,6 +31,7 @@ import com.xgwnje.visionguard.account.dark
 import com.xgwnje.visionguard.account.rememberAppearance
 import com.xgwnje.visionguard.inference.model.AccelerationBenchmark
 import com.xgwnje.visionguard.inference.model.AccelerationMeasure
+import com.xgwnje.visionguard.inference.model.BundledAccelerationBenchmark
 import com.xgwnje.visionguard.inference.model.InferenceProvider
 import com.xgwnje.visionguard.inference.model.OnnxEngine
 import com.xgwnje.visionguard.inference.runtime.InferenceRuntime
@@ -153,86 +154,32 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * 显式请求时跑一次推理加速测量，不进入界面。
+     * 显式请求时跑一次自带的推理加速测量，不进入界面。
      *
-     * 只用于测量，正常启动不会命中；且只在 Debug 构建生效，UI 预览 / 正式 Release 即使
-     * 收到该 extra 也不会执行（预览构建虽然 debuggable，但 `isDebuggableRelease` 明确排除）。
+     * 界面入口在「设置 → 维护 → 推理加速测量」，正常使用走那里；这个 intent 入口只是
+     * 让自动化验证能在不登录的情况下跑同一套逻辑（模型同样取自 APK assets）。
      *
-     * 触发方式：
      * ```
      * adb shell am start -n <包名>/com.xgwnje.visionguard.inference.MainActivity \
-     *     --ez benchmark true [--es models yolo26n_320_int8.onnx] [--es frame frames/scene.jpg]
+     *     --ez benchmark true [--ez benchmark_full true]
      * ```
-     * 模型与画面放 `files/bench-models/`、`files/bench-frames/`（`run-as` 推送），读数同时写
-     * logcat 的 `VGInferenceBench` 标签与 `files/diagnostics/acceleration-bench-*.txt`。
      */
     private fun runAccelerationBenchmarkIfRequested(): Boolean {
         if (!isBenchmarkBuild() || intent?.getBooleanExtra(EXTRA_BENCHMARK, false) != true) return false
+        val full = intent?.getBooleanExtra(EXTRA_BENCHMARK_FULL, false) == true
 
-        val requested = intent?.getStringExtra(EXTRA_BENCHMARK_MODELS)
-            ?.split(',')
-            ?.map { it.trim() }
-            ?.filter { it.isNotEmpty() }
-            .orEmpty()
-        val frameName = intent?.getStringExtra(EXTRA_BENCHMARK_FRAME)?.trim().orEmpty()
-
-        Thread {
-            val dir = File(filesDir, AccelerationBenchmark.MODEL_DIR)
-            val requestedNames = if (requested.isEmpty()) {
-                AccelerationMeasure.modelsIn(dir).map { it.name }
-            } else {
-                requested
-            }
-            val device = "${Build.MANUFACTURER} ${Build.MODEL} / API ${Build.VERSION.SDK_INT}"
-            val results = mutableListOf<AccelerationMeasure.Result>()
-            val failures = mutableListOf<String>()
-
-            // 真实画面：与正式链路同一套 letterbox 预处理；读不到就退回合成输入并记一条失败。
-            val frame = if (frameName.isEmpty()) null else {
-                AccelerationBenchmark.loadFrame(File(filesDir, frameName))
-                    ?: File(filesDir, frameName).let {
-                        failures += "画面 ${it.name}：文件不存在或无法解码"
-                        null
-                    }
-            }
-
-            if (requestedNames.isEmpty()) {
-                failures += "没有待测模型：$dir（用 run-as 推送到该目录）"
-            }
-            requestedNames.forEach { name ->
-                // 同一个模型基名下的 .onnx 与 .tflite 会各跑自己运行时的档位。
-                val base = name.substringBeforeLast('.')
-                val onnx = File(dir, "$base.onnx")
-                val tflite = File(dir, "$base.tflite")
-                val usable = listOfNotNull(
-                    onnx.takeIf { it.isFile && it.length() >= OnnxEngine.MIN_MODEL_BYTES },
-                    tflite.takeIf { it.isFile && it.length() >= OnnxEngine.MIN_MODEL_BYTES }
-                )
-                if (usable.isEmpty()) {
-                    failures += "$base：既没有可用的 .onnx 也没有 .tflite"
-                    return@forEach
-                }
-                val (rows, errors) = AccelerationBenchmark.run(
-                    modelName = base,
-                    onnxFile = onnx.takeIf { it.isFile },
-                    tfliteFile = tflite.takeIf { it.isFile },
-                    providers = InferenceProvider.benchmarkOrder,
-                    argb = frame
-                )
-                results += rows
-                failures += errors
-            }
-
-            val report = AccelerationMeasure.Report(device, results, failures)
-            val path = AccelerationBenchmark.persist(File(filesDir, "diagnostics"), report)
-            Log.i(AccelerationBenchmark.TAG, "输入：${if (frame != null) "$frameName（真实画面）" else "合成画面"}")
-            Log.i(AccelerationBenchmark.TAG, "报告：${path ?: "写入失败"}")
-            report.lines().forEach { Log.i(AccelerationBenchmark.TAG, it) }
-            runOnUiThread {
-                Toast.makeText(this, "推理加速测量完成：${results.size} 条读数，${failures.size} 项失败；详见 logcat", Toast.LENGTH_LONG).show()
-            }
+        lifecycleScope.launch {
+            BundledAccelerationBenchmark.run(this@MainActivity, onlyAccelerated = !full)
+            val state = BundledAccelerationBenchmark.state.value
+            Log.i(BundledAccelerationBenchmark.TAG, "报告：${state.reportPath ?: "写入失败"}")
+            state.report.lines().forEach { Log.i(BundledAccelerationBenchmark.TAG, it) }
+            Toast.makeText(
+                this@MainActivity,
+                "推理加速测量完成：${if (state.failure == null) "见 logcat 与设置页" else state.failure}",
+                Toast.LENGTH_LONG
+            ).show()
             finish()
-        }.start()
+        }
         return true
     }
 
@@ -271,13 +218,10 @@ class MainActivity : ComponentActivity() {
         BuildConfig.DEBUG && !applicationContext.packageName.endsWith(".uipreview")
 
     companion object {
-        /** `--ez benchmark true`：只跑一次加速测量，不进入界面。 */
+        /** `--ez benchmark true`：只跑一次加速测量，不进入界面（自动化验证用）。 */
         const val EXTRA_BENCHMARK = "benchmark"
 
-        /** `--es models a.onnx,b.onnx`：只测这些模型；省略时测目录内全部。 */
-        const val EXTRA_BENCHMARK_MODELS = "models"
-
-        /** `--es frame bench-frames/scene.jpg`：真实画面路径（相对 files/）；省略时用合成画面。 */
-        const val EXTRA_BENCHMARK_FRAME = "frame"
+        /** `--ez benchmark_full true`：连逐线程 CPU 档一起跑；省略时只跑加速档与基线。 */
+        const val EXTRA_BENCHMARK_FULL = "benchmark_full"
     }
 }

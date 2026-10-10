@@ -1,6 +1,5 @@
 package com.xgwnje.visionguard.inference.model
 
-import android.graphics.BitmapFactory
 import android.util.Log
 import com.xgwnje.visionguard.inference.detect.ArgbImage
 import java.io.File
@@ -15,9 +14,6 @@ import java.io.File
 object AccelerationBenchmark {
 
     const val TAG = "VGInferenceBench"
-
-    /** 目录：待测模型。adb 推送位置，与生产模型目录分开，不参与正式选择。 */
-    const val MODEL_DIR = "bench-models"
 
     /** 预热帧数：第一帧含图优化与会话初始化，不能计入稳态。 */
     private const val WARMUP_RUNS = 2
@@ -179,22 +175,5 @@ object AccelerationBenchmark {
         val file = File(directory, "acceleration-bench-$stamp.txt")
         file.writeText(report.lines().joinToString("\n"))
         file.absolutePath
-    }.getOrNull()
-
-    /**
-     * 读一张真实画面作为测量输入（JPEG / PNG 等系统可解码的格式）。
-     *
-     * 用真实画面而不是合成图，是为了让预处理、激活分布与正式推理一致；读不到时返回 null，
-     * 由调用方决定是否退回合成输入。
-     */
-    fun loadFrame(path: File): ArgbImage? = runCatching {
-        if (!path.isFile) return null
-        val bitmap = BitmapFactory.decodeFile(path.absolutePath) ?: return null
-        val width = bitmap.width
-        val height = bitmap.height
-        val pixels = IntArray(width * height)
-        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-        bitmap.recycle()
-        ArgbImage(width, height, pixels)
     }.getOrNull()
 }

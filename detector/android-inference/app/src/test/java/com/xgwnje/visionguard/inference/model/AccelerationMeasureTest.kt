@@ -83,17 +83,6 @@ class AccelerationMeasureTest {
     }
 
     @Test
-    fun `待测模型只取目录下的 onnx 且按名称排序`() {
-        val dir = temporary.newFolder("bench-models")
-        java.io.File(dir, "b.onnx").writeText("x")
-        java.io.File(dir, "a.onnx").writeText("x")
-        java.io.File(dir, "notes.txt").writeText("x")
-        java.io.File(dir, "sub.onnx").mkdirs()
-
-        assertEquals(listOf("a.onnx", "b.onnx"), AccelerationMeasure.modelsIn(dir).map { it.name })
-    }
-
-    @Test
     fun `报告按门槛给出达标与未达标判定`() {
         val report = AccelerationMeasure.Report(
             device = "Test Device / API 36",

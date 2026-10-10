@@ -71,10 +71,6 @@ object AccelerationMeasure {
         return if (ordered.size % 2 == 1) ordered[middle] else (ordered[middle - 1] + ordered[middle]) / 2.0
     }
 
-    /** 待测模型：目录下的 `.onnx`，按名称排序保证多次运行一致。 */
-    fun modelsIn(dir: File): List<File> =
-        dir.listFiles { file -> file.isFile && file.name.endsWith(".onnx") }?.sortedBy { it.name }.orEmpty()
-
     /**
      * 固定合成输入：斜向渐变叠加固定位置的方块。
      *

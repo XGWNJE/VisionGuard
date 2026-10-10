@@ -47,6 +47,8 @@ import com.xgwnje.visionguard.account.ClientUpdateButton
 import com.xgwnje.visionguard.account.VisionGuardStatusColors
 import com.xgwnje.visionguard.icons.LucideIcons
 import com.xgwnje.visionguard.inference.AppConstants
+import com.xgwnje.visionguard.inference.BuildConfig
+import com.xgwnje.visionguard.inference.model.BundledAccelerationBenchmark
 import com.xgwnje.visionguard.inference.net.ControlState
 import com.xgwnje.visionguard.inference.net.MediaState
 import com.xgwnje.visionguard.inference.runtime.CrashReporter
@@ -540,6 +542,11 @@ private fun MaintenanceSection(runtime: InferenceRuntime, onMessage: (String?) -
     GeoDivider()
     CrashSection(onMessage)
 
+    if (isBenchmarkBuild()) {
+        GeoDivider()
+        AccelerationBenchmarkSection(onMessage)
+    }
+
     if (confirmClean) {
         GeoConfirm(
             title = "清理临时缓存",
@@ -561,6 +568,99 @@ private fun MaintenanceSection(runtime: InferenceRuntime, onMessage: (String?) -
                 }
             }
         )
+    }
+}
+
+/** 测量入口是否可用：只开放给可调试构建，且排除 UI 预览包，避免随预览包流出。 */
+@Composable
+private fun isBenchmarkBuild(): Boolean {
+    val context = LocalContext.current
+    return BuildConfig.DEBUG && !context.packageName.endsWith(".uipreview")
+}
+
+/**
+ * 自带的推理加速测量：模型与画面都在 APK 里，装完点一下就跑，不需要 adb。
+ *
+ * 只显示在可调试构建的「设置 → 维护」里；正式构建不显示，也不会自动运行。
+ */
+@Composable
+private fun AccelerationBenchmarkSection(onMessage: (String?) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val state by BundledAccelerationBenchmark.state.collectAsState()
+
+    GeoSectionLabel("06", "推理加速测量", "自带模型，无需连电脑")
+    GeoHint(
+        "把各推理档位（ONNX CPU / NNAPI，LiteRT CPU / GPU / NPU）在同一张真实画面上逐个跑一遍，" +
+            "报单帧耗时中位数并给出是否达标（门槛：加速档 ≤ 同运行时 CPU 的 0.70×）。只在本机运行，不上传。"
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
+        GeoKey(
+            onClick = { scope.launch { BundledAccelerationBenchmark.run(context, onlyAccelerated = true) } },
+            label = "快速测量",
+            icon = LucideIcons.Play,
+            busy = state.running,
+            enabled = !state.running
+        )
+        GeoKey(
+            onClick = { scope.launch { BundledAccelerationBenchmark.run(context, onlyAccelerated = false) } },
+            label = "完整测量",
+            icon = LucideIcons.Activity,
+            busy = state.running,
+            enabled = !state.running
+        )
+    }
+    GeoHint("快速测量只跑加速档与其 CPU 基线；完整测量另跑逐线程 CPU 档，更慢。新机型首次跑 GPU 档可能要几十秒编译模型，属正常现象。")
+
+    state.failure?.let { GeoHint("测量失败：$it", tone = GeoLampTone.Error) }
+
+    if (state.running || state.current.isNotEmpty()) {
+        GeoFieldLabel("进度")
+        Text(
+            state.current,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+
+    if (state.report.isNotEmpty()) {
+        GeoFieldLabel("结果")
+        GeoSurface(Modifier.fillMaxWidth()) {
+            Text(
+                state.report,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.fillMaxWidth().padding(Geo.Gap)
+            )
+        }
+        state.reportPath?.let { GeoHint("原始报告已写入：$it") }
+        Row(horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
+            GeoKey(
+                onClick = {
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_SUBJECT, "推理加速测量结果")
+                        putExtra(Intent.EXTRA_TEXT, state.report)
+                    }
+                    runCatching {
+                        context.startActivity(Intent.createChooser(intent, "分享测量结果"))
+                    }.onFailure { onMessage("无法打开分享：${it.message}") }
+                },
+                label = "分享结果",
+                icon = LucideIcons.ExternalLink
+            )
+            GeoKey(
+                onClick = {
+                    BundledAccelerationBenchmark.reset()
+                    onMessage("已清空上次结果")
+                },
+                label = "清空",
+                icon = LucideIcons.Trash2,
+                tone = GeoTone.Danger
+            )
+        }
     }
 }
 
