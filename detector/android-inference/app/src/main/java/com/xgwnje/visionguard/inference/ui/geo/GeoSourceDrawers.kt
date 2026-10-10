@@ -25,25 +25,6 @@ import com.xgwnje.visionguard.inference.source.SourceView
 import com.xgwnje.visionguard.inference.ui.formatElapsedMoment
 import com.xgwnje.visionguard.inference.ui.formatWallMoment
 
-/** 键值信息行：左标签固定宽度，右值可换行。 */
-@Composable
-private fun GeoInfoRow(label: String, value: String, labelWidth: Int = 96) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 24.dp), verticalAlignment = Alignment.Top) {
-        Text(
-            label,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.width(labelWidth.dp)
-        )
-        Text(
-            value,
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
 /** 来源检查：身份、状态分层、名称槽、镜头拨档与删除闸门。 */
 @Composable
 fun SourceInspectDrawer(

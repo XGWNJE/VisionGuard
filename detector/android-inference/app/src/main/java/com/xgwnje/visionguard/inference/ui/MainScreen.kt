@@ -38,11 +38,13 @@ import com.xgwnje.visionguard.inference.ui.geo.AddSourceDrawer
 import com.xgwnje.visionguard.inference.ui.geo.EmptyWorkspace
 import com.xgwnje.visionguard.inference.ui.geo.Geo
 import com.xgwnje.visionguard.inference.ui.geo.GeoDivider
+import com.xgwnje.visionguard.inference.ui.geo.GeoHelpDrawer
 import com.xgwnje.visionguard.inference.ui.geo.GeoHint
 import com.xgwnje.visionguard.inference.ui.geo.GeoLampTone
 import com.xgwnje.visionguard.inference.ui.geo.GeoMaskDrawer
 import com.xgwnje.visionguard.inference.ui.geo.GeoMessageRibbon
 import com.xgwnje.visionguard.inference.ui.geo.GeoParameterDrawer
+import com.xgwnje.visionguard.inference.ui.geo.GeoSettingsDrawer
 import com.xgwnje.visionguard.inference.ui.geo.ParameterStrip
 import com.xgwnje.visionguard.inference.ui.geo.PreviewComposition
 import com.xgwnje.visionguard.inference.ui.geo.SourceCarriage
@@ -149,18 +151,18 @@ fun MainScreen(
         }
 
         when (overlay) {
-            Overlay.SETTINGS -> GlobalSettingsOverlay(
+            Overlay.SETTINGS -> GeoSettingsDrawer(
                 session = session,
                 state = state,
                 control = control,
                 media = media,
                 appearance = appearance,
                 runtime = runtime,
-                onBack = { overlay = Overlay.NONE },
+                onClose = { overlay = Overlay.NONE },
                 onMessage = onMessage
             )
     
-            Overlay.HELP -> HelpPage(onBack = { overlay = Overlay.NONE })
+            Overlay.HELP -> GeoHelpDrawer(onClose = { overlay = Overlay.NONE })
     
             Overlay.INSPECT -> SourceInspectDrawer(
                 source = selected,

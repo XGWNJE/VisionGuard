@@ -656,6 +656,16 @@ class InferenceRuntime private constructor(private val context: Context) {
 
     fun modelStore(): ModelStore = models
 
+    /** 临时缓存盘点：只扫描固定目录，保护模型、账号、配置与回滚资料。 */
+    suspend fun inspectTemporaryCache(): org.json.JSONObject? = runCatching {
+        TemporaryCache.maintain(context, clean = false) { mutableState.value.runningSourceCount > 0 }
+    }.getOrNull()
+
+    /** 临时缓存清理：先盘点再确认，结果由调用方分项展示。 */
+    suspend fun cleanTemporaryCache(): org.json.JSONObject? = runCatching {
+        TemporaryCache.maintain(context, clean = true) { mutableState.value.runningSourceCount > 0 }
+    }.getOrNull()
+
     // ── 生命周期 ────────────────────────────────────────────────────
 
     fun clearMessage() = updateState { it.copy(message = null) }

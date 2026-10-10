@@ -331,6 +331,25 @@ fun GeoFieldLabel(text: String, modifier: Modifier = Modifier) {
     Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, modifier = modifier)
 }
 
+/** 键值信息行：左标签固定宽度，右值可换行。 */
+@Composable
+fun GeoInfoRow(label: String, value: String, labelWidth: Int = 96, valueColor: Color? = null) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 24.dp), verticalAlignment = Alignment.Top) {
+        Text(
+            label,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.width(labelWidth.dp)
+        )
+        Text(
+            value,
+            color = valueColor ?: MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
+
 /**
  * 信息带：失败 / 等待 / 成功各自带语义色与图标，可关闭、长文可展开，不覆盖主操作。
  */
