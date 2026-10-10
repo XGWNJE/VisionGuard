@@ -3,6 +3,7 @@ package com.xgwnje.visionguard.inference.ui.geo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,56 +44,6 @@ import com.xgwnje.visionguard.inference.source.SourceView
 import com.xgwnje.visionguard.inference.ui.EmptyFramePlaceholder
 import com.xgwnje.visionguard.inference.ui.FrameBackdrop
 import com.xgwnje.visionguard.inference.ui.FrameCanvas
-import com.xgwnje.visionguard.inference.ui.argbToImageBitmap
-
-/** 节点头部：品牌、连接状态、帮助 / 设置 / 账号入口。 */
-@Composable
-fun GeoNodeHeader(
-    connectionText: String,
-    connectionTone: GeoLampTone,
-    onConnection: () -> Unit,
-    onHelp: () -> Unit,
-    onSettings: () -> Unit,
-    onAccount: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier
-            .fillMaxWidth()
-            .height(56.dp)
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = Geo.ScreenPadding),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Geo.Gap)
-    ) {
-        Box(
-            Modifier
-                .size(width = 6.dp, height = 24.dp)
-                .background(MaterialTheme.colorScheme.primary, RectangleShape)
-        )
-        Spacer(Modifier.width(2.dp))
-        Text(
-            "VisionGuard",
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-        )
-        Spacer(Modifier.width(4.dp))
-        Box(Modifier.width(Geo.Border).height(20.dp).background(MaterialTheme.colorScheme.outlineVariant))
-        Spacer(Modifier.width(4.dp))
-        Text(
-            "视觉推理节点",
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.weight(1f)
-        )
-        Box(Modifier.clickable(onClick = onConnection).padding(horizontal = 4.dp)) {
-            GeoLamp(connectionText, connectionTone)
-        }
-        GeoIconKey(LucideIcons.CircleHelp, "使用帮助", onHelp)
-        GeoIconKey(LucideIcons.Settings, "全局设置", onSettings)
-        GeoIconKey(LucideIcons.UserRound, "账号菜单", onAccount)
-    }
-}
 
 /** 主预览：等比画面、遮罩与检测框、身份条与画面闸门。 */
 @Composable
@@ -321,7 +272,6 @@ fun ActionDeck(
     modifier: Modifier = Modifier
 ) {
     val running = source?.state?.isRunning == true
-    val ready = source?.state?.isReady == true
     val topConfidence = source?.state?.detections?.maxByOrNull { it.confidence }?.confidence
     val readouts: @Composable (Modifier) -> Unit = { readoutModifier ->
         Row(readoutModifier, horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
@@ -340,7 +290,9 @@ fun ActionDeck(
             GeoKey(
                 onClick = onToggle,
                 tone = GeoTone.Primary,
-                enabled = ready,
+                // 首次启动前没有任何成功帧，不能用「已处理帧」当门槛：未运行时始终可尝试启动，
+                // 缺权限或未绑定由 runtime 返回原因。
+                enabled = source != null,
                 busy = busy,
                 icon = if (running) LucideIcons.Pause else LucideIcons.Play,
                 label = if (busy) "处理中…" else if (running) "停止检测" else "开始检测",
@@ -403,11 +355,21 @@ private fun Readout(label: String, value: String, unit: String?, modifier: Modif
     }
 }
 
-/** 技术信息带：只读标识与参数摘要，点任意项进入参数抽屉。 */
+/**
+ * 技术信息带：只读标识与参数摘要，右端放应用级入口（连接状态、帮助、设置、账号）。
+ *
+ * owner 要求不留头部标题行、把高度让给画面，所以应用级入口落在这一行里。
+ */
 @Composable
 fun ParameterStrip(
     source: SourceView?,
+    connectionText: String,
+    connectionTone: GeoLampTone,
     onParams: () -> Unit,
+    onConnection: () -> Unit,
+    onHelp: () -> Unit,
+    onSettings: () -> Unit,
+    onAccount: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val running = source?.state?.isRunning == true
@@ -416,31 +378,42 @@ fun ParameterStrip(
             .fillMaxWidth()
             .heightIn(min = Geo.Touch)
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(horizontal = Geo.ScreenPadding),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Geo.Gap)
+            .padding(start = Geo.ScreenPadding, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                if (running) LucideIcons.LockKeyhole else LucideIcons.Pencil,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(14.dp)
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                if (running) "运行中只读" else "已停止 · 可编辑",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall
-            )
+        Row(
+            Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Geo.Gap)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (running) LucideIcons.LockKeyhole else LucideIcons.Pencil,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    if (running) "运行中只读" else "已停止 · 可编辑",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            source?.let { view ->
+                StripItem("置信度", "${view.params.confidencePercent}%", onParams)
+                StripItem("采样", "${view.params.targetFps} FPS", onParams)
+                StripItem("冷却", "${view.params.cooldownSeconds} 秒", onParams)
+                StripItem(null, ModelKeys.displayName(view.params.modelKey), onParams)
+                StripItem(null, "${view.params.watchedClasses.size} 个目标", onParams)
+            }
         }
-        source?.let { view ->
-            StripItem("置信度", "${view.params.confidencePercent}%", onParams)
-            StripItem("采样", "${view.params.targetFps} FPS", onParams)
-            StripItem("冷却", "${view.params.cooldownSeconds} 秒", onParams)
-            StripItem(null, ModelKeys.displayName(view.params.modelKey), onParams)
-            StripItem(null, "${view.params.watchedClasses.size} 个目标", onParams)
+        Box(Modifier.clickable(onClick = onConnection).padding(horizontal = 8.dp)) {
+            GeoLamp(connectionText, connectionTone)
         }
+        GeoIconKey(LucideIcons.CircleHelp, "使用帮助", onHelp)
+        GeoIconKey(LucideIcons.Settings, "全局设置", onSettings)
+        GeoIconKey(LucideIcons.UserRound, "账号菜单", onAccount)
     }
 }
 

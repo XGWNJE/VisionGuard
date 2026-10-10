@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -41,9 +40,9 @@ import com.xgwnje.visionguard.inference.ui.geo.Geo
 import com.xgwnje.visionguard.inference.ui.geo.GeoDivider
 import com.xgwnje.visionguard.inference.ui.geo.GeoHint
 import com.xgwnje.visionguard.inference.ui.geo.GeoLampTone
+import com.xgwnje.visionguard.inference.ui.geo.GeoMaskDrawer
 import com.xgwnje.visionguard.inference.ui.geo.GeoMessageRibbon
 import com.xgwnje.visionguard.inference.ui.geo.GeoParameterDrawer
-import com.xgwnje.visionguard.inference.ui.geo.GeoNodeHeader
 import com.xgwnje.visionguard.inference.ui.geo.ParameterStrip
 import com.xgwnje.visionguard.inference.ui.geo.PreviewComposition
 import com.xgwnje.visionguard.inference.ui.geo.SourceCarriage
@@ -92,17 +91,7 @@ fun MainScreen(
 
     Box(Modifier.fillMaxSize()) {
         Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-                GeoNodeHeader(
-                    connectionText = connectionText,
-                    connectionTone = connectionTone,
-                    onConnection = { overlay = Overlay.SETTINGS },
-                    onHelp = { overlay = Overlay.HELP },
-                    onSettings = { overlay = Overlay.SETTINGS },
-                    onAccount = { overlay = Overlay.SETTINGS }
-                )
-                GeoDivider()
-    
+            Column(Modifier.fillMaxSize().navigationBarsPadding()) {
                 state.message?.let { message ->
                     GeoMessageRibbon(
                         text = message,
@@ -146,7 +135,13 @@ fun MainScreen(
                                 }
                             },
                             onParams = { parameterEditorFor = selected?.sourceId },
-                            onMasks = { maskEditorFor = selected?.sourceId }
+                            onMasks = { maskEditorFor = selected?.sourceId },
+                            connectionText = connectionText,
+                            connectionTone = connectionTone,
+                            onConnection = { overlay = Overlay.SETTINGS },
+                            onHelp = { overlay = Overlay.HELP },
+                            onSettings = { overlay = Overlay.SETTINGS },
+                            onAccount = { overlay = Overlay.SETTINGS }
                         )
                     }
                 }
@@ -217,7 +212,7 @@ fun MainScreen(
     
         val editingMasks = state.sources.firstOrNull { it.sourceId == maskEditorFor }
         if (editingMasks != null) {
-            MaskEditorDialog(
+            GeoMaskDrawer(
                 sourceName = editingMasks.sourceName,
                 frame = editingMasks.state.preview,
                 initial = editingMasks.masks,
@@ -250,7 +245,13 @@ private fun Workspace(
     onInspect: () -> Unit,
     onToggle: () -> Unit,
     onParams: () -> Unit,
-    onMasks: () -> Unit
+    onMasks: () -> Unit,
+    connectionText: String,
+    connectionTone: GeoLampTone,
+    onConnection: () -> Unit,
+    onHelp: () -> Unit,
+    onSettings: () -> Unit,
+    onAccount: () -> Unit
 ) {
     val freshness = when {
         selected == null -> "没有来源"
@@ -310,7 +311,16 @@ private fun Workspace(
             onParams = onParams,
             onMasks = onMasks
         )
-        ParameterStrip(source = selected, onParams = onParams)
+        ParameterStrip(
+            source = selected,
+            connectionText = connectionText,
+            connectionTone = connectionTone,
+            onParams = onParams,
+            onConnection = onConnection,
+            onHelp = onHelp,
+            onSettings = onSettings,
+            onAccount = onAccount
+        )
         selected?.state?.error?.let { GeoHint(it, GeoLampTone.Error) }
         selected?.state?.performanceWarning?.let { GeoHint(it, GeoLampTone.Warning) }
         if (state.recoveryWarning != null) GeoHint(state.recoveryWarning, GeoLampTone.Warning)

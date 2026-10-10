@@ -19,6 +19,8 @@ import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.xgwnje.visionguard.account.AccountLogin
 import com.xgwnje.visionguard.account.AccountStore
@@ -68,6 +70,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        applyImmersiveMode()
         val account = AccountStore.get(this)
         val runtime = InferenceRuntime.get(this)
         setContent {
@@ -75,13 +78,14 @@ class MainActivity : ComponentActivity() {
             val appearance = rememberAppearance()
             val darkTheme = appearance.dark()
             SideEffect {
+                applyImmersiveMode()
                 WindowCompat.getInsetsController(window, window.decorView).apply {
                     isAppearanceLightStatusBars = !darkTheme
                     isAppearanceLightNavigationBars = !darkTheme
                 }
             }
             VisionguardTheme(darkTheme = darkTheme) {
-                Column(Modifier.fillMaxSize().statusBarsPadding()) {
+                Column(Modifier.fillMaxSize()) {
                     if (session == null) {
                         ApplicationOptions(appearance, AppConstants.LOGIN_COMPONENT)
                         AccountLogin(
@@ -120,6 +124,23 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * 全屏沉浸：不显示系统状态栏，把高度让给画面；用户从边缘下滑仍可临时呼出。
+     * 回到前台或窗口重新获得焦点时再隐藏一次，避免系统恢复状态栏。
+     */
+    private fun applyImmersiveMode() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.statusBars())
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applyImmersiveMode()
     }
 
     /** 本机相机来源先确认相机权限，其余来源直接启停。 */

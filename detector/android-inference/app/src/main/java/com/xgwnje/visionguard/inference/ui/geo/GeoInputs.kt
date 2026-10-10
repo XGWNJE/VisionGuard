@@ -572,19 +572,29 @@ fun GeoSlotCard(
                 )
             }
         }
-        if (selected) {
+        // 未下载时始终给下载入口（含当前选中项，否则选中的未下载模型没有下载入口）；
+        // 已下载的选中项用对勾表达选中。
+        if (trailingIcon != null && onTrailingClick != null) {
+            GeoIconKey(
+                trailingIcon,
+                "下载 $title",
+                onClick = onTrailingClick,
+                modifier = Modifier.align(Alignment.BottomEnd).size(Geo.Touch)
+            )
+            if (selected) {
+                Icon(
+                    LucideIcons.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.align(Alignment.TopEnd).size(16.dp)
+                )
+            }
+        } else if (selected) {
             Icon(
                 LucideIcons.Check,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
                 modifier = Modifier.align(Alignment.BottomEnd).size(20.dp)
-            )
-        } else if (trailingIcon != null) {
-            GeoIconKey(
-                trailingIcon,
-                title,
-                onClick = { onTrailingClick?.invoke() },
-                modifier = Modifier.align(Alignment.BottomEnd).size(Geo.Touch)
             )
         }
     }
