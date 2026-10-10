@@ -1,6 +1,8 @@
 package com.xgwnje.visionguard.inference.model
 
+import android.graphics.BitmapFactory
 import android.util.Log
+import com.xgwnje.visionguard.inference.detect.ArgbImage
 import java.io.File
 
 /**
@@ -35,12 +37,16 @@ object AccelerationBenchmark {
     /**
      * 测量 [modelFile] 在 [providers] 上的单帧耗时。
      *
+     * [argb] 为真实画面时按与正式链路相同的 letterbox 预处理生成输入；为空则用固定合成输入。
+     * 两种输入都只影响耗时测量，不影响质量结论（质量在桌面比对）。
+     *
      * 返回读数和失败原因；NNAPI 档位可能因驱动拒绝、模型不被接受或设备不支持而失败，
      * 失败原因必须原样记下来，不能当成"没测过"。
      */
     fun run(
         modelFile: File,
         providers: List<InferenceProvider>,
+        argb: ArgbImage? = null,
         maxTotalMs: Long = MAX_DURATION_MS * 4,
         log: (String) -> Unit = { Log.i(TAG, it) }
     ): Pair<List<AccelerationMeasure.Result>, List<String>> {
@@ -58,7 +64,8 @@ object AccelerationBenchmark {
             try {
                 val engine = OnnxEngine.create(modelFile, provider)
                 try {
-                    val tensor = AccelerationMeasure.syntheticInput(engine.modelSize)
+                    val tensor = argb?.toLetterboxTensor(engine.modelSize)?.tensor
+                        ?: AccelerationMeasure.syntheticInput(engine.modelSize)
                     repeat(WARMUP_RUNS) { engine.run(tensor) }
                     for (frame in 0 until MAX_RUNS) {
                         val began = System.nanoTime()
@@ -108,5 +115,22 @@ object AccelerationBenchmark {
         val file = File(directory, "acceleration-bench-$stamp.txt")
         file.writeText(report.lines().joinToString("\n"))
         file.absolutePath
+    }.getOrNull()
+
+    /**
+     * 读一张真实画面作为测量输入（JPEG / PNG 等系统可解码的格式）。
+     *
+     * 用真实画面而不是合成图，是为了让预处理、激活分布与正式推理一致；读不到时返回 null，
+     * 由调用方决定是否退回合成输入。
+     */
+    fun loadFrame(path: File): ArgbImage? = runCatching {
+        if (!path.isFile) return null
+        val bitmap = BitmapFactory.decodeFile(path.absolutePath) ?: return null
+        val width = bitmap.width
+        val height = bitmap.height
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+        bitmap.recycle()
+        ArgbImage(width, height, pixels)
     }.getOrNull()
 }

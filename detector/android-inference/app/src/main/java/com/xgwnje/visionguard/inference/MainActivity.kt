@@ -161,10 +161,10 @@ class MainActivity : ComponentActivity() {
      * 触发方式：
      * ```
      * adb shell am start -n <包名>/com.xgwnje.visionguard.inference.MainActivity \
-     *     --ez benchmark true [--es models yolo26n_320_int8.onnx]
+     *     --ez benchmark true [--es models yolo26n_320_int8.onnx] [--es frame frames/scene.jpg]
      * ```
-     * 模型放 `files/bench-models/`（`run-as` 推送），读数同时写 logcat 的
-     * `VGInferenceBench` 标签与 `files/diagnostics/acceleration-bench-*.txt`。
+     * 模型与画面放 `files/bench-models/`、`files/bench-frames/`（`run-as` 推送），读数同时写
+     * logcat 的 `VGInferenceBench` 标签与 `files/diagnostics/acceleration-bench-*.txt`。
      */
     private fun runAccelerationBenchmarkIfRequested(): Boolean {
         if (!isBenchmarkBuild() || intent?.getBooleanExtra(EXTRA_BENCHMARK, false) != true) return false
@@ -174,6 +174,7 @@ class MainActivity : ComponentActivity() {
             ?.map { it.trim() }
             ?.filter { it.isNotEmpty() }
             .orEmpty()
+        val frameName = intent?.getStringExtra(EXTRA_BENCHMARK_FRAME)?.trim().orEmpty()
 
         Thread {
             val dir = File(filesDir, AccelerationBenchmark.MODEL_DIR)
@@ -185,6 +186,15 @@ class MainActivity : ComponentActivity() {
             val device = "${Build.MANUFACTURER} ${Build.MODEL} / API ${Build.VERSION.SDK_INT}"
             val results = mutableListOf<AccelerationMeasure.Result>()
             val failures = mutableListOf<String>()
+
+            // 真实画面：与正式链路同一套 letterbox 预处理；读不到就退回合成输入并记一条失败。
+            val frame = if (frameName.isEmpty()) null else {
+                AccelerationBenchmark.loadFrame(File(filesDir, frameName))
+                    ?: File(filesDir, frameName).let {
+                        failures += "画面 ${it.name}：文件不存在或无法解码"
+                        null
+                    }
+            }
 
             if (models.isEmpty()) {
                 failures += "没有待测模型：$dir（用 run-as 推送到该目录）"
@@ -198,14 +208,16 @@ class MainActivity : ComponentActivity() {
                     failures += "${model.name}：体积不足 ${OnnxEngine.MIN_MODEL_BYTES} 字节"
                     return@forEach
                 }
-                val (rows, errors) = AccelerationBenchmark.run(model, InferenceProvider.benchmarkOrder)
+                val (rows, errors) = AccelerationBenchmark.run(model, InferenceProvider.benchmarkOrder, frame)
                 results += rows
                 failures += errors
             }
 
             val report = AccelerationMeasure.Report(device, results, failures)
             val path = AccelerationBenchmark.persist(File(filesDir, "diagnostics"), report)
+            Log.i(AccelerationBenchmark.TAG, "输入：${if (frame != null) "$frameName（真实画面）" else "合成画面"}")
             Log.i(AccelerationBenchmark.TAG, "报告：${path ?: "写入失败"}")
+            report.lines().forEach { Log.i(AccelerationBenchmark.TAG, it) }
             runOnUiThread {
                 Toast.makeText(this, "推理加速测量完成：${results.size} 条读数，${failures.size} 项失败；详见 logcat", Toast.LENGTH_LONG).show()
             }
@@ -254,5 +266,8 @@ class MainActivity : ComponentActivity() {
 
         /** `--es models a.onnx,b.onnx`：只测这些模型；省略时测目录内全部。 */
         const val EXTRA_BENCHMARK_MODELS = "models"
+
+        /** `--es frame bench-frames/scene.jpg`：真实画面路径（相对 files/）；省略时用合成画面。 */
+        const val EXTRA_BENCHMARK_FRAME = "frame"
     }
 }
