@@ -103,6 +103,20 @@ object Geo {
     const val TARGET_COLUMNS = 5
     const val TARGET_LIMIT = 256
 
+    /**
+     * 参数区块的统一节奏：主控件区 / 操作行 / 快捷行。
+     *
+     * 并排的几个控件逐段等高，视觉上不会出现「有的地方留白大、有的地方留白小」。
+     */
+    val BlockControl = 132.dp
+    val BlockAction = 42.dp
+    val BlockQuick = 36.dp
+
+    /** 模型插片与信息格。 */
+    val ModelTile = 84.dp
+    val BlockGap = 12.dp
+    val InfoCell = 56.dp
+
     /** 抽屉宽度。 */
     val ParamDrawer = 760.dp
     val Drawer = 560.dp

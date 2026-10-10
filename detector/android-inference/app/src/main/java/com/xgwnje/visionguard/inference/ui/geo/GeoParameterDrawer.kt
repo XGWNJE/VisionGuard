@@ -37,6 +37,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,6 +47,7 @@ import com.xgwnje.visionguard.icons.LucideIcons
 import com.xgwnje.visionguard.inference.detect.CocoClassMap
 import com.xgwnje.visionguard.inference.detect.DetectionParams
 import com.xgwnje.visionguard.inference.runtime.ModelDownloadState
+import com.xgwnje.visionguard.inference.model.ModelKeys
 import com.xgwnje.visionguard.inference.runtime.ModelState
 import com.xgwnje.visionguard.inference.source.SourceCaptureMode
 import com.xgwnje.visionguard.inference.source.SourceView
@@ -63,14 +66,16 @@ enum class ParamAnchor {
     NAME, LENS, MAINTENANCE, MACHINES, MODELS, TARGETS
 }
 
-private val cooldownPresets = listOf(5, 10, 30, 60)
+private val cooldownPresets = listOf(5, 30, 60)
+private val confidencePresets = listOf(25, 50, 75)
+private val fpsPresets = listOf(1, 3, 5)
 private val commonTargets = listOf("person", "bicycle", "car", "motorcycle", "bus", "truck", "cat", "dog", "backpack", "handbag")
 
 /**
- * 参数抽屉：上拨档切「来源」与「检测参数」两页，各自尽量一屏放完。
+ * 参数抽屉：拨档切「来源」与「检测参数」两页。
  *
- * 来源页承载来源身份、运行状态、名称、镜头与删除；检测参数页承载采样 / 置信度 / 冷却 /
- * 模型 / 目标。底部信息带的参数项通过 [scrollTo] 直接定位到对应区块。
+ * 检测参数页按统一节奏排布：三个机器控件逐段等高（主控件 / 操作行 / 快捷行），
+ * 下面是模型插槽与检测目标两列。草稿状态放在抽屉层，切换分区不会丢。
  */
 @Composable
 fun GeoParameterDrawer(
@@ -90,10 +95,66 @@ fun GeoParameterDrawer(
     onMessage: (String?) -> Unit
 ) {
     if (source == null) return
+    val initial = source.params
     var section by remember { mutableStateOf(initialSection) }
     val scrollState = rememberScrollState()
     // 普通 Map：布局回调写入不能进 State，否则会触发重组与布局互相触发的死循环。
     val anchors = remember { mutableMapOf<ParamAnchor, Float>() }
+    val scope = rememberCoroutineScope()
+
+    var confidence by remember(source.sourceId, initial) { mutableStateOf(initial.confidencePercent) }
+    var targetFps by remember(source.sourceId, initial) { mutableStateOf(initial.targetFps) }
+    var cooldown by remember(source.sourceId, initial) { mutableStateOf(initial.cooldownSeconds) }
+    var modelKey by remember(source.sourceId, initial) { mutableStateOf(initial.modelKey) }
+    var watched by remember(source.sourceId, initial) { mutableStateOf(initial.watchedClasses) }
+    var reviewed by remember(source.sourceId, initial) { mutableStateOf(true) }
+    var search by remember(source.sourceId) { mutableStateOf("") }
+    var showAllTargets by remember(source.sourceId) { mutableStateOf(false) }
+    var error by remember(source.sourceId) { mutableStateOf<String?>(null) }
+    var saving by remember(source.sourceId) { mutableStateOf(false) }
+
+    val locked = source.state.isRunning
+    val confidenceError = DetectionParams.validateConfidence(confidence)
+    val fpsError = DetectionParams.validateTargetFps(targetFps)
+    val cooldownError = DetectionParams.validateCooldown(cooldown)
+    val modelDownloaded = models.firstOrNull { it.key == modelKey }?.downloaded == true
+    val targetsText = watched.joinToString(",")
+    val targetsValid = watched.isNotEmpty() && watched.all { CocoClassMap.EnZh.containsKey(it) }
+    val targetsWithinLimit = watched.size <= DetectionParams.MAX_TARGET_COUNT &&
+        targetsText.length <= DetectionParams.MAX_TARGETS_TEXT_LENGTH
+    val canSave = !locked && !saving && confidenceError == null && fpsError == null && cooldownError == null &&
+        modelDownloaded && targetsValid && targetsWithinLimit && reviewed
+
+    fun resetDraft() {
+        confidence = initial.confidencePercent
+        targetFps = initial.targetFps
+        cooldown = initial.cooldownSeconds
+        modelKey = initial.modelKey
+        watched = initial.watchedClasses
+        search = ""
+        showAllTargets = false
+        reviewed = true
+        error = null
+    }
+
+    fun save() {
+        if (locked) {
+            error = "请先停止来源；参数是冷改动，停止后保存、下次启动生效"
+            return
+        }
+        saving = true
+        val failure = onSave(
+            initial.copy(
+                confidencePercent = confidence,
+                targetFps = targetFps,
+                cooldownSeconds = cooldown,
+                modelKey = modelKey,
+                watchedClasses = watched
+            )
+        )
+        saving = false
+        if (failure == null) onMessage("检测规则已保存，重新启动来源后生效") else error = failure
+    }
 
     // 底部信息带点进来时定位到对应区块：等两帧让目标分区完成测量再滚动。
     LaunchedEffect(section, scrollTo) {
@@ -111,10 +172,26 @@ fun GeoParameterDrawer(
         width = Geo.ParamDrawer,
         scrollState = scrollState,
         footer = {
-            if (section == ParamSection.DETECTION) {
-                GeoKey(onClick = onDismiss, label = "取消")
-            } else {
-                GeoKey(onClick = onDismiss, label = "关闭")
+            when (section) {
+                ParamSection.SOURCE -> GeoKey(onClick = onDismiss, label = "关闭")
+
+                ParamSection.DETECTION -> {
+                    GeoKey(
+                        onClick = { resetDraft() },
+                        label = "还原",
+                        icon = LucideIcons.RotateCcw,
+                        enabled = !saving
+                    )
+                    GeoKey(onClick = onDismiss, label = "取消")
+                    GeoKey(
+                        onClick = { save() },
+                        label = "保存参数",
+                        icon = LucideIcons.Check,
+                        tone = GeoTone.Primary,
+                        enabled = canSave,
+                        busy = saving
+                    )
+                }
             }
         }
     ) {
@@ -123,10 +200,7 @@ fun GeoParameterDrawer(
             value = section.name,
             onSelect = { name -> ParamSection.entries.firstOrNull { it.name == name }?.let { section = it } }
         )
-        Column(
-            Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(Geo.GroupGap)
-        ) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Geo.BlockGap)) {
             when (section) {
                 ParamSection.SOURCE -> SourceSection(
                     source = source,
@@ -140,15 +214,38 @@ fun GeoParameterDrawer(
                 )
 
                 ParamSection.DETECTION -> DetectionSection(
-                    source = source,
-                    initial = source.params,
-                    running = source.state.isRunning,
+                    locked = locked,
                     models = models,
                     downloads = downloads,
                     anchors = anchors,
-                    onDownloadModel = onDownloadModel,
-                    onSave = onSave,
-                    onMessage = onMessage
+                    confidence = confidence,
+                    onConfidence = { confidence = it; error = null },
+                    confidenceError = confidenceError,
+                    targetFps = targetFps,
+                    onTargetFps = { targetFps = it; error = null },
+                    fpsError = fpsError,
+                    cooldown = cooldown,
+                    onCooldown = { cooldown = it; error = null },
+                    cooldownError = cooldownError,
+                    modelKey = modelKey,
+                    onSelectModel = { key -> modelKey = key; reviewed = key == initial.modelKey; error = null },
+                    reviewed = reviewed,
+                    onReview = { reviewed = true },
+                    modelDownloaded = modelDownloaded,
+                    watched = watched,
+                    onToggleTarget = { key ->
+                        watched = if (watched.contains(key)) watched - key else watched + key
+                        error = null
+                    },
+                    targetsText = targetsText,
+                    targetsValid = targetsValid,
+                    targetsWithinLimit = targetsWithinLimit,
+                    search = search,
+                    onSearch = { search = it },
+                    showAllTargets = showAllTargets,
+                    onToggleAllTargets = { showAllTargets = !showAllTargets },
+                    error = error,
+                    onDownloadModel = { key -> scope.launch { onDownloadModel(key)?.let(onMessage) } }
                 )
             }
         }
@@ -190,7 +287,7 @@ private fun SourceSection(
             style = MaterialTheme.typography.bodySmall
         )
     }
-    // 两列信息网格：避免每行只放一条键值造成大片留白。
+    // 两列信息网格：同一行两格等高，避免一行一条键值造成大片留白。
     val rows = listOf(
         "来源身份" to source.sourceId,
         "推理后端" to source.state.backend.ifEmpty { "未报告" },
@@ -283,14 +380,16 @@ private fun SourceSection(
     }
 }
 
-/** 键值单元：标签在上、值在下，用于两列信息网格。 */
+/** 键值单元：标签在上、值在下，等高。 */
 @Composable
 private fun GeoInfoCell(label: String, value: String, modifier: Modifier = Modifier) {
     Column(
         modifier
+            .height(Geo.InfoCell)
             .background(MaterialTheme.colorScheme.surface, RectangleShape)
             .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.Center
     ) {
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         Text(
@@ -307,123 +406,103 @@ private fun GeoInfoCell(label: String, value: String, modifier: Modifier = Modif
 
 @Composable
 private fun DetectionSection(
-    source: SourceView,
-    initial: DetectionParams,
-    running: Boolean,
+    locked: Boolean,
     models: List<ModelState>,
     downloads: Map<String, ModelDownloadState>,
     anchors: MutableMap<ParamAnchor, Float>,
-    onDownloadModel: suspend (String) -> String?,
-    onSave: (DetectionParams) -> String?,
-    onMessage: (String?) -> Unit
+    confidence: Int,
+    onConfidence: (Int) -> Unit,
+    confidenceError: String?,
+    targetFps: Int,
+    onTargetFps: (Int) -> Unit,
+    fpsError: String?,
+    cooldown: Int,
+    onCooldown: (Int) -> Unit,
+    cooldownError: String?,
+    modelKey: String,
+    onSelectModel: (String) -> Unit,
+    reviewed: Boolean,
+    onReview: () -> Unit,
+    modelDownloaded: Boolean,
+    watched: Set<String>,
+    onToggleTarget: (String) -> Unit,
+    targetsText: String,
+    targetsValid: Boolean,
+    targetsWithinLimit: Boolean,
+    search: String,
+    onSearch: (String) -> Unit,
+    showAllTargets: Boolean,
+    onToggleAllTargets: () -> Unit,
+    error: String?,
+    onDownloadModel: (String) -> Unit
 ) {
-    var confidence by remember(initial) { mutableStateOf(initial.confidencePercent) }
-    var targetFps by remember(initial) { mutableStateOf(initial.targetFps) }
-    var cooldown by remember(initial) { mutableStateOf(initial.cooldownSeconds) }
-    var modelKey by remember(initial) { mutableStateOf(initial.modelKey) }
-    var watched by remember(initial) { mutableStateOf(initial.watchedClasses) }
-    var search by remember { mutableStateOf("") }
-    var reviewed by remember(initial) { mutableStateOf(true) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var saving by remember { mutableStateOf(false) }
-    var showAllTargets by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    val locked = running
-
-    val confidenceError = DetectionParams.validateConfidence(confidence)
-    val fpsError = DetectionParams.validateTargetFps(targetFps)
-    val cooldownError = DetectionParams.validateCooldown(cooldown)
-    val modelDownloaded = models.firstOrNull { it.key == modelKey }?.downloaded == true
-    val targetsText = watched.joinToString(",")
-    val targetsValid = watched.isNotEmpty() && watched.all { CocoClassMap.EnZh.containsKey(it) }
-    val targetsWithinLimit = watched.size <= DetectionParams.MAX_TARGET_COUNT &&
-        targetsText.length <= DetectionParams.MAX_TARGETS_TEXT_LENGTH
-    val canSave = !locked && !saving && confidenceError == null && fpsError == null && cooldownError == null &&
-        modelDownloaded && targetsValid && targetsWithinLimit && reviewed
-
-    fun save() {
-        if (locked) {
-            error = "请先停止来源；参数是冷改动，停止后保存、下次启动生效"
-            return
-        }
-        saving = true
-        val failure = onSave(
-            initial.copy(
-                confidencePercent = confidence,
-                targetFps = targetFps,
-                cooldownSeconds = cooldown,
-                modelKey = modelKey,
-                watchedClasses = watched
-            )
-        )
-        saving = false
-        if (failure == null) onMessage("检测规则已保存，重新启动来源后生效") else error = failure
-    }
-
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         GeoLamp(if (locked) "运行中 · 只读" else "已停止 · 可编辑", if (locked) GeoLampTone.Warning else GeoLampTone.Neutral)
         Spacer(Modifier.weight(1f))
         Text("草稿 / 保存后下次启动生效", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
     }
-    if (locked) GeoHint("停止检测后，才能调整参数；运行中的来源不会被编辑操作隐式停止。", GeoLampTone.Warning)
+    if (locked) {
+        GeoHint("停止检测后，才能调整参数；参数是冷改动，保存后下次启动生效。", GeoLampTone.Warning)
+    }
+    if (error != null) {
+        Text(error, color = VisionGuardStatusColors.error, style = MaterialTheme.typography.bodySmall)
+    }
 
-    // 三个物理控件并排；窄屏自动纵向堆叠，避免把一屏拉长。
+    // 三个机器控件：主控件区 / 操作行 / 快捷行 逐段等高，横向并排；窄屏纵向堆叠。
     Column(Modifier.fillMaxWidth().onGloballyPositioned { anchors[ParamAnchor.MACHINES] = it.positionInParent().y }) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            if (maxWidth >= 640.dp) {
+            if (maxWidth >= 660.dp) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Geo.GroupGap)) {
-                    MachineBlock("01", "采样频率", "${DetectionParams.MIN_TARGET_FPS}—${DetectionParams.MAX_TARGET_FPS} FPS", Modifier.weight(1f)) {
-                        GeoWheel(
-                            label = "采样频率",
-                            value = targetFps,
-                            min = DetectionParams.MIN_TARGET_FPS,
-                            max = DetectionParams.MAX_TARGET_FPS,
-                            enabled = !locked,
-                            unit = "FPS",
-                            height = 168.dp,
-                            onChange = { targetFps = it; error = null }
-                        )
-                        fpsError?.let { FieldError(it) }
+                    MachineBlock(
+                        index = "01",
+                        title = "采样频率",
+                        trailing = "${DetectionParams.MIN_TARGET_FPS}—${DetectionParams.MAX_TARGET_FPS} FPS",
+                        error = fpsError,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        WheelControl(value = targetFps, min = DetectionParams.MIN_TARGET_FPS, max = DetectionParams.MAX_TARGET_FPS, enabled = !locked, unit = "FPS", onChange = onTargetFps)
+                        ReadoutAction(value = "$targetFps", unit = "FPS")
+                        QuickKeys(options = fpsPresets.map { it to "$it" }, selected = targetFps, enabled = !locked) { onTargetFps(it) }
                     }
-                    MachineBlock("02", "置信度", "${DetectionParams.MIN_CONFIDENCE_PERCENT}—${DetectionParams.MAX_CONFIDENCE_PERCENT}%", Modifier.weight(1.4f)) {
-                        GeoConfidenceRail(
-                            value = confidence,
-                            enabled = !locked,
-                            onChange = { confidence = it; error = null }
-                        )
-                        confidenceError?.let { FieldError(it) }
+                    MachineBlock(
+                        index = "02",
+                        title = "置信度",
+                        trailing = "${DetectionParams.MIN_CONFIDENCE_PERCENT}—${DetectionParams.MAX_CONFIDENCE_PERCENT}%",
+                        error = confidenceError,
+                        modifier = Modifier.weight(1.25f)
+                    ) {
+                        ConfidenceControl(value = confidence, enabled = !locked, onChange = onConfidence)
+                        CounterAction(value = confidence, unit = "%", min = DetectionParams.MIN_CONFIDENCE_PERCENT, max = DetectionParams.MAX_CONFIDENCE_PERCENT, enabled = !locked, onChange = onConfidence)
+                        QuickKeys(options = confidencePresets.map { it to "$it%" }, selected = confidence, enabled = !locked) { onConfidence(it) }
                     }
-                    MachineBlock("03", "报警冷却", "${DetectionParams.MIN_COOLDOWN_SECONDS}—${DetectionParams.MAX_COOLDOWN_SECONDS} 秒", Modifier.weight(1.2f)) {
-                        CooldownControl(
-                            cooldown = cooldown,
-                            enabled = !locked,
-                            onChange = { cooldown = it; error = null }
-                        )
-                        cooldownError?.let { FieldError(it) }
+                    MachineBlock(
+                        index = "03",
+                        title = "报警冷却",
+                        trailing = "${DetectionParams.MIN_COOLDOWN_SECONDS}—${DetectionParams.MAX_COOLDOWN_SECONDS} 秒",
+                        error = cooldownError,
+                        modifier = Modifier.weight(1.25f)
+                    ) {
+                        DigitsControl(value = cooldown, enabled = !locked, onChange = onCooldown)
+                        CounterAction(value = cooldown, unit = "秒", min = DetectionParams.MIN_COOLDOWN_SECONDS, max = DetectionParams.MAX_COOLDOWN_SECONDS, enabled = !locked, onChange = onCooldown)
+                        QuickKeys(options = cooldownPresets.map { it to "${it}s" }, selected = cooldown, enabled = !locked) { onCooldown(it) }
                     }
                 }
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(Geo.GroupGap)) {
-                    MachineBlock("01", "采样频率", "1—5 FPS", Modifier.fillMaxWidth()) {
-                        GeoWheel(
-                            label = "采样频率",
-                            value = targetFps,
-                            min = DetectionParams.MIN_TARGET_FPS,
-                            max = DetectionParams.MAX_TARGET_FPS,
-                            enabled = !locked,
-                            unit = "FPS",
-                            height = 168.dp,
-                            onChange = { targetFps = it; error = null }
-                        )
-                        fpsError?.let { FieldError(it) }
+                    MachineBlock("01", "采样频率", "1—5 FPS", fpsError, Modifier.fillMaxWidth()) {
+                        WheelControl(value = targetFps, min = DetectionParams.MIN_TARGET_FPS, max = DetectionParams.MAX_TARGET_FPS, enabled = !locked, unit = "FPS", onChange = onTargetFps)
+                        ReadoutAction(value = "$targetFps", unit = "FPS")
+                        QuickKeys(options = fpsPresets.map { it to "$it" }, selected = targetFps, enabled = !locked) { onTargetFps(it) }
                     }
-                    MachineBlock("02", "置信度", "10—95%", Modifier.fillMaxWidth()) {
-                        GeoConfidenceRail(value = confidence, enabled = !locked, onChange = { confidence = it; error = null })
-                        confidenceError?.let { FieldError(it) }
+                    MachineBlock("02", "置信度", "10—95%", confidenceError, Modifier.fillMaxWidth()) {
+                        ConfidenceControl(value = confidence, enabled = !locked, onChange = onConfidence)
+                        CounterAction(value = confidence, unit = "%", min = DetectionParams.MIN_CONFIDENCE_PERCENT, max = DetectionParams.MAX_CONFIDENCE_PERCENT, enabled = !locked, onChange = onConfidence)
+                        QuickKeys(options = confidencePresets.map { it to "$it%" }, selected = confidence, enabled = !locked) { onConfidence(it) }
                     }
-                    MachineBlock("03", "报警冷却", "1—300 秒", Modifier.fillMaxWidth()) {
-                        CooldownControl(cooldown = cooldown, enabled = !locked, onChange = { cooldown = it; error = null })
-                        cooldownError?.let { FieldError(it) }
+                    MachineBlock("03", "报警冷却", "1—300 秒", cooldownError, Modifier.fillMaxWidth()) {
+                        DigitsControl(value = cooldown, enabled = !locked, onChange = onCooldown)
+                        CounterAction(value = cooldown, unit = "秒", min = DetectionParams.MIN_COOLDOWN_SECONDS, max = DetectionParams.MAX_COOLDOWN_SECONDS, enabled = !locked, onChange = onCooldown)
+                        QuickKeys(options = cooldownPresets.map { it to "${it}s" }, selected = cooldown, enabled = !locked) { onCooldown(it) }
                     }
                 }
             }
@@ -431,205 +510,212 @@ private fun DetectionSection(
     }
 
     GeoDivider()
-    Column(Modifier.fillMaxWidth().onGloballyPositioned { anchors[ParamAnchor.MODELS] = it.positionInParent().y }) {
-        GeoSectionLabel("04", "模型插槽", "仅已下载可选")
-        ModelCartridges(
-            models = models,
-            downloads = downloads,
-            selected = modelKey,
-            enabled = !locked,
-            onSelect = {
-                modelKey = it
-                reviewed = it == initial.modelKey
-                error = null
-            },
-            onDownload = { key -> scope.launch { onDownloadModel(key)?.let(onMessage) } }
-        )
-        if (!reviewed) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = Geo.Touch)
-                    .clickable(enabled = !locked) { reviewed = true },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    Modifier
-                        .size(20.dp)
-                        .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape)
-                        .background(MaterialTheme.colorScheme.surface, RectangleShape)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("我已根据新模型重新核对检测目标", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-        if (!modelDownloaded) FieldError("当前模型未下载")
-    }
-
-    GeoDivider()
-    Column(Modifier.fillMaxWidth().onGloballyPositioned { anchors[ParamAnchor.TARGETS] = it.positionInParent().y }) {
-        GeoSectionLabel("05", "检测目标", "至少一项")
-        GeoFlatTextField(
-            value = search,
-            onValueChange = { search = it },
-            placeholder = "目标搜索 · 中文 / 英文",
-            leading = LucideIcons.Search,
-            enabled = !locked,
-            trailing = {
-                GeoIconKey(LucideIcons.X, "清空搜索", onClick = { search = "" }, enabled = search.isNotEmpty() && !locked)
-            }
-        )
-        if (watched.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
-                watched.sorted().forEach { key ->
-                    SelectedTargetChip(
-                        label = CocoClassMap.displayName(key),
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth >= 660.dp) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Geo.GroupGap)) {
+                Column(Modifier.weight(0.85f).onGloballyPositioned { anchors[ParamAnchor.MODELS] = it.positionInParent().y }) {
+                    GeoSectionLabel("04", "模型插槽", "仅已下载可选")
+                    ModelCartridges(
+                        models = models,
+                        downloads = downloads,
+                        selected = modelKey,
                         enabled = !locked,
-                        onRemove = { watched = watched - key }
+                        onSelect = onSelectModel,
+                        onDownload = onDownloadModel
+                    )
+                    ModelFootnotes(reviewed = reviewed, modelDownloaded = modelDownloaded, locked = locked, onReview = onReview)
+                }
+                Column(Modifier.weight(1.15f).onGloballyPositioned { anchors[ParamAnchor.TARGETS] = it.positionInParent().y }) {
+                    TargetBlock(
+                        watched = watched,
+                        onToggleTarget = onToggleTarget,
+                        targetsText = targetsText,
+                        targetsValid = targetsValid,
+                        targetsWithinLimit = targetsWithinLimit,
+                        search = search,
+                        onSearch = onSearch,
+                        showAllTargets = showAllTargets,
+                        onToggleAllTargets = onToggleAllTargets,
+                        locked = locked
                     )
                 }
             }
-        }
-        val query = search.trim()
-        val candidates = if (query.isEmpty()) commonTargets else {
-            CocoClassMap.EnglishNames.filter { name ->
-                name.contains(query, ignoreCase = true) || CocoClassMap.displayName(name).contains(query, ignoreCase = true)
+        } else {
+            Column(Modifier.fillMaxWidth().onGloballyPositioned { anchors[ParamAnchor.MODELS] = it.positionInParent().y }) {
+                GeoSectionLabel("04", "模型插槽", "仅已下载可选")
+                ModelCartridges(
+                    models = models,
+                    downloads = downloads,
+                    selected = modelKey,
+                    enabled = !locked,
+                    onSelect = onSelectModel,
+                    onDownload = onDownloadModel
+                )
+                ModelFootnotes(reviewed = reviewed, modelDownloaded = modelDownloaded, locked = locked, onReview = onReview)
             }
-        }
-        when {
-            candidates.isEmpty() -> Text(
-                "没有匹配的目标。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium
-            )
-            showAllTargets && query.isEmpty() -> TargetPool(
-                keys = CocoClassMap.EnglishNames,
-                watched = watched,
-                enabled = !locked,
-                onToggle = { key ->
-                    watched = if (watched.contains(key)) watched - key else watched + key
-                    error = null
-                }
-            )
-            else -> TargetGrid(
-                keys = candidates,
-                watched = watched,
-                enabled = !locked,
-                onToggle = { key ->
-                    watched = if (watched.contains(key)) watched - key else watched + key
-                    error = null
-                }
-            )
-        }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                if (targetsValid && targetsWithinLimit) {
-                    "已选 ${watched.size} 项 · ${targetsText.length} / ${DetectionParams.MAX_TARGETS_TEXT_LENGTH} UTF-16"
-                } else {
-                    "至少选择一个目标，且不超过 ${DetectionParams.MAX_TARGET_COUNT} 项 / ${DetectionParams.MAX_TARGETS_TEXT_LENGTH} UTF-16"
-                },
-                color = if (targetsValid && targetsWithinLimit) MaterialTheme.colorScheme.onSurfaceVariant else VisionGuardStatusColors.error,
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.weight(1f)
-            )
-            if (query.isEmpty()) {
-                GeoKey(
-                    onClick = { showAllTargets = !showAllTargets },
-                    label = if (showAllTargets) "收起" else "全部 ${CocoClassMap.EnglishNames.size} 类",
-                    icon = if (showAllTargets) LucideIcons.ChevronUp else LucideIcons.ChevronDown,
-                    enabled = !locked
+            Spacer(Modifier.height(Geo.GroupGap))
+            Column(Modifier.fillMaxWidth().onGloballyPositioned { anchors[ParamAnchor.TARGETS] = it.positionInParent().y }) {
+                TargetBlock(
+                    watched = watched,
+                    onToggleTarget = onToggleTarget,
+                    targetsText = targetsText,
+                    targetsValid = targetsValid,
+                    targetsWithinLimit = targetsWithinLimit,
+                    search = search,
+                    onSearch = onSearch,
+                    showAllTargets = showAllTargets,
+                    onToggleAllTargets = onToggleAllTargets,
+                    locked = locked
                 )
             }
         }
     }
-
-    error?.let { FieldError(it) }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Geo.Gap, Alignment.End)) {
-        GeoKey(
-            onClick = {
-                confidence = initial.confidencePercent
-                targetFps = initial.targetFps
-                cooldown = initial.cooldownSeconds
-                modelKey = initial.modelKey
-                watched = initial.watchedClasses
-                search = ""
-                reviewed = true
-                error = null
-            },
-            label = "还原当前值",
-            icon = LucideIcons.RotateCcw,
-            enabled = !saving
-        )
-        GeoKey(
-            onClick = { save() },
-            label = "保存参数",
-            icon = LucideIcons.Check,
-            tone = GeoTone.Primary,
-            enabled = canSave,
-            busy = saving
-        )
-    }
 }
 
+/** 机器控件区块：标题 + 主控件区 + 操作行 + 快捷行，逐段等高。 */
 @Composable
-private fun MachineBlock(index: String, title: String, trailing: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+private fun MachineBlock(
+    index: String,
+    title: String,
+    trailing: String,
+    error: String?,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Geo.Gap)) {
         GeoSectionLabel(index, title, trailing)
         content()
+        if (error != null) {
+            Text(error, color = VisionGuardStatusColors.error, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+        }
     }
 }
 
+/** 采样滚筒：主控件区固定高度，上下键贴在右侧。 */
 @Composable
-private fun CooldownControl(cooldown: Int, enabled: Boolean, onChange: (Int) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(Geo.Gap)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
-            for (step in listOf(100, 10, 1)) {
-                GeoWheel(
-                    label = "冷却${step}位",
-                    value = cooldown,
-                    min = DetectionParams.MIN_COOLDOWN_SECONDS,
-                    max = DetectionParams.MAX_COOLDOWN_SECONDS,
-                    enabled = enabled,
-                    step = step,
-                    format = { ((it / step) % 10).toString() },
-                    size = 52.dp,
-                    height = 128.dp,
-                    numberSize = 30.sp,
-                    compact = true,
-                    onChange = onChange
-                )
-            }
-            Text("秒", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
-            cooldownPresets.forEach { preset ->
-                GeoKey(
-                    onClick = { onChange(preset) },
-                    label = "${preset}s",
-                    tone = if (cooldown == preset) GeoTone.Primary else GeoTone.Secondary,
-                    enabled = enabled,
-                    minWidth = 64.dp
-                )
-            }
-        }
-        GeoCounterInput(
-            label = "冷却时间",
-            value = cooldown,
-            min = DetectionParams.MIN_COOLDOWN_SECONDS,
-            max = DetectionParams.MAX_COOLDOWN_SECONDS,
-            unit = "秒",
+private fun WheelControl(value: Int, min: Int, max: Int, enabled: Boolean, unit: String, onChange: (Int) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().height(Geo.BlockControl),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        GeoWheel(
+            label = "采样频率",
+            value = value,
+            min = min,
+            max = max,
             enabled = enabled,
+            unit = unit,
+            height = Geo.BlockControl,
+            numberSize = 34.sp,
             onChange = onChange
         )
     }
 }
 
+/** 置信度：主控件区里放数值、滑轨与刻度。 */
 @Composable
-private fun FieldError(text: String) {
-    Text(text, color = VisionGuardStatusColors.error, style = MaterialTheme.typography.bodySmall)
+private fun ConfidenceControl(value: Int, enabled: Boolean, onChange: (Int) -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().height(Geo.BlockControl),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            "$value",
+            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.SemiBold),
+            maxLines = 1
+        )
+        Spacer(Modifier.height(Geo.Gap))
+        GeoConfidenceRail(value = value, enabled = enabled, onChange = onChange)
+        Row(Modifier.fillMaxWidth()) {
+            Text("${DetectionParams.MIN_CONFIDENCE_PERCENT}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.weight(1f))
+            Text("${DetectionParams.MAX_CONFIDENCE_PERCENT}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
+    }
 }
 
-/** 模型插槽：三列插片，未下载只给下载入口；选中与已下载分别表达。 */
+/** 冷却：三位滚筒在主控件区居中。 */
+@Composable
+private fun DigitsControl(value: Int, enabled: Boolean, onChange: (Int) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().height(Geo.BlockControl),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        for (step in listOf(100, 10, 1)) {
+            GeoWheel(
+                label = "冷却${step}位",
+                value = value,
+                min = DetectionParams.MIN_COOLDOWN_SECONDS,
+                max = DetectionParams.MAX_COOLDOWN_SECONDS,
+                enabled = enabled,
+                step = step,
+                format = { ((it / step) % 10).toString() },
+                size = 54.dp,
+                height = Geo.BlockControl,
+                numberSize = 32.sp,
+                compact = true,
+                onChange = onChange
+            )
+            Spacer(Modifier.width(Geo.Gap))
+        }
+    }
+}
+
+/** 操作行：只读读数，与加减计数行同高。 */
+@Composable
+private fun ReadoutAction(value: String, unit: String) {
+    Row(
+        Modifier.fillMaxWidth().height(Geo.BlockAction)
+            .background(MaterialTheme.colorScheme.surface, RectangleShape)
+            .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Text(value, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.width(6.dp))
+        Text(unit, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/** 操作行：加减计数，与读数行同高。 */
+@Composable
+private fun CounterAction(value: Int, unit: String, min: Int, max: Int, enabled: Boolean, onChange: (Int) -> Unit) {
+    Box(Modifier.fillMaxWidth().height(Geo.BlockAction)) {
+        GeoCounterInput(
+            label = unit,
+            value = value,
+            min = min,
+            max = max,
+            unit = unit,
+            enabled = enabled,
+            modifier = Modifier.fillMaxWidth(),
+            onChange = onChange
+        )
+    }
+}
+
+/** 快捷行：三个等宽预设，与相邻控件同高。 */
+@Composable
+private fun QuickKeys(options: List<Pair<Int, String>>, selected: Int, enabled: Boolean, onPick: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth().height(Geo.BlockQuick), horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
+        options.forEach { (value, label) ->
+            GeoKey(
+                onClick = { onPick(value) },
+                label = label,
+                tone = if (value == selected) GeoTone.Primary else GeoTone.Secondary,
+                enabled = enabled,
+                minHeight = Geo.BlockQuick,
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
+
+/** 模型插片：三列，等高。 */
 @Composable
 private fun ModelCartridges(
     models: List<ModelState>,
@@ -640,12 +726,12 @@ private fun ModelCartridges(
     onDownload: (String) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(Geo.Gap)) {
-        models.chunked(3).forEach { row ->
+        models.chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
                 row.forEach { model ->
                     val progress = downloads[model.key]
                     GeoSlotCard(
-                        title = model.displayName,
+                        title = ModelKeys.displayName(model.key).removePrefix("YOLO").replace(" · ", "·"),
                         subtitle = when {
                             progress != null && progress.total > 0 -> "下载 ${progress.percent}%"
                             progress != null -> "下载中…"
@@ -655,24 +741,116 @@ private fun ModelCartridges(
                         selected = model.key == selected,
                         enabled = enabled && model.downloaded,
                         onClick = { onSelect(model.key) },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).height(Geo.ModelTile),
                         trailingIcon = if (!model.downloaded && progress == null) LucideIcons.Download else null,
                         onTrailingClick = { onDownload(model.key) }
                     )
                 }
-                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                repeat(2 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
-    models.forEach { model ->
-        val progress = downloads[model.key] ?: return@forEach
-        if (progress.total <= 0) return@forEach
-        Box(Modifier.fillMaxWidth().height(4.dp).background(MaterialTheme.colorScheme.surfaceVariant, RectangleShape)) {
+}
+
+@Composable
+private fun ModelFootnotes(reviewed: Boolean, modelDownloaded: Boolean, locked: Boolean, onReview: () -> Unit) {
+    if (!reviewed) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = Geo.Touch)
+                .clickable(enabled = !locked) { onReview() },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Box(
                 Modifier
-                    .fillMaxWidth(progress.percent / 100f)
-                    .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.primary, RectangleShape)
+                    .size(20.dp)
+                    .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape)
+                    .background(MaterialTheme.colorScheme.surface, RectangleShape)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text("我已根据新模型重新核对检测目标", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+    if (!modelDownloaded) {
+        Text("当前模型未下载", color = VisionGuardStatusColors.error, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/** 检测目标：搜索、已选、常用排片与全部展开。 */
+@Composable
+private fun TargetBlock(
+    watched: Set<String>,
+    onToggleTarget: (String) -> Unit,
+    targetsText: String,
+    targetsValid: Boolean,
+    targetsWithinLimit: Boolean,
+    search: String,
+    onSearch: (String) -> Unit,
+    showAllTargets: Boolean,
+    onToggleAllTargets: () -> Unit,
+    locked: Boolean
+) {
+    GeoSectionLabel("05", "检测目标", "至少一项")
+    GeoFlatTextField(
+        value = search,
+        onValueChange = onSearch,
+        placeholder = "目标搜索 · 中文 / 英文",
+        leading = LucideIcons.Search,
+        enabled = !locked,
+        trailing = {
+            GeoIconKey(LucideIcons.X, "清空搜索", onClick = { onSearch("") }, enabled = search.isNotEmpty() && !locked)
+        }
+    )
+    if (watched.isNotEmpty()) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
+            watched.sorted().forEach { key ->
+                SelectedTargetChip(
+                    label = CocoClassMap.displayName(key),
+                    enabled = !locked,
+                    onRemove = { onToggleTarget(key) }
+                )
+            }
+        }
+    }
+    val query = search.trim()
+    val candidates = if (query.isEmpty()) commonTargets else {
+        CocoClassMap.EnglishNames.filter { name ->
+            name.contains(query, ignoreCase = true) || CocoClassMap.displayName(name).contains(query, ignoreCase = true)
+        }
+    }
+    when {
+        candidates.isEmpty() -> Text(
+            "没有匹配的目标。",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium
+        )
+        showAllTargets && query.isEmpty() -> TargetPool(
+            keys = CocoClassMap.EnglishNames,
+            watched = watched,
+            enabled = !locked,
+            onToggle = onToggleTarget
+        )
+        else -> TargetGrid(keys = candidates, watched = watched, enabled = !locked, onToggle = onToggleTarget)
+    }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            if (targetsValid && targetsWithinLimit) {
+                "已选 ${watched.size} 项 · ${targetsText.length} / ${DetectionParams.MAX_TARGETS_TEXT_LENGTH} UTF-16"
+            } else {
+                "至少一项，且不超过 ${DetectionParams.MAX_TARGET_COUNT} 项 / ${DetectionParams.MAX_TARGETS_TEXT_LENGTH} UTF-16"
+            },
+            color = if (targetsValid && targetsWithinLimit) MaterialTheme.colorScheme.onSurfaceVariant else VisionGuardStatusColors.error,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.weight(1f)
+        )
+        if (query.isEmpty()) {
+            GeoKey(
+                onClick = onToggleAllTargets,
+                label = if (showAllTargets) "收起" else "全部 ${CocoClassMap.EnglishNames.size} 类",
+                icon = if (showAllTargets) LucideIcons.ChevronUp else LucideIcons.ChevronDown,
+                enabled = !locked,
+                minHeight = Geo.BlockQuick
             )
         }
     }
@@ -682,7 +860,7 @@ private fun ModelCartridges(
 private fun SelectedTargetChip(label: String, enabled: Boolean, onRemove: () -> Unit) {
     Row(
         Modifier
-            .heightIn(min = Geo.Touch)
+            .heightIn(min = 40.dp)
             .background(MaterialTheme.colorScheme.primaryContainer, RectangleShape)
             .clickable(enabled = enabled, onClick = onRemove)
             .padding(horizontal = 12.dp),
