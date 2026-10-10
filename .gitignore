@@ -7,6 +7,8 @@ Desktop.ini
 *.cache
 dist/
 artifacts/
+__pycache__/
+*.pyc
 
 # 本仓库以 AGENTS.md + .agents/skills/ 为当前 Agent 入口；本地 Agent 状态不入库。
 .codex/*
