@@ -175,4 +175,10 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.gson)
     implementation(libs.onnxruntime.android)
+    // 换运行时的候选：LiteRT 有独立的 GPU delegate 与 NPU 加速器，是 NNAPI 之外公开可得的
+    // 移动加速路线。先与 ONNX Runtime 并存用于真机对比测量，选定后再删掉另一条。
+    implementation(libs.litert)
+    implementation(libs.litert.api)
+    // litert-gpu 带 libLiteRtClGlAccelerator.so：没有它，运行时会报本机不支持 GPU 加速器。
+    implementation(libs.litert.gpu)
 }

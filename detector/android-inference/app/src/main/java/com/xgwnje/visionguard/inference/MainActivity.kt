@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -16,6 +18,9 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -27,20 +32,28 @@ import com.xgwnje.visionguard.account.AccountStore
 import com.xgwnje.visionguard.account.ApplicationOptions
 import com.xgwnje.visionguard.account.dark
 import com.xgwnje.visionguard.account.rememberAppearance
+import com.xgwnje.visionguard.inference.model.AccelerationBenchmark
+import com.xgwnje.visionguard.inference.model.AccelerationMeasure
+import com.xgwnje.visionguard.inference.model.BundledAccelerationBenchmark
+import com.xgwnje.visionguard.inference.model.InferenceProvider
+import com.xgwnje.visionguard.inference.model.OnnxEngine
 import com.xgwnje.visionguard.inference.runtime.InferenceRuntime
 import com.xgwnje.visionguard.inference.runtime.MessageTone
 import com.xgwnje.visionguard.inference.service.InferenceService
 import com.xgwnje.visionguard.inference.source.SourceCaptureMode
+import com.xgwnje.visionguard.inference.ui.BenchmarkScreen
 import com.xgwnje.visionguard.inference.ui.MainScreen
 import com.xgwnje.visionguard.inference.ui.theme.VisionguardTheme
 import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * 视觉推理节点（Android）入口。
  *
  * 只负责会话门、主题、权限与前台服务：
  * - Android 13+ 启动前台服务前确认 `POST_NOTIFICATIONS`；
- * - 启动本机相机来源前确认 `CAMERA`，授权后继续启动该来源。
+ * - 启动本机相机来源前确认 `CAMERA`，授权后继续启动该来源；
+ * - 显式请求时跑一次推理加速测量（见 `runAccelerationBenchmarkIfRequested`）。
  */
 class MainActivity : ComponentActivity() {
 
@@ -69,11 +82,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (runAccelerationBenchmarkIfRequested()) return
         enableEdgeToEdge()
         applyImmersiveMode()
         val account = AccountStore.get(this)
         val runtime = InferenceRuntime.get(this)
+        // 测量构建先给测量入口：测量只用本机算力与包内模型，不应被登录条件挡住；
+        // 点「进入完整应用」再走原有登录流程。正式构建没有这个首屏。
+        val benchmarkFirst = isBenchmarkBuild()
         setContent {
+            var showFullApp by rememberSaveable { mutableStateOf(!benchmarkFirst) }
             val session by account.session.collectAsState()
             val appearance = rememberAppearance()
             val darkTheme = appearance.dark()
@@ -86,7 +104,9 @@ class MainActivity : ComponentActivity() {
             }
             VisionguardTheme(darkTheme = darkTheme) {
                 Column(Modifier.fillMaxSize()) {
-                    if (session == null) {
+                    if (!showFullApp) {
+                        BenchmarkScreen(onOpenFullApp = { showFullApp = true })
+                    } else if (session == null) {
                         ApplicationOptions(appearance, AppConstants.LOGIN_COMPONENT)
                         AccountLogin(
                             store = account,
@@ -143,6 +163,36 @@ class MainActivity : ComponentActivity() {
         if (hasFocus) applyImmersiveMode()
     }
 
+    /**
+     * 显式请求时跑一次自带的推理加速测量，不进入界面。
+     *
+     * 界面入口在「设置 → 维护 → 推理加速测量」，正常使用走那里；这个 intent 入口只是
+     * 让自动化验证能在不登录的情况下跑同一套逻辑（模型同样取自 APK assets）。
+     *
+     * ```
+     * adb shell am start -n <包名>/com.xgwnje.visionguard.inference.MainActivity \
+     *     --ez benchmark true [--ez benchmark_full true]
+     * ```
+     */
+    private fun runAccelerationBenchmarkIfRequested(): Boolean {
+        if (!isBenchmarkBuild() || intent?.getBooleanExtra(EXTRA_BENCHMARK, false) != true) return false
+        val full = intent?.getBooleanExtra(EXTRA_BENCHMARK_FULL, false) == true
+
+        lifecycleScope.launch {
+            BundledAccelerationBenchmark.run(this@MainActivity, onlyAccelerated = !full)
+            val state = BundledAccelerationBenchmark.state.value
+            Log.i(BundledAccelerationBenchmark.TAG, "报告：${state.reportPath ?: "写入失败"}")
+            state.report.lines().forEach { Log.i(BundledAccelerationBenchmark.TAG, it) }
+            Toast.makeText(
+                this@MainActivity,
+                "推理加速测量完成：${if (state.failure == null) "见 logcat 与设置页" else state.failure}",
+                Toast.LENGTH_LONG
+            ).show()
+            finish()
+        }
+        return true
+    }
+
     /** 本机相机来源先确认相机权限，其余来源直接启停。 */
     private suspend fun toggleSource(sourceId: String): String? {
         val runtime = InferenceRuntime.get(this)
@@ -166,5 +216,22 @@ class MainActivity : ComponentActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
         notificationAsked = true
         notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    /**
+     * 测量入口只在 Debug 构建开放。
+     *
+     * UI 预览构建是 debuggable 的 Release，不能靠 `debuggable` 标志判断；这里直接看
+     * `BuildConfig.DEBUG`，并额外排除预览包名，避免测量入口随预览包流出。
+     */
+    private fun isBenchmarkBuild(): Boolean =
+        BuildConfig.DEBUG && !applicationContext.packageName.endsWith(".uipreview")
+
+    companion object {
+        /** `--ez benchmark true`：只跑一次加速测量，不进入界面（自动化验证用）。 */
+        const val EXTRA_BENCHMARK = "benchmark"
+
+        /** `--ez benchmark_full true`：连逐线程 CPU 档一起跑；省略时只跑加速档与基线。 */
+        const val EXTRA_BENCHMARK_FULL = "benchmark_full"
     }
 }
