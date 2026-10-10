@@ -15,6 +15,9 @@ import java.io.File
  * 还能在运行前问出本机到底支持哪些——不支持时明确失败，不静默回落 CPU。
  *
  * 输入输出语义与 [OnnxEngine] 一致：CHW float 进、展平 float 出；CHW→NHWC 在这里吸收。
+ *
+ * 张量名与签名取模型自带的（`serving_default` / `images` / `output0`），换模型只需换这三个值；
+ * 名字错了会立刻抛 `Input tensor not found`，不会静默读错张量。
  */
 class LitertAcceleratedEngine private constructor(
     private val environment: Environment,
@@ -23,7 +26,7 @@ class LitertAcceleratedEngine private constructor(
     private val outputs: List<TensorBuffer>,
     val modelSize: Int,
     val provider: InferenceProvider,
-    /** 环境实际报告的可用加速器，写进失败说明与报告。 */
+    /** 环境实际报告的可用加速器，写进报告便于判断档位是否真的生效。 */
     val availableAccelerators: String
 ) {
 
@@ -49,7 +52,7 @@ class LitertAcceleratedEngine private constructor(
             val row = y * modelSize
             for (x in 0 until modelSize) {
                 val pixel = row + x
-                val target = (row + x) * 3
+                val target = pixel * 3
                 result[target] = tensor[pixel]
                 result[target + 1] = tensor[plane + pixel]
                 result[target + 2] = tensor[2 * plane + pixel]
@@ -59,7 +62,16 @@ class LitertAcceleratedEngine private constructor(
     }
 
     companion object {
-        fun create(modelFile: File, provider: InferenceProvider): LitertAcceleratedEngine {
+        /** 默认张量名与签名：export 出来的 LiteRT 模型固定用这一套。 */
+        const val DEFAULT_SIGNATURE = "serving_default"
+        const val DEFAULT_INPUT_NAME = "images"
+
+        fun create(
+            modelFile: File,
+            provider: InferenceProvider,
+            signature: String = DEFAULT_SIGNATURE,
+            inputName: String = DEFAULT_INPUT_NAME
+        ): LitertAcceleratedEngine {
             require(modelFile.isFile) { "模型文件不存在：${modelFile.name}" }
             require(provider.runtime == InferenceRuntimeKind.LITERT) {
                 "档位 ${provider.title} 不属于 LiteRT"
@@ -81,16 +93,17 @@ class LitertAcceleratedEngine private constructor(
             }
 
             val model = CompiledModel.create(modelFile.absolutePath, options, environment)
-            // 空串表示「主图第一个张量 / 无签名」，与库内默认值一致。
-            val inputType = model.getInputTensorType("", "")
+            // 用带签名与张量名的重载：无参重载在不同构建里对默认名的解析不一致，
+            // 实测无参重载会报 `Input tensor not found`。
+            val inputType = model.getInputTensorType(inputName, signature)
             val dimensions = inputType.layout?.dimensions.orEmpty()
             val size = dimensions.getOrNull(1) ?: DEFAULT_MODEL_SIZE
 
             return LitertAcceleratedEngine(
                 environment = environment,
                 model = model,
-                inputs = model.createInputBuffers(),
-                outputs = model.createOutputBuffers(),
+                inputs = model.createInputBuffers(signature),
+                outputs = model.createOutputBuffers(signature),
                 modelSize = size,
                 provider = provider,
                 availableAccelerators = availableText
