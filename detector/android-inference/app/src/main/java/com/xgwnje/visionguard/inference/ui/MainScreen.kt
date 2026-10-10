@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +32,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.xgwnje.visionguard.account.AccountSession
@@ -50,8 +52,10 @@ import com.xgwnje.visionguard.inference.ui.geo.GeoLampTone
 import com.xgwnje.visionguard.inference.ui.geo.GeoMaskDrawer
 import com.xgwnje.visionguard.inference.ui.geo.GeoMessageRibbon
 import com.xgwnje.visionguard.inference.ui.geo.GeoParameterDrawer
+import com.xgwnje.visionguard.inference.ui.geo.MockWorkspaceData
 import com.xgwnje.visionguard.inference.ui.geo.ParamAnchor
 import com.xgwnje.visionguard.inference.ui.geo.ParamSection
+import com.xgwnje.visionguard.inference.ui.geo.UiPreviewFlags
 import com.xgwnje.visionguard.inference.ui.geo.GeoSettingsDrawer
 import com.xgwnje.visionguard.inference.ui.geo.ParameterStrip
 import com.xgwnje.visionguard.inference.ui.geo.PreviewComposition
@@ -73,7 +77,11 @@ fun MainScreen(
     appearance: AppearancePreference,
     onToggleSource: suspend (String) -> String?
 ) {
-    val state by runtime.state.collectAsState()
+    val realState by runtime.state.collectAsState()
+    val mockData by UiPreviewFlags.mockData.collectAsState()
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { UiPreviewFlags.attach(context) }
+    // 预览构建可以选择用模拟数据渲染整屏，正式构建里 mockData 恒为 false。
     val control by runtime.controlState.collectAsState()
     val media by runtime.mediaState.collectAsState()
 
@@ -88,6 +96,10 @@ fun MainScreen(
 
     val nowWallMs = rememberSecondTick()
     val nowElapsedMs = android.os.SystemClock.elapsedRealtime()
+
+    // 预览构建可以选择用模拟数据渲染整屏，正式构建里 mockData 恒为 false。
+    val state = if (mockData) MockWorkspaceData.state(nowElapsedMs, nowWallMs) else realState
+    // 预览构建可以选择用模拟数据渲染整屏，正式构建里 mockData 恒为 false。
     val onMessage: (String?) -> Unit = { runtime.setMessage(it) }
 
     // 每个入口记住自己的焦点位置：关闭抽屉后把焦点还回去（键盘与无障碍可达性）。

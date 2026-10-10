@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -420,6 +421,18 @@ private fun MaintenanceSection(runtime: InferenceRuntime, onMessage: (String?) -
     var report by remember { mutableStateOf<JSONObject?>(null) }
     var confirmClean by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+
+    if (UiPreviewFlags.available) {
+        val mockData by UiPreviewFlags.mockData.collectAsState()
+        GeoSectionLabel("00", "UI 验收", "仅预览构建")
+        GeoShifter(
+            options = listOf("off" to "真实数据", "on" to "模拟数据"),
+            value = if (mockData) "on" else "off",
+            onSelect = { UiPreviewFlags.setMockData(it == "on") }
+        )
+        GeoHint("模拟数据用一份覆盖多来源、异常态与长文本的快照渲染界面，方便检查常规、空态与边界；正式构建不显示此项。")
+        GeoDivider()
+    }
 
     GeoSectionLabel("01", "版本", "内测源码 0.x.y")
     GeoInfoRow("应用", AppConstants.APP_TITLE)
