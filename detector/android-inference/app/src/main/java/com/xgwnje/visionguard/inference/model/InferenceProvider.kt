@@ -34,19 +34,51 @@ enum class InferenceProvider(val id: String, val title: String, val runtime: Inf
     LITERT_CPU1("litert_cpu_1thread", "LiteRT · CPU 1 线程", InferenceRuntimeKind.LITERT),
     LITERT_CPU4("litert_cpu_4threads", "LiteRT · CPU 4 线程", InferenceRuntimeKind.LITERT),
     LITERT_CPU8("litert_cpu_8threads", "LiteRT · CPU 8 线程", InferenceRuntimeKind.LITERT),
-    LITERT_GPU("litert_gpu", "LiteRT · GPU delegate", InferenceRuntimeKind.LITERT),
-    LITERT_GPU_FP16("litert_gpu_fp16", "LiteRT · GPU delegate FP16", InferenceRuntimeKind.LITERT);
+    LITERT_ACCEL_CPU("litert_accel_cpu", "LiteRT · 加速器 API CPU", InferenceRuntimeKind.LITERT),
+    LITERT_GPU("litert_gpu", "LiteRT · GPU 加速器", InferenceRuntimeKind.LITERT),
+    LITERT_GPU_FP16("litert_gpu_fp16", "LiteRT · GPU 加速器 FP16", InferenceRuntimeKind.LITERT),
+    LITERT_NPU("litert_npu", "LiteRT · NPU 加速器", InferenceRuntimeKind.LITERT);
 
     /** 是否使用 NNAPI。 */
     val usesNnapi: Boolean
         get() = this == ONNX_NNAPI_DEFAULT || this == ONNX_NNAPI_FP16 ||
             this == ONNX_NNAPI_NCHW || this == ONNX_NNAPI_ACCEL_ONLY
 
-    /** 是否使用 LiteRT 的 GPU delegate。 */
+    /**
+     * 走 LiteRT `CompiledModel` 加速器 API 的档位。
+     *
+     * 与走老 `Interpreter` 的 CPU 档区分开：加速器 API 是 GPU / NPU 的唯一入口，
+     * 单列一档 CPU 是为了让 GPU 有「同 API 的 CPU 基线」可对照。
+     */
+    val usesLitertAcceleratorApi: Boolean
+        get() = this == LITERT_ACCEL_CPU || this == LITERT_GPU ||
+            this == LITERT_GPU_FP16 || this == LITERT_NPU
+
+    /** 是否使用 LiteRT 的 GPU 加速器。 */
     val usesGpuDelegate: Boolean get() = this == LITERT_GPU || this == LITERT_GPU_FP16
 
+    /** 是否使用 LiteRT 的 NPU 加速器。 */
+    val usesNpu: Boolean get() = this == LITERT_NPU
+
     /** 是否走硬件加速（判定门槛时与同精度 CPU 对照的就是这些档位）。 */
-    val usesAccelerator: Boolean get() = usesNnapi || usesGpuDelegate
+    val usesAccelerator: Boolean get() = usesNnapi || usesGpuDelegate || usesNpu
+
+    /** LiteRT 加速器档位对应的加速器枚举值；非该 API 的档位返回 null。 */
+    val litertAccelerator: com.google.ai.edge.litert.Accelerator?
+        get() = when (this) {
+            LITERT_ACCEL_CPU -> com.google.ai.edge.litert.Accelerator.CPU
+            LITERT_GPU, LITERT_GPU_FP16 -> com.google.ai.edge.litert.Accelerator.GPU
+            LITERT_NPU -> com.google.ai.edge.litert.Accelerator.NPU
+            else -> null
+        }
+
+    /** GPU 档位的精度；非 GPU 档位返回 null。 */
+    val gpuPrecision: com.google.ai.edge.litert.CompiledModel.GpuOptions.Precision?
+        get() = if (this == LITERT_GPU_FP16) {
+            com.google.ai.edge.litert.CompiledModel.GpuOptions.Precision.FP16
+        } else {
+            null
+        }
 
     /** CPU 档位的线程数；加速档位返回 null。 */
     val cpuThreads: Int?
@@ -77,7 +109,7 @@ enum class InferenceProvider(val id: String, val title: String, val runtime: Inf
             ONNX_CPU1, ONNX_CPU4, ONNX_CPU8,
             ONNX_NNAPI_DEFAULT, ONNX_NNAPI_FP16, ONNX_NNAPI_NCHW, ONNX_NNAPI_ACCEL_ONLY,
             LITERT_CPU1, LITERT_CPU4, LITERT_CPU8,
-            LITERT_GPU, LITERT_GPU_FP16
+            LITERT_ACCEL_CPU, LITERT_GPU, LITERT_GPU_FP16, LITERT_NPU
         )
 
         fun fromId(id: String): InferenceProvider? = entries.firstOrNull { it.id == id }

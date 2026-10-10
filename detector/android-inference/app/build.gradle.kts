@@ -179,6 +179,6 @@ dependencies {
     // 移动加速路线。先与 ONNX Runtime 并存用于真机对比测量，选定后再删掉另一条。
     implementation(libs.litert)
     implementation(libs.litert.api)
-    // 注意：GPU/NPU 加速走 LiteRT 2.x 的 CompiledModel 加速器 API，老的 Delegate 入口在这套
-    // 分发里没有暴露（InterpreterApi.Options 只有 setNumThreads）。接入加速器见专题文档。
+    // litert-gpu 带 libLiteRtClGlAccelerator.so：没有它，运行时会报本机不支持 GPU 加速器。
+    implementation(libs.litert.gpu)
 }

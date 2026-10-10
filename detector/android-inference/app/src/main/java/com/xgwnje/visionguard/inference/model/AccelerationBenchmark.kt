@@ -95,15 +95,29 @@ object AccelerationBenchmark {
                     }
 
                     InferenceRuntimeKind.LITERT -> {
-                        val engine = LitertEngine.create(modelFile, provider)
-                        try {
-                            size = engine.modelSize
-                            val tensor = tensorOf(size)
-                            repeat(WARMUP_RUNS) { engine.run(tensor) }
-                            measure(samples, startedAt, maxTotalMs) { engine.run(tensor) }
-                                .also { if (it.isNotEmpty()) note = it }
-                        } finally {
-                            engine.close()
+                        if (provider.usesLitertAcceleratorApi) {
+                            val engine = LitertAcceleratedEngine.create(modelFile, provider)
+                            try {
+                                size = engine.modelSize
+                                val tensor = tensorOf(size)
+                                repeat(WARMUP_RUNS) { engine.run(tensor) }
+                                measure(samples, startedAt, maxTotalMs) { engine.run(tensor) }
+                                    .also { if (it.isNotEmpty()) note = it }
+                                if (note.isEmpty()) note = "可用加速器 ${engine.availableAccelerators}"
+                            } finally {
+                                engine.close()
+                            }
+                        } else {
+                            val engine = LitertEngine.create(modelFile, provider)
+                            try {
+                                size = engine.modelSize
+                                val tensor = tensorOf(size)
+                                repeat(WARMUP_RUNS) { engine.run(tensor) }
+                                measure(samples, startedAt, maxTotalMs) { engine.run(tensor) }
+                                    .also { if (it.isNotEmpty()) note = it }
+                            } finally {
+                                engine.close()
+                            }
                         }
                     }
                 }

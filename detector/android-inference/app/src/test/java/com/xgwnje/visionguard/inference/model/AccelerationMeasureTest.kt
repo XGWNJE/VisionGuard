@@ -1,5 +1,7 @@
 package com.xgwnje.visionguard.inference.model
 
+import com.google.ai.edge.litert.Accelerator
+import com.google.ai.edge.litert.CompiledModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -114,6 +116,31 @@ class AccelerationMeasureTest {
     }
 
     @Test
+    fun `LiteRT 加速器档位映射到 CPU GPU NPU`() {
+        assertEquals(Accelerator.CPU, InferenceProvider.LITERT_ACCEL_CPU.litertAccelerator)
+        assertEquals(Accelerator.GPU, InferenceProvider.LITERT_GPU.litertAccelerator)
+        assertEquals(Accelerator.GPU, InferenceProvider.LITERT_GPU_FP16.litertAccelerator)
+        assertEquals(Accelerator.NPU, InferenceProvider.LITERT_NPU.litertAccelerator)
+
+        // 走老 Interpreter 的 LiteRT CPU 档不指定加速器。
+        assertTrue(InferenceProvider.LITERT_CPU4.litertAccelerator == null)
+        assertTrue(InferenceProvider.LITERT_CPU4.usesLitertAcceleratorApi.not())
+
+        // GPU 档位精度：默认档不覆盖精度，FP16 档显式要求 FP16。
+        assertTrue(InferenceProvider.LITERT_GPU.gpuPrecision == null)
+        assertEquals(
+            CompiledModel.GpuOptions.Precision.FP16,
+            InferenceProvider.LITERT_GPU_FP16.gpuPrecision
+        )
+
+        // 只有 GPU / NPU 算硬件加速；加速器 API 的 CPU 档只是同 API 的基线。
+        assertTrue(InferenceProvider.LITERT_GPU.usesAccelerator)
+        assertTrue(InferenceProvider.LITERT_NPU.usesAccelerator)
+        assertTrue(InferenceProvider.LITERT_ACCEL_CPU.usesAccelerator.not())
+        assertTrue(InferenceProvider.LITERT_ACCEL_CPU.usesLitertAcceleratorApi)
+    }
+
+    @Test
     fun `LiteRT 加速档只与 LiteRT 的 CPU 基线比较`() {
         val report = AccelerationMeasure.Report(
             device = "d",
@@ -127,8 +154,8 @@ class AccelerationMeasureTest {
         val text = report.lines().joinToString("\n")
 
         // 50 / 200 = 0.25 达标；绝不能拿 ONNX CPU4=100 去比（那会得到未达标的错误结论）。
-        assertTrue(text.contains("LiteRT · GPU delegate / LiteRT · CPU 8 线程 = 0.25×（门槛 ≤ 0.70×，达标）"))
-        assertTrue(!text.contains("LiteRT · GPU delegate / ONNX · CPU 4 线程"))
+        assertTrue(text.contains("LiteRT · GPU 加速器 / LiteRT · CPU 8 线程 = 0.25×（门槛 ≤ 0.70×，达标）"))
+        assertTrue(!text.contains("LiteRT · GPU 加速器 / ONNX · CPU 4 线程"))
     }
 
     @Test
