@@ -88,8 +88,6 @@ data class RuntimeUiState(
 class InferenceRuntime private constructor(private val context: Context) {
 
     init {
-        // 来源可能在应用启动时就被恢复运行，加速方案必须在这之前就读到本机设置。
-        AcceleratorSettings.attach(context)
     }
 
     val account: AccountStore = AccountStore.get(context)
@@ -217,8 +215,6 @@ class InferenceRuntime private constructor(private val context: Context) {
                 remoteFrames = remoteFrames,
                 localFrame = { camera.latestFrame() },
                 clockMs = { SystemClock.elapsedRealtime() },
-                acceleration = { AcceleratorSettings.plan() },
-                onEngineReady = { effective, _ -> AcceleratorSettings.rememberResolved(effective) },
                 onAlert = ::onAlert
             )
             runtimes[source.sourceId] = runtime

@@ -4,32 +4,31 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import ai.onnxruntime.TensorInfo
-import ai.onnxruntime.providers.NNAPIFlags
 import java.io.File
 import java.nio.FloatBuffer
-import java.util.EnumSet
 
 /**
  * ONNX Runtime 会话封装，语义对齐 Windows `Inference/OnnxInferenceEngine.cs`。
  *
  * - 输入取模型元数据的第一项，输出只取第一个，两者都按张量展平给解析器；
  * - 输入尺寸取 `shape[2]`，形状不足四维时回退 320；
- * - 线程与会话参数与 Windows 一致（intra=2、inter=1、全量图优化、顺序执行）；
- * - 加速方案由 [AccelerationMode] 指定：注册成功但会话创建失败时显式降档重试，
- *   并把实际生效的后端与降档原因一起报给界面，绝不静默换档。
+ * - 固定走 CPU（intra=4、inter=1、全量图优化、顺序执行）。
+ *
+ * 之所以只用 CPU：真机实测（MediaTek MT8910，yolo26m · 640）NNAPI 四档为
+ * 1738–2252 ms，而 CPU 只要 335 ms——系统加速器在这条链上把图切碎后，
+ * 跨设备拷贝的开销超过了加速收益。多档位、自动探测与诊断已移除，
+ * 推理框架与模型的优化转到 `feature/inference-optimization` 分支。
  */
 class OnnxEngine private constructor(
     private val environment: OrtEnvironment,
     private val session: OrtSession,
     private val inputName: String,
     private val outputName: String,
-    val modelSize: Int,
-    val backend: String,
-    /** 自动模式下实际胜出的方案；手动模式下与 [requestedMode] 相同。 */
-    val effectiveMode: AccelerationMode,
-    val requestedMode: AccelerationMode,
-    val fallbackReason: String?
+    val modelSize: Int
 ) {
+
+    /** 后端标识：界面与心跳按它显示。 */
+    val backend: String = BACKEND
 
     /** 运行一次推理；[tensor] 为 CHW `float[3 * modelSize * modelSize]`。 */
     fun run(tensor: FloatArray): FloatArray {
@@ -55,89 +54,26 @@ class OnnxEngine private constructor(
         /** 低于该体积的模型文件视为未下载完成。 */
         const val MIN_MODEL_BYTES = 1L * 1024 * 1024
 
-        /**
-         * 按 [mode] 建会话。自动模式按 [AccelerationMode.AUTO_ORDER] 逐档尝试，
-         * 首个能建起会话的方案胜出；手动模式只用指定方案，失败即返回原因。
-         */
-        fun create(modelFile: File, mode: AccelerationMode = AccelerationMode.AUTO): OnnxEngine {
+        /** 后端显示名。 */
+        const val BACKEND = "CPU"
+
+        /** CPU 线程数：本机实测 4 线程比 2 线程快约两成。 */
+        private const val INTRA_OP_THREADS = 4
+
+        fun create(modelFile: File): OnnxEngine {
             require(modelFile.isFile) { "模型文件不存在：${modelFile.name}" }
             val environment = OrtEnvironment.getEnvironment()
-            val attempts = if (mode == AccelerationMode.AUTO) AccelerationMode.AUTO_ORDER else listOf(mode)
+            val options = OrtSession.SessionOptions()
+            options.setIntraOpNumThreads(INTRA_OP_THREADS)
+            options.setInterOpNumThreads(1)
+            options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            val session = environment.createSession(modelFile.absolutePath, options)
 
-            val failures = StringBuilder()
-            for ((index, candidate) in attempts.withIndex()) {
-                val options = OrtSession.SessionOptions()
-                options.setIntraOpNumThreads(candidate.intraOpThreads)
-                options.setInterOpNumThreads(1)
-                options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-                val registered = applyProvider(options, candidate)
-                val session = runCatching { environment.createSession(modelFile.absolutePath, options) }
-                if (session.isSuccess) {
-                    val reason = when {
-                        failures.isEmpty() -> null
-                        else -> "自动降档：$failures"
-                    }
-                    return build(environment, session.getOrThrow(), candidate, candidate, registered, reason)
-                }
-                runCatching { options.close() }
-                val message = session.exceptionOrNull()?.message ?: "会话创建失败"
-                if (mode != AccelerationMode.AUTO) {
-                    throw IllegalStateException("${candidate.title} 不可用：$message")
-                }
-                if (failures.isNotEmpty()) failures.append("；")
-                failures.append("${candidate.title}→${message.take(80)}")
-                if (index == attempts.lastIndex) {
-                    throw IllegalStateException("所有加速方案都不可用：$failures")
-                }
-            }
-            throw IllegalStateException("没有可用的加速方案")
-        }
-
-        /** 注册执行提供器；返回实际注册成功的后端名。 */
-        private fun applyProvider(
-            options: OrtSession.SessionOptions,
-            mode: AccelerationMode
-        ): String = when (mode) {
-            AccelerationMode.CPU_XNNPACK -> "CPU · XNNPACK"
-
-            AccelerationMode.CPU_THREADS4 -> "CPU · 4 线程"
-
-            AccelerationMode.NNAPI -> {
-                options.addNnapi()
-                "NNAPI"
-            }
-
-            AccelerationMode.NNAPI_FP16 -> {
-                options.addNnapi(EnumSet.of(NNAPIFlags.USE_FP16))
-                "NNAPI · FP16"
-            }
-
-            AccelerationMode.NNAPI_NCHW -> {
-                options.addNnapi(EnumSet.of(NNAPIFlags.USE_NCHW, NNAPIFlags.USE_FP16))
-                "NNAPI · NCHW"
-            }
-
-            AccelerationMode.NNAPI_ACCEL_ONLY -> {
-                options.addNnapi(EnumSet.of(NNAPIFlags.CPU_DISABLED, NNAPIFlags.USE_FP16))
-                "NNAPI · 仅加速器"
-            }
-
-            // 自动模式在 [create] 里已经展开成具体方案，这里不会走到。
-            AccelerationMode.AUTO -> "CPU · XNNPACK"
-        }
-
-        private fun build(
-            environment: OrtEnvironment,
-            session: OrtSession,
-            effective: AccelerationMode,
-            requested: AccelerationMode,
-            backend: String,
-            fallbackReason: String?
-        ): OnnxEngine {
             val inputName = session.inputNames.firstOrNull()
                 ?: throw IllegalStateException("模型没有输入张量。")
             val outputName = session.outputNames.firstOrNull()
                 ?: throw IllegalStateException("模型没有输出张量。")
+
             val modelSize = runCatching {
                 val info = session.inputInfo[inputName]?.info as? TensorInfo
                 val shape = info?.shape
@@ -149,11 +85,7 @@ class OnnxEngine private constructor(
                 session = session,
                 inputName = inputName,
                 outputName = outputName,
-                modelSize = modelSize,
-                backend = backend,
-                effectiveMode = effective,
-                requestedMode = requested,
-                fallbackReason = fallbackReason
+                modelSize = modelSize
             )
         }
 

@@ -43,10 +43,7 @@ NTP 校正报警时间，逐来源独立冷却。账号 / 服务 / 设备分区�
 
 ## 推理加速
 
-本端用 ONNX Runtime 官方 Android 包，Java 侧可注册的执行提供器只有 NNAPI 与 CPU 两档（CPU 一档在官方包里已是 XNNPACK 实现）：可选项为 NNAPI · FP16、NNAPI · 默认、NNAPI · NCHW、NNAPI · 仅加速器（禁止回退 CPU）、CPU · XNNPACK、CPU · 4 线程，另有自动模式按同一顺序探测并记住首个可用方案。QNN（骁龙 Hexagon）与 NeuroPilot 这类厂商 NPU 提供器不在官方包里、Java API 也没有注册入口，因此不列为可选项；联发科设备上 NNAPI 会经 MediaTek Neuron HAL 落到 APU。
-
-方案是冷设置：改动在下一次启动来源时生效。单帧耗时与生效后端显示在操作台读数、技术信息带与「设置 → 推理」；推理分区可逐方案跑诊断（各建一次会话并连续测 6 帧），报告含设备摘要、每个方案的可用性与失败原因、耗时统计，可截图或写入 `files/diagnostics/`。
-
+固定走 CPU：ONNX Runtime 官方 Android 包里 Java 侧可注册的执行提供器只有 NNAPI 与 CPU，多档位、自动探测与诊断已移除。真机实测（MediaTek MT8910，yolo26m · 640，6 帧均值）NNAPI 四档为 FP16 1882.7 ms、默认 1911.2 ms、NCHW 2251.8 ms、仅加速器 1737.8 ms，CPU 为 335.0 ms——系统加速器把图切碎后跨设备拷贝的开销超过了加速收益，在这条链上属于负优化；同机小模型 yolo26n · 320 上 NNAPI 为 77 ms，说明收益随模型规模变化，但不足以支撑保留档位。单帧耗时与后端显示在操作台读数、技术信息带与「设置 → 后台」；推理框架与模型的优化（量化、换运行时、厂商 NPU 路径）在 `feature/inference-optimization` 分支进行。
 ## 构建与未实现项
 
 构建入口为 `.agents/skills/visionguard-build/scripts/build-all.ps1 -Target AndroidInference`，版本读取根 `VERSION`；当前所有 ABI 合入一个 APK。签名所需材料仅放忽略文件或环境变量，构建结果见验证记录。

@@ -49,9 +49,6 @@ import com.xgwnje.visionguard.icons.LucideIcons
 import com.xgwnje.visionguard.inference.AppConstants
 import com.xgwnje.visionguard.inference.net.ControlState
 import com.xgwnje.visionguard.inference.net.MediaState
-import com.xgwnje.visionguard.inference.model.AccelerationDiagnostics
-import com.xgwnje.visionguard.inference.model.AccelerationMode
-import com.xgwnje.visionguard.inference.runtime.AcceleratorSettings
 import com.xgwnje.visionguard.inference.runtime.CrashReporter
 import com.xgwnje.visionguard.inference.runtime.InferenceRuntime
 import com.xgwnje.visionguard.inference.runtime.RuntimeUiState
@@ -64,7 +61,6 @@ import org.json.JSONObject
 private enum class SettingsSection(val title: String) {
     ACCOUNT("账号"),
     MODEL("模型"),
-    ACCELERATION("推理"),
     APPEARANCE("外观"),
     BACKGROUND("后台"),
     MAINTENANCE("维护")
@@ -101,7 +97,6 @@ fun GeoSettingsDrawer(
         when (section) {
             SettingsSection.ACCOUNT -> AccountSection(session, control, media, runtime, onMessage)
             SettingsSection.MODEL -> ModelSection(state, runtime, onMessage)
-            SettingsSection.ACCELERATION -> AccelerationSection(state, onMessage)
             SettingsSection.APPEARANCE -> AppearanceSection(appearance)
             SettingsSection.BACKGROUND -> BackgroundSection(state, runtime)
             SettingsSection.MAINTENANCE -> MaintenanceSection(runtime, onMessage)
@@ -248,6 +243,8 @@ private fun ModelSection(
 
     GeoSectionLabel("01", "推理状态", "逐来源上报")
     GeoInfoRow("推理后端", backend.ifBlank { "未开始推理" })
+    val latency = state.sources.firstOrNull { it.state.isRunning }?.state?.inferenceMs ?: 0L
+    GeoInfoRow("单帧耗时", if (latency > 0) "$latency ms" else "—")
     GeoInfoRow("运行来源", "${state.runningSourceCount} / ${state.sources.size} 路")
     GeoInfoRow("遮罩合计", "$totalMasks 个")
     GeoInfoRow("报警发件箱", "${state.outboxSize} 条待回执")
@@ -420,162 +417,6 @@ private fun BackgroundSection(state: RuntimeUiState, runtime: InferenceRuntime) 
         icon = LucideIcons.ExternalLink
     )
     GeoHint("相机与通知权限只能由本机用户在系统里授权；控制台不能远程绕过，应用也不会自行修改锁屏或唤醒设置。")
-}
-
-/** 推理：当前后端与单帧耗时、加速方案切换、自动探测记录。 */
-@Composable
-private fun AccelerationSection(state: RuntimeUiState, onMessage: (String?) -> Unit) {
-    val mode by AcceleratorSettings.mode.collectAsState()
-    val resolved by AcceleratorSettings.autoResolved.collectAsState()
-    val running = state.sources.filter { it.state.isRunning }
-    val backend = running.firstOrNull()?.state?.backend?.ifEmpty { null }
-        ?: state.sources.firstOrNull()?.state?.backend?.ifEmpty { null }
-    val inferenceMs = running.firstOrNull()?.state?.inferenceMs ?: 0L
-
-    GeoSectionLabel("01", "当前推理", if (running.isEmpty()) "未运行" else "运行中")
-    GeoInfoRow("生效后端", backend ?: "未开始推理")
-    GeoInfoRow("单帧耗时", if (inferenceMs > 0) "$inferenceMs ms" else "—")
-    GeoInfoRow("实际帧率", if (running.isEmpty()) "—" else "%.1f FPS".format(running.first().state.actualFps))
-    GeoHint("方案是冷设置：切换后要停止再启动来源才生效；运行中的来源不会被隐式停止。")
-
-    GeoDivider()
-    GeoSectionLabel("02", "加速方案", "手动 / 自动")
-    AccelerationMode.selectable.forEach { option ->
-        val selected = option == mode
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .background(
-                    if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                    RectangleShape
-                )
-                .border(
-                    if (selected) 2.dp else Geo.Border,
-                    if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                    RectangleShape
-                )
-                .geoFocusable()
-                .clickable {
-                    AcceleratorSettings.setMode(option)
-                    onMessage("加速方案已切换为 ${option.title}，停止并重新启动来源后生效")
-                }
-                .padding(horizontal = 12.dp, vertical = 10.dp)
-        ) {
-            Text(
-                option.title,
-                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Text(
-                option.detail,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-        Spacer(Modifier.height(Geo.Gap))
-    }
-
-    GeoDivider()
-    GeoSectionLabel("03", "自动探测", resolved?.title ?: "未记录")
-    GeoHint(
-        if (resolved != null) {
-            "自动模式复用上次探测成功的方案（${resolved?.title}）；设备或模型变化后可以重新探测。"
-        } else {
-            "自动模式按 NNAPI · FP16、NNAPI、NNAPI · NCHW、CPU · XNNPACK、CPU · 4 线程、NNAPI · 仅加速器的顺序取首个可用，不逐个比较快慢。"
-        }
-    )
-    GeoHint("本机实测（MT8910，yolo26m · 640）：NNAPI 各档 1738–2252 ms，CPU 约 335 ms——该设备上的 NNAPI 没有加速收益，因此默认档已设为 CPU · 4 线程。要确认自己设备的情况，跑上面的加速诊断。", GeoLampTone.Neutral)
-    GeoDivider()
-    AccelerationDiagnostics(state, onMessage)
-
-    GeoDivider()
-    GeoKey(
-        onClick = {
-            AcceleratorSettings.forgetResolved()
-            onMessage("已清除自动探测记录，下次启动来源会重新逐档探测")
-        },
-        label = "重新探测",
-        icon = LucideIcons.RotateCcw,
-        enabled = resolved != null
-    )
-}
-
-/** 加速诊断：逐方案测一遍，结果显示在界面并可写入本机日志。 */
-@Composable
-private fun AccelerationDiagnostics(state: RuntimeUiState, onMessage: (String?) -> Unit) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var report by remember { mutableStateOf<String?>(null) }
-    var busy by remember { mutableStateOf(false) }
-    val modelKey = state.sources.firstOrNull()?.params?.modelKey
-        ?: state.sources.firstOrNull { it.state.isRunning }?.params?.modelKey
-    val model = state.models.firstOrNull { it.key == modelKey }
-    val modelFile = remember(modelKey) {
-        modelKey?.let { java.io.File(java.io.File(context.filesDir, "models"), "$it.onnx") }
-    }
-
-    GeoSectionLabel("04", "加速诊断", "逐方案测耗时")
-    Text(
-        "逐个方案建一次会话并连续跑 6 帧，输出可用性、失败原因与单帧耗时；模拟器没有系统加速器，NNAPI 一档通常会失败，这是预期结果。诊断期间不要启动检测。",
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        style = MaterialTheme.typography.bodySmall
-    )
-    Row(horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
-        GeoKey(
-            onClick = {
-                val file = modelFile
-                if (file == null || !file.isFile) {
-                    onMessage("先下载一个模型，再做加速诊断")
-                    return@GeoKey
-                }
-                scope.launch {
-                    busy = true
-                    report = AccelerationDiagnostics.run(file, AcceleratorSettings.mode.value, AcceleratorSettings.autoResolved.value)
-                    busy = false
-                    onMessage("加速诊断完成，可截图反馈或写入本机日志")
-                }
-            },
-            label = "运行诊断",
-            icon = LucideIcons.Activity,
-            tone = GeoTone.Primary,
-            busy = busy
-        )
-        GeoKey(
-            onClick = {
-                val text = report
-                if (text == null) {
-                    onMessage("先运行诊断")
-                } else {
-                    val path = AccelerationDiagnostics.writeReport(context, text)
-                    onMessage(if (path != null) "已写入 $path" else "写入失败")
-                }
-            },
-            label = "写入日志",
-            icon = LucideIcons.Pencil,
-            enabled = report != null && !busy
-        )
-    }
-    if (modelFile == null || !modelFile.isFile) {
-        GeoHint("没有可用的模型文件：先在「模型」分区下载一个再诊断。", GeoLampTone.Warning)
-    } else {
-        GeoInfoRow("诊断模型", model?.displayName ?: modelFile.name)
-    }
-    report?.let { text ->
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.surface, RectangleShape)
-                .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape)
-                .padding(12.dp)
-        ) {
-            Text(
-                text,
-                color = MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
-                softWrap = true
-            )
-        }
-    }
 }
 
 /** 崩溃与异常退出：本机记录 + 系统退出原因（含 native 崩溃与 ANR），可导出反馈。 */

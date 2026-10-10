@@ -49,7 +49,7 @@ object MockWorkspaceData {
                     isRunning = true,
                     isReady = true,
                     actualFps = 3.0,
-                    backend = "NNAPI",
+                    backend = "CPU",
                     inferenceMs = 42,
                     lastProgressAtMs = nowElapsedMs - 780,
                     lastProgressWallMs = nowWallMs - 780,
@@ -82,7 +82,7 @@ object MockWorkspaceData {
                 remotePublisherName = "推流节点 · 东门",
                 state = SourceRuntimeState(
                     isReady = true,
-                    backend = "NNAPI",
+                    backend = "CPU",
                     processedFrames = 8_642,
                     failedFrames = 12,
                     lastProgressAtMs = nowElapsedMs - 42_000,
