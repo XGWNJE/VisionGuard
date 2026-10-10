@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -27,6 +29,10 @@ import com.xgwnje.visionguard.account.AccountStore
 import com.xgwnje.visionguard.account.ApplicationOptions
 import com.xgwnje.visionguard.account.dark
 import com.xgwnje.visionguard.account.rememberAppearance
+import com.xgwnje.visionguard.inference.model.AccelerationBenchmark
+import com.xgwnje.visionguard.inference.model.AccelerationMeasure
+import com.xgwnje.visionguard.inference.model.InferenceProvider
+import com.xgwnje.visionguard.inference.model.OnnxEngine
 import com.xgwnje.visionguard.inference.runtime.InferenceRuntime
 import com.xgwnje.visionguard.inference.runtime.MessageTone
 import com.xgwnje.visionguard.inference.service.InferenceService
@@ -34,13 +40,15 @@ import com.xgwnje.visionguard.inference.source.SourceCaptureMode
 import com.xgwnje.visionguard.inference.ui.MainScreen
 import com.xgwnje.visionguard.inference.ui.theme.VisionguardTheme
 import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * 视觉推理节点（Android）入口。
  *
  * 只负责会话门、主题、权限与前台服务：
  * - Android 13+ 启动前台服务前确认 `POST_NOTIFICATIONS`；
- * - 启动本机相机来源前确认 `CAMERA`，授权后继续启动该来源。
+ * - 启动本机相机来源前确认 `CAMERA`，授权后继续启动该来源；
+ * - 显式请求时跑一次推理加速测量（见 `runAccelerationBenchmarkIfRequested`）。
  */
 class MainActivity : ComponentActivity() {
 
@@ -69,6 +77,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (runAccelerationBenchmarkIfRequested()) return
         enableEdgeToEdge()
         applyImmersiveMode()
         val account = AccountStore.get(this)
@@ -143,6 +152,68 @@ class MainActivity : ComponentActivity() {
         if (hasFocus) applyImmersiveMode()
     }
 
+    /**
+     * 显式请求时跑一次推理加速测量，不进入界面。
+     *
+     * 只用于测量，正常启动不会命中；且只在 Debug 构建生效，UI 预览 / 正式 Release 即使
+     * 收到该 extra 也不会执行（预览构建虽然 debuggable，但 `isDebuggableRelease` 明确排除）。
+     *
+     * 触发方式：
+     * ```
+     * adb shell am start -n <包名>/com.xgwnje.visionguard.inference.MainActivity \
+     *     --ez benchmark true [--es models yolo26n_320_int8.onnx]
+     * ```
+     * 模型放 `files/bench-models/`（`run-as` 推送），读数同时写 logcat 的
+     * `VGInferenceBench` 标签与 `files/diagnostics/acceleration-bench-*.txt`。
+     */
+    private fun runAccelerationBenchmarkIfRequested(): Boolean {
+        if (!isBenchmarkBuild() || intent?.getBooleanExtra(EXTRA_BENCHMARK, false) != true) return false
+
+        val requested = intent?.getStringExtra(EXTRA_BENCHMARK_MODELS)
+            ?.split(',')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            .orEmpty()
+
+        Thread {
+            val dir = File(filesDir, AccelerationBenchmark.MODEL_DIR)
+            val models = if (requested.isEmpty()) {
+                AccelerationMeasure.modelsIn(dir)
+            } else {
+                requested.map { File(dir, it) }
+            }
+            val device = "${Build.MANUFACTURER} ${Build.MODEL} / API ${Build.VERSION.SDK_INT}"
+            val results = mutableListOf<AccelerationMeasure.Result>()
+            val failures = mutableListOf<String>()
+
+            if (models.isEmpty()) {
+                failures += "没有待测模型：$dir（用 run-as 推送到该目录）"
+            }
+            models.forEach { model ->
+                if (!model.isFile) {
+                    failures += "${model.name}：文件不存在"
+                    return@forEach
+                }
+                if (model.length() < OnnxEngine.MIN_MODEL_BYTES) {
+                    failures += "${model.name}：体积不足 ${OnnxEngine.MIN_MODEL_BYTES} 字节"
+                    return@forEach
+                }
+                val (rows, errors) = AccelerationBenchmark.run(model, InferenceProvider.benchmarkOrder)
+                results += rows
+                failures += errors
+            }
+
+            val report = AccelerationMeasure.Report(device, results, failures)
+            val path = AccelerationBenchmark.persist(File(filesDir, "diagnostics"), report)
+            Log.i(AccelerationBenchmark.TAG, "报告：${path ?: "写入失败"}")
+            runOnUiThread {
+                Toast.makeText(this, "推理加速测量完成：${results.size} 条读数，${failures.size} 项失败；详见 logcat", Toast.LENGTH_LONG).show()
+            }
+            finish()
+        }.start()
+        return true
+    }
+
     /** 本机相机来源先确认相机权限，其余来源直接启停。 */
     private suspend fun toggleSource(sourceId: String): String? {
         val runtime = InferenceRuntime.get(this)
@@ -166,5 +237,22 @@ class MainActivity : ComponentActivity() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) return
         notificationAsked = true
         notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    /**
+     * 测量入口只在 Debug 构建开放。
+     *
+     * UI 预览构建是 debuggable 的 Release，不能靠 `debuggable` 标志判断；这里直接看
+     * `BuildConfig.DEBUG`，并额外排除预览包名，避免测量入口随预览包流出。
+     */
+    private fun isBenchmarkBuild(): Boolean =
+        BuildConfig.DEBUG && !applicationContext.packageName.endsWith(".uipreview")
+
+    companion object {
+        /** `--ez benchmark true`：只跑一次加速测量，不进入界面。 */
+        const val EXTRA_BENCHMARK = "benchmark"
+
+        /** `--es models a.onnx,b.onnx`：只测这些模型；省略时测目录内全部。 */
+        const val EXTRA_BENCHMARK_MODELS = "models"
     }
 }
