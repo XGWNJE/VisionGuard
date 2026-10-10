@@ -12,8 +12,8 @@ Quantize exported ONNX models to INT8 for the inference nodes.
 2. 必须排除"大小量程混用"的检测头（见 `--exclude head`）。默认 `none` 会把类别
    分数压成 0，检测输出全空。
 
-要求 onnxruntime >= 1.17：QDQ 静态量化不支持 opset < 13，YOLOv5u 导出为 opset 12，
-需要先转 opset（`--mode dynamic` 不受影响）。
+要求 onnxruntime >= 1.17。YOLOv5u 导出为 opset 12，静态量化会自动先升到 opset 13 并
+核对升级前后输出一致；不升级会得到 onnxruntime 拒绝加载的模型。
 
 Usage:
   # 静态量化（需要校准画面）
@@ -283,6 +283,56 @@ def input_name_of(model_path: Path) -> str:
     return session.get_inputs()[0].name
 
 
+#: QDQ 静态量化会插入带 axis 属性的逐通道 DequantizeLinear，需要 opset >= 13。
+_MIN_STATIC_OPSET = 13
+
+
+def ensure_static_opset(model_path: Path, work_dir: Path, output_stem: str) -> Path:
+    """opset < 13 时先升级到 13；否则原样返回。
+
+    YOLOv5u 导出为 opset 12，直接静态量化会得到 onnxruntime 拒绝加载的模型
+    （`Error Unrecognized attribute: axis for operator DequantizeLinear`），必须转版本。
+    """
+    import onnx
+    from onnx import version_converter
+
+    model = onnx.load(str(model_path))
+    versions = [item.version for item in model.opset_import if item.domain in ("", "ai.onnx")]
+    current = max(versions) if versions else 0
+    if current >= _MIN_STATIC_OPSET:
+        return model_path
+
+    import onnxruntime as ort
+
+    source = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+    upgraded = version_converter.convert_version(model, _MIN_STATIC_OPSET)
+    try:
+        onnx.checker.check_model(upgraded)
+    except Exception as error:  # noqa: BLE001 - 需要把失败原因原样报给调用者
+        raise SystemExit(f"opset {current} -> {_MIN_STATIC_OPSET} 转换后模型校验失败：{error}") from error
+
+    work_dir.mkdir(parents=True, exist_ok=True)
+    target = work_dir / f"{output_stem}_opset{_MIN_STATIC_OPSET}.onnx"
+    onnx.save(upgraded, str(target))
+
+    # 转换器可能在数值上改变极小算子，用同一帧输入核对输出是否保持一致。
+    probe = np.zeros((1, 3, read_model_size(model_path), read_model_size(model_path)), dtype=np.float32)
+    before = np.asarray(
+        source.run(None, {source.get_inputs()[0].name: probe})[0], dtype=np.float64
+    ).reshape(-1)
+    check = ort.InferenceSession(str(target), providers=["CPUExecutionProvider"])
+    after = np.asarray(
+        check.run(None, {check.get_inputs()[0].name: probe})[0], dtype=np.float64
+    ).reshape(-1)
+    if before.size != after.size or not np.array_equal(before, after):
+        raise SystemExit(
+            f"opset {current} -> {_MIN_STATIC_OPSET} 改变了输出（{before.size} vs {after.size} 元素），"
+            "拒绝继续量化；请改用 `--mode dynamic` 或重新以 opset >= 13 导出。"
+        )
+    print(f"opset {current} -> {_MIN_STATIC_OPSET}：{model_path.name} -> {target.name}（输出一致）")
+    return target
+
+
 def quantize(
     model_path: Path,
     mode: str,
@@ -307,12 +357,14 @@ def quantize(
             weight_type=QuantType.QInt8,
         )
     else:
+        source = ensure_static_opset(model_path, target_dir / "_opset", model_path.stem)
+        size = read_model_size(source)
         tensors = load_calibration(calib_dir, size, calib_count)
-        reader = FrameCalibrationReader(tensors, input_name_of(model_path))
-        excluded = excluded_node_names(model_path, exclude_mode, exclude_from or [])
+        reader = FrameCalibrationReader(tensors, input_name_of(source))
+        excluded = excluded_node_names(source, exclude_mode, exclude_from or [])
         print(f"量化范围：{exclude_mode}，排除节点 {len(excluded)} 个")
         quantize_static(
-            model_input=str(model_path),
+            model_input=str(source),
             model_output=str(output),
             calibration_data_reader=reader,
             quant_format=QuantFormat.QDQ,
