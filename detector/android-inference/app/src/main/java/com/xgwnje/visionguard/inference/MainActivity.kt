@@ -18,6 +18,9 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -38,6 +41,7 @@ import com.xgwnje.visionguard.inference.runtime.InferenceRuntime
 import com.xgwnje.visionguard.inference.runtime.MessageTone
 import com.xgwnje.visionguard.inference.service.InferenceService
 import com.xgwnje.visionguard.inference.source.SourceCaptureMode
+import com.xgwnje.visionguard.inference.ui.BenchmarkScreen
 import com.xgwnje.visionguard.inference.ui.MainScreen
 import com.xgwnje.visionguard.inference.ui.theme.VisionguardTheme
 import kotlinx.coroutines.launch
@@ -83,7 +87,11 @@ class MainActivity : ComponentActivity() {
         applyImmersiveMode()
         val account = AccountStore.get(this)
         val runtime = InferenceRuntime.get(this)
+        // 测量构建先给测量入口：测量只用本机算力与包内模型，不应被登录条件挡住；
+        // 点「进入完整应用」再走原有登录流程。正式构建没有这个首屏。
+        val benchmarkFirst = isBenchmarkBuild()
         setContent {
+            var showFullApp by rememberSaveable { mutableStateOf(!benchmarkFirst) }
             val session by account.session.collectAsState()
             val appearance = rememberAppearance()
             val darkTheme = appearance.dark()
@@ -96,7 +104,9 @@ class MainActivity : ComponentActivity() {
             }
             VisionguardTheme(darkTheme = darkTheme) {
                 Column(Modifier.fillMaxSize()) {
-                    if (session == null) {
+                    if (!showFullApp) {
+                        BenchmarkScreen(onOpenFullApp = { showFullApp = true })
+                    } else if (session == null) {
                         ApplicationOptions(appearance, AppConstants.LOGIN_COMPONENT)
                         AccountLogin(
                             store = account,
