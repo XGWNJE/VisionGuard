@@ -6,6 +6,7 @@ import com.xgwnje.visionguard.inference.alert.AlertGate
 import com.xgwnje.visionguard.inference.detect.ArgbImage
 import com.xgwnje.visionguard.inference.detect.Detection
 import com.xgwnje.visionguard.inference.detect.YoloOutputParser
+import com.xgwnje.visionguard.inference.model.AccelerationMode
 import com.xgwnje.visionguard.inference.model.ModelStore
 import com.xgwnje.visionguard.inference.model.OnnxEngine
 import com.xgwnje.visionguard.inference.net.RemoteFrameStore
@@ -38,7 +39,11 @@ class SourceRuntime(
     private val remoteFrames: RemoteFrameStore,
     private val localFrame: () -> ArgbImage?,
     private val clockMs: () -> Long,
-    private val onAlert: (AlertEvent, ArgbImage) -> Unit
+    private val onAlert: (AlertEvent, ArgbImage) -> Unit,
+    /** 当前加速方案；每次启动按它建会话，改动在下一次启动生效。 */
+    private val acceleration: () -> AccelerationMode,
+    /** 会话建成后回报实际生效的方案，供自动模式记忆。 */
+    private val onEngineReady: (AccelerationMode, String) -> Unit = { _, _ -> }
 ) {
     private val mutableState = MutableStateFlow(SourceRuntimeState(statusText = "未就绪"))
     val state = mutableState.asStateFlow()
@@ -84,7 +89,7 @@ class SourceRuntime(
 
         val modelFile = models.file(config.params.modelKey)
         val created = withContext(Dispatchers.IO) {
-            runCatching { OnnxEngine.create(modelFile) }
+            runCatching { OnnxEngine.create(modelFile, acceleration()) }
         }
         val loaded = created.getOrElse { error ->
             val message = "模型加载失败：${error.message ?: error::class.java.simpleName}"
@@ -92,6 +97,7 @@ class SourceRuntime(
             return message
         }
         engine = loaded
+        onEngineReady(loaded.requestedMode, loaded.backend)
         gate.reset()
         lastRemoteSequence = -1L
         lastLocalFrame = null

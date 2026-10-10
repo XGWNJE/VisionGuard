@@ -51,6 +51,7 @@ import com.xgwnje.visionguard.inference.ui.geo.GeoHint
 import com.xgwnje.visionguard.inference.ui.geo.GeoLampTone
 import com.xgwnje.visionguard.inference.ui.geo.GeoMaskDrawer
 import com.xgwnje.visionguard.inference.ui.geo.GeoMessageRibbon
+import com.xgwnje.visionguard.inference.runtime.AcceleratorSettings
 import com.xgwnje.visionguard.inference.ui.geo.GeoParameterDrawer
 import com.xgwnje.visionguard.inference.ui.geo.MockWorkspaceData
 import com.xgwnje.visionguard.inference.ui.geo.ParamAnchor

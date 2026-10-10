@@ -240,6 +240,12 @@ fun ActionDeck(
                 if (running && topConfidence != null) "%" else null,
                 Modifier.weight(1f)
             )
+            Readout(
+                "单帧耗时",
+                if (running && (source?.state?.inferenceMs ?: 0L) > 0) "${source?.state?.inferenceMs}" else "—",
+                if (running && (source?.state?.inferenceMs ?: 0L) > 0) "ms" else null,
+                Modifier.weight(1f)
+            )
         }
     }
     val keys: @Composable (Modifier) -> Unit = { keyModifier ->
@@ -365,6 +371,7 @@ fun ParameterStrip(
             source?.let { view ->
                 StripItem("置信度", "${view.params.confidencePercent}%") { onParams(ParamAnchor.MACHINES) }
                 StripItem("采样", "${view.params.targetFps} FPS") { onParams(ParamAnchor.MACHINES) }
+                StripItem("耗时", if (view.state.inferenceMs > 0) "${view.state.inferenceMs} ms" else "—") { onParams(ParamAnchor.MACHINES) }
                 StripItem("冷却", "${view.params.cooldownSeconds} 秒") { onParams(ParamAnchor.MACHINES) }
                 StripItem(null, ModelKeys.displayName(view.params.modelKey)) { onParams(ParamAnchor.MODELS) }
                 StripItem(null, "${view.params.watchedClasses.size} 个目标") { onParams(ParamAnchor.TARGETS) }
@@ -411,7 +418,7 @@ fun EmptyWorkspace(onAdd: () -> Unit, modifier: Modifier = Modifier) {
         Text("还没有来源", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         Text(
-            "添加本机相机，或创建远程槽位等待控制台绑定。",
+            "添加本机相机；远程来源由相机推流绑定或控制台设定后自动出现。",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center
