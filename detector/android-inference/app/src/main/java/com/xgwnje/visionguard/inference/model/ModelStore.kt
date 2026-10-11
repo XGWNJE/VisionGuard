@@ -8,94 +8,78 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
- * Android 推理端的模型清单。
+ * Android 推理端的模型清单：**两条后端路线 × 两个尺寸 = 4 档**。
  *
- * 与 Windows modern 档同一套 YOLO26 模型（`[1,300,6]`，模型内含 NMS）：Android 的
- * ONNX Runtime 属于现代档，不需要 Win7 legacy 的 YOLOv5 模型。
+ * - GPU 档 `<键>`（`yolo26m_320` / `yolo26m_640`）：只有截断图 `<键>_gpu.tflite`，**不下 ONNX 本体**；
+ * - CPU 档 `<键>_int8`（`yolo26m_320_int8` / `yolo26m_640_int8`）：只有量化版 `<键>.onnx`。
  *
- * 每个键最多有两种产物；清单里每个基名两项，合起来 12 项：
- * - `<键>.onnx` FP32 本体：图内自带 NMS，走 ONNX Runtime CPU；有 GPU 产物的键可以改用 GPU；
- * - `<键>_int8.onnx` 量化版：与本体并存、键名带 `_int8`，**只走 ONNX Runtime CPU**
- *   （量化版没有 GPU 产物，也不会被送去 LiteRT——LiteRT 读 `.tflite`，量化版只有 `.onnx`）。
+ * 为什么 CPU 不跑 FP32：同尺寸 INT8 在 CPU 上快 1.5–2.0 倍、体积小 3–4 倍；FP32 只作为 GPU
+ * 截断图的来源存在。所以 GPU 用不了时回落到**同尺寸 INT8**，不是回落 FP32。
  *
- * 产物与路线一一对应，别混：
- * - CPU 正式档 = ONNX Runtime · CPU 4 线程 + int8 或 FP32 本体；
- * - GPU 档 = LiteRT GPU + `<基名>_gpu.tflite`（截断图，图尾 int64 后处理被截掉，否则整图编译失败），
- *   NMS 移到端侧解析，只有 [gpuKeys] 里的键才有，且只在 640 及以上值得用。
+ * 为什么 320 也要 GPU 档：加速路线上性能不足时按尺寸降级，与 CPU 路线的 320 INT8 对应。
+ * 后端随档位绑定，用户只选档位，不再单独选 CPU / GPU。
  */
 object ModelKeys {
-    /** 原始（FP32）模型键，顺序即默认选择顺序。 */
-    val baseKeys: List<String> = listOf(
-        "yolo26n_320", "yolo26n_640",
-        "yolo26s_320", "yolo26s_640",
-        "yolo26m_320", "yolo26m_640"
-    )
-
-    /** 量化版后缀。 */
+    /** 量化版后缀，也是 CPU 档的键名后缀。 */
     const val INT8_SUFFIX = "_int8"
 
-    /** 当前可选键：本体与量化版交替（12 项）。 */
-    val keys: List<String> = derivedKeys()
+    /** GPU 档：只分发截断图。 */
+    val gpuKeys: List<String> = listOf("yolo26m_320", "yolo26m_640")
 
-    /**
-     * 有 GPU 产物、允许走加速的键。
-     *
-     * 只放实测有效的组合：GPU 在 320 上反而不如 CPU（14.4 对 7.4 ms），所以列的全是 640；
-     * 服务端磁盘余量有限，先投放 `yolo26m_640`（同轮 67.5 对 255.7 ms，收益最大）。
-     * 新增键前必须先补测，否则端侧会拿一个没量过的产物去跑正式链路。
-     */
-    val gpuKeys: List<String> = listOf("yolo26m_640")
+    /** CPU 档：只分发量化版本体。 */
+    val cpuKeys: List<String> = gpuKeys.map { it + INT8_SUFFIX }
 
-    /**
-     * 本体与量化版交替的全量清单（`本体、量化版、本体、量化版…`）。
-     *
-     * 顺序不能随意调整：[InferenceRuntime.defaultModelKey] 取「第一个已下载的键」，
-     * 量化版排在各自本体之后，新装设备的默认模型才仍是 FP32。
-     */
-    fun derivedKeys(): List<String> = baseKeys.flatMap { listOf(it, it + INT8_SUFFIX) }
+    /** 界面顺序：同一尺寸的 GPU 与 CPU 成对出现。 */
+    val keys: List<String> = gpuKeys.flatMap { listOf(it, it + INT8_SUFFIX) }
 
-    val defaultKey: String = baseKeys.first()
+    /** 新装设备的默认档：最小、CPU 上一定能跑。 */
+    val defaultKey: String = cpuKeys.first()
 
     fun isSupported(key: String): Boolean = keys.contains(key)
 
-    /**
-     * 该键是否有 GPU 产物（控制下载入口与是否尝试加速）。
-     *
-     * 量化版一律 false：这些量化产物的边界是 float32、图内 int8，端侧没有它们的边界量化登记表，
-     * 送去 LiteRT 会在写缓冲时报尺寸不符；走 ONNX Runtime CPU 才是它们的正路。
-     */
-    fun supportsGpu(key: String): Boolean =
-        keys.contains(key) && !isQuantized(key) && gpuKeys.contains(key)
+    fun supportsGpu(key: String): Boolean = gpuKeys.contains(key)
 
-    /** 是否为量化版键。 */
-    fun isQuantized(key: String): Boolean = key.endsWith(INT8_SUFFIX)
+    /** 是否为 CPU（量化）档。 */
+    fun isQuantized(key: String): Boolean = cpuKeys.contains(key)
 
-    /** 量化版键对应的本体键。 */
+    /** 去掉量化后缀，得到尺寸基名（`yolo26m_320`）。 */
     fun baseOf(key: String): String = key.removeSuffix(INT8_SUFFIX)
+
+    /** 该键的实际产物形态：GPU 档走截断图，CPU 档走量化本体。 */
+    fun formatOf(key: String): ModelFormat = if (supportsGpu(key)) ModelFormat.GPU_TFLITE else ModelFormat.ONNX
+
+    /**
+     * 同尺寸的 CPU 档键；本身就是 CPU 档时返回自己。
+     *
+     * GPU 用不了时按同尺寸降级到它，而不是换尺寸——尺寸是用户对性能与精度的选择。
+     */
+    fun cpuTierOf(key: String): String? = (baseOf(key) + INT8_SUFFIX).takeIf { cpuKeys.contains(it) }
 
     /**
      * 模型文件名。
      *
-     * 服务端 `/models` 按文件名静态分发，因此量化版键天然对应 `<键>.onnx`，不需要额外映射；
-     * GPU 产物是同键的另一个文件名，也不引入服务端映射。
+     * 服务端 `/models` 按文件名静态分发：CPU 档天然对应 `<键>.onnx`，GPU 档对应 `<基名>_gpu.tflite`，
+     * 都不需要额外映射。
      */
-    fun fileName(key: String, format: ModelFormat = ModelFormat.ONNX): String = when (format) {
+    fun fileName(key: String, format: ModelFormat = formatOf(key)): String = when (format) {
         ModelFormat.ONNX -> "$key.onnx"
-        ModelFormat.GPU_TFLITE -> "${key}_gpu.tflite"
+        ModelFormat.GPU_TFLITE -> "${baseOf(key)}_gpu.tflite"
     }
 
+    /** 本端清单内的全部文件名，用于盘点并清理清单外的残留。 */
+    fun fileNameSet(): Set<String> = keys.map { fileName(it) }.toSet()
+
     /**
-     * 界面展示名，例如 `YOLO26n · 320`、`YOLO26n · 320 INT8`。
+     * 界面展示名，例如 `YOLO26M · 320 GPU`、`YOLO26M · 320 CPU`。
      *
-     * 无法识别的键原样返回，不做猜测。
+     * 后端写在名字里：用户选档位就是选后端，不再有第二个开关。无法识别的键原样返回，不猜。
      */
     fun displayName(key: String): String {
-        val quantized = isQuantized(key)
         val parts = baseOf(key).split('_')
         if (parts.size != 2 || !parts[0].startsWith("yolo26")) return key
         val size = parts[1]
         val variant = parts[0].removePrefix("yolo26").uppercase()
-        return "YOLO26$variant · $size" + if (quantized) " INT8" else ""
+        return "YOLO26$variant · $size " + if (supportsGpu(key)) "GPU" else "CPU"
     }
 }
 
@@ -104,7 +88,8 @@ object ModelKeys {
  *
  * 与 Windows `Utils/ModelManager.cs` 一致：模型不入版本控制、不随安装包分发，
  * 从统一服务的 `/models/<文件名>` 静态端点按需下载；下载先写 `.tmp`，校验声明长度后
- * 再替换正式文件，长度不符时删除临时文件并报可读原因。
+ * 再替换正式文件，长度不符时删除临时文件并报可读原因。清单外的历史文件由
+ * [cleanupUnknownFiles] 盘点清理，避免旧档位一直占着磁盘。
  */
 class ModelStore(private val modelsDir: File, private val serverUrl: String) {
 
@@ -113,36 +98,45 @@ class ModelStore(private val modelsDir: File, private val serverUrl: String) {
         .readTimeout(DOWNLOAD_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .build()
 
-    fun file(key: String, format: ModelFormat = ModelFormat.ONNX): File =
+    fun file(key: String, format: ModelFormat = ModelKeys.formatOf(key)): File =
         File(modelsDir, ModelKeys.fileName(key, format))
 
-    fun isDownloaded(key: String, format: ModelFormat = ModelFormat.ONNX): Boolean {
+    fun isDownloaded(key: String): Boolean {
+        val format = ModelKeys.formatOf(key)
         val target = file(key, format)
         return target.isFile && target.length() >= format.minBytes
     }
 
-    /** 已下载的模型键，按清单顺序（只算本体）。 */
+    /** 已下载的档位键，按清单顺序。 */
     fun downloadedKeys(): List<String> = ModelKeys.keys.filter { isDownloaded(it) }
 
-    /** 该键是否可用 GPU：有产物定义且 GPU 产物已下载。 */
-    fun isGpuReady(key: String): Boolean = ModelKeys.supportsGpu(key) && isDownloaded(key, ModelFormat.GPU_TFLITE)
+    /** GPU 档是否就绪：有产物定义且截断图已下载。 */
+    fun isGpuReady(key: String): Boolean = ModelKeys.supportsGpu(key) && isDownloaded(key)
 
-    /** GPU 产物文件；该键没有 GPU 产物时返回 null。 */
+    /** GPU 档的截断图文件；该键不是 GPU 档时返回 null。 */
     fun gpuFile(key: String): File? =
         if (ModelKeys.supportsGpu(key)) file(key, ModelFormat.GPU_TFLITE) else null
 
+    /** CPU 引擎要加载的 ONNX 文件：GPU 档取同尺寸 CPU 档，CPU 档取自己；取不到返回 null。 */
+    fun cpuFile(key: String): File? =
+        ModelKeys.cpuTierOf(key)?.let { file(it, ModelFormat.ONNX) }
+
     /**
-     * 下载指定模型的指定产物；成功返回 null，失败返回可读原因。
+     * 下载指定档位的产物；成功返回 null，失败返回可读原因。
      * [onProgress] 参数为已接收字节与声明总字节（未知时为 -1）。
      */
     suspend fun download(
         key: String,
-        format: ModelFormat = ModelFormat.ONNX,
+        format: ModelFormat = ModelKeys.formatOf(key),
         onProgress: (Long, Long) -> Unit = { _, _ -> }
     ): String? = withContext(Dispatchers.IO) {
         if (!ModelKeys.isSupported(key)) return@withContext "本端不支持模型 $key"
         if (format == ModelFormat.GPU_TFLITE && !ModelKeys.supportsGpu(key)) {
             return@withContext "模型 $key 没有 GPU 版本"
+        }
+        // GPU 档不下 ONNX 本体：CPU 路线的正路是同尺寸 INT8，本体只会白占一倍磁盘。
+        if (format == ModelFormat.ONNX && ModelKeys.supportsGpu(key)) {
+            return@withContext "模型 $key 是 GPU 档，只下载截断图"
         }
         modelsDir.mkdirs()
         val fileName = ModelKeys.fileName(key, format)
@@ -194,9 +188,30 @@ class ModelStore(private val modelsDir: File, private val serverUrl: String) {
         null
     }
 
-    /** 删除已下载模型产物，用于释放空间；不删除正在使用的模型由调用方保证。 */
-    suspend fun delete(key: String, format: ModelFormat = ModelFormat.ONNX): Boolean =
+    /** 删除已下载的档位产物，用于释放空间；不删除正在使用的模型由调用方保证。 */
+    suspend fun delete(key: String, format: ModelFormat = ModelKeys.formatOf(key)): Boolean =
         withContext(Dispatchers.IO) { file(key, format).delete() }
+
+    /**
+     * 删除清单外的残留文件（旧档位模型、半截 `.tmp`），返回（文件数, 字节数）。
+     *
+     * 档位收敛后设备上会留下 `yolo26n_*` / `yolo26s_*` 与旧 GPU 产物；它们已经不可能被选中，
+     * 留着只是占空间。只动 `files/models/` 这一个目录，不碰账号、配置与业务数据。
+     */
+    suspend fun cleanupUnknownFiles(): Pair<Int, Long> = withContext(Dispatchers.IO) {
+        val known = ModelKeys.fileNameSet()
+        var files = 0
+        var bytes = 0L
+        modelsDir.listFiles()?.forEach { candidate ->
+            if (!candidate.isFile || candidate.name in known) return@forEach
+            val size = candidate.length()
+            if (candidate.delete()) {
+                files += 1
+                bytes += size
+            }
+        }
+        files to bytes
+    }
 
     companion object {
         private const val DOWNLOAD_TIMEOUT_SECONDS = 600L

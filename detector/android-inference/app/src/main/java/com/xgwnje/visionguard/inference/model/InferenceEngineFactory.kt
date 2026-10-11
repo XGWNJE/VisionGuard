@@ -5,11 +5,13 @@ import com.google.ai.edge.litert.Environment
 import java.io.File
 
 /**
- * 正式链路的引擎选择：能用 GPU 就用 GPU，用不了就如实回落 CPU 并说明原因。
+ * 正式链路的引擎选择：档位定后端，用不了就回落到**同尺寸的 CPU 档**并说明原因。
  *
- * 为什么必须显式回落而不是直接选 CPU：这台设备的 GPU 只在**截断图**（图尾无 int64 后处理）
- * 上编得过，普通图会报 `Failed to compile model`；模型文件也可能还没下载。两者都要给出可读原因，
- * 否则界面只能显示「CPU」，看不出是「没装 GPU 模型」还是「设备不支持」。
+ * 为什么必须显式回落而不是直接选 CPU：设备可能没有可用的 GPU 加速器，截断图也可能还没下载完；
+ * 两者都要给出可读原因，否则界面只能显示「CPU」，看不出是「没下 GPU 档」还是「设备不支持」。
+ *
+ * 为什么回落目标是同尺寸 INT8 而不是 FP32：CPU 上 INT8 快 1.5–2.0 倍、体积小 3–4 倍，
+ * FP32 本体已经不再下发（见 [ModelKeys]）。
  *
  * 为什么 GPU 只走「加速器 API GPU + FP32」这一档：真机同轮实测 int8 边界在 GPU 上比 FP32 慢
  * 1.58 倍且类别分数被压成 0（混量程张量），纹理权重与关外部张量两档也没有更快，
@@ -34,7 +36,7 @@ object InferenceEngineFactory {
      * 后端选择判定（纯函数，便于单测覆盖整张判定表）。
      *
      * 这是正式链路上「到底用没用 GPU」的唯一判据，三个输入都可能是「没有」：
-     * 用户没下载 GPU 产物、设备不支持 GPU 加速器、来源配置的模型没有 GPU 版本。
+     * GPU 档的截断图没下载、设备不支持 GPU 加速器、来源配置选的是 CPU 档。
      * 每种都要给出可读原因，否则界面只能显示 CPU，看不出是哪一种。
      */
     fun decide(
@@ -46,12 +48,12 @@ object InferenceEngineFactory {
     ): BackendPreference {
         if (!wantGpu) return BackendPreference(preferGpu = false, fallbackReason = null)
         if (!gpuFileExists) {
-            return BackendPreference(false, "未下载 GPU 模型（${gpuFileName ?: "无"}），已用 CPU")
+            return BackendPreference(false, "GPU 档的截断图未就绪（${gpuFileName ?: "无"}），已回落 CPU 档")
         }
         if (!gpuAcceleratorAvailable) {
             return BackendPreference(
                 false,
-                "本机不支持 LiteRT GPU 加速器（可用：${availableAccelerators.ifEmpty { "无" }}），已用 CPU"
+                "本机不支持 LiteRT GPU 加速器（可用：${availableAccelerators.ifEmpty { "无" }}），已回落 CPU 档"
             )
         }
         return BackendPreference(preferGpu = true, fallbackReason = null)
@@ -60,11 +62,11 @@ object InferenceEngineFactory {
     /**
      * 创建来源运行时的引擎。
      *
-     * @param onnxFile 本体模型（正式档走 CPU 时使用）
-     * @param tfliteFile GPU 产物；为 null 或文件缺失时回落 CPU
-     * @param wantGpu 是否优先使用 GPU（来源配置与设备能力都满足时为 true）
+     * @param cpuOnnxFile 回落与 CPU 档使用的量化本体；GPU 档时调用方传同尺寸 CPU 档的文件
+     * @param tfliteFile GPU 档的截断图；CPU 档为 null
+     * @param wantGpu 是否优先使用 GPU（来源配置选的是 GPU 档时为 true）
      */
-    fun create(onnxFile: File, tfliteFile: File?, wantGpu: Boolean): Selection {
+    fun create(cpuOnnxFile: File?, tfliteFile: File?, wantGpu: Boolean): Selection {
         val available = if (wantGpu) availableAccelerators() else emptySet()
         val preference = decide(
             wantGpu = wantGpu,
@@ -73,9 +75,7 @@ object InferenceEngineFactory {
             gpuAcceleratorAvailable = available.contains(Accelerator.GPU),
             availableAccelerators = available.joinToString(",") { it.name }
         )
-        if (!preference.preferGpu) {
-            return Selection(OnnxEngine.create(onnxFile), InferenceProvider.production, preference.fallbackReason)
-        }
+        if (!preference.preferGpu) return cpuSelection(cpuOnnxFile, preference.fallbackReason)
 
         val gpu = runCatching {
             LitertAcceleratedEngine.create(tfliteFile!!, GPU_PROVIDER) as InferenceEngine
@@ -83,14 +83,21 @@ object InferenceEngineFactory {
         return gpu.fold(
             onSuccess = { Selection(it, GPU_PROVIDER, null) },
             onFailure = { error ->
-                Selection(
-                    OnnxEngine.create(onnxFile),
-                    InferenceProvider.production,
-                    "GPU 模型加载失败（${error.message ?: error::class.java.simpleName}），已用 CPU"
-                )
+                val reason = "GPU 模型加载失败（${error.message ?: error::class.java.simpleName}），已回落 CPU 档"
+                // 没有可回落的 CPU 档时把 GPU 的失败原样抛出，由来源状态显示真实原因。
+                runCatching { cpuSelection(cpuOnnxFile, reason) }.getOrElse { throw error }
             }
         )
     }
+
+    private fun cpuSelection(cpuOnnxFile: File?, reason: String?): Selection {
+        val file = cpuOnnxFile
+            ?: error("没有可用的 CPU 档模型；请先下载同尺寸的 CPU 档")
+        return Selection(OnnxEngine.create(file), InferenceProvider.production, reason)
+    }
+
+    /** 本机是否有可用的 GPU 加速器；判定与 [create] 同源，同一进程内只探测一次。 */
+    fun hasGpuAccelerator(): Boolean = availableAccelerators().contains(Accelerator.GPU)
 
     /**
      * 本机可见的 LiteRT 加速器；同一进程内结果固定，问一次就够。

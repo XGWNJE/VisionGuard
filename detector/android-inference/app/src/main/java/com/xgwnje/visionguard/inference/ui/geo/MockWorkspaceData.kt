@@ -7,6 +7,7 @@ import com.xgwnje.visionguard.inference.detect.DetectionBox
 import com.xgwnje.visionguard.inference.detect.DetectionParams
 import com.xgwnje.visionguard.inference.detect.MaskRegion
 import com.xgwnje.visionguard.inference.runtime.MessageTone
+import com.xgwnje.visionguard.inference.model.ModelInferenceTarget
 import com.xgwnje.visionguard.inference.runtime.ModelDownloadState
 import com.xgwnje.visionguard.inference.runtime.ModelState
 import com.xgwnje.visionguard.inference.runtime.RuntimeUiState
@@ -39,7 +40,7 @@ object MockWorkspaceData {
                     confidencePercent = 45,
                     targetFps = 3,
                     cooldownSeconds = 5,
-                    modelKey = "yolo26n_320",
+                    modelKey = "yolo26m_320_int8",
                     watchedClasses = setOf("person", "car", "dog")
                 ),
                 masks = listOf(MaskRegion(0.06f, 0.10f, 0.18f, 0.42f)),
@@ -74,7 +75,7 @@ object MockWorkspaceData {
                     confidencePercent = 60,
                     targetFps = 2,
                     cooldownSeconds = 30,
-                    modelKey = "yolo26n_640",
+                    modelKey = "yolo26m_640_int8",
                     watchedClasses = setOf("person")
                 ),
                 masks = emptyList(),
@@ -98,7 +99,7 @@ object MockWorkspaceData {
                     confidencePercent = 45,
                     targetFps = 3,
                     cooldownSeconds = 5,
-                    modelKey = "yolo26s_320",
+                    modelKey = "yolo26m_640",
                     watchedClasses = setOf("person", "bicycle", "car", "motorcycle", "bus", "truck", "cat", "dog", "backpack", "handbag")
                 ),
                 masks = emptyList(),
@@ -122,7 +123,7 @@ object MockWorkspaceData {
                     confidencePercent = 45,
                     targetFps = 3,
                     cooldownSeconds = 5,
-                    modelKey = "yolo26n_320",
+                    modelKey = "yolo26m_320_int8",
                     watchedClasses = setOf("person")
                 ),
                 masks = emptyList(),
@@ -136,19 +137,18 @@ object MockWorkspaceData {
         )
 
         val models = listOf(
-            ModelState("yolo26n_320", "YOLO26N · 320", true),
-            ModelState("yolo26n_640", "YOLO26N · 640", true),
-            ModelState("yolo26s_320", "YOLO26S · 320", false),
-            ModelState("yolo26s_640", "YOLO26S · 640", false),
-            ModelState("yolo26m_320", "YOLO26M · 320", true),
-            ModelState("yolo26m_640", "YOLO26M · 640", false)
+            ModelState("yolo26m_320", "YOLO26M · 320 GPU", downloaded = true, target = ModelInferenceTarget.Gpu),
+            ModelState("yolo26m_320_int8", "YOLO26M · 320 CPU", downloaded = true),
+            ModelState("yolo26m_640", "YOLO26M · 640 GPU", downloaded = false, target = ModelInferenceTarget.Gpu),
+            ModelState("yolo26m_640_int8", "YOLO26M · 640 CPU", downloaded = true)
         )
 
         return RuntimeUiState(
             sources = sources,
             selectedSourceId = "camera",
             models = models,
-            downloads = mapOf("yolo26s_320" to ModelDownloadState(4_100_000, 9_800_000)),
+            gpuAvailable = true,
+            downloads = mapOf("yolo26m_640" to ModelDownloadState(41_000_000, 81_853_048)),
             outboxSize = 2,
             alertCount = 27,
             lastAlertAtMs = nowElapsedMs - 9_400,

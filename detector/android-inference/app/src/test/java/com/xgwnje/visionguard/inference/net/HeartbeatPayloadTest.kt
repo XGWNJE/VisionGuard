@@ -24,7 +24,7 @@ class HeartbeatPayloadTest {
         sourceName = "来源 $id",
         isMonitoring = monitoring,
         isReady = ready,
-        modelKey = "yolo26n_320",
+        modelKey = "yolo26m_320_int8",
         actualFps = fps,
         error = if (ready) null else "等待画面",
         activeBackend = backend,
@@ -51,8 +51,8 @@ class HeartbeatPayloadTest {
                 deviceId = "dev-1",
                 deviceName = "视觉推理节点 · Pixel",
                 sources = sources,
-                modelOptions = listOf("yolo26n_320"),
-                modelLabels = HeartbeatPayload.standardModelLabels(listOf("yolo26n_320")),
+                modelOptions = listOf("yolo26m_320_int8"),
+                modelLabels = HeartbeatPayload.standardModelLabels(listOf("yolo26m_320_int8")),
                 inferenceBackends = inferenceBackends,
                 inferenceLimits = inferenceLimits,
                 overConcurrencyLimit = overConcurrencyLimit
@@ -113,7 +113,7 @@ class HeartbeatPayloadTest {
         assertEquals(0.45, json["confidence"].asDouble, 1e-6)
         assertEquals("person", json["targets"].asString)
         assertEquals(3, json["targetSamplingRate"].asInt)
-        assertEquals("yolo26n_320", json["modelKey"].asString)
+        assertEquals("yolo26m_320_int8", json["modelKey"].asString)
         assertEquals(1, json["modelOptions"].asJsonArray.size())
     }
 
@@ -142,7 +142,7 @@ class HeartbeatPayloadTest {
     @Test
     fun `模型标签完整回传八十类中英文`() {
         val json = build(listOf(source("camera", true, true)))
-        val labels = json["modelLabels"].asJsonObject["yolo26n_320"].asJsonArray
+        val labels = json["modelLabels"].asJsonObject["yolo26m_320_int8"].asJsonArray
         assertEquals(80, labels.size())
         assertEquals("person", labels[0].asJsonObject["value"].asString)
         assertEquals("人", labels[0].asJsonObject["label"].asString)

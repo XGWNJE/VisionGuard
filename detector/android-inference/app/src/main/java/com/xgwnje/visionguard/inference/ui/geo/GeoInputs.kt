@@ -555,6 +555,7 @@ fun GeoSlotCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     trailingIcon: ImageVector? = null,
+    trailingDescription: String? = null,
     onTrailingClick: (() -> Unit)? = null
 ) {
     val background = when {
@@ -589,12 +590,11 @@ fun GeoSlotCard(
                 )
             }
         }
-        // 未下载时始终给下载入口（含当前选中项，否则选中的未下载模型没有下载入口）；
-        // 已下载的选中项用对勾表达选中。
+        // 右下角是这一项的产物操作（模型档位是「下载 / 删除」，见调用方）；已下载的选中项另用对勾表达选中。
         if (trailingIcon != null && onTrailingClick != null) {
             GeoIconKey(
                 trailingIcon,
-                "下载 $title",
+                trailingDescription ?: "下载 $title",
                 onClick = onTrailingClick,
                 modifier = Modifier.align(Alignment.BottomEnd).size(Geo.Touch)
             )

@@ -543,10 +543,10 @@ function Test-RequiredModels {
     # 只会让下发出去的机器下载不到模型、legacy 档（Win7）直接无法推理。
     # 因此这里按两个档位的模型键逐项校验，缺任何一个都中止发布，而不是少带一个包。
     $expectedModels = @(
-        # modern 档（Win10/11）：YOLO26
-        'yolo26n_320', 'yolo26n_640', 'yolo26s_320', 'yolo26s_640', 'yolo26m_320', 'yolo26m_640',
-        # legacy 档（Win7 SP1）：YOLOv5
-        'yolov5nu_320', 'yolov5nu_640', 'yolov5su_320', 'yolov5su_640', 'yolov5mu_320', 'yolov5mu_640'
+        # modern 档（Win10/11）：YOLO26，固定 320 / 640
+        'yolo26m_320', 'yolo26m_640',
+        # legacy 档（Win7 SP1）：YOLOv5，低端机只用 320 的 su / mu
+        'yolov5su_320', 'yolov5mu_320'
     )
     $assetsDir = Join-Path $repoRoot 'detector\windows-wpf\Assets'
     $missing = New-Object System.Collections.Generic.List[string]

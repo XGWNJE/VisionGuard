@@ -45,22 +45,24 @@ class QuantizedModelContractTest {
 
     @Test
     fun `量化产物命名规则与模型键一致`() {
-        // 量化产物按 `<键>_int8.onnx` 命名；名字变了这里先失败。
-        // 注意：量化版当前**不在可选清单**里（服务端未投放），但命名与识别规则要一直成立，
-        // 否则将来启用时又要重新对一遍。
-        val key = ModelKeys.baseKeys.first()
-        assertEquals("yolo26n_320", key)
+        // CPU 档按 `<键>.onnx` 命名（键名自带 `_int8`），GPU 档按 `<基名>_gpu.tflite`；名字变了这里先失败。
+        val key = ModelKeys.cpuKeys.first()
+        assertEquals("yolo26m_320_int8", key)
+        val base = ModelKeys.baseOf(key)
+        assertEquals("yolo26m_320", base)
 
         val modelsDir = temporary.newFolder("models")
         java.io.File(modelsDir, "${key}.onnx").writeText("x")
 
         val store = ModelStore(modelsDir, "http://127.0.0.1:1")
         assertEquals("${key}.onnx", store.file(key).name)
-        assertEquals("${key}_int8.onnx", store.file("${key}_int8").name)
+        assertEquals("${base}_gpu.tflite", store.file(base).name)
 
-        assertTrue(ModelKeys.isQuantized("${key}_int8"))
-        assertEquals(key, ModelKeys.baseOf("${key}_int8"))
-        assertTrue(ModelKeys.displayName("${key}_int8").contains("INT8"))
+        assertTrue(ModelKeys.isQuantized(key))
+        assertTrue(ModelKeys.supportsGpu(base))
+        assertEquals(base, ModelKeys.baseOf(key))
+        assertTrue(ModelKeys.displayName(key).endsWith("CPU"))
+        assertEquals(key, ModelKeys.cpuTierOf(base))
     }
 
     /**

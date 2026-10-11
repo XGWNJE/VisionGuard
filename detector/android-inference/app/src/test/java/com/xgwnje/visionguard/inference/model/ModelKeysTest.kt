@@ -1,5 +1,6 @@
 package com.xgwnje.visionguard.inference.model
 
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -9,9 +10,9 @@ import org.junit.rules.TemporaryFolder
 /**
  * 模型清单契约。
  *
- * `ModelKeys.keys` 直接驱动参数抽屉的模型选择器（未下载的会显示下载入口），也决定默认选择的
- * 模型、心跳上报的选项与标签、以及下载路径。所以「清单里有哪些键」是**用户可见且影响发布行为**
- * 的约定：量化版没投放时不能出现在清单里，否则用户点了下载必然失败。
+ * `ModelKeys.keys` 直接驱动来源参数抽屉的模型插槽（未下载的不可选、就地带下载入口），
+ * 也决定默认档位、心跳上报的选项与标签、下载路径与清单外文件的清理范围。所以「清单里有哪些档位」
+ * 是**用户可见且影响发布行为**的约定：服务端没有的产物不能出现在清单里，否则用户点了必然失败。
  */
 class ModelKeysTest {
 
@@ -19,106 +20,100 @@ class ModelKeysTest {
     val temporary = TemporaryFolder()
 
     @Test
-    fun `可选清单是本体与量化版合起来的十二项`() {
-        assertEquals(6, ModelKeys.baseKeys.size)
-        assertEquals(12, ModelKeys.keys.size)
-        ModelKeys.baseKeys.forEach { base ->
-            assertTrue("缺本体：$base", ModelKeys.isSupported(base))
-            assertTrue("缺量化版：$base${ModelKeys.INT8_SUFFIX}", ModelKeys.isSupported(base + ModelKeys.INT8_SUFFIX))
-        }
-        // 服务端必须同时有本体与量化产物，否则清单里的键点了会失败
+    fun `清单是两条后端路线乘两个尺寸的四档`() {
+        assertEquals(listOf("yolo26m_320", "yolo26m_640"), ModelKeys.gpuKeys)
+        assertEquals(listOf("yolo26m_320_int8", "yolo26m_640_int8"), ModelKeys.cpuKeys)
+        // 同一尺寸的 GPU 与 CPU 成对出现，界面顺序即此
+        assertEquals(
+            listOf("yolo26m_320", "yolo26m_320_int8", "yolo26m_640", "yolo26m_640_int8"),
+            ModelKeys.keys
+        )
+    }
+
+    @Test
+    fun `GPU 档只发截断图、CPU 档只发量化本体`() {
+        // GPU 档不下 ONNX 本体：CPU 路线的正路是同尺寸 INT8，本体只会白占一倍磁盘
+        assertEquals(ModelFormat.GPU_TFLITE, ModelKeys.formatOf("yolo26m_640"))
+        assertEquals(ModelFormat.ONNX, ModelKeys.formatOf("yolo26m_640_int8"))
+        assertEquals("yolo26m_640_gpu.tflite", ModelKeys.fileName("yolo26m_640"))
+        assertEquals("yolo26m_320_gpu.tflite", ModelKeys.fileName("yolo26m_320"))
+        assertEquals("yolo26m_640_int8.onnx", ModelKeys.fileName("yolo26m_640_int8"))
+    }
+
+    @Test
+    fun `每档都能找到同尺寸的 CPU 回落档`() {
         ModelKeys.keys.forEach { key ->
-            assertTrue("服务端按 <键>.onnx 分发，键要能拼出文件名：$key", ModelKeys.fileName(key).endsWith(".onnx"))
+            val cpu = ModelKeys.cpuTierOf(key)
+            assertTrue("缺 CPU 回落档：$key", cpu != null && ModelKeys.cpuKeys.contains(cpu))
+            // 回落只换后端、不换尺寸
+            assertEquals(ModelKeys.baseOf(key), ModelKeys.baseOf(cpu!!))
         }
     }
 
     @Test
-    fun `派生清单保留本体与量化版交替的顺序`() {
-        // 顺序不能变：defaultModelKey 取「第一个已下载的键」，量化版排在各自本体之后，
-        // 新装设备的默认模型才仍是 FP32。
-        val derived = ModelKeys.derivedKeys()
-        assertEquals(ModelKeys.baseKeys.size * 2, derived.size)
-        assertEquals(derived, ModelKeys.keys)
-        ModelKeys.baseKeys.forEachIndexed { index, base ->
-            assertEquals(base, derived[index * 2])
-            assertEquals("${base}${ModelKeys.INT8_SUFFIX}", derived[index * 2 + 1])
-        }
+    fun `默认档是最小的 CPU 档`() {
+        assertEquals("yolo26m_320_int8", ModelKeys.defaultKey)
+        assertTrue(ModelKeys.isQuantized(ModelKeys.defaultKey))
+        assertTrue(!ModelKeys.supportsGpu(ModelKeys.defaultKey))
     }
 
     @Test
-    fun `量化版不参与 GPU 加速`() {
-        // 量化产物只有 .onnx（ONNX Runtime CPU 的正路），没有 GPU 产物；送去 LiteRT 会在
-        // 写缓冲时报尺寸不符。supportsGpu 必须把它们挡在外面。
-        ModelKeys.keys.filter { ModelKeys.isQuantized(it) }.forEach { key ->
-            assertTrue("量化版不该有 GPU 产物入口：$key", !ModelKeys.supportsGpu(key))
-        }
-        ModelKeys.gpuKeys.forEach { key ->
-            assertTrue("GPU 键本身不能是量化版：$key", !ModelKeys.isQuantized(key))
-            assertTrue(ModelKeys.supportsGpu(key))
-        }
-    }
-
-    @Test
-    fun `默认模型仍是首个 FP32 本体`() {
-        assertEquals("yolo26n_320", ModelKeys.defaultKey)
-        assertTrue(!ModelKeys.isQuantized(ModelKeys.defaultKey))
-        assertEquals(ModelKeys.baseKeys.first(), ModelKeys.defaultKey)
-    }
-
-    @Test
-    fun `量化版键可以还原成本体`() {
-        ModelKeys.baseKeys.forEach { base ->
-            val quantized = base + ModelKeys.INT8_SUFFIX
-            assertTrue(ModelKeys.isQuantized(quantized))
-            assertEquals(base, ModelKeys.baseOf(quantized))
-            assertTrue(!ModelKeys.isQuantized(base))
-            assertEquals(base, ModelKeys.baseOf(base))
-        }
-        assertTrue(!ModelKeys.isSupported("yolo26n_320_int16"))
-        assertTrue(!ModelKeys.isSupported("yolo26x_320"))
-    }
-
-    @Test
-    fun `展示名区分量化版`() {
-        // 变体名按既有实现大写（`YOLO26N · 320`），不在这里改风格。
-        assertEquals("YOLO26N · 320", ModelKeys.displayName("yolo26n_320"))
-        assertEquals("YOLO26N · 320 INT8", ModelKeys.displayName("yolo26n_320_int8"))
-        assertEquals("YOLO26M · 640 INT8", ModelKeys.displayName("yolo26m_640_int8"))
-        assertEquals("YOLO26S · 640", ModelKeys.displayName("yolo26s_640"))
-        // 无法识别的键原样返回，不做猜测。
+    fun `后端写在展示名里`() {
+        assertEquals("YOLO26M · 320 GPU", ModelKeys.displayName("yolo26m_320"))
+        assertEquals("YOLO26M · 320 CPU", ModelKeys.displayName("yolo26m_320_int8"))
+        assertEquals("YOLO26M · 640 GPU", ModelKeys.displayName("yolo26m_640"))
+        assertEquals("YOLO26M · 640 CPU", ModelKeys.displayName("yolo26m_640_int8"))
+        // 无法识别的键原样返回，不做猜测
         assertEquals("unknown_key", ModelKeys.displayName("unknown_key"))
     }
 
     @Test
-    fun `文件名与键一致，服务端按文件名静态分发`() {
-        assertEquals("yolo26n_320.onnx", ModelKeys.fileName("yolo26n_320"))
-        assertEquals("yolo26n_320_int8.onnx", ModelKeys.fileName("yolo26n_320_int8"))
-        // GPU 产物是同一个键的另一个文件名，不引入服务端映射表
-        assertEquals("yolo26m_640_gpu.tflite", ModelKeys.fileName("yolo26m_640", ModelFormat.GPU_TFLITE))
-    }
-
-    @Test
-    fun `GPU 产物只在实测有效的键上开放`() {
-        // 320 档 GPU 反而比 CPU 慢，不能开放；只放 640 里实测收益最大的那一个
-        assertEquals(listOf("yolo26m_640"), ModelKeys.gpuKeys)
-        assertTrue(ModelKeys.supportsGpu("yolo26m_640"))
-        assertTrue(!ModelKeys.supportsGpu("yolo26n_320"))
-        assertTrue(!ModelKeys.supportsGpu("yolo26n_640"))
-        ModelKeys.gpuKeys.forEach { key ->
-            assertTrue("GPU 键必须在可选清单里：$key", ModelKeys.keys.contains(key))
+    fun `已下架的旧档位不再被支持`() {
+        listOf(
+            "yolo26n_320", "yolo26n_640", "yolo26s_320", "yolo26s_640",
+            "yolo26n_320_int8", "yolo26s_640_int8", "yolo26m_320_int16", "yolo26x_320"
+        ).forEach { key ->
+            assertTrue("旧档位不该在清单里：$key", !ModelKeys.isSupported(key))
         }
     }
 
     @Test
-    fun `GPU 产物下载只在支持该组合时可用`() {
-        val dir = temporary.newFolder("models-gpu")
+    fun `下载产物落到对应文件名`() {
+        val dir = temporary.newFolder("models")
         val store = ModelStore(dir, "http://127.0.0.1:1")
-        assertEquals("yolo26m_640_gpu.tflite", store.file("yolo26m_640", ModelFormat.GPU_TFLITE).name)
-        assertEquals("yolo26m_640_gpu.tflite", store.gpuFile("yolo26m_640")?.name)
-        // 没有 GPU 产物的键不给文件入口，避免拿错产物去跑正式链路
-        assertEquals(null, store.gpuFile("yolo26n_320"))
-        assertTrue(!store.isGpuReady("yolo26n_320"))
-        assertTrue(!store.isGpuReady("yolo26m_640"))
+        assertEquals("yolo26m_640_gpu.tflite", store.file("yolo26m_640").name)
+        assertEquals("yolo26m_320_int8.onnx", store.file("yolo26m_320_int8").name)
+        // GPU 档没有 ONNX 本体入口，但 CPU 引擎要能拿到同尺寸的量化本体
+        assertEquals("yolo26m_320_int8.onnx", store.cpuFile("yolo26m_320")?.name)
+        assertEquals("yolo26m_640_int8.onnx", store.cpuFile("yolo26m_640_int8")?.name)
+        assertEquals(null, store.gpuFile("yolo26m_640_int8"))
+    }
+
+    @Test
+    fun `空目录里没有任何档位算已下载`() {
+        val dir = temporary.newFolder("models-empty")
+        val store = ModelStore(dir, "http://127.0.0.1:1")
+        ModelKeys.keys.forEach { key ->
+            assertTrue("空目录不该算已下载：$key", !store.isDownloaded(key))
+        }
+        assertTrue(store.downloadedKeys().isEmpty())
+    }
+
+    @Test
+    fun `清单外的残留文件会被清理`() {
+        val dir = temporary.newFolder("models-cleanup")
+        val staleOnnx = java.io.File(dir, "yolo26n_320.onnx").apply { writeBytes(ByteArray(2 * 1024 * 1024)) }
+        val staleGpu = java.io.File(dir, "yolo26m_640_anchor_float32.tflite").apply { writeBytes(ByteArray(4096)) }
+        val staleTmp = java.io.File(dir, "yolo26m_320_int8.onnx.tmp").apply { writeBytes(ByteArray(1024)) }
+        val kept = java.io.File(dir, "yolo26m_320_int8.onnx").apply { writeBytes(ByteArray(2 * 1024 * 1024)) }
+
+        val store = ModelStore(dir, "http://127.0.0.1:1")
+        val (files, bytes) = runBlocking { store.cleanupUnknownFiles() }
+
+        assertEquals(3, files)
+        assertTrue(bytes > 0)
+        assertTrue(!staleOnnx.exists() && !staleGpu.exists() && !staleTmp.exists())
+        assertTrue("清单内的文件不能被删：${kept.name}", kept.exists())
     }
 
     @Test
@@ -127,13 +122,5 @@ class ModelKeysTest {
         ModelKeys.keys.forEach { assertTrue("键过长：$it", it.length <= 64) }
         // 端侧一次最多上报 16 个选项。
         assertTrue(ModelKeys.keys.size <= 16)
-    }
-
-    @Test
-    fun `下载产物落到键同名文件`() {
-        val dir = temporary.newFolder("models")
-        val store = ModelStore(dir, "http://127.0.0.1:1")
-        assertEquals("yolo26n_640_int8.onnx", store.file("yolo26n_640_int8").name)
-        assertEquals("yolo26n_640.onnx", store.file("yolo26n_640").name)
     }
 }

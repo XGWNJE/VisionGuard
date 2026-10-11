@@ -102,13 +102,13 @@ if ($Target -in @('Windows', 'PrepareWindows')) {
     )
     foreach ($taskIndex in 1..$taskCount) {
         $taskName = if ($Scene -eq 'limits') { ($taskNamePrefix + ('SourceName0123456789' * 5)).Substring(0,64) } else { "$taskNamePrefix Source $taskIndex" }
-        $taskLines += "Source.$taskIndex.Name=$taskName", "Source.$taskIndex.Initialized=True", "Source.$taskIndex.SourceId=preview-$taskIndex", "Source.$taskIndex.Threshold=95", "Source.$taskIndex.Cooldown=300", "Source.$taskIndex.Fps=5", "Source.$taskIndex.ModelKey=yolo26n_320", "Source.$taskIndex.Targets=person", "Source.$taskIndex.CaptureMode=ScreenRegion", "Source.$taskIndex.ScreenRegion=", "Source.$taskIndex.Masks="
+        $taskLines += "Source.$taskIndex.Name=$taskName", "Source.$taskIndex.Initialized=True", "Source.$taskIndex.SourceId=preview-$taskIndex", "Source.$taskIndex.Threshold=95", "Source.$taskIndex.Cooldown=300", "Source.$taskIndex.Fps=5", "Source.$taskIndex.ModelKey=yolo26m_320", "Source.$taskIndex.Targets=person", "Source.$taskIndex.CaptureMode=ScreenRegion", "Source.$taskIndex.ScreenRegion=", "Source.$taskIndex.Masks="
     }
     $taskConfiguration = Join-Path $taskWindows 'environment.json'
     $taskValues = @{ serviceUrl = 'http://127.0.0.1:4318'; accountDir = (Join-Path $taskWindows 'accounts'); settingsPath = $taskSettings; modelsDirectory = (Join-Path $taskWindows 'models'); logDirectory = (Join-Path $taskWindows 'logs') }
     New-Item -ItemType Directory -Force -Path $taskValues.modelsDirectory | Out-Null
-    $taskCachedModel = Join-Path $env:APPDATA 'VisionGuard\models\yolo26n_320.onnx'
-    $taskPreviewModel = Join-Path $taskValues.modelsDirectory 'yolo26n_320.onnx'
+    $taskCachedModel = Join-Path $env:APPDATA 'VisionGuard\models\yolo26m_320.onnx'
+    $taskPreviewModel = Join-Path $taskValues.modelsDirectory 'yolo26m_320.onnx'
     if ((Test-Path $taskCachedModel) -and !(Test-Path $taskPreviewModel)) { Copy-Item -LiteralPath $taskCachedModel -Destination $taskPreviewModel }
     [IO.File]::WriteAllText($taskSettings, ($taskLines -join "`r`n"), (New-Object Text.UTF8Encoding($false)))
     [IO.File]::WriteAllText($taskConfiguration, ($taskValues | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))

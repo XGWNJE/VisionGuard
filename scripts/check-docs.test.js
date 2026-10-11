@@ -249,9 +249,12 @@ test('the task list keeps its fixed chapters and top-priority placement', () => 
   assert.ok(renamed[0].includes('### 高：能被立刻解决、且不解决就一直硌着'));
 
   // 章节齐全但把标着「最高优先级」的条目挪到中档（检查按行号推进，挪到前面必须失效）。
+  // 取「高」档下的第一条，不绑定具体编号，任务清单增删条目不会让这条用例失效。
   const lines = valid.split(/\r?\n/);
-  const promotionLine = lines.findIndex(line => line.startsWith('- [ ] **1.'));
-  const promotion = lines.splice(promotionLine, 1)[0].replace('- [ ] **1.', '- [ ] 最高优先级 · **1.');
+  const topChapterLine = lines.indexOf('### 高：能被立刻解决、且不解决就一直硌着');
+  const promotionLine = lines.findIndex((line, index) => index > topChapterLine && /^- \[[ x]\] /.test(line));
+  assert.notEqual(promotionLine, -1);
+  const promotion = lines.splice(promotionLine, 1)[0].replace('- [ ] ', '- [ ] 最高优先级 · ');
   lines.splice(lines.indexOf('### 中：影响真实部署质量，但可以排期') + 1, 0, promotion);
   const demoted = audit(lines.join('\n'));
   assert.equal(demoted.length, 1);

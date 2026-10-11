@@ -34,7 +34,7 @@ internal static class Program
                 using var transport = new ServerPushService();
                 IReadOnlyList<RemoteStreamInfo> streams = Array.Empty<RemoteStreamInfo>(); var gate = new object();
                 transport.StreamsReceived += (_, values) => { lock (gate) streams = values; };
-                transport.UpdateHeartbeatParams(false, true, 5, .5f, "person", 3, "yolo26n_320", new[] { "yolo26n_320" });
+                transport.UpdateHeartbeatParams(false, true, 5, .5f, "person", 3, "yolo26m_320", new[] { "yolo26m_320" });
                 transport.Configure(AccountSession.ServiceUrl, session.token, session.device.deviceId, session.device.deviceName);
                 var sequences = new Dictionary<string, (string session, long sequence)>(); int received = 0;
                 var watch = Stopwatch.StartNew();

@@ -267,9 +267,10 @@ test('release preflight refuses to package Windows without every model the detec
 
   // 闸门里列出的模型键必须覆盖 ModelManager 里两个档位能选的全部键，
   // 否则新增模型时会静默漏出发布包（客户端选得到、服务器没有）。
+  // 当前是每档两项：modern 的 320 / 640 本体，legacy 的 320 su / mu。
   const declaredKeys = [...modelManager.matchAll(/"([a-z0-9]+_[0-9]{3})"/g)].map((match) => match[1]);
   const uniqueKeys = [...new Set(declaredKeys)].sort();
-  assert.ok(uniqueKeys.length >= 12, `expected both profile model lists in ModelManager, found ${uniqueKeys.join(', ')}`);
+  assert.ok(uniqueKeys.length >= 4, `expected both profile model lists in ModelManager, found ${uniqueKeys.join(', ')}`);
   for (const key of uniqueKeys) {
     assert.match(script, new RegExp(`'${key}'`), `release preflight does not require ${key}`);
   }

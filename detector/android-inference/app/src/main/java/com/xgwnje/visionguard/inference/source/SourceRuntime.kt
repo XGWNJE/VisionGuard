@@ -9,6 +9,7 @@ import com.xgwnje.visionguard.inference.detect.YoloOutputParser
 import com.xgwnje.visionguard.inference.model.InferenceEngine
 import com.xgwnje.visionguard.inference.model.InferenceEngineFactory
 import com.xgwnje.visionguard.inference.model.InferenceLimits
+import com.xgwnje.visionguard.inference.model.ModelKeys
 import com.xgwnje.visionguard.inference.model.ModelStore
 import com.xgwnje.visionguard.inference.net.RemoteFrameStore
 import com.xgwnje.visionguard.inference.time.NtpSync
@@ -89,13 +90,15 @@ class SourceRuntime(
             return reason
         }
 
-        val modelFile = models.file(config.params.modelKey)
+        val key = config.params.modelKey
+        // 档位即后端：GPU 档只加载截断图，CPU 引擎用同尺寸 CPU 档的量化本体（回落目标也是它）。
+        val gpuFile = models.gpuFile(key)
         val created = withContext(Dispatchers.IO) {
             runCatching {
                 InferenceEngineFactory.create(
-                    onnxFile = modelFile,
-                    tfliteFile = models.gpuFile(config.params.modelKey),
-                    wantGpu = models.isGpuReady(config.params.modelKey)
+                    cpuOnnxFile = models.cpuFile(key),
+                    tfliteFile = gpuFile,
+                    wantGpu = gpuFile != null
                 )
             }
         }
@@ -196,7 +199,14 @@ class SourceRuntime(
         if (!SourceConfig.isValidSourceId(config.sourceId)) return "来源身份不合法"
         SourceConfig.validateName(config.sourceName)?.let { return it }
         if (!models.isDownloaded(config.params.modelKey)) {
-            return "模型 ${config.params.modelKey} 未下载，请在“全局设置 → 推理与模型”中下载后重试。"
+            return "模型 ${ModelKeys.displayName(config.params.modelKey)} 未下载，请在来源参数抽屉的「模型插槽」里下载后重试。"
+        }
+        // GPU 档要有一条 CPU 回落路：GPU 编译失败时靠同尺寸 INT8 顶上，它不在就没有退路。
+        if (ModelKeys.supportsGpu(config.params.modelKey)) {
+            val cpuKey = ModelKeys.cpuTierOf(config.params.modelKey)
+            if (cpuKey != null && !models.isDownloaded(cpuKey)) {
+                return "GPU 档需要同尺寸的 ${ModelKeys.displayName(cpuKey)} 作为回落，请先在模型插槽里下载"
+            }
         }
         com.xgwnje.visionguard.inference.detect.DetectionParams.validateConfidence(config.params.confidencePercent)?.let { return it }
         com.xgwnje.visionguard.inference.detect.DetectionParams.validateTargetFps(config.params.targetFps)?.let { return it }

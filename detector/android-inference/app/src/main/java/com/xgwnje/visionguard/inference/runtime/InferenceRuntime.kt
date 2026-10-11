@@ -22,8 +22,8 @@ import com.xgwnje.visionguard.inference.capture.LocalCameraStatus
 import com.xgwnje.visionguard.inference.detect.ArgbImage
 import com.xgwnje.visionguard.inference.detect.DetectionParams
 import com.xgwnje.visionguard.inference.detect.MaskRegion
+import com.xgwnje.visionguard.inference.model.InferenceEngineFactory
 import com.xgwnje.visionguard.inference.model.InferenceLimits
-import com.xgwnje.visionguard.inference.model.ModelFormat
 import com.xgwnje.visionguard.inference.model.ModelInferenceTarget
 import com.xgwnje.visionguard.inference.model.ModelKeys
 import com.xgwnje.visionguard.inference.model.ModelStore
@@ -57,22 +57,18 @@ import java.security.MessageDigest
 /**
  * 模型资源视图。
  *
- * 「这个模型跑在哪」必须一眼看清：同一个模型有 FP32 本体、量化版，个别键还有 GPU 产物，
- * 三种组合对应三种后端。所以每项都算好 [target]（GPU / CPU + 精度），界面直接显示它，
- * 而不是把 GPU 产物列成另一个看起来无关的模型。
+ * 档位本身携带后端（GPU 档只有截断图、CPU 档只有量化本体），所以每项只需要算好 [target]：
+ * 「该档此刻跑在 GPU 还是 CPU」，界面直接显示它。
  */
 data class ModelState(
     val key: String,
     val displayName: String,
     val downloaded: Boolean,
-    /** 是否提供 GPU 版本下载入口（量化版恒为 false，见 `ModelKeys.supportsGpu`）。 */
-    val gpuSupported: Boolean = false,
-    val gpuDownloaded: Boolean = false,
     /**
-     * 该模型当前的推理目标。GPU 产物已下载 → 走 GPU；否则按精度落 ONNX Runtime CPU。
-     * GPU 产物没下载时给出下载提示，避免"以为在加速其实没有"。
+     * 该档位当前的推理目标。GPU 档要同时满足「截断图已下载」与「本机有 GPU 加速器」才是 GPU，
+     * 否则按 CPU 显示——避免「以为在加速其实没有」。
      */
-    val target: ModelInferenceTarget = ModelInferenceTarget.CpuFp32
+    val target: ModelInferenceTarget = ModelInferenceTarget.Cpu
 )
 
 /** 下载进度视图。 */
@@ -88,6 +84,8 @@ data class RuntimeUiState(
     val sources: List<SourceView> = emptyList(),
     val selectedSourceId: String? = null,
     val models: List<ModelState> = emptyList(),
+    /** 本机是否有可用的 GPU 加速器；GPU 档在无加速器的设备上不可选。 */
+    val gpuAvailable: Boolean = false,
     val downloads: Map<String, ModelDownloadState> = emptyMap(),
     val outboxSize: Int = 0,
     val recoveryWarning: String? = null,
@@ -165,6 +163,8 @@ class InferenceRuntime private constructor(private val context: Context) {
             }
         }
         updateModels()
+        // 档位收敛后清掉清单外的历史模型（旧 n/s 档与旧 GPU 产物），只动 models 目录。
+        scope.launch { withContext(Dispatchers.IO) { runCatching { models.cleanupUnknownFiles() } } }
         scope.launch { runCatching { withContext(Dispatchers.IO) { NtpSync.syncOnce() } } }
     }
 
@@ -293,8 +293,9 @@ class InferenceRuntime private constructor(private val context: Context) {
         return null
     }
 
+    /** 新来源的默认档：已下载的 CPU 档优先（GPU 用不了也能直接跑），否则用清单默认档。 */
     private fun defaultModelKey(): String =
-        models.downloadedKeys().firstOrNull() ?: ModelKeys.defaultKey
+        models.downloadedKeys().firstOrNull { ModelKeys.isQuantized(it) } ?: ModelKeys.defaultKey
 
     suspend fun removeSource(sourceId: String): String? {
         val runtime = runtimes[sourceId] ?: return "来源不存在"
@@ -439,7 +440,7 @@ class InferenceRuntime private constructor(private val context: Context) {
             modelLabels = HeartbeatPayload.standardModelLabels(ModelKeys.keys),
             components = mapOf("detectorApp" to if (mutableState.value.runningSourceCount > 0) "running" else "stopped"),
             // 只上报本机真实可用的后端：GPU 产物没下载的键不宣告 gpu，避免控制台显示的能力与实机不符。
-            inferenceBackends = configured.associate { it.params.modelKey to if (gpuReady(it.params.modelKey)) "gpu" else "cpu" },
+            inferenceBackends = configured.associate { it.params.modelKey to if (gpuActive(it.params.modelKey)) "gpu" else "cpu" },
             inferenceLimits = InferenceLimits.declaredLimits(),
             overConcurrencyLimit = configured.size > concurrencyLimit()
         )
@@ -644,52 +645,49 @@ class InferenceRuntime private constructor(private val context: Context) {
     // ── 模型 ────────────────────────────────────────────────────────
 
     private fun updateModels() {
-        updateState {
-            it.copy(
-                models = ModelKeys.keys.map { key ->
-                    val gpuReady = models.isGpuReady(key)
-                    ModelState(
-                        key = key,
-                        displayName = ModelKeys.displayName(key),
-                        downloaded = models.isDownloaded(key),
-                        gpuSupported = ModelKeys.supportsGpu(key),
-                        gpuDownloaded = gpuReady,
-                        target = ModelInferenceTarget.resolve(key, gpuReady)
-                    )
-                }
-            )
+        scope.launch {
+            // 探测加速器要建 LiteRT 环境，放到 IO 上做；同一进程内结果有缓存。
+            val gpuAvailable = withContext(Dispatchers.IO) {
+                runCatching { InferenceEngineFactory.hasGpuAccelerator() }.getOrDefault(false)
+            }
+            updateState {
+                it.copy(
+                    gpuAvailable = gpuAvailable,
+                    models = ModelKeys.keys.map { key ->
+                        val gpuReady = models.isGpuReady(key)
+                        ModelState(
+                            key = key,
+                            displayName = ModelKeys.displayName(key),
+                            downloaded = models.isDownloaded(key),
+                            target = ModelInferenceTarget.resolve(key, gpuReady, gpuAvailable)
+                        )
+                    }
+                )
+            }
         }
     }
 
-    suspend fun downloadModel(key: String, format: ModelFormat = ModelFormat.ONNX): String? {
+    /** 下载某个档位的产物（GPU 档取截断图、CPU 档取量化本体）。 */
+    suspend fun downloadModel(key: String): String? {
         if (!ModelKeys.isSupported(key)) return "本端不支持模型 $key"
-        if (format == ModelFormat.GPU_TFLITE && !ModelKeys.supportsGpu(key)) return "模型 ${ModelKeys.displayName(key)} 没有 GPU 版本"
-        val label = ModelKeys.displayName(key) + if (format == ModelFormat.GPU_TFLITE) " GPU" else ""
-        val slot = downloadSlot(key, format)
-        updateState { it.copy(downloads = it.downloads + (slot to ModelDownloadState(0, 0))) }
-        val error = models.download(key, format) { received, total ->
-            updateState { it.copy(downloads = it.downloads + (slot to ModelDownloadState(received, total))) }
+        val label = ModelKeys.displayName(key)
+        updateState { it.copy(downloads = it.downloads + (key to ModelDownloadState(0, 0))) }
+        val error = models.download(key) { received, total ->
+            updateState { it.copy(downloads = it.downloads + (key to ModelDownloadState(received, total))) }
         }
-        updateState { it.copy(downloads = it.downloads - slot, message = error ?: "模型 $label 已下载") }
+        updateState { it.copy(downloads = it.downloads - key, message = error ?: "模型 $label 已下载") }
         updateModels()
         return error
     }
 
-    /** GPU 产物下载：与本体分开，用户按需取，不默认占用带宽与磁盘。 */
-    suspend fun downloadGpuModel(key: String): String? = downloadModel(key, ModelFormat.GPU_TFLITE)
-
-    suspend fun deleteModel(key: String, format: ModelFormat = ModelFormat.ONNX): String? {
-        if (runtimes.values.any { it.state.value.isRunning && it.params.modelKey == key && format == ModelFormat.ONNX }) {
-            return "该模型正在被运行中的来源使用，请先停止来源"
+    suspend fun deleteModel(key: String): String? {
+        if (runtimes.values.any { it.state.value.isRunning && it.params.modelKey == key }) {
+            return "该档位正在被运行中的来源使用，请先停止来源"
         }
-        models.delete(key, format)
+        models.delete(key)
         updateModels()
         return null
     }
-
-    /** 下载进度槽位：本体与 GPU 产物各占一格。 */
-    private fun downloadSlot(key: String, format: ModelFormat) =
-        if (format == ModelFormat.ONNX) key else "${key}_gpu"
 
     /**
      * 本机当前配置下的并发来源上限（单路 ≥5 帧/秒）。
@@ -701,7 +699,7 @@ class InferenceRuntime private constructor(private val context: Context) {
     fun concurrencyLimit(): Int {
         val configured = settings.sources()
         if (configured.isEmpty()) return InferenceLimits.CONSERVATIVE_LIMIT
-        return configured.minOf { InferenceLimits.perConfiguration(it.params.modelKey, gpu = gpuReady(it.params.modelKey)) }
+        return configured.minOf { InferenceLimits.perConfiguration(it.params.modelKey, gpu = gpuActive(it.params.modelKey)) }
     }
 
     /** 已配置来源数是否超过当前配置的能力上限。 */
@@ -715,19 +713,22 @@ class InferenceRuntime private constructor(private val context: Context) {
      */
     fun concurrencyReason(newModelKey: String): String? {
         val configured = settings.sources()
-        val gpu = gpuReady(newModelKey)
-        val limit = (configured.map { InferenceLimits.perConfiguration(it.params.modelKey, gpuReady(it.params.modelKey)) } +
+        val gpu = gpuActive(newModelKey)
+        val limit = (configured.map { InferenceLimits.perConfiguration(it.params.modelKey, gpuActive(it.params.modelKey)) } +
             InferenceLimits.perConfiguration(newModelKey, gpu))
             .min()
         val next = configured.size + 1
         if (next <= limit) return null
         val binding = (configured.map { it.params.modelKey } + newModelKey)
-            .minByOrNull { InferenceLimits.perConfiguration(it, gpuReady(it)) } ?: newModelKey
-        return "本机同时最多跑 $limit 路（受模型 $binding 限制，单路需 ≥5 帧/秒），请先减少来源或改用更小的模型"
+            .minByOrNull { InferenceLimits.perConfiguration(it, gpuActive(it)) } ?: newModelKey
+        return "本机同时最多跑 $limit 路（受档位 $binding 限制，单路需 ≥5 帧/秒），请先减少来源或改用更小的档位"
     }
 
-    /** 该模型是否具备走 GPU 的条件（有产物且已下载）。 */
+    /** 该档位的截断图是否已下载（GPU 档才有）。 */
     private fun gpuReady(modelKey: String): Boolean = models.isGpuReady(modelKey)
+
+    /** 该档位此刻是否真的走 GPU：产物就绪 + 本机有可用加速器。 */
+    private fun gpuActive(modelKey: String): Boolean = gpuReady(modelKey) && mutableState.value.gpuAvailable
 
     fun modelStore(): ModelStore = models
 

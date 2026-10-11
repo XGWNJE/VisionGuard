@@ -78,7 +78,7 @@ coordinator.FrameProcessed += (_, e) =>
 };
 
 MonitorSource CreateSource(int index, string? name = null, int fps = 3, InferenceBackend backend = InferenceBackend.DirectML, int identityIndex = -1) =>
-    new(sourceIds[identityIndex < 0 ? index : identityIndex], name ?? windows[index].Title, "yolo26n_320", new MonitorConfig
+    new(sourceIds[identityIndex < 0 ? index : identityIndex], name ?? windows[index].Title, "yolo26m_320", new MonitorConfig
     {
         CaptureMode = CaptureMode.WindowHandle, TargetWindowHandle = windows[index].Handle,
         TargetWindowTitle = windows[index].Title, WindowSubRegion = Rectangle.Empty,

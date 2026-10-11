@@ -27,8 +27,6 @@ param(
     [string]$VpsHost = 'xgwnje',
     [string]$VpsDir = '',
     [string[]]$Keys = @(
-        'yolo26n_320', 'yolo26n_640',
-        'yolo26s_320', 'yolo26s_640',
         'yolo26m_320', 'yolo26m_640'
     ),
     [switch]$WhatIf,

@@ -262,6 +262,8 @@ fun MainScreen(
                 scrollTo = paramAnchor,
                 models = state.models,
                 downloads = state.downloads,
+                gpuAvailable = state.gpuAvailable,
+                usedModelKeys = state.sources.filter { it.state.isRunning }.map { it.params.modelKey }.toSet(),
                 onDismiss = { parameterEditorFor = null; paramAnchor = null; restoreFocus() },
                 onRename = { runtime.renameSource(editingParams.sourceId, it) },
                 onSetLens = { runtime.setCameraLensFacing(editingParams.sourceId, it) },
@@ -272,6 +274,7 @@ fun MainScreen(
                     }
                 },
                 onDownloadModel = { runtime.downloadModel(it) },
+                onDeleteModel = { runtime.deleteModel(it) },
                 onSave = { params ->
                     val failure = runtime.updateParams(editingParams.sourceId, params)
                     if (failure == null) parameterEditorFor = null

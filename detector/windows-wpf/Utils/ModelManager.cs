@@ -10,21 +10,22 @@ namespace VisionGuard.Detector.Windows.Utils
     public static class ModelManager
     {
         private static string ServerBase => AppConfig.ServerUrl;
-        public const int ModelCount = 6;
+        public const int ModelCount = 2;
 
         /// <summary>
-        /// 本档位的模型清单。
+        /// 本档位的模型清单：每档只留两项，用户不必在长列表里做选择。
         /// legacy 档（Windows 7）的 ONNX Runtime 原生库是 1.1.0，算子覆盖不足以支撑 YOLO26，
-        /// 因此固定 YOLOv5 系列；modern 档使用 YOLO26。服务端 `/models` 是静态目录，
-        /// 六个 yolov5 模型均已实测可下载（HTTP 200）。
+        /// 因此固定 YOLOv5 系列；低端机长期实测后只留 320 的 su / mu（640 不实用）。
+        /// modern 档使用 YOLO26，固定 320 / 640 两档，走 FP32 + DirectML。
+        /// 服务端 `/models` 是静态目录，这四个模型都必须已投放。
         /// </summary>
         public static readonly string[] ModelKeys = NativeLibrarySelector.IsLegacy
-            ? new[] { "yolov5nu_320", "yolov5nu_640", "yolov5su_320", "yolov5su_640", "yolov5mu_320", "yolov5mu_640" }
-            : new[] { "yolo26n_320", "yolo26n_640", "yolo26s_320", "yolo26s_640", "yolo26m_320", "yolo26m_640" };
+            ? new[] { "yolov5su_320", "yolov5mu_320" }
+            : new[] { "yolo26m_320", "yolo26m_640" };
 
         public static readonly string[] ModelDisplayNames = NativeLibrarySelector.IsLegacy
-            ? new[] { "YOLOv5nu 320 (~10MB)", "YOLOv5nu 640 (~10MB)", "YOLOv5su 320 (~35MB)", "YOLOv5su 640 (~35MB)", "YOLOv5mu 320 (~96MB)", "YOLOv5mu 640 (~96MB)" }
-            : new[] { "YOLO26n 320 (~9MB)", "YOLO26n 640 (~10MB)", "YOLO26s 320 (~36MB)", "YOLO26s 640 (~37MB)", "YOLO26m 320 (~78MB)", "YOLO26m 640 (~78MB)" };
+            ? new[] { "YOLOv5su 320 (~35MB)", "YOLOv5mu 320 (~96MB)" }
+            : new[] { "YOLO26m 320 (~78MB)", "YOLO26m 640 (~78MB)" };
 
         /// <summary>本档位的默认模型键（旧配置里的模型键不适用于本档位时使用）。</summary>
         public static string DefaultModelKey => ModelKeys[0];

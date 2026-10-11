@@ -86,11 +86,16 @@ fun GeoParameterDrawer(
     scrollTo: ParamAnchor?,
     models: List<ModelState>,
     downloads: Map<String, ModelDownloadState>,
+    /** 本机是否有可用的 GPU 加速器；没有时 GPU 档不可选。 */
+    gpuAvailable: Boolean,
+    /** 正在被运行中来源使用的档位键：这些档位不允许删除。 */
+    usedModelKeys: Set<String>,
     onDismiss: () -> Unit,
     onRename: (String) -> String?,
     onSetLens: (Int) -> String?,
     onDelete: () -> Unit,
     onDownloadModel: suspend (String) -> String?,
+    onDeleteModel: suspend (String) -> String?,
     onSave: (DetectionParams) -> String?,
     onMessage: (String?) -> Unit
 ) {
@@ -105,9 +110,17 @@ fun GeoParameterDrawer(
     var confidence by remember(source.sourceId, initial) { mutableStateOf(initial.confidencePercent) }
     var targetFps by remember(source.sourceId, initial) { mutableStateOf(initial.targetFps) }
     var cooldown by remember(source.sourceId, initial) { mutableStateOf(initial.cooldownSeconds) }
-    var modelKey by remember(source.sourceId, initial) { mutableStateOf(initial.modelKey) }
+    // 本机没有 GPU 加速器时 GPU 档不可选：草稿直接落到同尺寸的 CPU 档，并要求用户复核一次。
+    val autoAdjustedFrom = initial.modelKey.takeIf { ModelKeys.supportsGpu(it) && !gpuAvailable }
+    var modelKey by remember(source.sourceId, initial, gpuAvailable) {
+        mutableStateOf(
+            if (autoAdjustedFrom != null) ModelKeys.cpuTierOf(autoAdjustedFrom) ?: ModelKeys.defaultKey
+            else initial.modelKey
+        )
+    }
     var watched by remember(source.sourceId, initial) { mutableStateOf(initial.watchedClasses) }
-    var reviewed by remember(source.sourceId, initial) { mutableStateOf(true) }
+    var reviewed by remember(source.sourceId, initial, gpuAvailable) { mutableStateOf(autoAdjustedFrom == null) }
+    var pendingDeleteModel by remember { mutableStateOf<String?>(null) }
     var search by remember(source.sourceId) { mutableStateOf("") }
     var showAllTargets by remember(source.sourceId) { mutableStateOf(false) }
     var error by remember(source.sourceId) { mutableStateOf<String?>(null) }
@@ -217,6 +230,9 @@ fun GeoParameterDrawer(
                     locked = locked,
                     models = models,
                     downloads = downloads,
+                    gpuAvailable = gpuAvailable,
+                    usedModelKeys = usedModelKeys,
+                    autoAdjustedFrom = autoAdjustedFrom,
                     anchors = anchors,
                     confidence = confidence,
                     onConfidence = { confidence = it; error = null },
@@ -245,10 +261,24 @@ fun GeoParameterDrawer(
                     showAllTargets = showAllTargets,
                     onToggleAllTargets = { showAllTargets = !showAllTargets },
                     error = error,
-                    onDownloadModel = { key -> scope.launch { onDownloadModel(key)?.let(onMessage) } }
+                    onDownloadModel = { key -> scope.launch { onDownloadModel(key)?.let(onMessage) } },
+                    onRequestDeleteModel = { key -> pendingDeleteModel = key }
                 )
             }
         }
+    }
+
+    pendingDeleteModel?.let { key ->
+        GeoConfirm(
+            title = "删除模型",
+            text = "删除 ${ModelKeys.displayName(key)} 的本机文件？下次使用需要重新下载；账号、配置与遮罩不受影响。",
+            confirmLabel = "删除",
+            onCancel = { pendingDeleteModel = null },
+            onConfirm = {
+                pendingDeleteModel = null
+                scope.launch { onDeleteModel(key)?.let(onMessage) }
+            }
+        )
     }
 }
 
@@ -409,6 +439,9 @@ private fun DetectionSection(
     locked: Boolean,
     models: List<ModelState>,
     downloads: Map<String, ModelDownloadState>,
+    gpuAvailable: Boolean,
+    usedModelKeys: Set<String>,
+    autoAdjustedFrom: String?,
     anchors: MutableMap<ParamAnchor, Float>,
     confidence: Int,
     onConfidence: (Int) -> Unit,
@@ -434,7 +467,8 @@ private fun DetectionSection(
     showAllTargets: Boolean,
     onToggleAllTargets: () -> Unit,
     error: String?,
-    onDownloadModel: (String) -> Unit
+    onDownloadModel: (String) -> Unit,
+    onRequestDeleteModel: (String) -> Unit
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         GeoLamp(if (locked) "运行中 · 只读" else "已停止 · 可编辑", if (locked) GeoLampTone.Warning else GeoLampTone.Neutral)
@@ -514,16 +548,22 @@ private fun DetectionSection(
         if (maxWidth >= 660.dp) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Geo.GroupGap)) {
                 Column(Modifier.weight(0.85f).onGloballyPositioned { anchors[ParamAnchor.MODELS] = it.positionInParent().y }) {
-                    GeoSectionLabel("04", "模型插槽", "仅已下载可选")
-                    ModelCartridges(
+                    ModelSlotBlock(
                         models = models,
                         downloads = downloads,
+                        gpuAvailable = gpuAvailable,
+                        usedModelKeys = usedModelKeys,
                         selected = modelKey,
                         enabled = !locked,
+                        autoAdjustedFrom = autoAdjustedFrom,
+                        reviewed = reviewed,
+                        modelDownloaded = modelDownloaded,
+                        locked = locked,
                         onSelect = onSelectModel,
-                        onDownload = onDownloadModel
+                        onDownload = onDownloadModel,
+                        onDelete = onRequestDeleteModel,
+                        onReview = onReview
                     )
-                    ModelFootnotes(reviewed = reviewed, modelDownloaded = modelDownloaded, locked = locked, onReview = onReview)
                 }
                 Column(Modifier.weight(1.15f).onGloballyPositioned { anchors[ParamAnchor.TARGETS] = it.positionInParent().y }) {
                     TargetBlock(
@@ -542,16 +582,22 @@ private fun DetectionSection(
             }
         } else {
             Column(Modifier.fillMaxWidth().onGloballyPositioned { anchors[ParamAnchor.MODELS] = it.positionInParent().y }) {
-                GeoSectionLabel("04", "模型插槽", "仅已下载可选")
-                ModelCartridges(
+                ModelSlotBlock(
                     models = models,
                     downloads = downloads,
+                    gpuAvailable = gpuAvailable,
+                    usedModelKeys = usedModelKeys,
                     selected = modelKey,
                     enabled = !locked,
+                    autoAdjustedFrom = autoAdjustedFrom,
+                    reviewed = reviewed,
+                    modelDownloaded = modelDownloaded,
+                    locked = locked,
                     onSelect = onSelectModel,
-                    onDownload = onDownloadModel
+                    onDownload = onDownloadModel,
+                    onDelete = onRequestDeleteModel,
+                    onReview = onReview
                 )
-                ModelFootnotes(reviewed = reviewed, modelDownloaded = modelDownloaded, locked = locked, onReview = onReview)
             }
             Spacer(Modifier.height(Geo.GroupGap))
             Column(Modifier.fillMaxWidth().onGloballyPositioned { anchors[ParamAnchor.TARGETS] = it.positionInParent().y }) {
@@ -570,6 +616,52 @@ private fun DetectionSection(
             }
         }
     }
+}
+
+/**
+ * 模型插槽：下载、删除与选中都在这一处，参数页之外不再有第二份模型清单。
+ *
+ * 未下载的档位不可选中（先下载再选）；使用中的档位不给删除入口；设备没有 GPU 加速器时
+ * GPU 档直接标成不可用，草稿已经自动落到同尺寸 CPU 档。
+ */
+@Composable
+private fun ModelSlotBlock(
+    models: List<ModelState>,
+    downloads: Map<String, ModelDownloadState>,
+    gpuAvailable: Boolean,
+    usedModelKeys: Set<String>,
+    selected: String,
+    enabled: Boolean,
+    autoAdjustedFrom: String?,
+    reviewed: Boolean,
+    modelDownloaded: Boolean,
+    locked: Boolean,
+    onSelect: (String) -> Unit,
+    onDownload: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onReview: () -> Unit
+) {
+    GeoSectionLabel("04", "模型插槽", "下载 / 删除 / 选中")
+    ModelCartridges(
+        models = models,
+        downloads = downloads,
+        gpuAvailable = gpuAvailable,
+        usedModelKeys = usedModelKeys,
+        selected = selected,
+        enabled = enabled,
+        onSelect = onSelect,
+        onDownload = onDownload,
+        onDelete = onDelete
+    )
+    autoAdjustedFrom?.let {
+        Spacer(Modifier.height(Geo.Gap))
+        Text(
+            "本机不支持 GPU，已把 ${ModelKeys.displayName(it)} 换成同尺寸的 CPU 档。",
+            color = VisionGuardStatusColors.warning,
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+    ModelFootnotes(reviewed = reviewed, modelDownloaded = modelDownloaded, locked = locked, onReview = onReview)
 }
 
 /** 机器控件区块：标题 + 主控件区 + 操作行 + 快捷行，逐段等高。 */
@@ -715,35 +807,58 @@ private fun QuickKeys(options: List<Pair<Int, String>>, selected: Int, enabled: 
     }
 }
 
-/** 模型插片：三列，等高。 */
+/** 插片上的短名：`M·320 GPU`。 */
+private fun shortModelName(key: String): String =
+    ModelKeys.displayName(key).removePrefix("YOLO26").replace(" · ", "·")
+
+/** 模型插片：两列、等高；下载、删除与选中都在插片上。 */
 @Composable
 private fun ModelCartridges(
     models: List<ModelState>,
     downloads: Map<String, ModelDownloadState>,
+    gpuAvailable: Boolean,
+    usedModelKeys: Set<String>,
     selected: String,
     enabled: Boolean,
     onSelect: (String) -> Unit,
-    onDownload: (String) -> Unit
+    onDownload: (String) -> Unit,
+    onDelete: (String) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(Geo.Gap)) {
         models.chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
                 row.forEach { model ->
                     val progress = downloads[model.key]
+                    // GPU 档在本机没有加速器时不给选，也不给下载（下了也跑不了）。
+                    val gpuBlocked = ModelKeys.supportsGpu(model.key) && !gpuAvailable
+                    val inUse = model.key in usedModelKeys
+                    val name = shortModelName(model.key)
                     GeoSlotCard(
-                        title = ModelKeys.displayName(model.key).removePrefix("YOLO").replace(" · ", "·"),
+                        title = name,
                         subtitle = when {
+                            gpuBlocked -> "本机不支持 GPU"
                             progress != null && progress.total > 0 -> "下载 ${progress.percent}%"
                             progress != null -> "下载中…"
-                            model.downloaded -> "已下载"
-                            else -> "未下载"
+                            model.downloaded -> "已下载 · ${model.target.label}" + if (inUse) " · 使用中" else ""
+                            else -> "未下载 · 点右下角下载"
                         },
                         selected = model.key == selected,
-                        enabled = enabled && model.downloaded,
+                        enabled = enabled && model.downloaded && !gpuBlocked,
                         onClick = { onSelect(model.key) },
                         modifier = Modifier.weight(1f).height(Geo.ModelTile),
-                        trailingIcon = if (!model.downloaded && progress == null) LucideIcons.Download else null,
-                        onTrailingClick = { onDownload(model.key) }
+                        trailingIcon = when {
+                            gpuBlocked || progress != null -> null
+                            !model.downloaded -> LucideIcons.Download
+                            inUse -> null
+                            else -> LucideIcons.Trash2
+                        },
+                        trailingDescription = if (model.downloaded) "删除 $name" else "下载 $name",
+                        onTrailingClick = when {
+                            gpuBlocked || progress != null -> null
+                            !model.downloaded -> ({ onDownload(model.key) })
+                            inUse -> null
+                            else -> ({ onDelete(model.key) })
+                        }
                     )
                 }
                 repeat(2 - row.size) { Spacer(Modifier.weight(1f)) }
