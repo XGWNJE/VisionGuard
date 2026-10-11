@@ -1,5 +1,6 @@
 import WebSocket from 'ws';
 import { NotificationSession } from './NotificationSession';
+import { PROTOCOL_VERSION } from './protocol';
 import type { WsAlertPush } from '../models/types';
 
 /** Minimal notification-node transport; no Vigil integration or playback policy here. */
@@ -33,7 +34,7 @@ export class NotificationNodeClient {
     if (this.stopped) return;
     const ws = new WebSocket(this.url, { handshakeTimeout: 5000 });
     this.ws = ws;
-    ws.on('open', () => this.send({ type: 'auth', ...this.auth }));
+    ws.on('open', () => this.send({ type: 'auth', ...this.auth, version: PROTOCOL_VERSION }));
     ws.on('message', raw => {
       if (this.ws !== ws || this.stopped) return;
       let message: any;

@@ -5,13 +5,15 @@ import path from 'node:path';
 import http from 'node:http';
 import express from 'express';
 import test from 'node:test';
-import { registration } from './helpers/accounts';
 
+// 数据目录必须在加载任何应用模块之前确定：config 在求值时固化 dataDir，
+// 晚于此设置环境变量会让账号目录与缓存清理目录分叉。
 const directory = fs.mkdtempSync(path.join(os.tmpdir(),'vg-cache-'));
 process.env.VISIONGUARD_DATA_DIR=directory;
 test.after(()=>fs.rmSync(directory,{recursive:true,force:true}));
-const {screenshotCache,maintainLegacyCache,parseCacheReport}=require('../src/services/CacheMaintenance') as typeof import('../src/services/CacheMaintenance');
 
+import { registration } from './helpers/accounts';
+const {screenshotCache,maintainLegacyCache,parseCacheReport}=require('../src/services/CacheMaintenance') as typeof import('../src/services/CacheMaintenance');
 test('only expired unreferenced images removed; hardlink unlink does not claim freed blocks',()=>{
   const root=path.join(directory,'screenshots');fs.mkdirSync(root,{recursive:true});
   const old=Date.now()-80*3600000;
@@ -52,6 +54,7 @@ test('cache API isolates accounts, requires console and limits legacy cleanup to
   assert.equal((await request(nodeSession.token,{scope:'account'})).status,403);
   assert.equal((await request(other.token,{scope:'legacy'})).status,403);
   assert.equal((await request(consoleSession.token,{scope:'account',path:'../'})).status,400);
+  // 账号目录与清理目录必须同源：只要 dataDir 分叉，移除计数就会是 0。
   const response=await request(consoleSession.token,{scope:'account'});assert.equal(response.status,200);assert.equal((await response.json() as any).removedFiles,1);
   assert.ok(fs.existsSync(path.join(accountDirectory(second.accountId),'screenshots','expired-file-123.png')));
 });

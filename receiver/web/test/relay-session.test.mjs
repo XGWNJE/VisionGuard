@@ -40,7 +40,10 @@ function harness(fetcher){
     serverClose(code,reason){this.readyState=3;this.onclose?.({code,reason,wasClean:true});}
   }
   const module={exports:{}};
-  const context=vm.createContext({module,exports:module.exports,require:name=>name==='react'?react:name==='./connectionDiagnostics'?diagnosticsModule.exports:protocol,performance:{now:()=>now},location:{origin:'http://127.0.0.1:3100'},URL,console:logConsole,crypto:webcrypto,WebSocket:Socket,fetch:fetcher,AbortController,setTimeout:(fn,ms)=>schedule(fn,ms),clearTimeout:id=>timers.delete(id),setInterval:(fn,ms)=>schedule(fn,ms,true),clearInterval:id=>timers.delete(id)});
+  // 会话版本模块由用例控制：未登录时不得声明版本，登录后必须随认证一起声明。
+  let protocolVersionValue='';
+  const sessionModule={exports:{setProtocolVersion:value=>{protocolVersionValue=typeof value==='string'?value.trim():'';},protocolVersion:()=>protocolVersionValue,versionHeaders:()=>protocolVersionValue?{'X-VisionGuard-Version':protocolVersionValue}:{}}};
+  const context=vm.createContext({module,exports:module.exports,require:name=>name==='react'?react:name==='./connectionDiagnostics'?diagnosticsModule.exports:name==='./session.ts'?sessionModule.exports:protocol,performance:{now:()=>now},location:{origin:'http://127.0.0.1:3100'},URL,console:logConsole,crypto:webcrypto,WebSocket:Socket,fetch:fetcher,AbortController,setTimeout:(fn,ms)=>schedule(fn,ms),clearTimeout:id=>timers.delete(id),setInterval:(fn,ms)=>schedule(fn,ms,true),clearInterval:id=>timers.delete(id)});
   new vm.Script(compiled).runInContext(context);
   const commit=()=>{while(pending.length)pending.shift()();};
   return{

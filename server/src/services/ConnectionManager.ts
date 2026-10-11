@@ -19,6 +19,7 @@ import { mediaRelay } from './MediaRelay';
 import { NotificationScopeStore, parseNotificationScope, scopeAccepts } from './NotificationScopeStore';
 import { TimeStandardStore, validAlarmTimeZone } from './TimeStandardStore';
 import { authenticateNode, clientType, allowedCapabilities, validateEvent, registeredNodes, REALTIME_TTL_MS, DETECTION_STALL_MS, type NodeIdentity, type NodeRole } from './NodeProtocol';
+import { wsVersionGate } from './protocol';
 import { addAlert, getAlertById, markAlertScreenshot, type AddAlertResult } from '../services/AlertStore';
 import { isValidSetConfigKey, validateSetConfigValue, usesIntegerPercentConfidence, MAX_TARGETS_LENGTH } from '../services/ControlProtocol';
 import { remoteConfigRole, sanitizeRemoteSettings, validateRemoteConfig } from './RemoteSettings';
@@ -1528,6 +1529,8 @@ export function handleConnection(ws: WebSocket, req?: IncomingMessage): void {
     clearTimeout(timer);
     let message: any; try { message = JSON.parse(raw.toString()); } catch { endReason = 'invalid-json'; log('auth-rejected', { reason: endReason }); ws.close(4001, 'invalid auth'); return; }
     if (!message || typeof message !== 'object' || Array.isArray(message)) { endReason = 'invalid-auth-message'; log('auth-rejected', { reason: endReason }); ws.close(4001, 'invalid auth'); return; }
+    // 协议版本闸门：旧版本端点（含 API Key 时代的旧包）在此静默出局，不回包、不逐条记日志。
+    if (!wsVersionGate(message)) { endReason = 'protocol-version'; log('protocol-dropped', { reason: endReason }); ws.close(4001, 'protocol mismatch'); return; }
     const session = !binary && message.type === 'auth' ? accountStore.authenticate(message.token) : undefined;
     if (!session) { endReason = binary ? 'binary-auth' : message.type !== 'auth' ? 'unexpected-message' : 'invalid-session'; log('auth-rejected', { reason: endReason }); ws.send(JSON.stringify({ type: 'auth-result', success: false, reason: 'invalid session' })); ws.close(4001, 'invalid session'); return; }
     socketTokens.set(ws, message.token);

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRequestId, mergeAlerts, parseTimeStandard, websocketURL, type Ack, type Alert, type Device, type Identity, type Notifier, type Stream, type TimeStandard } from './protocol';
 import type { Login } from './account';
+import { protocolVersion, versionHeaders } from './session.ts';
 import { recordConnectionEvent, type ConnectionPhase } from './connectionDiagnostics';
 // Keep every operation awaiting its result; bound only completed history.
 const retainAcks = (items: Ack[]) => { let history=0; return items.filter(item => ['pending','forwarded'].includes(item.phase ?? '') || history++ < 100); };
@@ -54,7 +55,7 @@ export function useRelay(login: Login | null) {
     const history = async () => {
       historyAbort?.abort(); const abort = new AbortController(); historyAbort = abort;
       try {
-        const response = await fetch('/api/alerts?limit=100', { headers: { Authorization: `Bearer ${login.token}` }, signal: abort.signal, cache: 'no-store' });
+        const response = await fetch('/api/alerts?limit=100', { headers: { ...versionHeaders(), Authorization: `Bearer ${login.token}` }, signal: abort.signal, cache: 'no-store' });
         if (stopped || abort.signal.aborted) return;
         if (response.status === 401) { terminal = true; setExpiredToken(login.token); disconnect('登录已失效，请重新登录', 'history-unauthorized'); return; }
         if (!response.ok) throw new Error('历史记录读取失败');
@@ -88,7 +89,8 @@ export function useRelay(login: Login | null) {
         if (stopped || ws !== current) return;
         socketOpened = performance.now(); phase = 'authenticating'; log('socket-open');
         setStatus('正在认证'); waitForPhase('auth-timeout', authTimeoutMs);
-        current.send(JSON.stringify({ type:'auth', token:login.token })); log('auth-sent');
+        const version = protocolVersion();
+        current.send(JSON.stringify({ type:'auth', token:login.token, ...(version ? { version } : {}) })); log('auth-sent');
       };
       current.onmessage = event => {
         if (stopped || ws !== current || typeof event.data !== 'string') return;

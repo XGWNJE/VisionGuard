@@ -302,7 +302,14 @@ namespace VisionGuard.Detector.Windows.Utils
             ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
             var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
             if (!string.IsNullOrEmpty(token)) client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            // 协议版本闸门：服务端只服务与自身同版本的端点，旧版本请求会被静默丢弃。
+            client.DefaultRequestHeaders.TryAddWithoutValidation("X-VisionGuard-Version", ClientVersion());
             return client;
+        }
+        private static string ClientVersion()
+        {
+            try { return System.Diagnostics.FileVersionInfo.GetVersionInfo(typeof(AccountSession).Assembly.Location).FileVersion ?? ""; }
+            catch { return ""; }
         }
         private sealed class AccountRateLimitException : InvalidOperationException
         {

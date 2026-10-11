@@ -228,6 +228,7 @@ namespace VisionGuard.Resident.Windows
                 {
                     ["type"] = "auth",
                     ["token"] = apiKey,
+                    ["version"] = ClientVersion(),
                 });
 
                 int authWait = WaitHandle.WaitAny(new WaitHandle[] { authenticated, shutdownRequested }, AuthTimeoutMs);
@@ -353,6 +354,12 @@ namespace VisionGuard.Resident.Windows
             {
                 return false;
             }
+        }
+
+        /** 协议版本：与服务端同源的发版版本号，旧版本端点会被服务端静默丢弃。 */
+        private static string ClientVersion()
+        {
+            return FileVersionInfo.GetVersionInfo(typeof(Program).Assembly.Location).FileVersion ?? "";
         }
 
         private static void Validate(ResidentConfig config)

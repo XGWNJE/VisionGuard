@@ -45,11 +45,19 @@ export interface AlertRecord {
 
 // ── WebSocket 消息 ─────────────────────────────────────────
 
-/** 客户端 → 服务器：认证 */
+/** 客户端 → 服务器：认证。`version` 是协议版本闸门的唯一判据，必须等于本服务版本。 */
 export interface WsAuthMessage {
   type: 'auth';
   token: string;
-  version?: string;
+  version: string;
+}
+
+/** 客户端 → 服务器：媒体通道认证，与业务通道同一版本闸门。 */
+export interface WsMediaAuthMessage {
+  type: 'media-auth';
+  token: string;
+  direction: 'publish' | 'subscribe';
+  version: string;
 }
 
 /** 检测端 → 服务器：心跳 (每 3 秒) */

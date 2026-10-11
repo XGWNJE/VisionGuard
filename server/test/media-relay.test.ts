@@ -4,11 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import test from 'node:test';
+// 数据目录必须在加载 helpers（进而加载 config）之前确定：config 在求值时固化 dataDir。
+const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-media-test-'));
+process.env.VISIONGUARD_DATA_DIR = directory;
+
 import { registration } from './helpers/accounts';
 import WebSocket, { WebSocketServer } from 'ws';
 
-const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-media-test-'));
-process.env.VISIONGUARD_DATA_DIR = directory;
 const { AccountFixture } = require('./helpers/accounts') as typeof import('./helpers/accounts');
 const owner = new AccountFixture([{ name: 'camera', component: 'android-camera' }, { name: 'inference', component: 'windows-inference' }, { name: 'console', component: 'web-console' }], 'media-owner');
 const foreign = new AccountFixture([{ name: 'foreign-inference', component: 'windows-inference' }, { name: 'foreign-console', component: 'web-console' }], 'media-other');

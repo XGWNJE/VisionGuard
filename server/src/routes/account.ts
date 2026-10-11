@@ -8,7 +8,7 @@ import { accountDeviceList } from '../services/ConnectionManager';
 export function sessionResponse(session: AccountSession & { token?: string; resident?: AccountSession & { token: string } }): object {
   const { accountId: ignored, ...device } = session.device;
   const resident = session.resident;
-  return { ok: true, ...(session.token ? { token: session.token } : {}), expiresAt: session.expiresAt, channel: config.channelId,
+  return { ok: true, ...(session.token ? { token: session.token } : {}), expiresAt: session.expiresAt, channel: config.channelId, version: config.version,
     account: session.account, device, ...(resident ? { resident: { token: resident.token, expiresAt: resident.expiresAt, device: (({ accountId: _account, ...rest }) => rest)(resident.device) } } : {}) };
 }
 export function accountFailure(res: Response, error: unknown): void {

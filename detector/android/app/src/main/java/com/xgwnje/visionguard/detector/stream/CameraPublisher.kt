@@ -99,7 +99,7 @@ class CameraPublisher(private val account: AccountStore,
         control = http.newWebSocket(Request.Builder().url(value.webSocketUrl).build(), object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) { handler.post {
                 if (own != controlGeneration || closed) ws.cancel()
-                else ws.send(JSONObject().put("type", "auth").put("token", value.token).toString())
+                else ws.send(JSONObject().put("type", "auth").put("token", value.token).put("version", com.xgwnje.visionguard.detector.AppConstants.VERSION).toString())
             } }
             override fun onMessage(ws: WebSocket, text: String) { handler.post {
                 if (own != controlGeneration || closed || text.length > 1_000_000) return@post

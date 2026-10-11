@@ -8,9 +8,11 @@ import WebSocket, { WebSocketServer } from 'ws';
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-auth-diagnostics-'));
 process.env.VISIONGUARD_CHANNEL = 'auth-diagnostics-test';
 process.env.VISIONGUARD_DATA_DIR = temporary;
-const { AccountFixture } = require('./helpers/accounts') as typeof import('./helpers/accounts');
+// 本文件专门验证门禁行为，显式按部署实例启用闸门。
+process.env.VISIONGUARD_PROTOCOL_GATE = '1';const { AccountFixture } = require('./helpers/accounts') as typeof import('./helpers/accounts');
 const fixtureAccount = new AccountFixture([{ name: 'console', component: 'web-console' }]);
 const { handleConnection } = require('../src/services/ConnectionManager') as typeof import('../src/services/ConnectionManager');
+const { PROTOCOL_VERSION, protocolNoiseStats, resetProtocolNoise } = require('../src/services/protocol') as typeof import('../src/services/protocol');
 test.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
 
 async function fixture(t: any, trace = 'a'.repeat(32)) {
@@ -43,11 +45,25 @@ test('an unauthenticated socket is logged from upgrade through timeout and close
 
 test('a rejected token is distinguishable from no first frame without logging the auth message', async t => {
   const f = await fixture(t);
-  f.ws.send(JSON.stringify({ type: 'auth', token: 'private-invalid-token', password: 'private-password' }));
+  f.ws.send(JSON.stringify({ type: 'auth', token: 'private-invalid-token', password: 'private-password', version: PROTOCOL_VERSION }));
   assert.equal(await f.closed, 4001);
   assert.deepEqual(f.logs.map(item => item.event), ['socket-open','first-frame','auth-rejected','socket-close']);
   assert.equal(f.logs[2].reason, 'invalid-session');assert.equal(f.logs[2].firstFrameReceived, true);
   assert.ok(!JSON.stringify(f.logs).includes('private-'));
+});
+
+test('a legacy client without the protocol version is dropped silently and counted, not logged per attempt', async t => {
+  resetProtocolNoise();
+  const f = await fixture(t);
+  f.ws.send(JSON.stringify({ type: 'auth', token: 'private-invalid-token', apiKey: 'XG-VisionGuard-2024', role: 'windows-resident' }));
+  assert.equal(await f.closed, 4001);
+  assert.deepEqual(f.logs.map(item => item.event), ['socket-open','first-frame','protocol-dropped','socket-close']);
+  assert.equal(f.logs[2].reason, 'protocol-version');
+  assert.deepEqual(f.messages, []);
+  const before = protocolNoiseStats();
+  assert.equal(before?.connections, 1);
+  assert.deepEqual(before?.byVersion, { '(未声明)': 1 });
+  resetProtocolNoise();
 });
 
 test('a successful console auth logs its attempt and component, then its close code', async t => {

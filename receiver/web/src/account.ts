@@ -1,9 +1,11 @@
 import type { Identity } from './protocol';
+import { versionHeaders } from './session.ts';
 
 export type Login = {
   token: string;
   expiresAt: string;
   channel: string;
+  version?: string;
   account: { accountId: string; username: string; isAdmin?: boolean };
   device: Identity & { deviceName: string; component: string };
 };
@@ -66,7 +68,7 @@ export async function accountRequest<T>(path: string, token?: string, body?: unk
   }
   const response = await fetch(path, {
     method: method ?? (body === undefined ? 'GET' : 'POST'),
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    headers: { ...versionHeaders(), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     cache: 'no-store', credentials: 'omit', ...(signal ? { signal } : {}),
   }).catch((error: unknown) => {

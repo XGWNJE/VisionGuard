@@ -7,11 +7,17 @@
 import path from 'path';
 import { parsePositiveIntEnv } from './utils/security';
 
+/** 部署包内 `package.json` 的版本，与根 `VERSION` 一致；作为协议版本唯一来源。 */
+const serverVersion: string = require('../package.json').version;
+
 export function parseBindHost(value: string | undefined): string {
   return value?.trim() || '127.0.0.1';
 }
 
 export const config = {
+  /** 本进程版本号（= 根 VERSION），用于协议版本闸门与内部诊断。 */
+  version: serverVersion,
+
   /** 进程标签；账号与会话由本实例私有数据目录确定。 */
   channelId: (process.env.VISIONGUARD_CHANNEL || 'vnext').trim(),
 
@@ -64,6 +70,15 @@ export const config = {
 
   /** 接收端幽灵清理阈值 (毫秒)。心跳 30s，取 45s 为安全阈值。 */
   receiverGhostThresholdMs: 45_000,
+
+  /**
+   * 协议版本闸门：只服务与本版同版本的端点，缺版本字段的旧包直接出局。
+   * 默认只在上线部署实例（`NODE_ENV=production`）启用；本地服务跑链路、跑 UI 检查不受影响，
+   * 需要在本地复现门禁时用 `VISIONGUARD_PROTOCOL_GATE=1` 打开。
+   */
+  protocolGate: process.env.VISIONGUARD_PROTOCOL_GATE === undefined
+    ? process.env.NODE_ENV === 'production'
+    : process.env.VISIONGUARD_PROTOCOL_GATE === '1',
 } as const;
 
 export function validateConfig(): void {

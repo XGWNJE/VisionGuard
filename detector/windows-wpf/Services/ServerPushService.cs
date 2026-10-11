@@ -479,6 +479,7 @@ namespace VisionGuard.Detector.Windows.Services
             {
                 ["type"] = "auth",
                 ["token"] = _apiKey,
+                ["version"] = AppConfig.Version,
             });
         }
 

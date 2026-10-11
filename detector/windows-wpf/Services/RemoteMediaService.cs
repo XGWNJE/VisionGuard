@@ -39,7 +39,7 @@ namespace VisionGuard.Detector.Windows.Services
                     {
                         _socket = ws;
                         ws.ConnectAsyncInternal(_stop.Token).GetAwaiter().GetResult();
-                        Send(ws, new { type = "media-auth", token = _token, direction = "subscribe" });
+                        Send(ws, new { type = "media-auth", token = _token, direction = "subscribe", version = Utils.AppConfig.Version });
                         long lastResponse = Stopwatch.GetTimestamp(); int mediaReady = 0, checking = 0;
                         using (var health = new Timer(_ => {
                             if (Interlocked.Exchange(ref checking, 1) != 0) return;

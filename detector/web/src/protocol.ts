@@ -5,7 +5,7 @@ export interface CameraSettings { cameraResolution: CameraResolution; cameraDimS
 export interface StreamInfo { streamId: string; publisherDeviceId: string; targetDeviceId?: string; sourceId?: string; sourceName: string; isStreaming: boolean; stopReason?: string }
 export interface TargetDevice { deviceId: string; deviceName: string; component: string; platform: string; capabilities?: string[]; online?: boolean }
 export interface AccountIdentity { account: { accountId: string; username: string; isAdmin?: boolean }; device: { deviceId: string; deviceName: string; component: string; platform: string; role: string; nodeType: string } }
-export interface LoginResult extends AccountIdentity { token: string; expiresAt: string; channel: string }
+export interface LoginResult extends AccountIdentity { token: string; expiresAt: string; channel: string; version?: string }
 
 export interface ControlState {
   connected: boolean;

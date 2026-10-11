@@ -5,11 +5,14 @@ import path from 'node:path';
 import http from 'node:http';
 import express from 'express';
 import test from 'node:test';
+
+// 数据目录必须在加载 helpers（进而加载 config）之前确定：config 在求值时固化 dataDir。
+const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-screenshot-auth-'));
+process.env.VISIONGUARD_DATA_DIR = directory;
+
 import { registration } from './helpers/accounts';
 
 test('registered consoles can read screenshots; detectors, notifiers and anonymous clients cannot', async t => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-screenshot-auth-'));
-  process.env.VISIONGUARD_DATA_DIR = directory;
   const { accountStore, accountDirectory } = require('../src/services/AccountStore') as typeof import('../src/services/AccountStore');
   const { addAlert } = require('../src/services/AlertStore') as typeof import('../src/services/AlertStore');
   const account = accountStore.createAccount('picture-owner', 'private-picture-password');

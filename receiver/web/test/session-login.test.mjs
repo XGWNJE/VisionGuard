@@ -21,7 +21,7 @@ function vault(origin='https://console.example.test', shared=new Map(), blocked=
   });return request;}};
   const module={exports:{}};
   const sessionStorage={getItem:key=>tab.get(key)??null,setItem:(key,value)=>tab.set(key,value),removeItem:key=>tab.delete(key)};
-  new vm.Script(compiled).runInContext(vm.createContext({module,exports:module.exports,indexedDB,sessionStorage,crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,location:{origin},Date,require:()=>({accountRequest,AccountRequestError,parseLogin})}));
+  new vm.Script(compiled).runInContext(vm.createContext({module,exports:module.exports,indexedDB,sessionStorage,crypto:webcrypto,TextEncoder,TextDecoder,Uint8Array,location:{origin},Date,require:()=>({accountRequest,AccountRequestError,parseLogin,setProtocolVersion:()=>{},protocolVersion:()=>'',versionHeaders:()=>({})})}));
   return{...module.exports,shared,tab,record:()=>shared.get(tab.get('visionguard-console-session'))};
 }
 const login={token:'private-token-fixture-'.repeat(3),expiresAt:new Date(Date.now()+24*3600_000).toISOString(),channel:'isolated',account:{accountId:'one',username:'test-user',isAdmin:false},device:{deviceId:'console',deviceName:'控制台',role:'console',nodeType:'console',platform:'web',component:'web-console'}};

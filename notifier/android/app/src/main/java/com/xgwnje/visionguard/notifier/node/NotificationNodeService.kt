@@ -190,7 +190,7 @@ class NotificationNodeService : Service() {
         socket = client.newWebSocket(Request.Builder().url(value.endpoint).build(), object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) { handler.post {
                 if (own != generation || stopped) { ws.cancel(); return@post }
-                if (!ws.send(JSONObject().put("type", "auth").put("token", value.token).toString())) transportFailed("认证发送失败")
+                if (!ws.send(JSONObject().put("type", "auth").put("token", value.token).put("version", com.xgwnje.visionguard.notifier.BuildConfig.VERSION_NAME).toString())) transportFailed("认证发送失败")
             } }
             override fun onMessage(ws: WebSocket, text: String) { handler.post {
                 if (own != generation || stopped || text.length > 1_000_000) return@post

@@ -1,6 +1,7 @@
 /** 媒体通道状态机：发布鉴权、帧节拍、在途额度与心跳重连。socket 与计时器由外部注入。 */
 
 import { parseFrameAck, parseMediaReady, parseRate, websocketURL } from './protocol';
+import { protocolVersion } from './session';
 import { FramePacer, FrameWindow, MediaLiveness, encodePacket } from './mediaPacket';
 
 export interface MediaSocket {
@@ -120,7 +121,8 @@ export class MediaPublisher {
     socket.onopen = () => {
       if (own !== this.generation || this.closed || !this.wanted) { socket.close(); return; }
       if (socket.readyState !== 1) return;
-      socket.send(JSON.stringify({ type: 'media-auth', token, direction: 'publish' }));
+      const version = protocolVersion();
+      socket.send(JSON.stringify({ type: 'media-auth', token, direction: 'publish', ...(version ? { version } : {}) }));
     };
     socket.onmessage = event => { if (own === this.generation && !this.closed && typeof event.data === 'string') this.receive(event.data); };
     socket.onclose = () => { if (own === this.generation && !this.closed) this.reconnect('视频连接中断，正在重连'); };

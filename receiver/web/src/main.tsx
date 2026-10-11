@@ -5,6 +5,7 @@ import { Activity, ArrowLeft, Bell, BellOff, Camera, ChevronRight, CircleHelp, C
 import { eventLabel, formatTime, isCameraComponent, isWithinEventTime, mergeDevices, parseEventTime, timeStandardLabel, typeLabel, websocketURL, type Ack, type AlarmTimeZone, type Alert, type Device, type Notifier, type Scope, type Stream, type Target, type TimeStandard } from './protocol';
 import { useRelay } from './useRelay';
 import { accountRequest, AccountRequestError, browserDeviceIdentity, browserDeviceModel, normalizeDisplayName, parseLogin, type Login } from './account';
+import { setProtocolVersion, versionHeaders } from './session.ts';
 import { AccountManagement } from './AccountManagement';
 import { clearRememberedLogin, readRememberedLogin, saveRememberedLogin } from './rememberedLogin';
 import { clearSessionLogin, restoreSessionLogin, saveSessionLogin } from './sessionLogin';
@@ -29,7 +30,7 @@ function App() {
   const loginRef = useRef<Login | null>(null);
   const [restoringSession, setRestoringSession] = useState(true);
   const [sessionWarning, setSessionWarning] = useState('');
-  function updateLogin(value: Login | null) { loginRef.current = value; setLogin(value); }
+  function updateLogin(value: Login | null) { loginRef.current = value; setLogin(value); setProtocolVersion(value?.version); }
   const [loginError, setLoginError] = useState('');
   const relay = useRelay(login);
   const [page, setPage] = useState<Page>('节点');
@@ -307,7 +308,7 @@ function EventImage({alert,login}:{alert:Alert;login:Login}) {
     try { url = new URL(alert.screenshotUrl,location.origin); } catch { setImageError('截图地址无效'); return; }
     if (url.origin !== location.origin || !url.pathname.startsWith('/screenshots/')) { setImageError('截图地址无效'); return; }
     const controller = new AbortController(); let objectURL = '';
-    void fetch(url, {headers:{Authorization:`Bearer ${login.token}`},signal:controller.signal,cache:'no-store'}).then(async r => { if (!r.ok) throw new Error(); const blob = await r.blob(); if (!blob.type.startsWith('image/')) throw new Error(); if (!controller.signal.aborted) { objectURL = URL.createObjectURL(blob); setImage(objectURL); } }).catch(() => { if (!controller.signal.aborted) setImageError('截图暂不可用'); });
+    void fetch(url, {headers:{...versionHeaders(),Authorization:`Bearer ${login.token}`},signal:controller.signal,cache:'no-store'}).then(async r => { if (!r.ok) throw new Error(); const blob = await r.blob(); if (!blob.type.startsWith('image/')) throw new Error(); if (!controller.signal.aborted) { objectURL = URL.createObjectURL(blob); setImage(objectURL); } }).catch(() => { if (!controller.signal.aborted) setImageError('截图暂不可用'); });
     return () => { controller.abort(); if (objectURL) URL.revokeObjectURL(objectURL); };
   },[alert.alertId,alert.hasScreenshot,alert.screenshotUrl,login.token]);
   return <>{image && <img className="event-image" src={image} alt="事件截图" onError={()=>{setImage(null);setImageError('截图无法显示');}}/>}{alert.hasScreenshot && !image && !imageError && <p role="status">{alert.screenshotUrl ? '正在加载截图…' : '等待截图地址…'}</p>}{!alert.hasScreenshot && <p className="subtle">此事件没有截图</p>}{imageError && <p className="error" role="alert">{imageError}</p>}</>;

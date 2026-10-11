@@ -5,6 +5,7 @@ import { performance } from 'node:perf_hooks';
 import WebSocket from 'ws';
 import { accountStore, accountDirectory, AccountError, type AccountSession } from './AccountStore';
 import { isCameraComponent, isInferenceComponent } from './NodeComponents';
+import { wsVersionGate } from './protocol';
 
 export interface Stream {
   streamId: string; publisherDeviceId: string; publisherName: string; targetDeviceId?: string; sourceId?: string;
@@ -183,6 +184,8 @@ export class MediaRelay {
         if (!publisher && !subscriber) {
           if (binary) { ws.close(4001, 'media auth required'); return; }
           const message = JSON.parse(raw.toString());
+          // 媒体通道与业务通道同一道版本闸门：旧版本端点连发布/订阅都进不来。
+          if (!wsVersionGate(message)) { ws.close(4001, 'protocol mismatch'); return; }
           const session = message?.type === 'media-auth' ? accountStore.authenticate(message.token) : undefined;
           if (!session || !((message.direction === 'publish' && isCameraComponent(session.device.component)) || (message.direction === 'subscribe' && isInferenceComponent(session.device.component)))) { ws.close(4001, 'media permission required'); return; }
           clearTimeout(timer); this.ensureAccount(session.account.accountId);

@@ -29,6 +29,7 @@ import streamsRouter from './routes/streams';
 import { mediaRelay } from './services/MediaRelay';
 import { websocketLimits } from './services/WebSocketLimits';
 import { startCleanupTimer, cleanupScreenshots } from './services/ScreenshotCleanup';
+import { createHttpVersionGate } from './services/protocol';
 import path from 'path';
 
 // ── Express app ────────────────────────────────────────────
@@ -40,6 +41,9 @@ app.use(express.json({ limit: '16kb' }));
 
 // 已认证请求按账号、设备和组件限速；匿名请求保留 IP 限速。
 app.use('/api', createApiLimiter());
+// 协议版本闸门：非本版端点（含 API Key 时代的旧包）在鉴权前静默出局，只汇总量、不逐条响应。
+// 只在上线部署实例启用；本地/测试实例放行所有版本，跑链路与 UI 检查不需要对齐版本。
+app.use('/api', createHttpVersionGate(config.protocolGate));
 
 // 健康检查 (无需鉴权，独立限速)
 const healthLimiter = rateLimit({
@@ -50,7 +54,7 @@ const healthLimiter = rateLimit({
   message: { ok: false, error: 'too many requests' },
 });
 app.get('/health', healthLimiter, (_req, res) => {
-  res.json({ ok: true, channel: config.channelId, uptime: process.uptime() });
+  res.json({ ok: true, channel: config.channelId, version: config.version, uptime: process.uptime() });
 });
 
 // 路由
@@ -122,6 +126,7 @@ startCleanupTimer();
 server.listen(config.port, config.host, () => {
   console.log(`[server] 统一服务 v0.6.12 已启动`);
   console.log(`[server] 隔离通道: ${config.channelId} / 数据目录: ${config.dataDir}`);
+  console.log(`[server] 协议版本闸门: ${config.protocolGate ? `启用（只服务 ${config.version}）` : '关闭（本地/测试实例）'}`);
   console.log(`[server] HTTP + WS 监听地址: ${config.host}:${config.port}`);
   console.log(`[server] 截图模式: WebSocket 独立推送并备份；HTTP 上传${config.enableHttpScreenshotUpload ? '开启' : '关闭'}`);
   console.log(`[server] 报警记录 TTL: ${config.alertTtlHours} 小时`);

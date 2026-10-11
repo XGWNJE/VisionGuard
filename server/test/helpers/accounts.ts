@@ -1,4 +1,5 @@
 import type { Component, AccountSession } from '../../src/services/AccountStore';
+import { PROTOCOL_VERSION } from '../../src/services/protocol';
 import crypto from 'node:crypto';
 
 export function registration(seed: string = crypto.randomUUID()) {
@@ -28,5 +29,5 @@ export class AccountFixture {
   }
   session(name: string, role?: string) { const session = this.sessions.get(name)!; return role === 'lifecycle' ? session.resident! : session; }
   id(name: string): string { return this.session(name).device.deviceId; }
-  auth(name: string, role?: string, valid = true): object { return { type: 'auth', token: valid ? this.session(name, role).token : 'invalid-fixture-session-token-value' }; }
+  auth(name: string, role?: string, valid = true): object { return { type: 'auth', token: valid ? this.session(name, role).token : 'invalid-fixture-session-token-value', version: PROTOCOL_VERSION }; }
 }

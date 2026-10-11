@@ -82,7 +82,7 @@ private fun Modifier.accountAutofill(type: AutofillType, onFill: (String) -> Uni
 }
 
 /** Saved sessions and opt-in login fields use Android Keystore; app backups exclude both. */
-class AccountStore private constructor(private val prefs: android.content.SharedPreferences, val allowsTestEndpoint: Boolean, private val stableIdentity: () -> String) {
+class AccountStore private constructor(private val prefs: android.content.SharedPreferences, val allowsTestEndpoint: Boolean, private val stableIdentity: () -> String, private val clientVersion: String) {
     private val http = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build()
     private val lock = Mutex()
     private val mutableSession = MutableStateFlow(readSaved())
@@ -232,6 +232,8 @@ class AccountStore private constructor(private val prefs: android.content.Shared
         require(path.startsWith("/api/") && !path.contains(".."))
         val builder = Request.Builder().url(endpoint + path)
         if (token != null) builder.header("Authorization", "Bearer $token")
+        // 协议版本闸门：服务端只服务与自身同版本的端点，旧版本请求会被静默丢弃。
+        if (clientVersion.isNotBlank()) builder.header("X-VisionGuard-Version", clientVersion)
         builder.method(method, if (method == "GET") null else (body ?: JSONObject()).toString().toRequestBody("application/json".toMediaType()))
         return http.newCall(builder.build()).execute().use { response ->
             if (response.code == 401 && token != null && path != "/api/account/password") clearIfCurrent(endpoint, token)
@@ -255,10 +257,17 @@ class AccountStore private constructor(private val prefs: android.content.Shared
             .take(12).joinToString("") { "%02x".format(it) }
         private const val KEY_ALIAS = "visionguard-account-session-v1"
         @Volatile private var instance: AccountStore? = null
-        fun get(context: Context): AccountStore = instance ?: synchronized(this) { instance ?: AccountStore(context.applicationContext.getSharedPreferences("account_session", Context.MODE_PRIVATE), context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+        fun get(context: Context): AccountStore = instance ?: synchronized(this) { instance ?: AccountStore(context.applicationContext.getSharedPreferences("account_session", Context.MODE_PRIVATE), context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0, {
             val app = context.applicationContext
             DeviceIdentityPolicy.identity(android.provider.Settings.Secure.getString(app.contentResolver, android.provider.Settings.Secure.ANDROID_ID), app.packageName)
-        }.also { instance = it } }
+        }, installedVersionName(context.applicationContext)) .also { instance = it } }
+        /** 已安装包的版本名；共享源码没有自己的 BuildConfig，因此从包信息读取。 */
+        private fun installedVersionName(context: Context): String = runCatching {
+            val info = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU)
+                context.packageManager.getPackageInfo(context.packageName, android.content.pm.PackageManager.PackageInfoFlags.of(0))
+            else context.packageManager.getPackageInfo(context.packageName, 0)
+            info.versionName.orEmpty()
+        }.getOrDefault("")
         fun normalizeEndpoint(value: String): String {
             val base = value.trim().trimEnd('/')
             val uri = URI(base)

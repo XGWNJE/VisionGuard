@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { config } from '../config';
 
 export type Component = 'web-console' | 'android-notifier' | 'android-camera' | 'web-camera' | 'windows-inference' | 'android-inference' | 'windows-resident';
 export interface Account { accountId: string; username: string; isAdmin?: boolean }
@@ -203,7 +204,9 @@ export class AccountStore {
   }
 }
 
-export const accountDataDir = path.resolve(process.env.VISIONGUARD_DATA_DIR || path.resolve(__dirname, '..', '..', 'data'));
+// 数据根目录只在 config 里解析一次：账号目录与截图 / 缓存清理必须落在同一根目录，
+// 两处各自读环境变量会因求值时机不同而分叉。
+export const accountDataDir = config.dataDir;
 export const accountStore = new AccountStore(path.join(accountDataDir, 'accounts.json'));
 export function accountDirectory(accountId: string): string {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(accountId)) throw new Error('Invalid account identity');

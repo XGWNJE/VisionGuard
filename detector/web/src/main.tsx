@@ -9,6 +9,7 @@ import type { CameraSettings, LoginResult } from './protocol';
 import { ControlClient, loginCamera, type ControlPorts, type ControlSocket } from './control';
 import { MediaPublisher, type MediaPorts, type MediaSocket } from './media';
 import { CameraSource, listCameras, type CameraDevice } from './cameraSource';
+import { setProtocolVersion, versionHeaders } from './session';
 
 const SESSION_KEY = 'visionguard.camera.session';
 const REMEMBER_KEY = 'visionguard.camera.remember';
@@ -17,7 +18,7 @@ const RESPONSE_MESSAGES: Record<number, string> = { 400: '请检查填写内容'
 
 async function fetchJson(path: string, init?: { method?: string; body?: string }, token?: string): Promise<any> {
   const response = await fetch(path, { method: init?.method ?? (init?.body === undefined ? 'GET' : 'POST'),
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(init?.body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    headers: { ...versionHeaders(), ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(init?.body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     body: init?.body, cache: 'no-store', credentials: 'omit' });
   let data: any;
   try { data = await response.json(); } catch { throw new Error('服务暂不可用'); }
@@ -36,7 +37,9 @@ function readStoredSession(): LoginResult | undefined {
   try {
     const raw = sessionStorage.getItem(SESSION_KEY);
     const parsed = raw ? JSON.parse(raw) : undefined;
-    return parsed && typeof parsed.token === 'string' && parsed.device?.component === 'web-camera' ? parsed as LoginResult : undefined;
+    if (!(parsed && typeof parsed.token === 'string' && parsed.device?.component === 'web-camera')) return undefined;
+    setProtocolVersion(parsed.version);
+    return parsed as LoginResult;
   } catch { return undefined; }
 }
 
@@ -116,6 +119,7 @@ export function App() {
     try {
       const identity = await readOrCreateDeviceIdentity(indexedDbIdentityPort());
       const next = await loginCamera(username.trim(), password, identity, browserDeviceModel(navigator.platform), fetchJson);
+      setProtocolVersion(next.version);
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
       try { localStorage.setItem(REMEMBER_KEY, remember ? 'true' : 'false'); } catch { /* 存储不可用时不影响登录 */ }
       setSession(next);

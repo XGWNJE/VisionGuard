@@ -6,11 +6,12 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import express from 'express';
 import test from 'node:test';
-import { registration } from './helpers/accounts';
 import WebSocket, { WebSocketServer } from 'ws';
 
+// 数据目录必须在加载任何应用模块之前确定：config 在求值时固化 dataDir。
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-account-test-'));
 process.env.VISIONGUARD_DATA_DIR = directory;
+const { registration } = require('./helpers/accounts') as typeof import('./helpers/accounts');
 const { accountStore, AccountStore, accountDirectory } = require('../src/services/AccountStore') as typeof import('../src/services/AccountStore');
 const accountRouter = require('../src/routes/account').default;
 const alertsRouter = require('../src/routes/alerts').default;
@@ -18,6 +19,7 @@ const screenshotRouter = require('../src/routes/screenshot').default;
 const streamsRouter = require('../src/routes/streams').default;
 const { handleConnection, broadcastScreenshotData } = require('../src/services/ConnectionManager') as typeof import('../src/services/ConnectionManager');
 const { addAlert } = require('../src/services/AlertStore') as typeof import('../src/services/AlertStore');
+const { PROTOCOL_VERSION, createHttpVersionGate } = require('../src/services/protocol') as typeof import('../src/services/protocol');
 accountStore.createAccount('account-a', 'private-test-password-a');
 accountStore.createAccount('account-b', 'private-test-password-b');
 test.after(() => fs.rmSync(directory, { recursive: true, force: true }));
@@ -25,7 +27,8 @@ test.after(() => fs.rmSync(directory, { recursive: true, force: true }));
 let fixtureSequence = 0;
 async function fixture(t: any) {
   const fixtureIp = `127.0.0.${++fixtureSequence}`;
-  const app = express(); app.use(express.json()); app.use(accountRouter); app.use(alertsRouter); app.use(screenshotRouter); app.use(streamsRouter);
+  // 与部署实例一致：挂上协议版本闸门；本地实例默认不挂，见 protocol-gate.test.ts。
+  const app = express(); app.use(express.json()); app.use(createHttpVersionGate(true)); app.use(accountRouter); app.use(alertsRouter); app.use(screenshotRouter); app.use(streamsRouter);
   const server = http.createServer(app); const wss = new WebSocketServer({ server }); wss.on('connection', handleConnection);
   const peers: WebSocket[] = [];
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -35,7 +38,7 @@ async function fixture(t: any) {
     return await new Promise<{ status: number; data: any }>((resolve, reject) => {
       if (url === '/api/account/login' && body) body = { ...registration(fixtureIp + '|' + (body as any).component), ...body };
       const req = http.request(origin + url, { method, localAddress: fixtureIp,
-        headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) } }, response => {
+        headers: { 'X-VisionGuard-Version': PROTOCOL_VERSION, ...(body ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) } }, response => {
         const chunks: Buffer[] = []; response.on('data', chunk => chunks.push(chunk)); response.on('end', () => {
           const text = Buffer.concat(chunks).toString(); resolve({ status: response.statusCode!, data: (() => { try { return JSON.parse(text); } catch { return text; } })() });
         });
@@ -57,7 +60,7 @@ async function fixture(t: any) {
       while (Date.now() < deadline) { const i = messages.findIndex(message => message.type === type && predicate(message)); if (i >= 0) return messages.splice(i, 1)[0]; await new Promise(resolve => setTimeout(resolve, 10)); }
       throw new Error(`Missing ${type}`);
     }
-    send({ type: 'auth', token, role: 'lifecycle', deviceId: 'spoofed', accountId: 'spoofed' });
+    send({ type: 'auth', token, role: 'lifecycle', deviceId: 'spoofed', accountId: 'spoofed', version: PROTOCOL_VERSION });
     return { ws, send, take, messages, auth: await take('auth-result') };
   }
   return { origin, request, login, peer };
@@ -137,7 +140,11 @@ test('real login derives identity and HTTP permissions; no legacy key or anonymo
   assert.equal(login.device.role, 'console'); assert.equal(login.account.username, 'account-a');
   assert.equal((await f.request('/api/account/session', 'GET', undefined, login.token)).data.device.deviceId, login.device.deviceId);
   assert.equal((await f.request('/api/alerts')).status, 401);
-  assert.equal((await fetch(f.origin + '/api/alerts', { headers: { 'X-API-Key': login.token } })).status, 401);
+  assert.equal((await fetch(f.origin + '/api/alerts', { headers: { 'X-API-Key': login.token, 'X-VisionGuard-Version': PROTOCOL_VERSION } })).status, 401);
+  // 协议版本闸门：旧版本端点静默出局（426 且无正文），但登录入口照常受理。
+  assert.equal((await fetch(f.origin + '/api/alerts', { headers: { Authorization: `Bearer ${login.token}` } })).status, 426);
+  assert.equal((await fetch(f.origin + '/api/alerts', { headers: { Authorization: `Bearer ${login.token}`, 'X-VisionGuard-Version': '0.0.1' } })).status, 426);
+  assert.equal((await f.request('/api/account/login', 'POST', { username: 'account-a', password: 'private-test-password-a', component: 'web-console' })).status, 200);
   assert.equal((await f.request('/api/alerts', 'GET', undefined, login.token)).status, 200);
   const peer = await f.peer(login.token);
   assert.equal(peer.auth.role, 'console'); assert.equal(peer.auth.deviceId, login.device.deviceId); assert.equal(peer.auth.component, 'web-console');
@@ -258,8 +265,8 @@ test('events, screenshots, WS lists, controls and time standards stay inside the
   addAlert(a.account.accountId, { alertId, deviceId: visual.device.deviceId, deviceName: 'Visual', timestamp: new Date().toISOString(), detections: [], createdAt: Date.now(), screenshotPath });
   assert.equal((await f.request('/api/alerts', 'GET', undefined, a.token)).data.alerts.some((alert: any) => alert.alertId === alertId), true);
   assert.equal((await f.request('/api/alerts?deviceId=' + visual.device.deviceId, 'GET', undefined, b.token)).data.alerts.length, 0);
-  assert.equal((await fetch(f.origin + `/screenshots/${alertId}.png`, { headers: { Authorization: `Bearer ${a.token}` } })).status, 200);
-  assert.equal((await fetch(f.origin + `/screenshots/${alertId}.png`, { headers: { Authorization: `Bearer ${b.token}` } })).status, 404);
+  assert.equal((await fetch(f.origin + `/screenshots/${alertId}.png`, { headers: { Authorization: `Bearer ${a.token}`, 'X-VisionGuard-Version': PROTOCOL_VERSION } })).status, 200);
+  assert.equal((await fetch(f.origin + `/screenshots/${alertId}.png`, { headers: { Authorization: `Bearer ${b.token}`, 'X-VisionGuard-Version': PROTOCOL_VERSION } })).status, 404);
   assert.equal((await f.request('/api/devices', 'GET', undefined, b.token)).data.devices.some((device: any) => device.deviceId === visual.device.deviceId), false);
 });
 

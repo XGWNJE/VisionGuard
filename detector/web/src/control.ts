@@ -110,7 +110,7 @@ export class ControlClient {
     this.socket = socket;
     this.status = '正在连接';
     this.onChange();
-    socket.onopen = () => { if (own !== this.generation || this.closed) { socket.close(); return; } socket.send(JSON.stringify({ type: 'auth', token: this.session.token })); };
+    socket.onopen = () => { if (own !== this.generation || this.closed) { socket.close(); return; } socket.send(JSON.stringify({ type: 'auth', token: this.session.token, version: this.session.version })); };
     socket.onmessage = event => { if (own === this.generation && !this.closed && typeof event.data === 'string') this.receive(event.data, socket); };
     socket.onclose = () => { if (own === this.generation) this.drop('连接中断，正在重连'); };
     socket.onerror = () => { if (own === this.generation) this.drop('连接中断，正在重连'); };
