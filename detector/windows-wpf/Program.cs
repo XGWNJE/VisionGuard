@@ -34,6 +34,9 @@ namespace VisionGuard.Detector.Windows
             // 要调登录界面时加 `--login-ui`（ui-preview.ps1 的 -LoginUi），或干脆不带这个环境变量。
             if (System.Array.IndexOf(args, "--login-ui") < 0) TryPreviewSignIn();
 
+            // 隔离预览的临时来源写在未分区设置里，登录后补进账号分区（见方法注释）。
+            SeedIsolatedPreviewSettings();
+
             // 先加载账号分区设置，驻留沿用已登录账号的同一设备身份。
             Utils.SettingsStore.Load();
 
@@ -106,6 +109,32 @@ namespace VisionGuard.Detector.Windows
         }
 
         private const uint AttachParentProcess = 0xFFFFFFFF;
+
+        /// <summary>
+        /// 隔离预览的临时来源：`PrepareWindows` 把 4 / 16 路预览来源写在未分区的 settings.ini 里，
+        /// 而登录之后设置读写走账号分区路径 `accounts/&lt;scope&gt;/settings.ini`，那份来源就看不见了。
+        /// 这里在首次登录后把它复制进账号分区，让预览一开窗就有临时来源。
+        /// 只在设置了 VISIONGUARD_SETTINGS_PATH（隔离环境）时生效，且不覆盖已存在的分区设置。
+        /// </summary>
+        private static void SeedIsolatedPreviewSettings()
+        {
+            try
+            {
+                string overridePath = Environment.GetEnvironmentVariable("VISIONGUARD_SETTINGS_PATH");
+                if (string.IsNullOrWhiteSpace(overridePath) || Utils.AccountSession.Current == null) return;
+                string full = System.IO.Path.GetFullPath(overridePath.Trim());
+                string scoped = System.IO.Path.Combine(
+                    System.IO.Path.GetDirectoryName(full),
+                    "accounts", Utils.AccountSession.ScopeKey, System.IO.Path.GetFileName(full));
+                if (System.IO.File.Exists(scoped) || !System.IO.File.Exists(full)) return;
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(scoped));
+                System.IO.File.Copy(full, scoped);
+            }
+            catch (Exception error)
+            {
+                Utils.LogManager.StaticWarn("[PreviewSignIn] seed settings skipped: " + error.Message);
+            }
+        }
 
         /// <summary>
         /// 本地预览的内置登录。环境变量 `VISIONGUARD_PREVIEW_SIGNIN` 是

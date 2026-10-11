@@ -107,3 +107,39 @@ test('publish script checks authorization before mutation while retaining read-o
     }
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 });
+
+test('preview builds carry the isolated sign-in while release packages stay clean', () => {
+  const gradle = fs.readFileSync(path.join(root, 'scripts/ui-preview.init.gradle'), 'utf8');
+  const previewKeys = ['preview_endpoint', 'preview_username', 'preview_password'];
+  // 预览构建注入三件套；正式构建没有这一步，应用回落到登录页。
+  for (const key of previewKeys) {
+    assert.match(gradle, new RegExp(`name="${key}"`), `ui-preview.init.gradle 没有注入 ${key}`);
+  }
+  assert.match(gradle, /test-accounts\.json/, '预览凭据的来源文件没有被引用');
+  // 三个应用的资源占位必须留在 main 且为空：缺了 release 变体引用 R.string.preview_* 会编译失败，
+  // 留了非空值就等于正式包内置了凭据。
+  for (const relative of [
+    'detector/android/app/src/main/res/values/strings.xml',
+    'notifier/android/app/src/main/res/values/strings.xml',
+    'detector/android-inference/app/src/main/res/values/strings.xml',
+  ]) {
+    const text = fs.readFileSync(path.join(root, relative), 'utf8');
+    for (const key of previewKeys) {
+      assert.match(text, new RegExp(`name="${key}"[^>]*/>`), `${relative} 的 ${key} 必须是空值占位`);
+    }
+  }
+  // 三个 Android 端都要登记并触发预览登录。
+  for (const relative of [
+    'detector/android/app/src/main/java/com/xgwnje/visionguard/detector/MainActivity.kt',
+    'notifier/android/app/src/main/java/com/xgwnje/visionguard/notifier/MainActivity.kt',
+    'detector/android-inference/app/src/main/java/com/xgwnje/visionguard/inference/MainActivity.kt',
+  ]) {
+    const text = fs.readFileSync(path.join(root, relative), 'utf8');
+    assert.match(text, /PreviewSignIn\.configure\(/, `${relative} 没有登记预览凭据`);
+    assert.match(text, /PreviewSignIn\.signIn\(/, `${relative} 没有发起预览登录`);
+  }
+  // Windows 侧的预览凭据经环境变量递入（隔离配置的字段契约不含账号密码）。
+  const program = fs.readFileSync(path.join(root, 'detector/windows-wpf/Program.cs'), 'utf8');
+  assert.match(program, /VISIONGUARD_PREVIEW_SIGNIN/);
+  assert.match(program, /--login-ui/, '缺少停在登录界面的调试入口');
+});

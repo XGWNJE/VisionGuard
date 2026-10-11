@@ -113,8 +113,20 @@ class Peer {
   }
   picture(alertId) { this.send({type:'screenshot-data',alertId,deviceId:this.session.device.deviceId,imageBase64:fs.readFileSync(path.join(HERE,'sample-frame.png')).toString('base64'),width:960,height:540}); }
 }
+// 清单里的旧 deviceId 与账号库漂移时，登录会 403（设备归属 / 身份不匹配）。
+// 去掉 deviceId 重试一次即可自愈：服务端按 deviceIdentity 认回或新建这台预览设备，
+// 否则整个控制台模拟数据都会因为这一条 403 起不来。
+async function loginBody(body, key) {
+  try { return await api('/api/account/login', null, body); }
+  catch (error) {
+    if (!body.deviceId || !/HTTP 403/.test(error.message)) throw error;
+    delete previous.devices[key]; delete manifest.devices[key];
+    const fresh = { ...body }; delete fresh.deviceId;
+    return await api('/api/account/login', null, fresh);
+  }
+}
 async function login(component, key) {
-  const session=await api('/api/account/login',null,{...account,component,deviceIdentity:require('node:crypto').createHash('sha256').update('ui-preview|'+key).digest('hex'),deviceModel:'模拟设备',...(previous.devices[key]?{deviceId:previous.devices[key]}:{})});
+  const session=await loginBody({...account,component,deviceIdentity:require('node:crypto').createHash('sha256').update('ui-preview|'+key).digest('hex'),deviceModel:'模拟设备',...(previous.devices[key]?{deviceId:previous.devices[key]}:{})}, key);
   sessions.push(session);return session;
 }
 async function main() {
@@ -129,7 +141,7 @@ async function main() {
     if(name.includes('expired')){const old=new Date(Date.now()-80*3600000);fs.utimesSync(file,old,old);}
   }
   const administrator=JSON.parse(fs.readFileSync(path.join(root,'.local/e2e-server/console-preview/initial-administrator.json'),'utf8'));
-  const adminSession=await api('/api/account/login',null,{username:administrator.username,password:administrator.password,component:'web-console',deviceIdentity:require('node:crypto').createHash('sha256').update('ui-preview-admin').digest('hex'),deviceModel:'模拟浏览器',...(previous.devices.admin?{deviceId:previous.devices.admin}:{})});
+  const adminSession=await loginBody({username:administrator.username,password:administrator.password,component:'web-console',deviceIdentity:require('node:crypto').createHash('sha256').update('ui-preview-admin').digest('hex'),deviceModel:'模拟浏览器',...(previous.devices.admin?{deviceId:previous.devices.admin}:{})}, 'admin');
   manifest.devices.admin=adminSession.device.deviceId;
   try {
     const existing=(await api('/api/admin/accounts',adminSession)).accounts;
@@ -168,10 +180,14 @@ async function main() {
   for(const d of devices.filter(d=>d.deviceName.startsWith('【模拟】')&&!current.has(d.deviceId)))await api('/api/devices/'+d.deviceId,consoleSession,undefined,'DELETE');
   devices=(await api('/api/devices',consoleSession)).devices;
   const alerts=(await api('/api/alerts?limit=100',consoleSession)).alerts.filter(a=>manifest.alertIds.includes(a.alertId));
-  assert.equal(specs.filter(s=>devices.some(d=>d.deviceId===s.session.device.deviceId)).length,6);
+  // 计数从 specs 算出来，别写死：加一个模拟设备就要同步改断言和证据，早晚会漂。
+  const simulated = specs.filter(s=>devices.some(d=>d.deviceId===s.session.device.deviceId));
+  assert.equal(simulated.length,specs.length);
   assert.ok(alerts.length>=12);assert.equal(alerts.filter(a=>a.hasScreenshot).length,alerts.length);
   const scopeList=await consolePeer.take(m=>m.type==='notification-scopes'&&m.notifiers?.some(n=>n.deviceId===specs[5].session.device.deviceId&&n.scope.mode==='selected'));
-  const evidence={account:'vg-test',simulated:true,nodes:6,onlineNodes:4,offlineNodes:2,sources:8,alerts:alerts.length,screenshots:alerts.filter(a=>a.hasScreenshot).length,uiFixturesReady:true,notificationScopes:scopeList.notifiers.map(n=>({deviceName:n.deviceName,online:n.online,mode:n.scope.mode})),checkedAt:new Date().toISOString()};
+  const offlineNodes=specs.filter(s=>s.offline).length;
+  const simulatedSources=specs.reduce((total,spec)=>total+(originalSources.get(spec.key)?.length||0),0);
+  const evidence={account:'vg-test',simulated:true,nodes:specs.length,onlineNodes:specs.length-offlineNodes,offlineNodes,sources:simulatedSources,alerts:alerts.length,screenshots:alerts.filter(a=>a.hasScreenshot).length,uiFixturesReady:true,notificationScopes:scopeList.notifiers.map(n=>({deviceName:n.deviceName,online:n.online,mode:n.scope.mode})),checkedAt:new Date().toISOString()};
   fs.writeFileSync(path.join(HERE,'verification.json'),JSON.stringify(evidence,null,2));console.log(JSON.stringify(evidence));
   startControls();
   console.log('UI preview scenarios: http://127.0.0.1:4319/ . Simulated data only.');
