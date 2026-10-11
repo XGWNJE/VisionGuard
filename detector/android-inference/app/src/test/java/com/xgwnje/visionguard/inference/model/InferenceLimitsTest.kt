@@ -20,12 +20,10 @@ class InferenceLimitsTest {
     }
 
     @Test
-    fun `INT8 两档还没有多路读数，按保守值拦`() {
-        // 单路中位已实测（320 为 65.7 ms、640 为 219.9 ms），但压力测量没做过；
-        // 宁可先跑通，也不要让来源静默卡死。补测后回填这里与文档。
-        ModelKeys.cpuKeys.forEach { key ->
-            assertEquals(InferenceLimits.CONSERVATIVE_LIMIT, InferenceLimits.perConfiguration(key, gpu = false))
-        }
+    fun `INT8 两档按多路实测收紧`() {
+        // 4 路 159.5 ms（6.3 帧/秒）达标、8 路 322.1 ms 掉线；640 的 2 路 151.4 ms 达标、4 路 548.0 ms 掉线。
+        assertEquals(4, InferenceLimits.perConfiguration("yolo26m_320_int8", gpu = false))
+        assertEquals(2, InferenceLimits.perConfiguration("yolo26m_640_int8", gpu = false))
     }
 
     @Test

@@ -4,16 +4,17 @@ package com.xgwnje.visionguard.inference.model
  * 单机同一档位能同时跑几路来源（单路帧率 ≥5 帧/秒 为界）。
  *
  * 为什么按「档位」计数而不是全机总数：每路来源各建一个独立会话，争用的是同一份算力。
- * 已实测（Xiaomi 26048RP6AC / MT8910 / API 37，640 输入、真实实例图）：
+ * 实测（Xiaomi 26048RP6AC / MT8910 / API 37，320 与 640 输入、真实实例图，8 帧多路扫描）：
  *
- * | 配置 | 上限 | 依据 |
+ * | 配置 | 上限 | 依据（同轮单路延迟中位） |
  * |---|---|---|
- * | ONNX CPU 4 线程 + `yolo26m_640`（FP32，已下架） | 2 路 | 2 路 6.4 帧/秒；4 路掉到 1.8 |
- * | LiteRT GPU + 截断图 `yolo26m_640_gpu.tflite` | 32 路 | 32 路仍 15.4 帧/秒，受内存而非算力约束 |
+ * | ONNX CPU 4 线程 + `yolo26m_320_int8` | 4 路 | 4 路 159.5 ms（6.3 帧/秒 ✓）；8 路 322.1 ms（3.1 ✗） |
+ * | ONNX CPU 4 线程 + `yolo26m_640_int8` | 2 路 | 2 路 151.4 ms（6.6 ✓）；4 路 548.0 ms（1.8 ✗） |
+ * | LiteRT GPU + `yolo26m_320_gpu.tflite` | 32 路 | 8 / 16 / 32 路单路 21.5 / 21.1 / 21.0 ms，未触底 |
+ * | LiteRT GPU + `yolo26m_640_gpu.tflite` | 32 路 | 32 路仍 15.4 帧/秒，受内存而非算力约束 |
  *
- * **INT8 两档还没有多路读数**：单路中位是 320 的 65.7 ms、640 的 219.9 ms（同轮），
- * 但压力测量没做过，所以这里不登记、按保守值拦截，等真机补测后回填
- * （落点见 `docs/06-任务清单.md` 第 11 项）。数值一律是**实测下限**，不是理论值。
+ * GPU 档在 CPU 上（`gpu = false`）不登记：GPU 档本来就不下发 ONNX 本体，跑到 CPU 说明配置异常，
+ * 按保守值拦。数值是**实测下限**，不是理论值。
  */
 object InferenceLimits {
 
@@ -22,6 +23,8 @@ object InferenceLimits {
 
     /** 在册的每档位上限。 */
     private val limits: Map<String, Int> = buildMap {
+        put(entry("yolo26m_320_int8", gpu = false), 4)
+        put(entry("yolo26m_640_int8", gpu = false), 2)
         // 截断图在 GPU 上是排队执行：路数翻倍只降单路帧率，32 路仍未触底，故按 32 记。
         ModelKeys.gpuKeys.forEach { put(entry(it, gpu = true), 32) }
     }
