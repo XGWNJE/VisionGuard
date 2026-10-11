@@ -207,8 +207,23 @@ foreach ($item in $plan) {
     # `yolo26m_640_anchor_float32.tflite` 要落成 `yolo26m_640_gpu.tflite`），
     # 只给目录会让远端多出一个端侧永远不会请求的文件。输出先收进变量再判退出码：
     # 直接管道到 Out-Null 时 `$LASTEXITCODE` 取到的不是 scp 的退出码。
-    $scpOutput = & scp $item.Path "${VpsHost}:${VpsDir}/$($item.File)" 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "上传失败：$($item.File) -> $($scpOutput -join ' ')" }
+    #
+    # 重试是必要的而非保险：实测 21 MiB 的文件会偶发 `client_loop: send disconnect:
+    # Connection reset`，一次失败就让整批停在半路（已上传的留着，剩下的没投），
+    # 与"任何一步失败就整体中止"的校验语义不一致。重试后仍以 sha256 为准。
+    $uploaded = $false
+    for ($attempt = 1; $attempt -le 3 -and -not $uploaded; $attempt++) {
+        $scpOutput = & scp $item.Path "${VpsHost}:${VpsDir}/$($item.File)" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            if ($attempt -lt 3) {
+                Write-Host ("  第 {0} 次上传被中断，重试：{1}" -f $attempt, ($scpOutput -join ' ').Trim())
+                Start-Sleep -Seconds 3
+                continue
+            }
+            throw "上传失败（已重试 3 次）：$($item.File) -> $($scpOutput -join ' ')"
+        }
+        $uploaded = $true
+    }
     $remoteHash = ((& ssh $VpsHost "sha256sum '$VpsDir/$($item.File)' | cut -d' ' -f1") -join '').Trim().ToLower()
     if ($remoteHash -ne $item.Sha256) {
         throw "上传后校验不一致：$($item.File)（本地 $($item.Sha256) / 远端 $remoteHash）"

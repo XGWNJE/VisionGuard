@@ -19,31 +19,42 @@ class ModelKeysTest {
     val temporary = TemporaryFolder()
 
     @Test
-    fun `可选清单只有本体，量化版未投放就不列出来`() {
+    fun `可选清单是本体与量化版合起来的十二项`() {
         assertEquals(6, ModelKeys.baseKeys.size)
-        assertEquals(ModelKeys.baseKeys, ModelKeys.keys)
-        ModelKeys.keys.forEach { key ->
-            assertTrue("可选清单里不该出现量化版：$key", !ModelKeys.isQuantized(key))
-            assertTrue(ModelKeys.isSupported(key))
-        }
+        assertEquals(12, ModelKeys.keys.size)
         ModelKeys.baseKeys.forEach { base ->
-            assertTrue(
-                "服务端没有量化文件，列出来就是坏入口",
-                !ModelKeys.isSupported(base + ModelKeys.INT8_SUFFIX)
-            )
+            assertTrue("缺本体：$base", ModelKeys.isSupported(base))
+            assertTrue("缺量化版：$base${ModelKeys.INT8_SUFFIX}", ModelKeys.isSupported(base + ModelKeys.INT8_SUFFIX))
+        }
+        // 服务端必须同时有本体与量化产物，否则清单里的键点了会失败
+        ModelKeys.keys.forEach { key ->
+            assertTrue("服务端按 <键>.onnx 分发，键要能拼出文件名：$key", ModelKeys.fileName(key).endsWith(".onnx"))
         }
     }
 
     @Test
     fun `派生清单保留本体与量化版交替的顺序`() {
-        // 将来启用时把 keys 改成 derivedKeys()：顺序必须保持这样，
-        // 因为 defaultModelKey 取「第一个已下载的键」，量化版排在各自本体之后，
+        // 顺序不能变：defaultModelKey 取「第一个已下载的键」，量化版排在各自本体之后，
         // 新装设备的默认模型才仍是 FP32。
         val derived = ModelKeys.derivedKeys()
         assertEquals(ModelKeys.baseKeys.size * 2, derived.size)
+        assertEquals(derived, ModelKeys.keys)
         ModelKeys.baseKeys.forEachIndexed { index, base ->
             assertEquals(base, derived[index * 2])
             assertEquals("${base}${ModelKeys.INT8_SUFFIX}", derived[index * 2 + 1])
+        }
+    }
+
+    @Test
+    fun `量化版不参与 GPU 加速`() {
+        // 量化产物只有 .onnx（ONNX Runtime CPU 的正路），没有 GPU 产物；送去 LiteRT 会在
+        // 写缓冲时报尺寸不符。supportsGpu 必须把它们挡在外面。
+        ModelKeys.keys.filter { ModelKeys.isQuantized(it) }.forEach { key ->
+            assertTrue("量化版不该有 GPU 产物入口：$key", !ModelKeys.supportsGpu(key))
+        }
+        ModelKeys.gpuKeys.forEach { key ->
+            assertTrue("GPU 键本身不能是量化版：$key", !ModelKeys.isQuantized(key))
+            assertTrue(ModelKeys.supportsGpu(key))
         }
     }
 

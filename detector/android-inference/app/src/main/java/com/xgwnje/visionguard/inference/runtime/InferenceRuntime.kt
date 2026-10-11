@@ -24,6 +24,7 @@ import com.xgwnje.visionguard.inference.detect.DetectionParams
 import com.xgwnje.visionguard.inference.detect.MaskRegion
 import com.xgwnje.visionguard.inference.model.InferenceLimits
 import com.xgwnje.visionguard.inference.model.ModelFormat
+import com.xgwnje.visionguard.inference.model.ModelInferenceTarget
 import com.xgwnje.visionguard.inference.model.ModelKeys
 import com.xgwnje.visionguard.inference.model.ModelStore
 import com.xgwnje.visionguard.inference.net.ControlClient
@@ -53,14 +54,25 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
 
-/** 模型资源视图；GPU 版本是可选的第二种产物，只在支持该组合的键上出现。 */
+/**
+ * 模型资源视图。
+ *
+ * 「这个模型跑在哪」必须一眼看清：同一个模型有 FP32 本体、量化版，个别键还有 GPU 产物，
+ * 三种组合对应三种后端。所以每项都算好 [target]（GPU / CPU + 精度），界面直接显示它，
+ * 而不是把 GPU 产物列成另一个看起来无关的模型。
+ */
 data class ModelState(
     val key: String,
     val displayName: String,
     val downloaded: Boolean,
-    /** 是否提供 GPU 版本下载入口。 */
+    /** 是否提供 GPU 版本下载入口（量化版恒为 false，见 `ModelKeys.supportsGpu`）。 */
     val gpuSupported: Boolean = false,
-    val gpuDownloaded: Boolean = false
+    val gpuDownloaded: Boolean = false,
+    /**
+     * 该模型当前的推理目标。GPU 产物已下载 → 走 GPU；否则按精度落 ONNX Runtime CPU。
+     * GPU 产物没下载时给出下载提示，避免"以为在加速其实没有"。
+     */
+    val target: ModelInferenceTarget = ModelInferenceTarget.CpuFp32
 )
 
 /** 下载进度视图。 */
@@ -635,12 +647,14 @@ class InferenceRuntime private constructor(private val context: Context) {
         updateState {
             it.copy(
                 models = ModelKeys.keys.map { key ->
+                    val gpuReady = models.isGpuReady(key)
                     ModelState(
                         key = key,
                         displayName = ModelKeys.displayName(key),
                         downloaded = models.isDownloaded(key),
                         gpuSupported = ModelKeys.supportsGpu(key),
-                        gpuDownloaded = models.isGpuReady(key)
+                        gpuDownloaded = gpuReady,
+                        target = ModelInferenceTarget.resolve(key, gpuReady)
                     )
                 }
             )

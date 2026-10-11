@@ -13,15 +13,15 @@ import java.util.concurrent.TimeUnit
  * 与 Windows modern 档同一套 YOLO26 模型（`[1,300,6]`，模型内含 NMS）：Android 的
  * ONNX Runtime 属于现代档，不需要 Win7 legacy 的 YOLOv5 模型。
  *
- * 每个键最多有两种产物、两种运行方式：
- * - `<键>.onnx` 本体：图内自带 NMS，正式档（ONNX CPU）用它；
- * - `<键>_gpu.tflite` 截断图：图尾的 int64 后处理被截掉（否则 GPU 加速器整图编译失败），
- *   NMS 移到端侧解析，只有 [gpuKeys] 里的键才有，且只在 640 及以上值得用。
+ * 每个键最多有两种产物；清单里每个基名两项，合起来 12 项：
+ * - `<键>.onnx` FP32 本体：图内自带 NMS，走 ONNX Runtime CPU；有 GPU 产物的键可以改用 GPU；
+ * - `<键>_int8.onnx` 量化版：与本体并存、键名带 `_int8`，**只走 ONNX Runtime CPU**
+ *   （量化版没有 GPU 产物，也不会被送去 LiteRT——LiteRT 读 `.tflite`，量化版只有 `.onnx`）。
  *
- * 量化版暂**不进可选清单**：模型清单直接驱动参数抽屉的模型选择器，未下载的会显示下载入口，
- * 服务端没有对应文件时用户点了必然失败。owner 已决定在推理路线重新梳理前不投放量化模型，
- * 因此这里只列本体键；`INT8_SUFFIX` 等派生工具保留并在单测里固定，将来要开只需把 [keys]
- * 改回 [derivedKeys]。
+ * 产物与路线一一对应，别混：
+ * - CPU 正式档 = ONNX Runtime · CPU 4 线程 + int8 或 FP32 本体；
+ * - GPU 档 = LiteRT GPU + `<基名>_gpu.tflite`（截断图，图尾 int64 后处理被截掉，否则整图编译失败），
+ *   NMS 移到端侧解析，只有 [gpuKeys] 里的键才有，且只在 640 及以上值得用。
  */
 object ModelKeys {
     /** 原始（FP32）模型键，顺序即默认选择顺序。 */
@@ -34,8 +34,8 @@ object ModelKeys {
     /** 量化版后缀。 */
     const val INT8_SUFFIX = "_int8"
 
-    /** 当前可选键：只列本体（量化模型未投放）。 */
-    val keys: List<String> = baseKeys
+    /** 当前可选键：本体与量化版交替（12 项）。 */
+    val keys: List<String> = derivedKeys()
 
     /**
      * 有 GPU 产物、允许走加速的键。
@@ -50,7 +50,7 @@ object ModelKeys {
      * 本体与量化版交替的全量清单（`本体、量化版、本体、量化版…`）。
      *
      * 顺序不能随意调整：[InferenceRuntime.defaultModelKey] 取「第一个已下载的键」，
-     * 量化版排在各自本体之后，新装设备的默认模型才仍是 FP32。当前未启用，保留备用。
+     * 量化版排在各自本体之后，新装设备的默认模型才仍是 FP32。
      */
     fun derivedKeys(): List<String> = baseKeys.flatMap { listOf(it, it + INT8_SUFFIX) }
 
@@ -58,8 +58,14 @@ object ModelKeys {
 
     fun isSupported(key: String): Boolean = keys.contains(key)
 
-    /** 该键是否有 GPU 产物（控制下载入口与是否尝试加速）。 */
-    fun supportsGpu(key: String): Boolean = keys.contains(key) && gpuKeys.contains(key)
+    /**
+     * 该键是否有 GPU 产物（控制下载入口与是否尝试加速）。
+     *
+     * 量化版一律 false：这些量化产物的边界是 float32、图内 int8，端侧没有它们的边界量化登记表，
+     * 送去 LiteRT 会在写缓冲时报尺寸不符；走 ONNX Runtime CPU 才是它们的正路。
+     */
+    fun supportsGpu(key: String): Boolean =
+        keys.contains(key) && !isQuantized(key) && gpuKeys.contains(key)
 
     /** 是否为量化版键。 */
     fun isQuantized(key: String): Boolean = key.endsWith(INT8_SUFFIX)

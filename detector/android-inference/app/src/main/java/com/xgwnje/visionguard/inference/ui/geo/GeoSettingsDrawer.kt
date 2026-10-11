@@ -255,11 +255,13 @@ private fun ModelSection(
 
     GeoDivider()
     GeoSectionLabel("02", "模型资源", "按需下载")
-    GeoHint("模型按需从统一服务下载，不随安装包分发；长度校验通过后才替换正式文件。使用中的模型不可删除。")
-    GeoHint("GPU 版本是另一份产物（截断图，NMS 在端侧解析）：只在 640 及以上更快，320 档请用默认的 CPU 版本。下载后该模型的来源会自动改用 GPU，编译失败则回落 CPU 并说明原因。")
+    GeoHint("模型按需从统一服务下载，不随安装包分发；长度校验通过后才替换正式文件。使用中的模型不可删除。清单里每个模型标出它跑在哪：<后端> 是当前目标。")
+    GeoHint("GPU 是同一模型的另一份产物（截断图，NMS 在端侧解析）：只在 640 及以上更快，320 档请用 CPU。GPU 产物下载后该模型自动改用 GPU，编译失败回落 CPU 并说明原因。量化版（INT8）一律走 ONNX Runtime CPU。")
     state.models.forEach { model ->
         val used = state.sources.any { it.state.isRunning && it.params.modelKey == model.key }
         val progress = state.downloads[model.key]
+        val gpuSlot = "${model.key}_gpu"
+        val gpuProgress = state.downloads[gpuSlot]
         var sizeText by remember(model.key, model.downloaded) { mutableStateOf("") }
         LaunchedEffect(model.key, model.downloaded) {
             sizeText = withContext(Dispatchers.IO) {
@@ -269,11 +271,22 @@ private fun ModelSection(
         }
         Row(Modifier.fillMaxWidth().heightIn(min = Geo.Touch), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(model.displayName, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(model.displayName, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.width(8.dp))
+                    // 这一项到底跑在哪个后端：GPU 已就绪显示 GPU，量化版显示 CPU · INT8，其余 CPU。
+                    Text(
+                        model.target.label,
+                        color = if (model.target.accelerated) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
                 Text(
                     when {
                         progress != null && progress.total > 0 -> "下载 ${progress.percent}%"
                         progress != null -> "下载中…"
+                        gpuProgress != null && gpuProgress.total > 0 -> "GPU 产物下载 ${gpuProgress.percent}%"
+                        gpuProgress != null -> "GPU 产物下载中…"
                         model.downloaded -> "已下载${if (sizeText.isNotEmpty()) " · $sizeText" else ""}"
                         else -> "未下载"
                     },
@@ -281,20 +294,37 @@ private fun ModelSection(
                     style = MaterialTheme.typography.bodySmall
                 )
             }
+            if (model.gpuSupported && model.downloaded && !model.gpuDownloaded && gpuProgress == null) {
+                // GPU 产物按需下载：不默认占用带宽与磁盘，但入口就在这一项上，不另开一行。
+                GeoKey(
+                    onClick = { scope.launch { runtime.downloadGpuModel(model.key)?.let(onMessage) } },
+                    label = "下载 GPU",
+                    icon = LucideIcons.Download
+                )
+            } else if (model.gpuSupported && model.gpuDownloaded && gpuProgress == null) {
+                GeoKey(
+                    onClick = { scope.launch { runtime.deleteModel(model.key, ModelFormat.GPU_TFLITE)?.let(onMessage) } },
+                    label = "删 GPU",
+                    icon = LucideIcons.Trash2,
+                    tone = GeoTone.Secondary
+                )
+            }
             when {
-                progress != null -> Text(
-                    if (progress.total > 0) "${progress.percent}%" else "下载中",
+                progress != null || gpuProgress != null -> Text(
+                    if ((progress ?: gpuProgress)!!.total > 0) "${(progress ?: gpuProgress)!!.percent}%" else "下载中",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall
                 )
 
-                model.downloaded -> GeoKey(
-                    onClick = { pendingDelete = model.key },
-                    label = if (used) "使用中" else "删除",
-                    icon = LucideIcons.Trash2,
-                    tone = GeoTone.Secondary,
-                    enabled = !used
-                )
+                model.downloaded -> Spacer(Modifier.width(8.dp)).let {
+                    GeoKey(
+                        onClick = { pendingDelete = model.key },
+                        label = if (used) "使用中" else "删除",
+                        icon = LucideIcons.Trash2,
+                        tone = GeoTone.Secondary,
+                        enabled = !used
+                    )
+                }
 
                 else -> GeoKey(
                     onClick = { scope.launch { runtime.downloadModel(model.key)?.let(onMessage) } },
@@ -303,7 +333,7 @@ private fun ModelSection(
                 )
             }
         }
-        progress?.let {
+        (progress ?: gpuProgress)?.let {
             if (it.total > 0) {
                 Box(Modifier.fillMaxWidth().height(4.dp).background(MaterialTheme.colorScheme.surfaceVariant, RectangleShape)) {
                     Box(
@@ -311,47 +341,6 @@ private fun ModelSection(
                             .fillMaxWidth(it.percent / 100f)
                             .fillMaxHeight()
                             .background(MaterialTheme.colorScheme.primary, RectangleShape)
-                    )
-                }
-            }
-        }
-        if (model.gpuSupported) {
-            val gpuSlot = "${model.key}_gpu"
-            val gpuProgress = state.downloads[gpuSlot]
-            Row(Modifier.fillMaxWidth().heightIn(min = Geo.Touch), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("${model.displayName} · GPU", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium)
-                    Text(
-                        when {
-                            gpuProgress != null && gpuProgress.total > 0 -> "下载 ${gpuProgress.percent}%"
-                            gpuProgress != null -> "下载中…"
-                            model.gpuDownloaded -> "已下载 · 来源自动改用 GPU"
-                            !model.downloaded -> "需先下载模型本体"
-                            else -> "未下载"
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-                when {
-                    gpuProgress != null -> Text(
-                        if (gpuProgress.total > 0) "${gpuProgress.percent}%" else "下载中",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-
-                    model.gpuDownloaded -> GeoKey(
-                        onClick = { scope.launch { runtime.deleteModel(model.key, ModelFormat.GPU_TFLITE)?.let(onMessage) } },
-                        label = "删除 GPU",
-                        icon = LucideIcons.Trash2,
-                        tone = GeoTone.Secondary
-                    )
-
-                    else -> GeoKey(
-                        onClick = { scope.launch { runtime.downloadGpuModel(model.key)?.let(onMessage) } },
-                        label = "下载 GPU",
-                        icon = LucideIcons.Download,
-                        enabled = model.downloaded
                     )
                 }
             }
