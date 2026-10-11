@@ -33,8 +33,11 @@ class RememberedLoginTest {
         val prefs = Proxy.newProxyInstance(javaClass.classLoader, arrayOf(SharedPreferences::class.java)) { _, method, args ->
             when(method.name) { "getString" -> values[args[0]] ?: args[1]; "edit" -> editor; else -> error("Unexpected preference operation") }
         } as SharedPreferences
-        val ctor = AccountStore::class.java.getDeclaredConstructor(SharedPreferences::class.java, java.lang.Boolean.TYPE, Function0::class.java).apply { isAccessible = true }
-        val store = ctor.newInstance(prefs, true, { "unused-stable-id" })
+        // 构造器还有稳定身份与客户端版本两个参数；版本头不参与偏好读写断言，用固定测试版本。
+        val ctor = AccountStore::class.java.getDeclaredConstructor(
+            SharedPreferences::class.java, java.lang.Boolean.TYPE, Function0::class.java, String::class.java
+        ).apply { isAccessible = true }
+        val store = ctor.newInstance(prefs, true, { "unused-stable-id" }, "0.0.0-test")
         store.rememberLogin(base + "/", "android-camera", null)
         assertFalse(values.containsKey("remembered:$base:android-camera"))
         assertEquals(2, values.size)

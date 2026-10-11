@@ -15,6 +15,16 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class AccountSessionInvalidationTest {
+    /** 构造器签名里除 prefs 外还有实测端点开关、稳定身份与客户端版本；版本头不参与这些断言。 */
+    private fun newStore(prefs: SharedPreferences, allowsTestEndpoint: Boolean, identity: () -> String): AccountStore =
+        AccountStore::class.java.getDeclaredConstructor(
+            SharedPreferences::class.java, java.lang.Boolean.TYPE, Function0::class.java, String::class.java
+        ).apply { isAccessible = true }.newInstance(prefs, allowsTestEndpoint, identity, TEST_CLIENT_VERSION)
+
+    private companion object {
+        const val TEST_CLIENT_VERSION = "0.0.0-test"
+    }
+
     @Test fun releasePinsProductionAndRejectsPreviouslySavedIsolatedSession() {
         var encryptedReads = 0
         val prefs = Proxy.newProxyInstance(javaClass.classLoader, arrayOf(SharedPreferences::class.java)) { _, method, args ->
@@ -25,13 +35,12 @@ class AccountSessionInvalidationTest {
                 else -> args[1]
             }
         } as SharedPreferences
-        val constructor = AccountStore::class.java.getDeclaredConstructor(SharedPreferences::class.java, java.lang.Boolean.TYPE, Function0::class.java).apply { isAccessible = true }
         val identity = { error("Identity must not be read before login") }
-        val release = constructor.newInstance(prefs, false, identity)
+        val release = newStore(prefs, false, identity)
         assertEquals(AccountStore.DEFAULT_ENDPOINT, release.savedEndpoint)
         assertNull(release.session.value)
         assertEquals("An isolated credential must not be decoded as a production session", 0, encryptedReads)
-        val debug = constructor.newInstance(prefs, true, identity)
+        val debug = newStore(prefs, true, identity)
         assertEquals("http://127.0.0.1:3173", debug.savedEndpoint)
         assertEquals(1, encryptedReads)
     }
@@ -72,7 +81,7 @@ class AccountSessionInvalidationTest {
                         else -> error("Unexpected preferences read: ${method.name}")
                     }
                 } as SharedPreferences
-                val store = AccountStore::class.java.getDeclaredConstructor(SharedPreferences::class.java, java.lang.Boolean.TYPE, Function0::class.java).apply { isAccessible = true }.newInstance(prefs, true, { error("Identity must not be read during an existing session request") })
+                val store = newStore(prefs, true) { error("Identity must not be read during an existing session request") }
                 @Suppress("UNCHECKED_CAST")
                 val sessions = AccountStore::class.java.getDeclaredField("mutableSession").apply { isAccessible = true }.get(store) as MutableStateFlow<AccountSession?>
                 val old = AccountSession("http://127.0.0.1:${server.localPort}", "old-token", "2099-01-01T00:00:00Z", "account", "user", "device", "Camera", "android-camera")
