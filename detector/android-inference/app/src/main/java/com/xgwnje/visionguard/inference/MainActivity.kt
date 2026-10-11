@@ -171,15 +171,24 @@ class MainActivity : ComponentActivity() {
      *
      * ```
      * adb shell am start -n <包名>/com.xgwnje.visionguard.inference.MainActivity \
-     *     --ez benchmark true [--ez benchmark_full true]
+     *     --ez benchmark true [--ez benchmark_full true] [--ei benchmark_parallel 8]
      * ```
+     *
+     * `benchmark_parallel` 大于 1 时改为跑**多路压力**：同时开这么多路跑同一模型。
      */
     private fun runAccelerationBenchmarkIfRequested(): Boolean {
         if (!isBenchmarkBuild() || intent?.getBooleanExtra(EXTRA_BENCHMARK, false) != true) return false
         val full = intent?.getBooleanExtra(EXTRA_BENCHMARK_FULL, false) == true
+        val parallelStreams = intent?.getIntExtra(EXTRA_BENCHMARK_PARALLEL, 0) ?: 0
+        val parallelModels = intent?.getStringExtra(EXTRA_BENCHMARK_MODELS).orEmpty()
 
         lifecycleScope.launch {
-            BundledAccelerationBenchmark.run(this@MainActivity, onlyAccelerated = !full)
+            BundledAccelerationBenchmark.run(
+                this@MainActivity,
+                onlyAccelerated = !full,
+                parallelStreams = parallelStreams,
+                parallelModels = parallelModels
+            )
             val state = BundledAccelerationBenchmark.state.value
             Log.i(BundledAccelerationBenchmark.TAG, "报告：${state.reportPath ?: "写入失败"}")
             state.report.lines().forEach { Log.i(BundledAccelerationBenchmark.TAG, it) }
@@ -233,5 +242,11 @@ class MainActivity : ComponentActivity() {
 
         /** `--ez benchmark_full true`：连逐线程 CPU 档一起跑；省略时只跑加速档与基线。 */
         const val EXTRA_BENCHMARK_FULL = "benchmark_full"
+
+        /** `--ei benchmark_parallel N`：多路压力模式，同时开 N 路跑同一模型（N > 0 时生效）。 */
+        const val EXTRA_BENCHMARK_PARALLEL = "benchmark_parallel"
+
+        /** `--es benchmark_models a,b`：只跑名字包含这些子串的模型（空表示全部）。 */
+        const val EXTRA_BENCHMARK_MODELS = "benchmark_models"
     }
 }

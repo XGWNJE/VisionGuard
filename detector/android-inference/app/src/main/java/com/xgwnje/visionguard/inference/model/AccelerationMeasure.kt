@@ -54,8 +54,43 @@ object AccelerationMeasure {
         val quality: String = ""
     )
 
+    /**
+     * 多路并发读数：同一档位同时跑 [streams] 路，每路 [framesPerStream] 帧。
+     *
+     * 单路中位数回答"一路多快"，本结构回答"多路压力下还顶不顶得住"：
+     * [framesPerSecond] 反映总算力（总帧数 ÷ 墙钟时间，并行执行不能把每路帧率相加），
+     * [medianMs] / [p95Ms] 反映每路的排队情况。
+     */
+    data class ParallelResult(
+        val model: String,
+        val provider: InferenceProvider,
+        val streams: Int,
+        val framesPerStream: Int,
+        val elapsedMs: Double,
+        val medianMs: Double,
+        val p95Ms: Double,
+        val maxMs: Double
+    ) {
+        /** 聚合吞吐：总帧数 ÷ 墙钟时间。 */
+        val framesPerSecond: Double
+            get() = if (elapsedMs <= 0) 0.0 else streams * framesPerStream * 1000.0 / elapsedMs
+
+        /** 报告文本：一眼看出该档位在多路压力下够不够用。 */
+        fun lines(): List<String> = listOf(
+            ("  【多路 %d 路 × %d 帧】%s：合计 %.0f ms，吞吐 %.1f 帧/秒，"
+                + "单路延迟 中位 %.1f / P95 %.1f / 最大 %.1f ms")
+                .format(streams, framesPerStream, provider.title, elapsedMs, framesPerSecond, medianMs, p95Ms, maxMs)
+        )
+    }
+
     /** 测量报告：同一设备上的全部读数与失败项。 */
-    data class Report(val device: String, val results: List<Result>, val failures: List<String>) {
+    data class Report(
+        val device: String,
+        val results: List<Result>,
+        val failures: List<String>,
+        /** 多路并发读数；本机不跑多路时为空。 */
+        val parallel: List<ParallelResult> = emptyList()
+    ) {
 
         fun lines(): List<String> = buildList {
             add("设备：$device")
@@ -89,6 +124,13 @@ object AccelerationMeasure {
                 }
             }
             failures.forEach { add("失败：$it") }
+            if (parallel.isNotEmpty()) {
+                add("多路并发（同一档位同时跑多路，看总吞吐与单路排队）")
+                parallel.groupBy { it.model }.forEach { (model, rows) ->
+                    add("模型：$model")
+                    rows.forEach { row -> addAll(row.lines()) }
+                }
+            }
         }
     }
 

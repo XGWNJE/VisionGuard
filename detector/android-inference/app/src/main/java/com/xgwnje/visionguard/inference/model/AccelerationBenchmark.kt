@@ -3,6 +3,10 @@ package com.xgwnje.visionguard.inference.model
 import android.util.Log
 import com.xgwnje.visionguard.inference.detect.ArgbImage
 import com.xgwnje.visionguard.inference.detect.YoloOutputParser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -169,8 +173,134 @@ object AccelerationBenchmark {
     }
 
     /**
-     * 质量探针：测速结束后用**同一个已建会话**多跑一帧，把"检出了什么"记进报告。
+     * 多路并发测量：同一档位、[streams] 路**同时**跑 [iterations] 帧，看多路压力下的表现。
      *
+     * 为什么要单独测：单路中位数回答的是"一路多快"，而实际部署是多个来源同时推理。
+     * CPU 档在多路下会互相抢核（每路排队，单路延迟上升、总算力封顶），
+     * GPU 档则可能因为并行度不足而吃不满——**两者的优劣在多路下可能反转**，
+     * 所以必须用聚合吞吐（总帧数 ÷ 墙钟时间）与单路延迟分位数一起看。
+     *
+     * 每路各自建独立会话（真实部署也是多个来源各自持有推理链）。
+     */
+    suspend fun runParallel(
+        modelName: String,
+        onnxFile: File?,
+        tfliteFile: File?,
+        provider: InferenceProvider,
+        streams: Int,
+        iterations: Int,
+        argb: ArgbImage? = null,
+        log: (String) -> Unit = { Log.i(TAG, it) }
+    ): Pair<AccelerationMeasure.ParallelResult?, List<String>> {
+        val modelFile = when (provider.runtime) {
+            InferenceRuntimeKind.ONNX -> onnxFile
+            InferenceRuntimeKind.LITERT -> tfliteFile
+        }
+        if (modelFile == null) {
+            return null to listOf("$modelName · ${provider.title}：缺 ${extensionOf(provider.runtime)} 产物")
+        }
+        val warmup = WARMUP_RUNS
+        return try {
+            val outcome: Pair<List<DoubleArray>, Double> = withContext(Dispatchers.Default) {
+                val startedAt = System.nanoTime()
+                val perStream = (0 until streams).map {
+                    async { runOneStream(modelFile, provider, argb, warmup, iterations) }
+                }
+                val all: List<DoubleArray> = awaitAll(*perStream.toTypedArray())
+                all to (System.nanoTime() - startedAt) / 1_000_000.0
+            }
+            val elapsedMs = outcome.second
+            val merged: List<Double> = outcome.first.flatMap { it.toList() }.sorted()
+            val result = AccelerationMeasure.ParallelResult(
+                model = modelName,
+                provider = provider,
+                streams = streams,
+                framesPerStream = iterations,
+                elapsedMs = elapsedMs,
+                medianMs = AccelerationMeasure.median(merged),
+                p95Ms = percentile(merged, 0.95),
+                maxMs = merged.lastOrNull() ?: 0.0
+            )
+            log(
+                "%s · %s：%d 路 × %d 帧，合计 %.0f ms，吞吐 %.1f 帧/秒，单路延迟 中位 %.1f / P95 %.1f / 最大 %.1f ms"
+                    .format(
+                        modelName, provider.title, streams, iterations, elapsedMs,
+                        result.framesPerSecond, result.medianMs, result.p95Ms, result.maxMs
+                    )
+            )
+            result to emptyList()
+        } catch (error: Throwable) {
+            val reason = error.message ?: error::class.java.simpleName
+            log("失败 $modelName · ${provider.title}（多路 $streams）：$reason")
+            null to listOf("$modelName · ${provider.title}（多路 $streams）：$reason")
+        }
+    }
+
+    /**
+     * 一路的推理循环：独立会话 + 预热 + 逐帧计时。返回每帧耗时（ms）。
+     *
+     * 每路各建独立会话，是因为真实部署里多个来源各自持有推理链；共用会话会低估内存与调度压力。
+     */
+    private fun runOneStream(
+        modelFile: File,
+        provider: InferenceProvider,
+        argb: ArgbImage?,
+        warmup: Int,
+        iterations: Int
+    ): DoubleArray {
+        val (size, session, close) = createEngine(modelFile, provider)
+        try {
+            val tensor = argb?.toLetterboxTensor(size)?.tensor ?: AccelerationMeasure.syntheticInput(size)
+            repeat(warmup) { session.run(tensor) }
+            return DoubleArray(iterations) { frame ->
+                val began = System.nanoTime()
+                session.run(tensor)
+                (System.nanoTime() - began) / 1_000_000.0
+            }
+        } finally {
+            close()
+        }
+    }
+
+    /** 已建会话的统一包装：ONNX 与两种 LiteRT 入口在这里合成一条路径。 */
+    private fun interface Session {
+        /** 跑一帧；入参为 CHW `float[3*size*size]`。 */
+        fun run(tensor: FloatArray): FloatArray
+    }
+
+    /**
+     * 建一个独立会话，返回 (输入边长, 会话, 关闭函数)。
+     *
+     * 三元组而不是自定义类：这里只需要这三个值，多一层包装只会增加阅读成本。
+     */
+    private fun createEngine(
+        modelFile: File,
+        provider: InferenceProvider
+    ): Triple<Int, Session, () -> Unit> =
+        when (provider.runtime) {
+            InferenceRuntimeKind.ONNX -> {
+                val engine = OnnxEngine.create(modelFile, provider)
+                Triple(engine.modelSize, Session { tensor -> engine.run(tensor) }) { engine.close() }
+            }
+
+            InferenceRuntimeKind.LITERT -> if (provider.usesLitertAcceleratorApi) {
+                val engine = LitertAcceleratedEngine.create(modelFile, provider)
+                Triple(engine.modelSize, Session { tensor -> engine.run(tensor) }) { engine.close() }
+            } else {
+                val engine = LitertEngine.create(modelFile, provider)
+                Triple(engine.modelSize, Session { tensor -> engine.run(tensor) }) { engine.close() }
+            }
+        }
+
+    /** 分位数（[ordered] 必须已排序）。 */
+    private fun percentile(ordered: List<Double>, fraction: Double): Double {
+        if (ordered.isEmpty()) return 0.0
+        val index = ((ordered.size - 1) * fraction).toInt().coerceIn(0, ordered.size - 1)
+        return ordered[index]
+    }
+
+    /**
+     * 质量探针：测速结束后用**同一个已建会话**多跑一帧，把"检出了什么"记进报告。
      * 为什么放在这里而不是另起一次测量：会话已经建好、输入也是同一张真实画面，
      * 多一帧的开销可以忽略；另起一次测量则要重新加载模型，还会因为不同档位的
      * 精度差异（FP32 / INT8）而失去可比性。质量帧失败只记原因，不影响耗时行。
