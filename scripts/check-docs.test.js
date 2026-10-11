@@ -15,6 +15,7 @@ const {
   checkComponentContract,
   checkCurrentComponentNames,
   checkReadmeVersion,
+  checkTaskListContract,
   checkVerificationVersionClaims
 } = require('./check-docs');
 
@@ -229,6 +230,32 @@ test('retired display names are rejected in current modules while version facts 
   assert.equal(errors.length, 2);
   assert.ok(errors.some(message => message.includes('20-统一服务.md')));
   assert.ok(errors.some(message => message.includes('40-Android相机节点.md')));
+});
+
+test('the task list keeps its fixed chapters and top-priority placement', () => {
+  const read = p => fs.readFileSync(path.join(root, p), 'utf8');
+  const valid = read('docs/06-任务清单.md');
+  const audit = (content) => {
+    const errors = [];
+    checkTaskListContract(content, errors);
+    return errors;
+  };
+  assert.deepEqual(audit(valid), []);
+
+  // 章节名与顺序是固定契约：改名一次即报错，且报错时必须点名期望的章节。
+  const renamed = audit(valid.replace('### 高：能被立刻解决、且不解决就一直硌着', '### 高：本季度要做的'));
+  assert.equal(renamed.length, 1);
+  assert.ok(renamed[0].includes('fixed chapters in order'));
+  assert.ok(renamed[0].includes('### 高：能被立刻解决、且不解决就一直硌着'));
+
+  // 章节齐全但把标着「最高优先级」的条目挪到中档（检查按行号推进，挪到前面必须失效）。
+  const lines = valid.split(/\r?\n/);
+  const promotionLine = lines.findIndex(line => line.startsWith('- [ ] **1.'));
+  const promotion = lines.splice(promotionLine, 1)[0].replace('- [ ] **1.', '- [ ] 最高优先级 · **1.');
+  lines.splice(lines.indexOf('### 中：影响真实部署质量，但可以排期') + 1, 0, promotion);
+  const demoted = audit(lines.join('\n'));
+  assert.equal(demoted.length, 1);
+  assert.ok(demoted[0].includes('top-priority chapter'));
 });
 
 test('MIT license and contribution policy cannot silently drift', () => {

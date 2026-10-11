@@ -618,6 +618,43 @@ function checkDocumentLayout(docsFiles, contents, errors) {
   }
 }
 
+// 任务清单的章节是固定契约：章节名与顺序承载职责分工（现状与分支归属在前、未完成事项在后），
+// 自由增删章节会让入口链接、锚点和「只维护未完成事项」的边界一起漂移。
+const TASK_LIST_HEADINGS = [
+  '# 本次任务清单',
+  '## 任务与分支对应',
+  '## 未完成事项',
+  '### 高：能被立刻解决、且不解决就一直硌着',
+  '### 中：影响真实部署质量，但可以排期',
+  '### 低 / 待外部条件'
+];
+
+// 新增「高」档事项时保持最前，除非内容本身说明它不卡住任何人。
+const TOP_PRIORITY_HEADING = '### 高：能被立刻解决、且不解决就一直硌着';
+
+function checkTaskListContract(taskList, errors) {
+  const relativePath = 'docs/06-任务清单.md';
+  const headings = taskList.split(/\r?\n/)
+    .map((line) => line.match(/^#{1,6}\s+(.+?)\s*#*$/))
+    .filter(Boolean)
+    .map((match) => match[0].trimEnd());
+  if (JSON.stringify(headings) !== JSON.stringify(TASK_LIST_HEADINGS)) {
+    errors.push(`[contract] ${relativePath} must keep the fixed chapters in order: ${TASK_LIST_HEADINGS.join(' / ')}; found: ${headings.join(' / ') || '(none)'}`);
+    return;
+  }
+
+  let inTopPriorityChapter = true;
+  for (const line of taskList.split(/\r?\n/)) {
+    if (line.startsWith('### ')) {
+      inTopPriorityChapter = false;
+      continue;
+    }
+    if (/^- \[[ x]\] /.test(line) && line.includes('最高优先级') && !inTopPriorityChapter) {
+      errors.push(`[contract] ${relativePath} must keep the 最高优先级 item under the top-priority chapter`);
+    }
+  }
+}
+
 function checkVerificationVersionClaims(version, verificationReport, errors) {
   for (const line of verificationReport.split(/\r?\n/)) {
     if (!/当前(?:版本)?为/.test(line) || !/(?:VERSION|package\.json)/.test(line)) {
@@ -789,6 +826,7 @@ function auditRepository(root = DEFAULT_ROOT) {
   checkCancelledPlans(root, markdownFiles, contents, errors);
 
   checkDocumentLayout(docsFiles, contents, errors);
+  checkTaskListContract(contents.get('docs/06-任务清单.md') || '', errors);
 
   return errors;
 }
@@ -825,8 +863,9 @@ module.exports = {
   checkProductContract,
   checkCancelledPlans,
   checkReadmeVersion,
-  checkVersionSources,
   checkSkillContract,
+  checkTaskListContract,
   checkValidationContract,
-  checkVerificationVersionClaims
+  checkVerificationVersionClaims,
+  checkVersionSources
 };
