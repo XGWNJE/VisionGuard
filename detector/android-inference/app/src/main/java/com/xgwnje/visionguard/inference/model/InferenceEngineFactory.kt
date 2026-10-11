@@ -27,6 +27,36 @@ object InferenceEngineFactory {
         val fallbackReason: String?
     )
 
+    /** 后端偏好：本次该不该走 GPU，以及不走时的可读原因。 */
+    data class BackendPreference(val preferGpu: Boolean, val fallbackReason: String?)
+
+    /**
+     * 后端选择判定（纯函数，便于单测覆盖整张判定表）。
+     *
+     * 这是正式链路上「到底用没用 GPU」的唯一判据，三个输入都可能是「没有」：
+     * 用户没下载 GPU 产物、设备不支持 GPU 加速器、来源配置的模型没有 GPU 版本。
+     * 每种都要给出可读原因，否则界面只能显示 CPU，看不出是哪一种。
+     */
+    fun decide(
+        wantGpu: Boolean,
+        gpuFileExists: Boolean,
+        gpuFileName: String?,
+        gpuAcceleratorAvailable: Boolean,
+        availableAccelerators: String
+    ): BackendPreference {
+        if (!wantGpu) return BackendPreference(preferGpu = false, fallbackReason = null)
+        if (!gpuFileExists) {
+            return BackendPreference(false, "未下载 GPU 模型（${gpuFileName ?: "无"}），已用 CPU")
+        }
+        if (!gpuAcceleratorAvailable) {
+            return BackendPreference(
+                false,
+                "本机不支持 LiteRT GPU 加速器（可用：${availableAccelerators.ifEmpty { "无" }}），已用 CPU"
+            )
+        }
+        return BackendPreference(preferGpu = true, fallbackReason = null)
+    }
+
     /**
      * 创建来源运行时的引擎。
      *
@@ -35,30 +65,20 @@ object InferenceEngineFactory {
      * @param wantGpu 是否优先使用 GPU（来源配置与设备能力都满足时为 true）
      */
     fun create(onnxFile: File, tfliteFile: File?, wantGpu: Boolean): Selection {
-        if (!wantGpu) {
-            return Selection(OnnxEngine.create(onnxFile), InferenceProvider.production, null)
-        }
-
-        if (tfliteFile == null || !tfliteFile.isFile) {
-            return Selection(
-                OnnxEngine.create(onnxFile),
-                InferenceProvider.production,
-                "未下载 GPU 模型（${tfliteFile?.name ?: "无"}），已用 CPU"
-            )
-        }
-
-        // 先问设备支持哪些加速器：不支持就不必付编译失败的代价。
-        val available = availableAccelerators()
-        if (!available.contains(Accelerator.GPU)) {
-            return Selection(
-                OnnxEngine.create(onnxFile),
-                InferenceProvider.production,
-                "本机不支持 LiteRT GPU 加速器（可用：${available.joinToString(",") { it.name }.ifEmpty { "无" }}），已用 CPU"
-            )
+        val available = if (wantGpu) availableAccelerators() else emptySet()
+        val preference = decide(
+            wantGpu = wantGpu,
+            gpuFileExists = tfliteFile?.isFile == true,
+            gpuFileName = tfliteFile?.name,
+            gpuAcceleratorAvailable = available.contains(Accelerator.GPU),
+            availableAccelerators = available.joinToString(",") { it.name }
+        )
+        if (!preference.preferGpu) {
+            return Selection(OnnxEngine.create(onnxFile), InferenceProvider.production, preference.fallbackReason)
         }
 
         val gpu = runCatching {
-            LitertAcceleratedEngine.create(tfliteFile, GPU_PROVIDER) as InferenceEngine
+            LitertAcceleratedEngine.create(tfliteFile!!, GPU_PROVIDER) as InferenceEngine
         }
         return gpu.fold(
             onSuccess = { Selection(it, GPU_PROVIDER, null) },

@@ -196,20 +196,24 @@ if (-not $Confirm) {
     Write-Host "VPS 目标默认只做只读预检，未上传任何文件。" -ForegroundColor Yellow
     Write-Host "确认无误后加 -Confirm 执行（属发布动作，需 owner 授权）。将执行："
     foreach ($item in $plan) {
-        Write-Host ("  scp `"{0}`" {1}:{2}/" -f $item.Path, $VpsHost, $VpsDir)
+        Write-Host ("  scp `"{0}`" {1}:{2}/{3}" -f $item.Path, $VpsHost, $VpsDir, $item.File)
     }
     Write-Host "`n上传后脚本会逐个比对远端 sha256，不一致即判失败。"
     exit 0
 }
 
 foreach ($item in $plan) {
-    & scp $item.Path "${VpsHost}:${VpsDir}/" | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "上传失败：$($item.File)" }
+    # 目标文件名必须显式给：本地文件名与投放名不同（例如 GPU 产物
+    # `yolo26m_640_anchor_float32.tflite` 要落成 `yolo26m_640_gpu.tflite`），
+    # 只给目录会让远端多出一个端侧永远不会请求的文件。输出先收进变量再判退出码：
+    # 直接管道到 Out-Null 时 `$LASTEXITCODE` 取到的不是 scp 的退出码。
+    $scpOutput = & scp $item.Path "${VpsHost}:${VpsDir}/$($item.File)" 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "上传失败：$($item.File) -> $($scpOutput -join ' ')" }
     $remoteHash = ((& ssh $VpsHost "sha256sum '$VpsDir/$($item.File)' | cut -d' ' -f1") -join '').Trim().ToLower()
     if ($remoteHash -ne $item.Sha256) {
         throw "上传后校验不一致：$($item.File)（本地 $($item.Sha256) / 远端 $remoteHash）"
     }
-    Write-Host ("已上传并校验 {0,-24} {1,7:N1} MiB" -f $item.File, ($item.Bytes / 1MB))
+    Write-Host ("已上传并校验 {0,-30} {1,7:N1} MiB" -f $item.File, ($item.Bytes / 1MB))
 }
 Write-Host "`n共 $($plan.Count) 个文件，合计 $totalMb MiB；已逐个比对 sha256。"
 Write-Host "服务端 /models 是静态目录，不需要重启 visionguard.service。"
