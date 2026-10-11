@@ -96,6 +96,43 @@ test('camera and sound configuration routes inside account, validates live state
   // Completion is a real execution receipt; the next heartbeat provides current readback.
 });
 
+test('camera resolution stays locked while either camera implementation reports streaming', async t => {
+  const owner = new AccountFixture([{ name: 'lock-camera', component: 'android-camera' }, { name: 'lock-web-camera', component: 'web-camera' },
+    { name: 'lock-console', component: 'web-console' }], 'resolution-lock-owner');
+  await owner.ready;
+  const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 }); wss.on('connection', handleConnection);
+  await new Promise<void>(resolve => wss.once('listening', resolve));
+  const port = (wss.address() as { port: number }).port;
+  const peers: WebSocket[] = [];
+  t.after(() => { peers.forEach(ws => ws.terminate()); wss.close(); });
+  async function peer(name: string) { const ws = await connect(port); peers.push(ws); const reply = waitForMessage(ws, m => m.type === 'auth-result'); ws.send(JSON.stringify(owner.auth(name))); await reply; return ws; }
+  const consolePeer = await peer('lock-console');
+  const cameraPeer = await peer('lock-camera');
+  const webCameraPeer = await peer('lock-web-camera');
+  const cameraState = { cameraResolution: '480p', cameraDimScreen: false, cameraHidePreview: false };
+  /** 相机推流时心跳 must 上报 isMonitoring=true；远程规格锁定依赖这一点。 */
+  async function heartbeat(node: WebSocket, streaming: boolean) {
+    const reply = waitForMessage(node, m => m.type === 'heartbeat-ack');
+    node.send(JSON.stringify({ type: 'heartbeat', isMonitoring: streaming, isReady: true, sources: [], capabilities: ['video-publish', 'stream-control', 'camera-config'], remoteSettings: cameraState }));
+    await reply;
+  }
+  async function attempt(name: string) {
+    const requestId = crypto.randomUUID();
+    const reply = waitForMessage(consolePeer, m => m.type === 'command-ack' && m.requestId === requestId && (m.phase === 'completed' || m.phase === 'forwarded'), 4000);
+    consolePeer.send(JSON.stringify({ type: 'set-config', requestId, targetDeviceId: owner.id(name), key: 'cameraResolution', value: '720p' }));
+    return reply;
+  }
+  for (const [node, name] of [[cameraPeer, 'lock-camera'], [webCameraPeer, 'lock-web-camera']] as const) {
+    await heartbeat(node, true);
+    const locked = await attempt(name);
+    assert.equal(locked.success, false, `${name} must reject a resolution change while streaming`);
+    assert.match(locked.reason, /停止推流/);
+    await heartbeat(node, false);
+    const accepted = await attempt(name);
+    assert.equal(accepted.success, true, `${name} must accept a resolution change after the stream stops: ${accepted.reason}`);
+  }
+});
+
 test('camera and notifier controls require declared capabilities, route only inside account and correlate actual completion', async t => {
   const owner = new AccountFixture([{name:'camera-command',component:'android-camera'}, {name:'web-camera-command',component:'web-camera'}, {name:'notifier-command',component:'android-notifier'},
     {name:'console-command',component:'web-console'}], 'control-capability-owner');

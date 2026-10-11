@@ -1040,9 +1040,11 @@ function handleRemoteConfig(senderWs: WebSocket, msg: WsSetConfig): void {
   const role = remoteConfigRole(msg.key)!;
   const target = role === 'android-notifier' ? notifierClients.get(msg.targetDeviceId) : findDetector(msg.targetDeviceId);
   if (!target || target.ws.readyState !== WebSocket.OPEN || (role === 'android-notifier' ? target.identity?.component !== role : !isCameraComponent(target.identity?.component))) { reject('目标离线或类型不符'); return; }
-  const capability = role === 'android-camera' ? 'camera-config' : msg.key.startsWith('audio') ? 'audio-library' : 'sound-config';
+  const cameraConfig = remoteConfigRole(msg.key) === 'android-camera';
+  const capability = cameraConfig ? 'camera-config' : msg.key.startsWith('audio') ? 'audio-library' : 'sound-config';
   if (!target.capabilities?.includes(capability)) { reject('节点不支持该配置'); return; }
-  const validation = validateRemoteConfig(msg.key, msg.value, target.remoteSettings, role === 'android-camera' && (target as DetectorClient).isMonitoring);
+  // 相机规格只能在停流时修改；相机按推流状态上报 isMonitoring，Android 与 Web 两个实现共用这条判断。
+  const validation = validateRemoteConfig(msg.key, msg.value, target.remoteSettings, cameraConfig && (target as DetectorClient).isMonitoring);
   if (!validation.ok) { reject(validation.reason); return; }
   if (!registerPendingControlRequest(msg.requestId!, senderWs, msg.targetDeviceId, command)) { reject('requestId 重复'); return; }
   sendJson(target.ws, {...msg, value:validation.value});

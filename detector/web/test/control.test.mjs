@@ -33,10 +33,11 @@ function harness() {
       throw new Error('连接失败，请检查网络后重试');
     },
     onStreamCommand: (command, done) => { ports.lastCommand = command; ports.complete = done; },
+    isStreaming: () => ports.streaming === true,
     saveConfig: (key, value) => settings.save(key, value),
     cameraState: () => ({ cameraApp: 'foreground', cameraPermission: 'granted' }),
     onState: () => {}, onUnauthorized: () => { ports.unauthorized = true; },
-    lastCommand: undefined, complete: undefined, unauthorized: false,
+    lastCommand: undefined, complete: undefined, unauthorized: false, streaming: false,
   };
   function createSocket() {
     const socket = { readyState: 0, sent: [], onopen: null, onmessage: null, onclose: null, onerror: null,
@@ -77,6 +78,10 @@ test('control client heartbeats its capabilities and starts streaming only after
   h.advance(1);
   const heartbeat = JSON.parse(socket.sent[socket.sent.length - 1]);
   assert.equal(heartbeat.type, 'heartbeat');
+  assert.equal(heartbeat.isMonitoring, false, 'idle heartbeats must not claim monitoring');
+  h.ports.streaming = true;
+  h.advance(1);
+  assert.equal(JSON.parse(socket.sent[socket.sent.length - 1]).isMonitoring, true, 'streaming heartbeats must report monitoring');
   assert.deepEqual(heartbeat.capabilities, ['video-publish', 'stream-control', 'camera-config', 'request-correlation']);
   assert.deepEqual(heartbeat.components, { cameraApp: 'foreground', cameraPermission: 'granted' });
   assert.deepEqual(heartbeat.remoteSettings, { cameraResolution: '480p', cameraDimScreen: false, cameraHidePreview: false });

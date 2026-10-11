@@ -16,6 +16,18 @@ test('frame packets use the 4-byte big-endian header length the service parses',
   assert.throws(() => mediaPacket.encodePacket(header, new Uint8Array(mediaPacket.MAX_JPEG_BYTES + 1)), /2 MiB/);
 });
 
+test('frame headers reject fractional capture times, bad sequence and bad rotation before sending', () => {
+  const base = { streamId: 'stream', sessionId: 'session', sequence: 1, capturedAt: 1234, width: 16, height: 16, rotation: 0 };
+  const jpeg = sampleJpeg();
+  // performance.now() 是小数；发出去会让服务端按非法帧断开，必须在组包前就拦住。
+  assert.throws(() => mediaPacket.encodePacket({ ...base, capturedAt: 859.5999999940395 }, jpeg), /采集时间/);
+  assert.throws(() => mediaPacket.encodePacket({ ...base, capturedAt: 0 }, jpeg), /采集时间/);
+  assert.throws(() => mediaPacket.encodePacket({ ...base, sequence: -1 }, jpeg), /帧序号/);
+  assert.throws(() => mediaPacket.encodePacket({ ...base, sequence: 2.5 }, jpeg), /帧序号/);
+  assert.throws(() => mediaPacket.encodePacket({ ...base, rotation: 45 }, jpeg), /方向/);
+  assert.ok(mediaPacket.encodePacket({ ...base, capturedAt: Math.round(859.6) }, jpeg));
+});
+
 test('frame window bounds in-flight frames by count and bytes and ignores duplicate receipts', () => {
   const window = new mediaPacket.FrameWindow();
   assert.equal(window.available(100), false);

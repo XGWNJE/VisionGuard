@@ -83,6 +83,7 @@ export function App() {
     const controlPorts: ControlPorts = { origin: location.origin, openSocket: url => socketFactory(url), now: () => Date.now(),
       setTimer: (callback, milliseconds) => window.setInterval(callback, milliseconds), clearTimer: handle => window.clearInterval(handle as number),
       fetchJson: (path, init) => fetchJson(path, init, session.token),
+      isStreaming: () => streamingRef.current,
       onStreamCommand: (command, done) => {
         if (command === 'stop-stream') { stopStreamingRef.current('user'); done(true, '已停止推流'); return; }
         void startStreaming().then(reason => done(!reason, reason ?? '摄像头已启动，等待画面通道；收帧状态请查看统计'));
@@ -144,7 +145,8 @@ export function App() {
     media.start();
     const loop = async () => {
       if (!streamingRef.current) return;
-      const capturedAt = performance.now();
+      // 采集时间取整：服务端只接受安全整数毫秒，小数会被整帧拒绝。
+      const capturedAt = Math.round(performance.now());
       if (media.due(capturedAt)) {
         const frame = await source.capture(settingsStore.current.cameraResolution, capturedAt);
         if (frame && !media.publish(frame)) setNotice('画面处理失败，已跳过这一帧');
@@ -240,6 +242,7 @@ export function App() {
             {devices.map((device, index) => <option key={device.deviceId || index} value={device.deviceId}>{device.label}</option>)}
           </select>
         </div>
+        {!streaming && devices.length === 0 && <p className="warning" role="status">未检测到摄像头设备：请确认本机有摄像头并已授权，浏览器只在 HTTPS 或本机 localhost 下提供设备列表。</p>}
         <label className="checkbox"><input type="checkbox" checked={!settings.cameraHidePreview}
           onChange={event => { const failure = settingsStore.save('cameraHidePreview', String(!event.target.checked)); if (failure) setNotice(failure); }} />显示本机预览</label>
         <p className="subtle">降低窗口亮度由系统控制，页面不做亮度调节。</p>

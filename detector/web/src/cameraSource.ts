@@ -26,8 +26,29 @@ export async function listCameras(): Promise<CameraDevice[]> {
   return devices.filter(device => device.kind === 'videoinput').map((device, index) => ({ deviceId: device.deviceId, label: device.label || `摄像头 ${index + 1}` }));
 }
 
-export class CameraSource {
-  private stream?: MediaStream;
+/** 理想尺寸不可用时按同样语义回退；用户明确选定的摄像头仍然保持精确指定。 */
+export function fallbackConstraints(deviceId: string | undefined): MediaTrackConstraints[] {
+  const exact = deviceId ? { deviceId: { exact: deviceId } } : {};
+  return [
+    { ...exact, width: { ideal: 640 }, height: { ideal: 480 } },
+    { ...exact },
+    deviceId ? { deviceId: { ideal: deviceId } } : {},
+    { facingMode: { ideal: 'environment' } },
+    {},
+  ];
+}
+
+/** 等视频元数据就绪；已有尺寸时立即返回，超时也不阻塞推流。 */
+export function waitForMetadata(video: HTMLVideoElement, timeout = 3000): Promise<void> {
+  if (video.videoWidth > 0 && video.videoHeight > 0) return Promise.resolve();
+  return new Promise(resolve => {
+    const done = () => { clearTimeout(timer); video.removeEventListener('loadedmetadata', done); resolve(); };
+    const timer = setTimeout(done, timeout);
+    video.addEventListener('loadedmetadata', done);
+  });
+}
+
+export class CameraSource {  private stream?: MediaStream;
   private canvas?: HTMLCanvasElement;
   private context?: CanvasRenderingContext2D;
 
@@ -35,22 +56,41 @@ export class CameraSource {
 
   get active(): boolean { return !!this.stream; }
 
+  /** 依次尝试理想约束与回退约束，并对刚释放设备的瞬态失败重试；只有全部失败才算不可用。 */
   async open(deviceId: string | undefined, resolution: '480p' | '720p'): Promise<string | undefined> {
     if (!navigator.mediaDevices?.getUserMedia) return '当前浏览器不支持摄像头采集，请改用现代浏览器';
-    try {
-      this.close();
-      this.stream = await navigator.mediaDevices.getUserMedia({ video: preferredConstraints(deviceId, resolution), audio: false });
-    } catch (error) {
-      const name = error instanceof Error ? error.name : '';
+    this.close();
+    const attempts = [preferredConstraints(deviceId, resolution), ...fallbackConstraints(deviceId)];
+    let lastError: unknown;
+    for (let round = 0; round < 3 && !this.stream; round++) {
+      for (const video of attempts) {
+        try {
+          this.stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+          lastError = undefined;
+          break;
+        } catch (error) {
+          lastError = error;
+          const name = error instanceof Error ? error.name : '';
+          // 权限被拒、页面不安全，或用户明确选定的摄像头不存在，重试没有意义。
+          if (name === 'NotAllowedError' || name === 'SecurityError') break;
+        }
+      }
+      // 刚停止的轨道可能还没释放，等一拍再试；真机上快速“停止 → 开始”也会遇到。
+      if (!this.stream && lastError) await new Promise(resolve => setTimeout(resolve, 300 * (round + 1)));
+    }
+    if (lastError) {
+      const name = lastError instanceof Error ? lastError.name : '';
       if (name === 'NotAllowedError') return '摄像头未授权：请在浏览器地址栏允许摄像头后重试';
       if (name === 'NotFoundError' || name === 'OverconstrainedError') return '没有可用的摄像头，或所选摄像头不可用';
       if (name === 'NotReadableError') return '摄像头被其他程序占用，请关闭后重试';
       return '无法启动摄像头，请检查系统权限';
     }
-    this.video.srcObject = this.stream;
+    this.video.srcObject = this.stream!;
     this.video.muted = true;
     this.video.playsInline = true;
-    try { await this.video.play(); } catch { return '摄像头画面无法播放，请重试'; }
+    // 画面尺寸要等元数据就绪，否则第一帧可能取不到采集尺寸。
+    await waitForMetadata(this.video);
+    try { await this.video.play(); } catch { /* 自动播放被拒时采集仍可继续，画面由预览承担 */ }
     return undefined;
   }
 

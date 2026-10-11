@@ -23,6 +23,8 @@ export interface ControlPorts {
   fetchJson(path: string, init?: { method?: string; body?: string }): Promise<any>;
   /** 控制台的开始 / 停止推流；done 必须回真实执行结果。 */
   onStreamCommand(command: 'start-stream' | 'stop-stream', done: (success: boolean, reason: string) => void): void;
+  /** 本机是否正在推流：心跳按此上报 isMonitoring，控制台据此判断能否远程改规格。 */
+  isStreaming(): boolean;
   /** 保存本机配置，返回失败原因；成功返回 undefined。 */
   saveConfig(key: string, value: string): string | undefined;
   cameraState(): Record<string, string>;
@@ -73,7 +75,7 @@ export class ControlClient {
       if (!this.socket && now >= this.nextRetryAt) this.connect();
       else if (this.socket && !this.authenticated && now - this.openedAt > AUTH_TIMEOUT_MS) this.drop('连接超时，正在重连');
       else if (this.socket && this.authenticated && now - this.lastResponse > RESPONSE_TIMEOUT_MS) this.drop('连接无响应，正在重连');
-      if (this.socket && this.authenticated) this.socket.send(JSON.stringify({ type: 'heartbeat', isMonitoring: false, isReady: true,
+      if (this.socket && this.authenticated) this.socket.send(JSON.stringify({ type: 'heartbeat', isMonitoring: this.ports.isStreaming(), isReady: true,
         capabilities: WEB_CAMERA_CAPABILITIES, components: this.ports.cameraState(), remoteSettings: this.settings.current, sources: [] }));
       this.scheduleTick(tick);
     };

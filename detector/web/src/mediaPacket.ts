@@ -12,6 +12,10 @@ export interface FrameHeader {
 }
 
 export function encodePacket(header: FrameHeader, jpeg: Uint8Array): Uint8Array {
+  // 服务端按 Number.isSafeInteger 校验序号与采集时间，小数会让整帧被判非法。
+  if (!Number.isSafeInteger(header.sequence) || header.sequence < 0) throw new Error('帧序号必须是非负整数');
+  if (!Number.isSafeInteger(header.capturedAt) || header.capturedAt <= 0) throw new Error('采集时间必须是正整数毫秒');
+  if (![0, 90, 180, 270].includes(header.rotation)) throw new Error('方向只能是 0 / 90 / 180 / 270');
   const json = encoder.encode(JSON.stringify(header));
   if (!json.length || json.length > MAX_HEADER_BYTES) throw new Error('帧头超限');
   if (!jpeg.length || jpeg.length > MAX_JPEG_BYTES) throw new Error('单帧画面上限 2 MiB');

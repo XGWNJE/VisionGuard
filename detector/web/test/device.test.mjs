@@ -59,3 +59,14 @@ test('camera capture targets follow the resolution ceiling and screen orientatio
   assert.deepEqual(cameraSource.preferredConstraints(undefined, '720p'), { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } });
   assert.deepEqual(cameraSource.preferredConstraints('camera-2', '480p'), { deviceId: { exact: 'camera-2' }, width: { ideal: 640 }, height: { ideal: 480 } });
 });
+
+test('camera capture falls back instead of refusing a stream when the ideal size is unsupported', () => {
+  const withoutDevice = cameraSource.fallbackConstraints(undefined);
+  assert.deepEqual(withoutDevice[0], { width: { ideal: 640 }, height: { ideal: 480 } });
+  assert.deepEqual(withoutDevice.at(-1), {}, 'the last attempt must not constrain anything');
+  const withDevice = cameraSource.fallbackConstraints('camera-2');
+  assert.deepEqual(withDevice[0], { deviceId: { exact: 'camera-2' }, width: { ideal: 640 }, height: { ideal: 480 } });
+  assert.deepEqual(withDevice[1], { deviceId: { exact: 'camera-2' } });
+  assert.deepEqual(withDevice[2], { deviceId: { ideal: 'camera-2' } });
+  assert.ok(withDevice.length > withDevice.indexOf(withDevice[2]));
+});
