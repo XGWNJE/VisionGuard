@@ -82,6 +82,32 @@ class ModelKeysTest {
     fun `文件名与键一致，服务端按文件名静态分发`() {
         assertEquals("yolo26n_320.onnx", ModelKeys.fileName("yolo26n_320"))
         assertEquals("yolo26n_320_int8.onnx", ModelKeys.fileName("yolo26n_320_int8"))
+        // GPU 产物是同一个键的另一个文件名，不引入服务端映射表
+        assertEquals("yolo26m_640_gpu.tflite", ModelKeys.fileName("yolo26m_640", ModelFormat.GPU_TFLITE))
+    }
+
+    @Test
+    fun `GPU 产物只在实测有效的键上开放`() {
+        // 320 档 GPU 反而比 CPU 慢，不能开放；只放 640 里实测收益最大的那一个
+        assertEquals(listOf("yolo26m_640"), ModelKeys.gpuKeys)
+        assertTrue(ModelKeys.supportsGpu("yolo26m_640"))
+        assertTrue(!ModelKeys.supportsGpu("yolo26n_320"))
+        assertTrue(!ModelKeys.supportsGpu("yolo26n_640"))
+        ModelKeys.gpuKeys.forEach { key ->
+            assertTrue("GPU 键必须在可选清单里：$key", ModelKeys.keys.contains(key))
+        }
+    }
+
+    @Test
+    fun `GPU 产物下载只在支持该组合时可用`() {
+        val dir = temporary.newFolder("models-gpu")
+        val store = ModelStore(dir, "http://127.0.0.1:1")
+        assertEquals("yolo26m_640_gpu.tflite", store.file("yolo26m_640", ModelFormat.GPU_TFLITE).name)
+        assertEquals("yolo26m_640_gpu.tflite", store.gpuFile("yolo26m_640")?.name)
+        // 没有 GPU 产物的键不给文件入口，避免拿错产物去跑正式链路
+        assertEquals(null, store.gpuFile("yolo26n_320"))
+        assertTrue(!store.isGpuReady("yolo26n_320"))
+        assertTrue(!store.isGpuReady("yolo26m_640"))
     }
 
     @Test

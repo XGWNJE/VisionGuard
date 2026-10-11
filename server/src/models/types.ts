@@ -74,6 +74,12 @@ export interface WsHeartbeat {
   sources?: SourceStatus[];
   monitoringExpected?: boolean;
   lastProgressAt?: string;
+  /** 模型键 → 实际加速后端（`cpu` / `gpu`）。检测端上报，服务端不猜测。 */
+  inferenceBackends?: Record<string, string>;
+  /** `模型键@后端` → 该配置的并发来源上限（单路 ≥5 帧/秒）。 */
+  inferenceLimits?: Record<string, number>;
+  /** 检测端自评：已配置来源数是否超过其推理能力上限。 */
+  overConcurrencyLimit?: boolean;
 }
 
 /** 控制台 → 服务器：心跳 (每 30 秒) */
@@ -96,6 +102,10 @@ export interface SourceStatus {
   actualFps?: number;
   error?: string;
   activeBackend?: string;
+  /** 后端细节：输入尺寸、线程、量化边界，或「为何没用 GPU」。 */
+  backendNote?: string;
+  /** 该来源配置在同机上的并发上限（单路 ≥5 帧/秒）。 */
+  concurrencyLimit?: number;
   performanceWarning?: string;
   cooldown?: number;
   confidence?: number;
@@ -174,6 +184,11 @@ export interface DeviceStatus {
   maxSources: number;
   /** 最近一次心跳的 sources 因超过上限被整组拒绝；接收端需要看到该状态，而不是静默的旧快照。 */
   sourceLimitExceeded: boolean;
+  /** 检测端自报的推理能力：各模型配置的加速后端与并发上限；控制台据此解释加不了更多来源。 */
+  inferenceBackends?: Record<string, string>;
+  inferenceLimits?: Record<string, number>;
+  /** 服务端按运行中的来源数与其上限比对得出的结论；检测端自评仅作参考。 */
+  overInferenceLimit?: boolean;
 }
 
 /** 接收端 → 服务器：反向控制命令 */
@@ -271,6 +286,9 @@ export interface DetectorClient {
   sources: SourceStatus[];
   /** 最近一次心跳的 sources 因超过服务端上限被整组拒绝。 */
   sourceLimitExceeded: boolean;
+  /** 检测端自报的推理能力：模型键 → 后端、`模型键@后端` → 并发上限。 */
+  inferenceBackends?: Record<string, string>;
+  inferenceLimits?: Record<string, number>;
   monitoringExpected?: boolean;
   lastProgressAt?: string;
 }

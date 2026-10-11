@@ -1,14 +1,20 @@
-﻿# 把量化模型投放到统一服务的模型目录（本地或 VPS）。
+﻿# 把量化模型与 GPU 产物投放到统一服务的模型目录（本地或 VPS）。
 #
 # 用法：
-#   pwsh scripts/deploy-int8-models.ps1 -WhatIf                      # 只校验与预览（默认本地）
+#   pwsh scripts/deploy-int8-models.ps1 -WhatIf                      # 只校验与预览（默认本地、量化版）
 #   pwsh scripts/deploy-int8-models.ps1                              # 复制到 server/data/models
+#   pwsh scripts/deploy-int8-models.ps1 -Kind Gpu -WhatIf            # 只处理 GPU 产物
 #   pwsh scripts/deploy-int8-models.ps1 -Target Vps                  # VPS 只读预检 + 预览命令
 #   pwsh scripts/deploy-int8-models.ps1 -Target Vps -Confirm         # 真正上传（需 owner 授权）
 #
+# 两种产物（`-Kind`，默认两种都做）：
+#   Quantized → `<键>_int8.onnx`：端侧 CPU 正式档的量化本体；
+#   Gpu       → `<键>_gpu.tflite`：GPU 加速用的截断图（图内无 NMS，端侧解析侧做 NMS）。
+# 两者都要求目标侧 FP32 本体 `<键>.onnx` 存在（是「并存」，本体缺了就是配置错误）。
+#
 # 无论哪种目标都先做同一套校验，任何一步失败就整体中止（不做部分投放）：
-#   1. 逐个用 ONNX Runtime 真加载 + 跑一帧，确认文件完整可用；
-#   2. 校验目标侧 FP32 本体存在（量化版是「并存」，本体缺了就是配置错误）；
+#   1. 逐个真加载 + 跑一帧（ONNX 用 onnxruntime，TFLite 用 LiteRT），确认文件完整可用；
+#   2. 校验目标侧 FP32 本体存在；
 #   3. 目标侧余量检查（VPS 上额外检查磁盘余量）。
 #
 # VPS 目标默认**只做只读预检**：SSH 端点、目录、本体、磁盘余量都会查，但不写任何文件。
@@ -17,6 +23,7 @@ param(
     [string]$Source = '.local/model-quant',
     [string]$Destination = 'server/data/models',
     [ValidateSet('Local', 'Vps')][string]$Target = 'Local',
+    [ValidateSet('Quantized', 'Gpu', 'All')][string]$Kind = 'Quantized',
     [string]$VpsHost = 'xgwnje',
     [string]$VpsDir = '',
     [string[]]$Keys = @(
@@ -37,15 +44,23 @@ function Resolve-RepoPath([string]$path) {
 }
 
 $sourceDir = Resolve-RepoPath $Source
+$gpuSourceDir = Resolve-RepoPath '.local/model-quant/anchor-tflite'
 
-# ── 1. 本地校验：每个量化文件真的能加载并推理。只看文件大小会漏掉半截文件。 ──
+# GPU 产物目录与命名：端侧按 `<键>_gpu.tflite` 下载，来源目录里叫 `<键>_anchor_float32.tflite`。
+function GpuArtifact([string]$key) {
+    $file = Join-Path $gpuSourceDir "${key}_anchor_float32.tflite"
+    return [pscustomobject]@{ Path = $file; Name = "${key}_gpu.tflite" }
+}
+
+# ── 1. 本地校验：逐个真加载 + 跑一帧。只看文件大小会漏掉半截文件。 ──
 $violations = @()
 $plan = @()
-foreach ($key in $Keys) {
-    $file = Join-Path $sourceDir "${key}_int8.onnx"
-    if (-not (Test-Path $file)) { $violations += "缺少量化产物：$file"; continue }
+if ($Kind -in @('Quantized', 'All')) {
+    foreach ($key in $Keys) {
+        $file = Join-Path $sourceDir "${key}_int8.onnx"
+        if (-not (Test-Path $file)) { $violations += "缺少量化产物：$file"; continue }
 
-    $result = & python -c @"
+        $result = & python -c @"
 import sys, numpy as np, onnxruntime as ort
 path = sys.argv[1]
 session = ort.InferenceSession(path, providers=['CPUExecutionProvider'])
@@ -54,17 +69,51 @@ size = shape[2] if len(shape) >= 4 else 320
 out = session.run(None, {session.get_inputs()[0].name: np.zeros((1, 3, size, size), dtype=np.float32)})[0]
 print('ok', np.asarray(out).shape)
 "@ $file 2>&1
-    if ($LASTEXITCODE -ne 0 -or ($result -join ' ') -notmatch 'ok \(') {
-        $violations += "加载失败：$file -> $($result -join ' ')"
-    } else {
-        Write-Host ("校验通过 {0,-22} {1}" -f "${key}_int8.onnx", (($result -join ' ').Trim()))
+        if ($LASTEXITCODE -ne 0 -or ($result -join ' ') -notmatch 'ok \(') {
+            $violations += "加载失败：$file -> $($result -join ' ')"
+        } else {
+            Write-Host ("校验通过 {0,-30} {1}" -f "${key}_int8.onnx", (($result -join ' ').Trim()))
+        }
+        $plan += [pscustomobject]@{
+            Key    = $key
+            File   = "${key}_int8.onnx"
+            Path   = $file
+            Bytes  = (Get-Item $file).Length
+            Sha256 = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
+        }
     }
-    $plan += [pscustomobject]@{
-        Key    = $key
-        File   = "${key}_int8.onnx"
-        Path   = $file
-        Bytes  = (Get-Item $file).Length
-        Sha256 = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
+}
+if ($Kind -in @('Gpu', 'All')) {
+    foreach ($key in $Keys) {
+        $artifact = GpuArtifact $key
+        if (-not (Test-Path $artifact.Path)) { $violations += "缺少 GPU 产物：$($artifact.Path)"; continue }
+
+        # TFLite 用 LiteRT 加载并跑一帧：既要能加载，也要能推理（GPU 依赖图内没有 int64 尾）。
+        $result = & python -c @"
+import sys, numpy as np
+from ai_edge_litert import interpreter as lrt
+path = sys.argv[1]
+it = lrt.Interpreter(model_path=path)
+it.allocate_tensors()
+detail = it.get_input_details()[0]
+shape = [int(value) for value in detail['shape']]
+it.set_tensor(detail['index'], np.zeros(shape, dtype=np.float32))
+it.invoke()
+out = it.get_tensor(it.get_output_details()[0]['index'])
+print('ok', list(out.shape))
+"@ $artifact.Path 2>&1
+        if ($LASTEXITCODE -ne 0 -or ($result -join ' ') -notmatch 'ok \[') {
+            $violations += "加载失败：$($artifact.Path) -> $($result -join ' ')"
+        } else {
+            Write-Host ("校验通过 {0,-30} {1}" -f $artifact.Name, (($result -join ' ').Trim()))
+        }
+        $plan += [pscustomobject]@{
+            Key    = $key
+            File   = $artifact.Name
+            Path   = $artifact.Path
+            Bytes  = (Get-Item $artifact.Path).Length
+            Sha256 = (Get-FileHash $artifact.Path -Algorithm SHA256).Hash.ToLower()
+        }
     }
 }
 

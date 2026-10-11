@@ -49,6 +49,7 @@ import com.xgwnje.visionguard.icons.LucideIcons
 import com.xgwnje.visionguard.inference.AppConstants
 import com.xgwnje.visionguard.inference.BuildConfig
 import com.xgwnje.visionguard.inference.model.BundledAccelerationBenchmark
+import com.xgwnje.visionguard.inference.model.ModelFormat
 import com.xgwnje.visionguard.inference.net.ControlState
 import com.xgwnje.visionguard.inference.net.MediaState
 import com.xgwnje.visionguard.inference.runtime.CrashReporter
@@ -250,11 +251,12 @@ private fun ModelSection(
     GeoInfoRow("运行来源", "${state.runningSourceCount} / ${state.sources.size} 路")
     GeoInfoRow("遮罩合计", "$totalMasks 个")
     GeoInfoRow("报警发件箱", "${state.outboxSize} 条待回执")
-    GeoHint("默认尝试 NNAPI 加速，会话创建失败时回落 CPU；具体以每个来源上报的后端为准。")
+    GeoHint("正式档固定走 ONNX Runtime · CPU；有 GPU 产物且已下载的模型自动改用 GPU 加速，用不了时回落 CPU 并在来源状态里说明原因。")
 
     GeoDivider()
     GeoSectionLabel("02", "模型资源", "按需下载")
     GeoHint("模型按需从统一服务下载，不随安装包分发；长度校验通过后才替换正式文件。使用中的模型不可删除。")
+    GeoHint("GPU 版本是另一份产物（截断图，NMS 在端侧解析）：只在 640 及以上更快，320 档请用默认的 CPU 版本。下载后该模型的来源会自动改用 GPU，编译失败则回落 CPU 并说明原因。")
     state.models.forEach { model ->
         val used = state.sources.any { it.state.isRunning && it.params.modelKey == model.key }
         val progress = state.downloads[model.key]
@@ -309,6 +311,47 @@ private fun ModelSection(
                             .fillMaxWidth(it.percent / 100f)
                             .fillMaxHeight()
                             .background(MaterialTheme.colorScheme.primary, RectangleShape)
+                    )
+                }
+            }
+        }
+        if (model.gpuSupported) {
+            val gpuSlot = "${model.key}_gpu"
+            val gpuProgress = state.downloads[gpuSlot]
+            Row(Modifier.fillMaxWidth().heightIn(min = Geo.Touch), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("${model.displayName} · GPU", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        when {
+                            gpuProgress != null && gpuProgress.total > 0 -> "下载 ${gpuProgress.percent}%"
+                            gpuProgress != null -> "下载中…"
+                            model.gpuDownloaded -> "已下载 · 来源自动改用 GPU"
+                            !model.downloaded -> "需先下载模型本体"
+                            else -> "未下载"
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                when {
+                    gpuProgress != null -> Text(
+                        if (gpuProgress.total > 0) "${gpuProgress.percent}%" else "下载中",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+
+                    model.gpuDownloaded -> GeoKey(
+                        onClick = { scope.launch { runtime.deleteModel(model.key, ModelFormat.GPU_TFLITE)?.let(onMessage) } },
+                        label = "删除 GPU",
+                        icon = LucideIcons.Trash2,
+                        tone = GeoTone.Secondary
+                    )
+
+                    else -> GeoKey(
+                        onClick = { scope.launch { runtime.downloadGpuModel(model.key)?.let(onMessage) } },
+                        label = "下载 GPU",
+                        icon = LucideIcons.Download,
+                        enabled = model.downloaded
                     )
                 }
             }

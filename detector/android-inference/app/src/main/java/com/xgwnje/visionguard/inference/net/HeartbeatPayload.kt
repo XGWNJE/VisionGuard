@@ -21,7 +21,11 @@ data class HeartbeatSource(
     val targetSamplingRate: Int,
     val monitoringExpected: Boolean,
     val lastProgressAtIso: String?,
-    val performanceWarning: String?
+    val performanceWarning: String?,
+    /** 后端细节：输入尺寸、线程、量化边界，或「为何没用 GPU」的回落原因。 */
+    val backendNote: String = "",
+    /** 该来源配置在同机上的并发上限（单路 ≥5 帧/秒），与控制台显示一致。 */
+    val concurrencyLimit: Int = 0
 )
 
 /**
@@ -30,6 +34,11 @@ data class HeartbeatSource(
  * 与 Windows `Services/ServerPushService.cs#SendHeartbeatNow` 对齐：顶层状态取任一来源的聚合值，
  * `cooldown/confidence/targets/targetSamplingRate/modelKey` 取第一个来源；完整回传模型标签与目标列表，
  * 不截断。Android 端不声明 `directml`，并额外声明 `video-subscribe`（远程镜头订阅能力）。
+ *
+ * 本端另外上报两件服务端无法自行推断的事实：
+ * - `inferenceBackends` / `inferenceLimits`：本机各模型配置的加速后端与并发上限，控制台据此
+ *   解释并校验「为什么这个设备加不了更多来源」，不必把设备型号硬编码进服务端；
+ * - `overConcurrencyLimit`：已配置来源数是否超过当前配置的能力上限。
  */
 object HeartbeatPayload {
 
@@ -42,7 +51,8 @@ object HeartbeatPayload {
         "screenshot-on-demand",
         "source-control",
         "video-subscribe",
-        "visual-inference"
+        "visual-inference",
+        "acceleration-reporting"
     )
 
     fun build(
@@ -52,7 +62,13 @@ object HeartbeatPayload {
         sources: List<HeartbeatSource>,
         modelOptions: List<String>,
         modelLabels: Map<String, List<Pair<String, String>>>,
-        components: Map<String, String> = mapOf("detectorApp" to "running")
+        components: Map<String, String> = mapOf("detectorApp" to "running"),
+        /** 模型键到 `cpu` / `gpu` 的实际后端，只在模型可用时出现。 */
+        inferenceBackends: Map<String, String> = emptyMap(),
+        /** `模型键@后端` 到并发上限。 */
+        inferenceLimits: Map<String, Int> = emptyMap(),
+        /** 已配置来源数是否超过当前配置的能力上限。 */
+        overConcurrencyLimit: Boolean = false
     ): JsonObject {
         val array = JsonArray()
         for (source in sources) {
@@ -65,6 +81,8 @@ object HeartbeatPayload {
                 addProperty("actualFps", source.actualFps)
                 if (!source.error.isNullOrBlank()) addProperty("error", source.error) else addProperty("error", "")
                 addProperty("activeBackend", source.activeBackend)
+                if (source.backendNote.isNotBlank()) addProperty("backendNote", source.backendNote)
+                if (source.concurrencyLimit > 0) addProperty("concurrencyLimit", source.concurrencyLimit)
                 addProperty("cooldown", source.cooldown)
                 addProperty("confidence", source.confidence)
                 addProperty("targets", source.targets)
@@ -91,9 +109,20 @@ object HeartbeatPayload {
             addProperty("canSwitchModelWhileMonitoring", false)
             addProperty("hasPendingConfigChanges", false)
             add("capabilities", JsonArray().apply { CAPABILITIES.forEach { add(it) } })
+            add("inferenceBackends", stringMapJson(inferenceBackends))
+            add("inferenceLimits", intMapJson(inferenceLimits))
+            addProperty("overConcurrencyLimit", overConcurrencyLimit)
             add("components", JsonObject().apply { components.forEach { (key, value) -> addProperty(key, value) } })
             add("sources", array)
         }
+    }
+
+    private fun stringMapJson(values: Map<String, String>): JsonObject = JsonObject().apply {
+        for ((key, value) in values) addProperty(key, value)
+    }
+
+    private fun intMapJson(values: Map<String, Int>): JsonObject = JsonObject().apply {
+        for ((key, value) in values) addProperty(key, value)
     }
 
     /** 每个模型键回传全部 80 个 COCO 类的中英文标签，供控制台选择检测目标。 */

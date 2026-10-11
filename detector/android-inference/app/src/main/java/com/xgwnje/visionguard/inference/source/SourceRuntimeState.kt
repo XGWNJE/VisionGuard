@@ -16,6 +16,13 @@ data class SourceRuntimeState(
     val error: String? = null,
     val actualFps: Double = 0.0,
     val backend: String = "",
+    /**
+     * 后端细节：输入尺寸、线程、量化边界，或「为何没用 GPU」的回落原因。
+     * 界面与心跳都读它，避免「显示 CPU 但看不出是没装 GPU 模型还是设备不支持」。
+     */
+    val backendNote: String = "",
+    /** 当前是否走硬件加速（GPU）。并发上限与「是否真加速」都以此为准。 */
+    val accelerated: Boolean = false,
     val inferenceMs: Long = 0,
     /** 最后成功处理时间，本机单调时钟（与控制流同源，供界面算新鲜度）。 */
     val lastProgressAtMs: Long? = null,

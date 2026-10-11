@@ -26,16 +26,24 @@ class OnnxEngine private constructor(
     private val session: OrtSession,
     private val inputName: String,
     private val outputName: String,
-    val modelSize: Int,
+    override val modelSize: Int,
     /** 实际创建时使用的执行提供器档位。 */
     val provider: InferenceProvider
-) {
+) : InferenceEngine {
 
     /** 后端标识：界面与心跳按它显示。 */
-    val backend: String = provider.title
+    override val backend: String = provider.title
+
+    /** ONNX Runtime 只有 CPU 与 NNAPI 两档，正式档不用 NNAPI，故不计入硬件加速。 */
+    override val accelerated: Boolean = false
+
+    /** 后端细节：来源运行时与心跳按它显示，确认线程数与输入尺寸。 */
+    override val backendNote: String =
+        "输入 ${modelSize}px，intra=${provider.cpuThreads ?: DEFAULT_INTRA_OP_THREADS} 线程" +
+            if (provider.usesNnapi) "，NNAPI" else ""
 
     /** 运行一次推理；[tensor] 为 CHW `float[3 * modelSize * modelSize]`。 */
-    fun run(tensor: FloatArray): FloatArray {
+    override fun run(tensor: FloatArray): FloatArray {
         val shape = longArrayOf(1, 3, modelSize.toLong(), modelSize.toLong())
         OnnxTensor.createTensor(environment, FloatBuffer.wrap(tensor), shape).use { input ->
             session.run(mapOf(inputName to input)).use { result ->
@@ -50,7 +58,7 @@ class OnnxEngine private constructor(
         }
     }
 
-    fun close() {
+    override fun close() {
         runCatching { session.close() }
     }
 
@@ -63,6 +71,9 @@ class OnnxEngine private constructor(
 
         /** CPU 线程数：本机实测 4 线程比 2 线程快约两成。 */
         private const val INTRA_OP_THREADS = 4
+
+        /** 档位未指定线程数时实际生效的线程数。 */
+        const val DEFAULT_INTRA_OP_THREADS = INTRA_OP_THREADS
 
         /** 正式运行：固定 CPU · 4 线程。 */
         fun create(modelFile: File): OnnxEngine = create(modelFile, InferenceProvider.production)

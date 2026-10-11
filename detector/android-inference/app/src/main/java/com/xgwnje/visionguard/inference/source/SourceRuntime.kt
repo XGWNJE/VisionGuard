@@ -6,8 +6,10 @@ import com.xgwnje.visionguard.inference.alert.AlertGate
 import com.xgwnje.visionguard.inference.detect.ArgbImage
 import com.xgwnje.visionguard.inference.detect.Detection
 import com.xgwnje.visionguard.inference.detect.YoloOutputParser
+import com.xgwnje.visionguard.inference.model.InferenceEngine
+import com.xgwnje.visionguard.inference.model.InferenceEngineFactory
+import com.xgwnje.visionguard.inference.model.InferenceLimits
 import com.xgwnje.visionguard.inference.model.ModelStore
-import com.xgwnje.visionguard.inference.model.OnnxEngine
 import com.xgwnje.visionguard.inference.net.RemoteFrameStore
 import com.xgwnje.visionguard.inference.time.NtpSync
 import kotlinx.coroutines.CoroutineScope
@@ -48,7 +50,7 @@ class SourceRuntime(
 
     private val gate = AlertGate()
     private val frameTimes = ArrayDeque<Long>()
-    private var engine: OnnxEngine? = null
+    private var engine: InferenceEngine? = null
     /** 保护会话的使用与关闭：推理是不可中断的原生调用，关闭必须等它返回，否则会撞上已释放的会话。 */
     private val engineLock = ReentrantLock()
     private var scope: CoroutineScope? = null
@@ -89,14 +91,20 @@ class SourceRuntime(
 
         val modelFile = models.file(config.params.modelKey)
         val created = withContext(Dispatchers.IO) {
-            runCatching { OnnxEngine.create(modelFile) }
+            runCatching {
+                InferenceEngineFactory.create(
+                    onnxFile = modelFile,
+                    tfliteFile = models.gpuFile(config.params.modelKey),
+                    wantGpu = models.isGpuReady(config.params.modelKey)
+                )
+            }
         }
-        val loaded = created.getOrElse { error ->
+        val selection = created.getOrElse { error ->
             val message = "模型加载失败：${error.message ?: error::class.java.simpleName}"
             update { it.copy(isRunning = false, isReady = false, error = message, statusText = "未就绪") }
             return message
         }
-        engine = loaded
+        engine = selection.engine
         gate.reset()
         lastRemoteSequence = -1L
         lastLocalFrame = null
@@ -111,7 +119,9 @@ class SourceRuntime(
                 isReady = false,
                 error = null,
                 monitoringExpected = true,
-                backend = loaded.backend,
+                backend = selection.engine.backend,
+                backendNote = selection.fallbackReason ?: selection.engine.backendNote,
+                accelerated = selection.engine.accelerated,
                 statusText = "检测中"
             )
         }
@@ -176,7 +186,9 @@ class SourceRuntime(
             targetSamplingRate = config.params.targetFps,
             monitoringExpected = snapshot.monitoringExpected,
             lastProgressAtIso = snapshot.lastProgressWallMs?.toIsoOrNull(),
-            performanceWarning = snapshot.performanceWarning
+            performanceWarning = snapshot.performanceWarning,
+            backendNote = snapshot.backendNote,
+            concurrencyLimit = InferenceLimits.perConfiguration(config.params.modelKey, gpu = snapshot.accelerated)
         )
     }
 

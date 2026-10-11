@@ -8,6 +8,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 
 /**
  * 真机推理加速测量：同一模型在 CPU 与 NNAPI 各档位上的单帧耗时。
@@ -300,22 +301,27 @@ object AccelerationBenchmark {
     }
 
     /**
-     * 质量探针：测速结束后用**同一个已建会话**多跑一帧，把"检出了什么"记进报告。
+     * 质量探针：测速结束后用**同一个已建会话**多跑一帧，把"检出了什么"与解析耗时记进报告。
      * 为什么放在这里而不是另起一次测量：会话已经建好、输入也是同一张真实画面，
      * 多一帧的开销可以忽略；另起一次测量则要重新加载模型，还会因为不同档位的
      * 精度差异（FP32 / INT8）而失去可比性。质量帧失败只记原因，不影响耗时行。
+     *
+     * 解析耗时单列（`解析 xx ms`）：锚点档的解码 + 逐类 NMS 在端侧 CPU 上跑，属于加速档的
+     * **净新增开销**，端到端能不能达标要用它来算，不能只看推理耗时。
      */
     private fun qualityProbe(argb: ArgbImage?, inputSize: Int, infer: () -> FloatArray): String {
         if (argb == null || inputSize <= 0) return ""
         return try {
             val frame = argb.toLetterboxTensor(inputSize)
-            val detections = YoloOutputParser.parse(
-                infer(), frame.transform, QUALITY_CONFIDENCE, setOf(QUALITY_TARGET)
-            )
-            val top = detections.maxByOrNull { it.confidence }
-            if (top == null) {
-                AccelerationMeasure.qualityLine(0, 0f, 0f, 0f, 0f, 0f)
+            val raw = infer()
+            val parseStarted = System.nanoTime()
+            val detections = YoloOutputParser.parse(raw, frame.transform, QUALITY_CONFIDENCE, setOf(QUALITY_TARGET))
+            val parseMs = (System.nanoTime() - parseStarted) / 1_000_000.0
+            val suffix = String.format(Locale.US, " / 解析 %.1f ms", parseMs)
+            if (detections.isEmpty()) {
+                AccelerationMeasure.qualityLine(0, 0f, 0f, 0f, 0f, 0f) + suffix
             } else {
+                val top = detections.maxByOrNull { it.confidence }!!
                 AccelerationMeasure.qualityLine(
                     detections.size,
                     top.confidence,
@@ -323,7 +329,7 @@ object AccelerationBenchmark {
                     (top.box.top + top.box.height / 2f) / argb.height,
                     top.box.width / argb.width,
                     top.box.height / argb.height
-                )
+                ) + suffix
             }
         } catch (error: Throwable) {
             "取质量失败：${error.message ?: error::class.java.simpleName}"

@@ -34,10 +34,17 @@ class HeartbeatPayloadTest {
         targetSamplingRate = samplingRate,
         monitoringExpected = monitoring,
         lastProgressAtIso = "2026-10-09T00:00:00Z",
-        performanceWarning = null
+        performanceWarning = null,
+        backendNote = "输入 640px，可用加速器 GPU,CPU",
+        concurrencyLimit = 2
     )
 
-    private fun build(sources: List<HeartbeatSource>) = JsonParser.parseString(
+    private fun build(
+        sources: List<HeartbeatSource>,
+        inferenceBackends: Map<String, String> = emptyMap(),
+        inferenceLimits: Map<String, Int> = emptyMap(),
+        overConcurrencyLimit: Boolean = false
+    ) = JsonParser.parseString(
         gson.toJson(
             HeartbeatPayload.build(
                 gson = gson,
@@ -45,7 +52,10 @@ class HeartbeatPayloadTest {
                 deviceName = "视觉推理节点 · Pixel",
                 sources = sources,
                 modelOptions = listOf("yolo26n_320"),
-                modelLabels = HeartbeatPayload.standardModelLabels(listOf("yolo26n_320"))
+                modelLabels = HeartbeatPayload.standardModelLabels(listOf("yolo26n_320")),
+                inferenceBackends = inferenceBackends,
+                inferenceLimits = inferenceLimits,
+                overConcurrencyLimit = overConcurrencyLimit
             )
         )
     ).asJsonObject
@@ -57,8 +67,40 @@ class HeartbeatPayloadTest {
         assertTrue(capabilities.contains("source-control"))
         assertTrue(capabilities.contains("config-control"))
         assertTrue(capabilities.contains("screenshot-on-demand"))
+        // 控制台据此知道本端会解释「为什么加不了更多来源」
+        assertTrue(capabilities.contains("acceleration-reporting"))
         assertFalse(capabilities.contains("directml"))
         assertFalse(capabilities.contains("video-publish"))
+    }
+
+    @Test
+    fun `推理能力随心跳上报`() {
+        val json = build(
+            sources = listOf(source("camera", true, true)),
+            inferenceBackends = mapOf("yolo26m_640" to "gpu"),
+            inferenceLimits = mapOf("yolo26m_640@cpu" to 2, "yolo26m_640@gpu" to 32),
+            overConcurrencyLimit = true
+        )
+        assertEquals("gpu", json["inferenceBackends"].asJsonObject["yolo26m_640"].asString)
+        assertEquals(2, json["inferenceLimits"].asJsonObject["yolo26m_640@cpu"].asInt)
+        assertEquals(32, json["inferenceLimits"].asJsonObject["yolo26m_640@gpu"].asInt)
+        assertTrue(json["overConcurrencyLimit"].asBoolean)
+    }
+
+    @Test
+    fun `来源上带后端细节与并发上限`() {
+        val json = build(listOf(source("camera", true, true)))
+        val item = json["sources"].asJsonArray[0].asJsonObject
+        assertEquals("输入 640px，可用加速器 GPU,CPU", item["backendNote"].asString)
+        assertEquals(2, item["concurrencyLimit"].asInt)
+    }
+
+    @Test
+    fun `没来源时不带后端细节字段也不报超限`() {
+        val json = build(emptyList())
+        assertEquals(0, json["sources"].asJsonArray.size())
+        assertEquals(0, json["inferenceLimits"].asJsonObject.size())
+        assertFalse(json["overConcurrencyLimit"].asBoolean)
     }
 
     @Test

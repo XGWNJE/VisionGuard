@@ -24,7 +24,7 @@ class LitertAcceleratedEngine private constructor(
     private val model: CompiledModel,
     private val inputs: List<TensorBuffer>,
     private val outputs: List<TensorBuffer>,
-    val modelSize: Int,
+    override val modelSize: Int,
     val provider: InferenceProvider,
     /** 环境实际报告的可用加速器，写进报告便于判断档位是否真的生效。 */
     val availableAccelerators: String,
@@ -34,10 +34,20 @@ class LitertAcceleratedEngine private constructor(
     private val inputInfo: TfliteQuantization.TensorInfo? = null,
     /** 模型输出的边界类型与量化参数。 */
     private val outputInfo: TfliteQuantization.TensorInfo? = null
-) {
+) : InferenceEngine {
 
     /** 后端标识：测量报告与心跳按它显示。 */
-    val backend: String = provider.title
+    override val backend: String = provider.title
+
+    /** 该档是否走 GPU 加速器；加速器 API 的 CPU 档不算加速。 */
+    override val accelerated: Boolean = provider.usesGpuDelegate
+
+    /** 后端细节：加速器可见性 + 边界精度（+ CPU 档的 XNNPACK 设置）。 */
+    override val backendNote: String = buildString {
+        append("输入 ${modelSize}px，可用加速器 ${availableAccelerators.ifEmpty { "无" }}")
+        append("，").append(quantizationNote())
+        if (cpuNote.isNotEmpty()) append("，").append(cpuNote)
+    }
 
     private val inputQuantized: Boolean get() = inputInfo?.quantized == true
     private val outputQuantized: Boolean get() = outputInfo?.quantized == true
@@ -55,7 +65,7 @@ class LitertAcceleratedEngine private constructor(
      * 边界的量化换算在这里吸收。**必须**按模型自报的 scale 换算——按 float32 尺寸写缓冲会报
      * `TensorBuffer host memory buffer size is smaller than the given data size`。
      */
-    fun run(tensor: FloatArray): FloatArray {
+    override fun run(tensor: FloatArray): FloatArray {
         val nhwc = toNhwc(tensor)
         if (inputQuantized) {
             inputs.first().writeInt8(quantize(nhwc))
@@ -66,7 +76,7 @@ class LitertAcceleratedEngine private constructor(
         return if (outputQuantized) dequantize(produced.readInt8()) else produced.readFloat()
     }
 
-    fun close() {
+    override fun close() {
         runCatching { model.close() }
         runCatching { environment.close() }
     }

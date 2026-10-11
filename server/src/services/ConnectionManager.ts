@@ -128,6 +128,8 @@ function scheduleDetectorRemoval(
 
 const MAX_MODEL_OPTIONS = 16;
 const MAX_COMPONENTS = 8;
+/** 检测端自报的推理能力条目上限（模型键数量级，留足余量）。 */
+const MAX_INFERENCE_ENTRIES = 32;
 const DETECTOR_COMMANDS = new Set(['pause', 'resume', 'stop-alarm']);
 // Windows 只剩一个检测端，生命周期命令统一为 detector。
 const RESIDENT_COMMANDS = new Set(['open-detector', 'close-detector']);
@@ -200,8 +202,49 @@ function sanitizeModelLabels(value: unknown, options: string[]): Record<string, 
   return result;
 }
 
-function sanitizeSources(value: unknown): SourceStatus[] | undefined {
-  if (!Array.isArray(value)) return undefined;
+/**
+ * 检测端自报的推理能力上限：`模型键@后端` → 并发来源数。
+ *
+ * 键与值都严格校验并限长，上限条数固定：这些字段只用于解释与展示，
+ * 不做任何控制决策，因此宁可丢字段也不用未校验的数据。
+ */
+function sanitizeInferenceLimits(value: unknown): Record<string, number> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const result: Record<string, number> = {};
+  for (const [key, limit] of Object.entries(value).slice(0, MAX_INFERENCE_ENTRIES)) {
+    if (!/^[A-Za-z0-9_.-]{1,48}@(cpu|gpu)$/.test(key)) continue;
+    if (typeof limit !== 'number' || !Number.isInteger(limit)) continue;
+    result[key] = Math.max(1, Math.min(64, limit));
+  }
+  return Object.keys(result).length ? result : undefined;
+}
+
+/** 检测端自报的加速后端：模型键 → `cpu` / `gpu`。 */
+function sanitizeInferenceBackends(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const result: Record<string, string> = {};
+  for (const [key, backend] of Object.entries(value).slice(0, MAX_INFERENCE_ENTRIES)) {
+    if (!/^[A-Za-z0-9_.-]{1,48}$/.test(key)) continue;
+    if (backend !== 'cpu' && backend !== 'gpu') continue;
+    result[key] = backend;
+  }
+  return Object.keys(result).length ? result : undefined;
+}
+
+/**
+ * 服务端口径的超限判定：按**运行中**来源各自的并发上限，取上限最小的那个配置作为设备能力上限。
+ *
+ * 与检测端自评的区别：这里只算真正在推理的来源，停掉的来源不占算力；自评按已配置来源数算。
+ * 控制台显示服务端口径，检测端自评仅作参考。
+ */
+function overInferenceLimit(sources: SourceStatus[]): boolean | undefined {
+  const running = sources.filter(source => source.isMonitoring && (source.concurrencyLimit ?? 0) > 0);
+  if (!running.length) return false;
+  const limit = Math.min(...running.map(source => source.concurrencyLimit!));
+  return running.length > limit;
+}
+
+function sanitizeSources(value: unknown): SourceStatus[] | undefined {  if (!Array.isArray(value)) return undefined;
   const ids = new Set<string>();
   const sources: SourceStatus[] = [];
   if (value.length > config.maxSourcesPerDetector) return undefined;
@@ -215,8 +258,12 @@ function sanitizeSources(value: unknown): SourceStatus[] | undefined {
       ? Math.max(0, Math.min(240, item.actualFps)) : undefined;
     const error = typeof item.error === 'string' && item.error.trim()
       ? item.error.trim().slice(0, 256) : undefined;
-    const activeBackend = typeof item.activeBackend === 'string' && /^(Cpu|DirectML|NNAPI|Unavailable)$/.test(item.activeBackend)
-      ? item.activeBackend : undefined;
+    const activeBackend = typeof item.activeBackend === 'string' && item.activeBackend.trim()
+      ? item.activeBackend.trim().slice(0, 64) : undefined;
+    const backendNote = typeof item.backendNote === 'string' && item.backendNote.trim()
+      ? item.backendNote.trim().slice(0, 256) : undefined;
+    const concurrencyLimit = typeof item.concurrencyLimit === 'number' && Number.isInteger(item.concurrencyLimit)
+      ? Math.max(1, Math.min(64, item.concurrencyLimit)) : undefined;
     const performanceWarning = typeof item.performanceWarning === 'string' && item.performanceWarning.trim()
       ? item.performanceWarning.trim().slice(0, 256) : undefined;
     const cooldown = typeof item.cooldown === 'number' && Number.isInteger(item.cooldown)
@@ -230,8 +277,8 @@ function sanitizeSources(value: unknown): SourceStatus[] | undefined {
       monitoringExpected: typeof item.monitoringExpected === 'boolean' ? item.monitoringExpected : undefined,
       lastProgressAt: validProgress(item.lastProgressAt) ? item.lastProgressAt : undefined,
       sourceId, sourceName, isMonitoring: !!item.isMonitoring, isReady: !!item.isReady,
-      modelKey: sanitizeModelKey(item.modelKey) ?? '', actualFps, error, activeBackend, performanceWarning,
-      cooldown, confidence, targets, targetSamplingRate,
+      modelKey: sanitizeModelKey(item.modelKey) ?? '', actualFps, error, activeBackend, backendNote, performanceWarning,
+      concurrencyLimit, cooldown, confidence, targets, targetSamplingRate,
     });
   }
   return sources;
@@ -782,6 +829,14 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   // 超限会让 sources 整组被拒、客户端保留旧快照，因此必须把这个状态也告诉控制台。
   const sourceOverLimit = Array.isArray(msg.sources) && msg.sources.length > config.maxSourcesPerDetector;
   const sourceLimitChanged = msg.sources !== undefined && client.sourceLimitExceeded !== sourceOverLimit;
+  const inferenceBackends = msg.inferenceBackends === undefined
+    ? undefined : sanitizeInferenceBackends(msg.inferenceBackends);
+  const inferenceLimits = msg.inferenceLimits === undefined
+    ? undefined : sanitizeInferenceLimits(msg.inferenceLimits);
+  const inferenceChanged =
+    JSON.stringify(client.inferenceBackends) !== JSON.stringify(inferenceBackends ?? client.inferenceBackends) ||
+    JSON.stringify(client.inferenceLimits) !== JSON.stringify(inferenceLimits ?? client.inferenceLimits) ||
+    (sanitizedSources !== undefined && overInferenceLimit(sanitizedSources) !== overInferenceLimit(client.sources));
   const changed =
     client.isMonitoring !== msg.isMonitoring ||
     client.isReady !== msg.isReady ||
@@ -796,7 +851,8 @@ function handleHeartbeat(msg: WsHeartbeat): void {
     JSON.stringify(client.capabilities) !== JSON.stringify(msg.capabilities ?? client.capabilities) ||
     JSON.stringify(client.components) !== JSON.stringify(msg.components ?? client.components) ||
     JSON.stringify(client.sources) !== JSON.stringify(msg.sources ?? client.sources) ||
-    JSON.stringify(client.remoteSettings) !== JSON.stringify(sanitizeRemoteSettings(msg.remoteSettings, client.identity.component)) || sourceLimitChanged;
+    JSON.stringify(client.remoteSettings) !== JSON.stringify(sanitizeRemoteSettings(msg.remoteSettings, client.identity.component)) || sourceLimitChanged ||
+    inferenceChanged;
 
   client.isMonitoring = msg.isMonitoring;
   client.isReady = msg.isReady ?? false;
@@ -819,6 +875,8 @@ function handleHeartbeat(msg: WsHeartbeat): void {
     mediaRelay.updateSamplingRates(accountId, client.deviceId, client.sources);
   }
   if (msg.sources !== undefined) client.sourceLimitExceeded = sourceOverLimit;
+  if (inferenceBackends !== undefined) client.inferenceBackends = inferenceBackends;
+  if (inferenceLimits !== undefined) client.inferenceLimits = inferenceLimits;
 
   const count = (_heartbeatCounter.get(msg.deviceId) ?? 0) + 1;
   _heartbeatCounter.set(msg.deviceId, count);
@@ -1164,6 +1222,9 @@ function buildDeviceList(): DeviceStatus[] {
         remoteSettings: c.remoteSettings,
         maxSources: config.maxSourcesPerDetector,
         sourceLimitExceeded: c.sourceLimitExceeded,
+        inferenceBackends: c.inferenceBackends,
+        inferenceLimits: c.inferenceLimits,
+        overInferenceLimit: overInferenceLimit(c.sources),
       });
     }
   }

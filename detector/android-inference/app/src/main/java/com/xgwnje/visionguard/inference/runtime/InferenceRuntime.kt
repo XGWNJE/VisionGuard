@@ -22,6 +22,8 @@ import com.xgwnje.visionguard.inference.capture.LocalCameraStatus
 import com.xgwnje.visionguard.inference.detect.ArgbImage
 import com.xgwnje.visionguard.inference.detect.DetectionParams
 import com.xgwnje.visionguard.inference.detect.MaskRegion
+import com.xgwnje.visionguard.inference.model.InferenceLimits
+import com.xgwnje.visionguard.inference.model.ModelFormat
 import com.xgwnje.visionguard.inference.model.ModelKeys
 import com.xgwnje.visionguard.inference.model.ModelStore
 import com.xgwnje.visionguard.inference.net.ControlClient
@@ -51,8 +53,15 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.security.MessageDigest
 
-/** 模型资源视图。 */
-data class ModelState(val key: String, val displayName: String, val downloaded: Boolean)
+/** 模型资源视图；GPU 版本是可选的第二种产物，只在支持该组合的键上出现。 */
+data class ModelState(
+    val key: String,
+    val displayName: String,
+    val downloaded: Boolean,
+    /** 是否提供 GPU 版本下载入口。 */
+    val gpuSupported: Boolean = false,
+    val gpuDownloaded: Boolean = false
+)
 
 /** 下载进度视图。 */
 data class ModelDownloadState(val received: Long, val total: Long) {
@@ -259,9 +268,11 @@ class InferenceRuntime private constructor(private val context: Context) {
     fun addLocalCameraSource(): String? {
         if (settings.hasLocalCameraSource()) return "本机相机来源已存在"
         if (!settings.canAddSource(control.state.value.maxSources)) return "已达到服务端来源上限"
+        val params = DetectionParams(modelKey = defaultModelKey())
+        concurrencyReason(params.modelKey)?.let { return it }
         settings.upsertSource(
             SourceConfig.forLocalCamera(
-                params = DetectionParams(modelKey = defaultModelKey()),
+                params = params,
                 masks = emptyList(),
                 lensFacing = SourceConfig.LENS_BACK
             )
@@ -383,13 +394,16 @@ class InferenceRuntime private constructor(private val context: Context) {
             for (stream in streams) {
                 if (settings.sources().any { it.sourceId == stream.sourceId }) continue
                 if (!settings.canAddSource(control.state.value.maxSources)) break
+                val params = DetectionParams(modelKey = defaultModelKey())
+                // 服务端下发的流也要过本机推理能力这一关：超了就停在这里，不静默把设备压死。
+                if (concurrencyReason(params.modelKey) != null) break
                 settings.upsertSource(
                     SourceConfig.forRemoteStream(
                         streamSourceId = stream.sourceId,
                         streamSourceName = stream.sourceName.ifBlank { stream.publisherName },
                         publisherDeviceId = stream.publisherDeviceId,
                         publisherName = stream.publisherName,
-                        params = DetectionParams(modelKey = defaultModelKey()),
+                        params = params,
                         masks = emptyList()
                     )
                 )
@@ -403,6 +417,7 @@ class InferenceRuntime private constructor(private val context: Context) {
 
     private fun buildHeartbeat(): JsonObject {
         val session = account.session.value
+        val configured = settings.sources()
         return HeartbeatPayload.build(
             gson = gson,
             deviceId = session?.deviceId ?: "",
@@ -410,7 +425,11 @@ class InferenceRuntime private constructor(private val context: Context) {
             sources = runtimes.values.map { it.heartbeatSource() },
             modelOptions = models.downloadedKeys(),
             modelLabels = HeartbeatPayload.standardModelLabels(ModelKeys.keys),
-            components = mapOf("detectorApp" to if (mutableState.value.runningSourceCount > 0) "running" else "stopped")
+            components = mapOf("detectorApp" to if (mutableState.value.runningSourceCount > 0) "running" else "stopped"),
+            // 只上报本机真实可用的后端：GPU 产物没下载的键不宣告 gpu，避免控制台显示的能力与实机不符。
+            inferenceBackends = configured.associate { it.params.modelKey to if (gpuReady(it.params.modelKey)) "gpu" else "cpu" },
+            inferenceLimits = InferenceLimits.declaredLimits(),
+            overConcurrencyLimit = configured.size > concurrencyLimit()
         )
     }
 
@@ -614,29 +633,87 @@ class InferenceRuntime private constructor(private val context: Context) {
 
     private fun updateModels() {
         updateState {
-            it.copy(models = ModelKeys.keys.map { key -> ModelState(key, ModelKeys.displayName(key), models.isDownloaded(key)) })
+            it.copy(
+                models = ModelKeys.keys.map { key ->
+                    ModelState(
+                        key = key,
+                        displayName = ModelKeys.displayName(key),
+                        downloaded = models.isDownloaded(key),
+                        gpuSupported = ModelKeys.supportsGpu(key),
+                        gpuDownloaded = models.isGpuReady(key)
+                    )
+                }
+            )
         }
     }
 
-    suspend fun downloadModel(key: String): String? {
+    suspend fun downloadModel(key: String, format: ModelFormat = ModelFormat.ONNX): String? {
         if (!ModelKeys.isSupported(key)) return "本端不支持模型 $key"
-        updateState { it.copy(downloads = it.downloads + (key to ModelDownloadState(0, 0))) }
-        val error = models.download(key) { received, total ->
-            updateState { it.copy(downloads = it.downloads + (key to ModelDownloadState(received, total))) }
+        if (format == ModelFormat.GPU_TFLITE && !ModelKeys.supportsGpu(key)) return "模型 ${ModelKeys.displayName(key)} 没有 GPU 版本"
+        val label = ModelKeys.displayName(key) + if (format == ModelFormat.GPU_TFLITE) " GPU" else ""
+        val slot = downloadSlot(key, format)
+        updateState { it.copy(downloads = it.downloads + (slot to ModelDownloadState(0, 0))) }
+        val error = models.download(key, format) { received, total ->
+            updateState { it.copy(downloads = it.downloads + (slot to ModelDownloadState(received, total))) }
         }
-        updateState { it.copy(downloads = it.downloads - key, message = error ?: "模型 ${ModelKeys.displayName(key)} 已下载") }
+        updateState { it.copy(downloads = it.downloads - slot, message = error ?: "模型 $label 已下载") }
         updateModels()
         return error
     }
 
-    suspend fun deleteModel(key: String): String? {
-        if (runtimes.values.any { it.state.value.isRunning && it.params.modelKey == key }) {
+    /** GPU 产物下载：与本体分开，用户按需取，不默认占用带宽与磁盘。 */
+    suspend fun downloadGpuModel(key: String): String? = downloadModel(key, ModelFormat.GPU_TFLITE)
+
+    suspend fun deleteModel(key: String, format: ModelFormat = ModelFormat.ONNX): String? {
+        if (runtimes.values.any { it.state.value.isRunning && it.params.modelKey == key && format == ModelFormat.ONNX }) {
             return "该模型正在被运行中的来源使用，请先停止来源"
         }
-        models.delete(key)
+        models.delete(key, format)
         updateModels()
         return null
     }
+
+    /** 下载进度槽位：本体与 GPU 产物各占一格。 */
+    private fun downloadSlot(key: String, format: ModelFormat) =
+        if (format == ModelFormat.ONNX) key else "${key}_gpu"
+
+    /**
+     * 本机当前配置下的并发来源上限（单路 ≥5 帧/秒）。
+     *
+     * 取已配置来源里**最重**的那个配置的上限：多路限制是设备级约束，来源可以先后启动、
+     * 也可以只跑其中一路，保守口径才不会让用户在某一路上把设备压死。数值表与实测依据见
+     * [InferenceLimits]。
+     */
+    fun concurrencyLimit(): Int {
+        val configured = settings.sources()
+        if (configured.isEmpty()) return InferenceLimits.CONSERVATIVE_LIMIT
+        return configured.minOf { InferenceLimits.perConfiguration(it.params.modelKey, gpu = gpuReady(it.params.modelKey)) }
+    }
+
+    /** 已配置来源数是否超过当前配置的能力上限。 */
+    fun overConcurrencyLimit(): Boolean = settings.sources().size > concurrencyLimit()
+
+    /**
+     * 再加一路该模型的来源是否会超过本机推理能力；超了就返回可读原因，没超返回 null。
+     *
+     * 判定用「现有来源 + 这一路」的配置集合算上限，而不是只看现有集合：用户新增的模型可能比
+     * 现有的更重（例如现有都是 320 档，新增一个 640 档），只看现有集合会放行一个必然卡死的组合。
+     */
+    fun concurrencyReason(newModelKey: String): String? {
+        val configured = settings.sources()
+        val gpu = gpuReady(newModelKey)
+        val limit = (configured.map { InferenceLimits.perConfiguration(it.params.modelKey, gpuReady(it.params.modelKey)) } +
+            InferenceLimits.perConfiguration(newModelKey, gpu))
+            .min()
+        val next = configured.size + 1
+        if (next <= limit) return null
+        val binding = (configured.map { it.params.modelKey } + newModelKey)
+            .minByOrNull { InferenceLimits.perConfiguration(it, gpuReady(it)) } ?: newModelKey
+        return "本机同时最多跑 $limit 路（受模型 $binding 限制，单路需 ≥5 帧/秒），请先减少来源或改用更小的模型"
+    }
+
+    /** 该模型是否具备走 GPU 的条件（有产物且已下载）。 */
+    private fun gpuReady(modelKey: String): Boolean = models.isGpuReady(modelKey)
 
     fun modelStore(): ModelStore = models
 
