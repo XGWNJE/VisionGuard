@@ -12,18 +12,18 @@
 
 检测链：`Capture → MaskApply → Letterbox → ONNX Runtime → Parse → AlertDecision → Outbox`。
 
-- 本机来源固定为 `camera`；绑定的远程镜头通过 `stream-list` 自动加入、移除，来源标识稳定。服务下发来源上限 1–16；每路独立运行与报错，忙时保留最新帧。
+- 本机来源固定为 `camera`；绑定的远程镜头通过 `stream-list` 自动加入、移除，来源标识稳定。服务下发来源上限 1–16；同时运行的来源数另受**本机推理能力**限制（按「模型 + 后端」定，CPU 32 / 4 / 2 路、GPU 32 路，见[多路限制](32-推理框架与模型优化.md#多路限制单路-5-帧秒)），超限时新增被拒并给出可读原因。每路独立运行与报错，忙时保留最新帧。
 - 来源名最多 64 个 UTF-16 单元且无控制字符；置信度 10–95% 整数、采样 1–5 FPS、冷却 1–300 秒、COCO 英文目标最长 4096 字符。模型与参数停止后保存，下次启动生效，本机及远控共用校验。
 - 遮罩用 `[0,1]` 相对坐标，推理前涂黑；预览和截图复用已遮罩画面，遮罩不通过远控同步。
-- 从统一服务按需下载 YOLO26 n / s / m 的 320 / 640 六个模型到私有 `files/models/`，长度校验后替换。等比缩放补黑边，输入 CHW RGB `/255`；默认尝试 NNAPI，注册或会话创建失败回落 CPU 并保留原因，intra / inter 线程为 2 / 1。
-- 解析验证输出展平长度，识别 `[1,300,6]`（模型内 NMS）或 `[1,84,N]`（解析侧逐类 NMS）。最多返回 5 框，映射回原帧。
+- 从统一服务按需下载 YOLO26 n / s / m 的 320 / 640 共 **12 个键**（6 个 FP32 本体 + 6 个量化版，键名 `<基名>` / `<基名>_int8`）到私有 `files/models/`，长度校验后替换；`yolo26m_640` 另有 GPU 产物 `<键>_gpu.tflite`，在同一行按钮上按需下载。等比缩放补黑边，输入 CHW RGB `/255`。加速档走 LiteRT GPU（见下文「推理加速」），其余走 ONNX Runtime CPU（intra / inter 线程为 4 / 1）。
+- 解析验证输出展平长度，识别 `[1,300,6]`（模型内 NMS）或 `[1,84,N]`（**锚点档，图内无 NMS**）。锚点档前 4 通道按「0/2 为一对 x、1/3 为一对 y」配对解码——顺序与端到端档 `x1,y1,x2,y2` 不同，照搬会静默出错框；逐类 NMS 后映射回原帧。两档都最多返回 5 框。
 - 远程帧格式为 4 字节大端头长、JSON、JPEG：头 ≤4096 字节、JPEG ≤2 MiB、最长 / 短边 ≤1280 / 720、旋转仅 0/90/180/270，声明尺寸须与实际一致。
 
 ## 报警、状态与远控
 
 NTP 校正报警时间，逐来源独立冷却。账号 / 服务 / 设备分区的持久 outbox 最多 500 项，超出丢最旧；实时期限 30 秒，过期不补发。收到接受回执后移除事件并异步发送截图（宽 ≤960，JPEG 65）；确定拒收 `alert-id-conflict`、`invalid-or-expired-event` 同样移除，其他拒收保留重试。
 
-心跳每 3 秒上报运行意图 `monitoringExpected`、成功处理时间 `lastProgressAt`、FPS、后端、参数及错误。成功帧才推进进度；FPS 低于目标 80% 连续 30 秒提示性能不足。
+心跳每 3 秒上报运行意图 `monitoringExpected`、成功处理时间 `lastProgressAt`、FPS、后端与后端细节（`backendNote`，含输入尺寸、加速器可见性与「为何没用 GPU」）、参数、错误，以及本机推理能力（`inferenceLimits` / `inferenceBackends` / `overConcurrencyLimit`）与逐来源 `concurrencyLimit`。成功帧才推进进度；FPS 低于目标 80% 连续 30 秒提示性能不足。
 
 控制台复用现有操作入口，命令逐条返回 completed 回执：
 
@@ -43,9 +43,16 @@ NTP 校正报警时间，逐来源独立冷却。账号 / 服务 / 设备分区�
 
 ## 推理加速
 
-固定走 CPU：ONNX Runtime 官方 Android 包里 Java 侧可注册的执行提供器只有 NNAPI 与 CPU，多档位、自动探测与诊断已移除。真机实测（MediaTek MT8910，yolo26m · 640，6 帧均值）NNAPI 四档为 FP16 1882.7 ms、默认 1911.2 ms、NCHW 2251.8 ms、仅加速器 1737.8 ms，CPU 为 335.0 ms——系统加速器把图切碎后跨设备拷贝的开销超过了加速收益，在这条链上属于负优化；同机小模型 yolo26n · 320 上 NNAPI 为 77 ms，说明收益随模型规模变化，但不足以支撑保留档位。单帧耗时与后端显示在操作台读数、技术信息带与「设置 → 后台」；推理框架与模型的优化（量化、换运行时、厂商 NPU 路径）在 `feature/inference-optimization` 分支进行。
+**两条路线，按模型选后端**（口径与全矩阵读数见[推理框架与模型优化](32-推理框架与模型优化.md#验收口径)）：
+
+- **正式档 = ONNX Runtime · CPU 4 线程**，FP32 本体与量化版都能跑；量化版更快、更省内存。
+- **加速档 = LiteRT GPU + 截断图**：来源启动时按「该模型有 GPU 产物且已下载」自动启用，用不了显式回落 CPU 并把原因写进来源状态（`backendNote`，如「未下载 GPU 模型」「GPU 模型加载失败」），不静默降级。端到端实测（同 API CPU 基线 290.2 ms）：640-m 单路 **67.0 ms**、帧率 15.9，解码 + NMS 仅 0.9–1.8 ms。
+- 设置里每个模型直接标出跑在哪：`GPU` / `CPU` / `CPU · INT8`（判定与引擎选择同一口径）。
+- **NNAPI 与 NPU 已放弃**：NNAPI 在这条链上是负优化（同机 MT8910 上 yolo26m · 640 四档 1737.8–2251.8 ms，CPU 335.0 ms——系统加速器把图切碎后跨设备拷贝的开销超过加速收益）；NPU 缺公开接口，不申请厂商 SDK 无路可走。
+- 量化版固定走 ONNX CPU，不参与加速：它们只有 `.onnx`，边界是 float32、图内 int8，而 LiteRT 需要按 scale 换算整数边界。
+
 ## 构建与未实现项
 
 构建入口为 `.agents/skills/visionguard-build/scripts/build-all.ps1 -Target AndroidInference`，版本读取根 `VERSION`；当前所有 ABI 合入一个 APK。签名所需材料仅放忽略文件或环境变量，构建结果见验证记录。
 
-应用内更新使用 `android-inference` 查询键，正式发布流水线与下载元数据尚未接入，当前没有更新资产。Android 系统画面采集、Windows 窗口 / 驻留机制未实现；后续开发承接由 owner 选定分支，不在存档收尾中扩展。
+**已接入发布流水线**：`publish-release.ps1` 的平台表含 `android-inference`，产出 `VisionGuard-Inference-v<版本>.apk` 并写入更新元数据（`/api/update?platform=android-inference`）。**应用内「检查更新 → 下载安装」入口尚未实现**，当前只能手动安装；Android 系统画面采集、Windows 窗口 / 驻留机制同样未实现。

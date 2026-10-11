@@ -4,7 +4,7 @@
 
 # VisionGuard
 
-VisionGuard 由检测节点、统一服务和控制台协作。视觉推理节点检测画面中的目标，经服务转发告警和截图；控制台管理节点，通知节点在 Android 后台接警与响铃。Windows 推理端已发布，Android 推理端已合入主线，尚未发布。
+VisionGuard 由检测节点、统一服务和控制台协作。视觉推理节点检测画面中的目标，经服务转发告警和截图；控制台管理节点，通知节点在 Android 后台接警与响铃。Windows 与 Android 两个推理端均已发布。
 
 [使用方式](#使用方式) · [快速开始](#快速开始) · [当前组件](#当前组件) · [路线规划](#路线规划) · [文档与许可](#文档与许可)
 
@@ -61,7 +61,7 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scri
 | 组件 | 平台 | 当前范围 | 源码入口 |
 |---|---|---|---|
 | 视觉推理节点 | Windows | 本地画面及远程镜头推理；统一入口、modern / legacy 运行时与内部后台驻留 | [启动器](./detector/windows-launcher/) · [WPF 运行时](./detector/windows-wpf/) · [内部驻留](./detector/windows-resident/) |
-| 视觉推理节点 | Android | 本机相机与远程镜头推理、NNAPI / CPU、前台服务；已合入主线，未发布 | [`detector/android-inference/`](./detector/android-inference) |
+| 视觉推理节点 | Android | 本机相机与远程镜头推理、ONNX Runtime CPU 正式档 + LiteRT GPU 加速档、前台服务；已发布 | [`detector/android-inference/`](./detector/android-inference) |
 | 相机推流节点 | Android | 前台摄像头推流，最高 720P；通过统一服务接入 Windows 推理来源 | [`detector/android/`](./detector/android) |
 | 相机推流节点 | Web | 同源页面采集浏览器摄像头推流，最高 720P；页面隐藏即停，须 HTTPS | [`detector/web/`](./detector/web) |
 | 控制台 | Web | 唯一控制台，左导航、右内容；节点/来源、事件、账号与通知范围；三种外观 | [`receiver/web/`](./receiver/web) |
