@@ -83,7 +83,7 @@ test('publish-release.ps1 keeps GitHub optional and release deployment reproduci
 
   assert.match(script, /param\s*\(/);
   assert.match(script, /\$Version/);
-  assert.match(script, /ValidateSet\('All','Windows','Android','Server','WPF','AndroidDetector','AndroidNotifier'\)/);
+  assert.match(script, /ValidateSet\('All','Windows','Android','Server','WPF','AndroidDetector','AndroidNotifier','AndroidInference'\)/);
   assert.match(script, /\$PushGitHub/);
   assert.match(script, /\$CreateTag/);
   assert.match(script, /\$CreateGitHubRelease/);

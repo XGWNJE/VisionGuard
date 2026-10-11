@@ -21,6 +21,7 @@ function releaseFileName(key, version) {
   if (key === 'android-detector') return `VisionGuard-Detector-v${version}.apk`;
   if (key === 'android-notifier') return `VisionGuard-Notifier-v${version}.apk`;
   if (key === 'android-receiver') return `VisionGuard-Receiver-v${version}.apk`;
+  if (key === 'android-inference') return `VisionGuard-Inference-v${version}.apk`;
   if (key === 'wpf') return `VisionGuard-WPF-v${version}.zip`;
   return `VisionGuard-${key}-v${version}.zip`;
 }

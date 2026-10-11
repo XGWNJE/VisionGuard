@@ -2,7 +2,7 @@
     [Parameter(Mandatory = $true)]
     [string]$Version,
 
-    [ValidateSet('All','Windows','Android','Server','WPF','AndroidDetector','AndroidNotifier')]
+    [ValidateSet('All','Windows','Android','Server','WPF','AndroidDetector','AndroidNotifier','AndroidInference')]
     [string]$Target = 'All',
 
     [switch]$UploadVps,
@@ -327,7 +327,7 @@ function Invoke-ReleasePreflight {
         Test-PythonParamiko
     }
 
-    if (Test-TargetEnabled @('Android', 'AndroidDetector', 'AndroidNotifier')) {
+    if (Test-TargetEnabled @('Android', 'AndroidDetector', 'AndroidNotifier', 'AndroidInference')) {
         Set-AndroidJavaHome
         [void](Get-AndroidTool -Name 'apksigner')
         [void](Get-AndroidTool -Name 'zipalign')
@@ -341,6 +341,11 @@ function Invoke-ReleasePreflight {
     if (Test-TargetEnabled @('Android', 'AndroidNotifier')) {
         [void](Get-KeystoreConfig -ProjectRoot (Join-Path $repoRoot 'notifier\android'))
         Write-Host "preflight: Android notifier signing config resolved"
+    }
+
+    if (Test-TargetEnabled @('Android', 'AndroidInference')) {
+        [void](Get-KeystoreConfig -ProjectRoot (Join-Path $repoRoot 'detector\android-inference'))
+        Write-Host "preflight: Android inference signing config resolved"
     }
 
     if ($ServerDeployPlanned -and $SkipBuild -and -not (Test-Path -LiteralPath (Join-Path $repoRoot 'server\dist\index.js'))) {
@@ -702,7 +707,8 @@ function Get-GitHubOnlyArtifacts {
     $definitions = @(
         [pscustomobject]@{ Platform = 'wpf'; Targets = @('Windows', 'WPF'); FileName = "VisionGuard-WPF-v$Version.zip"; Kind = 'zip' },
         [pscustomobject]@{ Platform = 'android-detector'; Targets = @('Android', 'AndroidDetector'); FileName = "VisionGuard-Detector-v$Version.apk"; Kind = 'apk' },
-        [pscustomobject]@{ Platform = 'android-notifier'; Targets = @('Android', 'AndroidNotifier'); FileName = "VisionGuard-Notifier-v$Version.apk"; Kind = 'apk' }
+        [pscustomobject]@{ Platform = 'android-notifier'; Targets = @('Android', 'AndroidNotifier'); FileName = "VisionGuard-Notifier-v$Version.apk"; Kind = 'apk' },
+        [pscustomobject]@{ Platform = 'android-inference'; Targets = @('Android', 'AndroidInference'); FileName = "VisionGuard-Inference-v$Version.apk"; Kind = 'apk' }
     )
 
     $artifacts = New-Object System.Collections.Generic.List[object]
@@ -1471,6 +1477,17 @@ if (Test-TargetEnabled @('Android', 'AndroidNotifier')) {
     Add-ReleaseEntry -Metadata $metadata -Key 'android-notifier' -FileName $fileName -FilePath $dest
     $artifacts.Add([pscustomobject]@{ Platform = 'android-notifier'; Path = $dest; FileName = $fileName }) | Out-Null
     $platforms.Add('android-notifier') | Out-Null
+}
+
+if (Test-TargetEnabled @('Android', 'AndroidInference')) {
+    $fileName = "VisionGuard-Inference-v$Version.apk"
+    $apkPath = Get-SignedAndroidApk -ProjectRoot (Join-Path $repoRoot 'detector\android-inference') -Name 'Android inference'
+    $dest = Join-Path $releaseDir $fileName
+    Copy-Item -LiteralPath $apkPath -Destination $dest -Force
+    Verify-AndroidApk -ApkPath $dest
+    Add-ReleaseEntry -Metadata $metadata -Key 'android-inference' -FileName $fileName -FilePath $dest
+    $artifacts.Add([pscustomobject]@{ Platform = 'android-inference'; Path = $dest; FileName = $fileName }) | Out-Null
+    $platforms.Add('android-inference') | Out-Null
 }
 
 if ($artifacts.Count -gt 0) {

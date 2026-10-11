@@ -23,5 +23,11 @@
                              "url":  "/releases/VisionGuard-Notifier-v0.6.12.apk",
                              "size":  4645539,
                              "sha256":  "FBA467AFE664F450B31B2E9ECF21AB4F2A9C378E036D9AEF7706F0613A4F3179"
-                         }
+                         },
+    "android-inference":  {
+                              "version":  "0.6.12",
+                              "url":  "/releases/VisionGuard-Inference-v0.6.12.apk",
+                              "size":  167654813,
+                              "sha256":  "43B16A157F50A048AF7335A214E84AC0D8F997306CDC73FD820C5BF4FDCC90A1"
+                          }
 }
