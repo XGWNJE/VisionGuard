@@ -40,3 +40,4 @@
 - 中文 Markdown 为 UTF-8 无 BOM；含非 ASCII 的 PowerShell 为 UTF-8 with BOM，由编码测试校验。
 - 修改文档、入口、协议、版本 / 域名边界后运行 `node scripts/check-docs.js`、`node --test scripts/check-docs.test.js scripts/release-workflow.test.js scripts/release-notes.test.js scripts/check-powershell-encoding.test.js scripts/project-guards.test.js`，以及 `npm --prefix receiver/web test` 与 `npm --prefix detector/web test`。
 - 编译用 `visionguard-build`；运行 / 设备烟测用 `visionguard-e2e`；明确授权的发布用 `visionguard-release`。详细命令、ServerBuild / person / FPS 证据标准见[运维文档](docs/60-构建验证与发布.md)，执行前按任务读取对应 Skill。
+- Android 装包 / 重装统一走 `scripts/install-android-apk.ps1`：厂商的「USB 安装」倒计时确认必须在安装命令运行期间及时响应，错过一次就要重传整个包；判定成功看包版本、最后更新时间和已安装 APK 字节数，不看弹窗是否消失。错过弹窗用 `-RespondOnly` 补确认，不要重跑安装。

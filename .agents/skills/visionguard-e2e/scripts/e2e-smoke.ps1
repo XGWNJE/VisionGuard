@@ -273,9 +273,24 @@ function Run-AndroidAppSmoke {
     $summary.selectedDevice = $selected.Serial
 
     $installLog = Join-Path $artifactRoot "$Name-install.txt"
-    & $tools.Adb -s $selected.Serial install -r $apk *> $installLog
-    if ($LASTEXITCODE -ne 0) { throw "$Name adb install failed." }
-    Add-Result -Name "$Name install" -Status 'PASS' -Evidence $installLog
+    # 统一安装入口：处理厂商「USB 安装」倒计时确认（错过一次就要重传整个包），并独立核对
+    # 包版本、最后更新时间和已安装 APK 字节数，而不是只看 adb 退出码或弹窗是否消失。
+    $installerScript = Join-Path $repoRoot 'scripts\install-android-apk.ps1'
+    if (-not (Test-Path -LiteralPath $installerScript)) { throw "Android install entry is missing: $installerScript" }
+    $installEvidence = Join-Path $artifactRoot "$Name-install-evidence"
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $installOutput = & powershell -ExecutionPolicy Bypass -File $installerScript -Apk $apk -PackageName $PackageName `
+            -Serial $selected.Serial -Adb $tools.Adb -EvidenceDirectory $installEvidence 2>&1
+        $installExit = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+        $installOutput | ForEach-Object { $_.ToString() } | Set-Content -Encoding UTF8 $installLog
+    }
+    if ($installExit -ne 0) { throw "$Name install failed: $installLog" }
+    Add-Result -Name "$Name install" -Status 'PASS' -Note 'vendor confirmation handled; package version and APK bytes verified' -Evidence $installLog
 
     if ($ClearAppData) {
         & $tools.Adb -s $selected.Serial shell pm clear $PackageName *> (Join-Path $artifactRoot "$Name-clear.txt")
