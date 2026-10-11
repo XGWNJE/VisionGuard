@@ -1,6 +1,7 @@
 package com.xgwnje.visionguard.inference.model
 
 import java.io.File
+import java.util.Locale
 import kotlin.math.abs
 
 /**
@@ -43,7 +44,14 @@ object AccelerationMeasure {
         val medianMs: Double,
         val minMs: Double,
         val maxMs: Double,
-        val note: String = ""
+        val note: String = "",
+        /**
+         * 同一档位同一画面上的质量读数（`person 3 个 / 最高分 0.812 / 最高框 …`）。
+         *
+         * 耗时全档可比，但只有在**同一模型**的不同精度 / 不同档位之间比质量才有意义：
+         * 它回答的是"这一档有没有把目标检出来"。为空表示这一档没取到质量读数（失败档位）。
+         */
+        val quality: String = ""
     )
 
     /** 测量报告：同一设备上的全部读数与失败项。 */
@@ -59,6 +67,7 @@ object AccelerationMeasure {
                         "  ${row.provider.title}：中位 %.1f ms / 最小 %.1f / 最大 %.1f（%d 帧）%s"
                             .format(row.medianMs, row.minMs, row.maxMs, row.runs, note)
                     )
+                    if (row.quality.isNotEmpty()) add("    质量：${row.quality}")
                 }
                 // 门槛只在「同运行时、同精度」之间比才有意义：NNAPI 对 ONNX 的 CPU 基线，
                 // GPU/NPU 对各自运行时的 CPU 基线。基线优先取正式档位（CPU · 4 线程），
@@ -82,6 +91,16 @@ object AccelerationMeasure {
             failures.forEach { add("失败：$it") }
         }
     }
+
+    /**
+     * 质量行：同画面同档位下检出了什么。
+     *
+     * 为什么要有这一行：耗时全档可比，但"最快的那一档有没有把目标检出来"必须单独证明，
+     * 否则可能把"模型量化坏了所以很快"当成结论。坐标用归一化中心与宽高，便于跨输入尺寸对照。
+     */
+    fun qualityLine(detections: Int, topScore: Float, centerX: Float, centerY: Float, width: Float, height: Float): String =
+        "person %d 个 / 最高分 %.3f / 最高框 中心 %.3f,%.3f 宽高 %.3f,%.3f"
+            .format(Locale.US, detections, topScore, centerX, centerY, width, height)
 
     /** 中位数；空列表返回 0。 */
     fun median(ordered: List<Double>): Double {

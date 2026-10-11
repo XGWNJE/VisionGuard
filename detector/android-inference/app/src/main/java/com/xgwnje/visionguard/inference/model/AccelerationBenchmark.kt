@@ -2,6 +2,7 @@ package com.xgwnje.visionguard.inference.model
 
 import android.util.Log
 import com.xgwnje.visionguard.inference.detect.ArgbImage
+import com.xgwnje.visionguard.inference.detect.YoloOutputParser
 import java.io.File
 
 /**
@@ -29,6 +30,14 @@ object AccelerationBenchmark {
 
     /** 单帧耗时超过它就提前结束该档位，读数仍记录。 */
     private const val SLOW_FRAME_MS = 15_000.0
+
+    /**
+     * 质量探针的阈值与目标类：与正式默认档位一致（`DetectionParams` 默认 45% 与 `person`）。
+     *
+     * 取正式默认值而不是另定一套，是为了让报告里的质量读数能直接和正式链路对照。
+     */
+    private const val QUALITY_CONFIDENCE = 0.45f
+    private const val QUALITY_TARGET = "person"
 
     /**
      * 测量一个模型在 [providers] 上的单帧耗时。
@@ -70,6 +79,7 @@ object AccelerationBenchmark {
             }
             val samples = mutableListOf<Double>()
             var note = ""
+            var quality = ""
             var size = 0
             try {
                 val tensorOf: (Int) -> FloatArray = { modelSize ->
@@ -85,6 +95,7 @@ object AccelerationBenchmark {
                             repeat(WARMUP_RUNS) { engine.run(tensor) }
                             measure(samples, startedAt, maxTotalMs) { engine.run(tensor) }
                                 .also { if (it.isNotEmpty()) note = it }
+                            quality = qualityProbe(argb, size) { engine.run(tensor) }
                         } finally {
                             engine.close()
                         }
@@ -99,6 +110,7 @@ object AccelerationBenchmark {
                                 repeat(WARMUP_RUNS) { engine.run(tensor) }
                                 measure(samples, startedAt, maxTotalMs) { engine.run(tensor) }
                                     .also { if (it.isNotEmpty()) note = it }
+                                quality = qualityProbe(argb, size) { engine.run(tensor) }
                                 if (note.isEmpty()) {
                                     note = listOfNotNull(
                                         engine.cpuNote.takeIf { it.isNotEmpty() },
@@ -116,6 +128,7 @@ object AccelerationBenchmark {
                                 repeat(WARMUP_RUNS) { engine.run(tensor) }
                                 measure(samples, startedAt, maxTotalMs) { engine.run(tensor) }
                                     .also { if (it.isNotEmpty()) note = it }
+                                quality = qualityProbe(argb, size) { engine.run(tensor) }
                                 if (note.isEmpty()) note = engine.quantizationNote
                             } finally {
                                 engine.close()
@@ -129,6 +142,9 @@ object AccelerationBenchmark {
                 val variant = provider.gpuVariantNote.takeIf { it.isNotEmpty() }?.let { "（$it）" } ?: ""
                 failures += "$modelName · ${provider.title}$variant：$reason"
                 log("失败 $modelName · ${provider.title}$variant：$reason")
+                // 有些 JDK 异常的 message 是 null（例如 java.nio 的 BufferUnderflowException），
+                // 只记消息等于什么都没记；把栈连同 cause 一起写进日志，失败才能定位到行。
+                log("失败栈 $modelName · ${provider.title}：\n" + error.stackTraceToString())
                 return@forEach
             }
 
@@ -140,7 +156,8 @@ object AccelerationBenchmark {
                 medianMs = AccelerationMeasure.median(ordered),
                 minMs = ordered.firstOrNull() ?: 0.0,
                 maxMs = ordered.lastOrNull() ?: 0.0,
-                note = note
+                note = note,
+                quality = quality
             )
             results += row
             log(
@@ -149,6 +166,38 @@ object AccelerationBenchmark {
             )
         }
         return results to failures
+    }
+
+    /**
+     * 质量探针：测速结束后用**同一个已建会话**多跑一帧，把"检出了什么"记进报告。
+     *
+     * 为什么放在这里而不是另起一次测量：会话已经建好、输入也是同一张真实画面，
+     * 多一帧的开销可以忽略；另起一次测量则要重新加载模型，还会因为不同档位的
+     * 精度差异（FP32 / INT8）而失去可比性。质量帧失败只记原因，不影响耗时行。
+     */
+    private fun qualityProbe(argb: ArgbImage?, inputSize: Int, infer: () -> FloatArray): String {
+        if (argb == null || inputSize <= 0) return ""
+        return try {
+            val frame = argb.toLetterboxTensor(inputSize)
+            val detections = YoloOutputParser.parse(
+                infer(), frame.transform, QUALITY_CONFIDENCE, setOf(QUALITY_TARGET)
+            )
+            val top = detections.maxByOrNull { it.confidence }
+            if (top == null) {
+                AccelerationMeasure.qualityLine(0, 0f, 0f, 0f, 0f, 0f)
+            } else {
+                AccelerationMeasure.qualityLine(
+                    detections.size,
+                    top.confidence,
+                    (top.box.left + top.box.width / 2f) / argb.width,
+                    (top.box.top + top.box.height / 2f) / argb.height,
+                    top.box.width / argb.width,
+                    top.box.height / argb.height
+                )
+            }
+        } catch (error: Throwable) {
+            "取质量失败：${error.message ?: error::class.java.simpleName}"
+        }
     }
 
     /** 跑一档，返回提前停止的说明（没有则为空串）。 */

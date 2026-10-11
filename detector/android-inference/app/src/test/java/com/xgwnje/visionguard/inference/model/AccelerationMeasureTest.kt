@@ -76,6 +76,37 @@ class AccelerationMeasureTest {
     }
 
     @Test
+    fun `报告在耗时行下带质量行且格式固定`() {
+        val report = AccelerationMeasure.Report(
+            device = "d",
+            results = listOf(
+                result(InferenceProvider.ONNX_CPU4, medianMs = 5.9).copy(
+                    quality = AccelerationMeasure.qualityLine(2, 0.9014f, 0.5f, 0.25f, 0.125f, 0.4f)
+                )
+            ),
+            failures = emptyList()
+        )
+        val lines = report.lines()
+
+        // 质量必须紧跟在对应档位的耗时行之后，否则报告里对不上是哪个档位。
+        val index = lines.indexOfFirst { it.contains("ONNX · CPU 4 线程：中位") }
+        assertTrue(index >= 0)
+        assertEquals("    质量：person 2 个 / 最高分 0.901 / 最高框 中心 0.500,0.250 宽高 0.125,0.400", lines[index + 1])
+        // 小数点是点号而不是逗号：不同区域设置下报告必须一样。
+        assertTrue(!lines[index + 1].contains(",").not())
+    }
+
+    @Test
+    fun `没有质量读数的档位不写质量行`() {
+        val report = AccelerationMeasure.Report(
+            device = "d",
+            results = listOf(result(InferenceProvider.ONNX_CPU4, medianMs = 5.9)),
+            failures = emptyList()
+        )
+        assertTrue(report.lines().none { it.contains("质量：") })
+    }
+
+    @Test
     fun `中位数基数与偶数各取一次`() {
         assertEquals(0.0, AccelerationMeasure.median(emptyList()), 0.0)
         assertEquals(7.0, AccelerationMeasure.median(listOf(7.0)), 0.0)

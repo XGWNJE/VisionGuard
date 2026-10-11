@@ -51,6 +51,8 @@ class LitertEngine private constructor(
     /** 运行一次推理；[tensor] 为 CHW `float[3 * modelSize * modelSize]`。 */
     fun run(tensor: FloatArray): FloatArray {
         writeInput(tensor)
+        // 位置与 limit 都归零：输入缓冲在类初始化时是满 limit，写完后位置停在末尾；
+        // 不重置就会让 native 从错误位置读输入。
         inputBuffer.rewind()
         outputBuffer.rewind()
         interpreter.run(inputBuffer, outputBuffer)
@@ -104,13 +106,19 @@ class LitertEngine private constructor(
     }
 
     private fun readOutput(): FloatArray {
+        // 读取前必须把位置归零：`interpreter.run()` 会写满缓冲并让位置停在末尾，
+        // 此时按视图的当前 `position` 取值就是越界读（真机上表现为 BufferUnderflowException）。
+        // 元素数与字节数一律以张量自报的 numBytes 为准，不再自己按形状推算。
         val count = outputBytes / when (outputKind) {
             OutputKind.FLOAT32 -> Float.SIZE_BYTES
             is OutputKind.Quantized -> (outputKind as OutputKind.Quantized).bytes
         }
+        outputBuffer.rewind()
         return when (val kind = outputKind) {
             OutputKind.FLOAT32 -> {
                 val raw = FloatArray(count)
+                // 批量读而不是逐元素绝对读：`ByteBufferAsFloatBuffer` 在 JVM 上按元素对齐取 idx，
+                // 绝对索引落在奇数字节上会读错位置；批量 get 一次拷完，也与 native 写入顺序一致。
                 outputBuffer.asFloatBuffer().get(raw)
                 raw
             }
