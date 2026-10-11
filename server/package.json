@@ -1,10 +1,10 @@
 {
   "name": "visionguard-relay",
-  "version": "0.6.11",
+  "version": "0.6.12",
   "description": "统一服务（内部工程标识 VisionGuard.Relay，HTTP + WebSocket）",
   "main": "dist/index.js",
   "scripts": {
-    "build": "node scripts/clean-output.cjs && tsc && npm --prefix ../receiver/web run build",
+    "build": "node scripts/clean-output.cjs && tsc && npm --prefix ../receiver/web run build && npm --prefix ../detector/web run build",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
     "test": "node --require ts-node/register --test test/**/*.test.ts"

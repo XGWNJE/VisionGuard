@@ -25,6 +25,7 @@ const specs = [
   {key:'warehouse', component:'windows-inference', name:'【模拟】仓库视觉推理节点', sources:[source('stock','仓库通道','running',4.4),source('loading','装卸区域','running',4.2),source('rear','后门入口','paused')]},
   {key:'offline', component:'windows-inference', name:'【模拟】停车场视觉推理节点（离线）', offline:true, sources:[]},
   {key:'camera', component:'android-camera', name:'【模拟】移动巡检相机', sources:[]},
+  {key:'webcamera', component:'web-camera', name:'【模拟】浏览器巡检相机', sources:[]},
   {key:'phone', component:'android-notifier', name:'【模拟】值班手机'},
   {key:'tablet', component:'android-notifier', name:'【模拟】备用平板（离线）', offline:true},
 ];
@@ -48,7 +49,7 @@ async function api(route, session, body, method) {
 class Peer {
   constructor(session, spec) {
     this.session=session; this.spec=spec; this.messages=[];
-    if(spec?.component==='android-camera')spec.remoteSettings={cameraResolution:'480p',cameraDimScreen:false,cameraHidePreview:false};
+    if(spec?.component==='android-camera'||spec?.component==='web-camera')spec.remoteSettings={cameraResolution:'480p',cameraDimScreen:false,cameraHidePreview:false};
     if(spec?.component==='android-notifier')spec.remoteSettings={soundLoopCount:10,soundSelection:'system-default',audioPreview:'',audioEntries:[
       {id:'system-default',name:'系统默认闹钟',mutable:false},{id:'silent',name:'静音',mutable:false},
       {id:'preset:vg_notifier_preset_target_spot',name:'【模拟】监控发现目标',mutable:false},
@@ -80,7 +81,7 @@ class Peer {
     if(!this.spec) return this.send({type:'heartbeat-console'});
     if(this.spec.component==='android-notifier')return this.send({type:'heartbeat-notifier',capabilities:['alarm-control','sound-config','audio-library','request-correlation','cache-maintenance'],remoteSettings:this.spec.remoteSettings});
     const sources=this.spec.sources||[];
-    this.send({type:'heartbeat',deviceId:this.session.device.deviceId,isMonitoring:sources.some(s=>s.isMonitoring),isReady:true,cooldown:20,confidence:0.65,targets:'person',targetSamplingRate:5,modelKey:'yolo26n_320',modelOptions:['yolo26n_320','yolo26s_320'],modelLabels:{yolo26n_320:[{value:'person',label:'人员'},{value:'car',label:'车辆'}],yolo26s_320:[{value:'person',label:'人员'},{value:'car',label:'车辆'}]},canSwitchModelWhileMonitoring:true,capabilities:this.spec.component==='android-camera'?['video-publish','camera-config','request-correlation','cache-maintenance']:['monitor-control','config-control','source-control','screenshot-on-demand','request-correlation','directml','video-subscribe','visual-inference','cache-maintenance'],remoteSettings:this.spec.remoteSettings,components:{detectorApp:'running'},sources:sources.map(s=>({...s,monitoringExpected:s.isMonitoring,lastProgressAt:new Date().toISOString()}))});
+    this.send({type:'heartbeat',deviceId:this.session.device.deviceId,isMonitoring:sources.some(s=>s.isMonitoring),isReady:true,cooldown:20,confidence:0.65,targets:'person',targetSamplingRate:5,modelKey:'yolo26n_320',modelOptions:['yolo26n_320','yolo26s_320'],modelLabels:{yolo26n_320:[{value:'person',label:'人员'},{value:'car',label:'车辆'}],yolo26s_320:[{value:'person',label:'人员'},{value:'car',label:'车辆'}]},canSwitchModelWhileMonitoring:true,capabilities:this.spec.component==='android-camera'?['video-publish','stream-control','camera-config','request-correlation','cache-maintenance']:this.spec.component==='web-camera'?['video-publish','stream-control','camera-config','request-correlation']:['monitor-control','config-control','source-control','screenshot-on-demand','request-correlation','directml','video-subscribe','visual-inference','cache-maintenance'],remoteSettings:this.spec.remoteSettings,components:{detectorApp:'running'},sources:sources.map(s=>({...s,monitoringExpected:s.isMonitoring,lastProgressAt:new Date().toISOString()}))});
   }
   control(msg) {
     const selected=msg.targetSourceId?(this.spec.sources||[]).filter(s=>s.sourceId===msg.targetSourceId):(this.spec.sources||[]);

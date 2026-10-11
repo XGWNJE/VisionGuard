@@ -13,6 +13,7 @@ const { AccountFixture } = require('./helpers/accounts') as typeof import('./hel
 const owner = new AccountFixture([{ name: 'camera', component: 'android-camera' }, { name: 'inference', component: 'windows-inference' }, { name: 'console', component: 'web-console' }], 'media-owner');
 const foreign = new AccountFixture([{ name: 'foreign-inference', component: 'windows-inference' }, { name: 'foreign-console', component: 'web-console' }], 'media-other');
 const androidOnly = new AccountFixture([{ name: 'android-only-camera', component: 'android-camera' }, { name: 'android-only-inference', component: 'android-inference' }], 'media-android-owner');
+const webOwner = new AccountFixture([{ name: 'web-camera', component: 'web-camera' }, { name: 'web-inference', component: 'windows-inference' }, { name: 'web-console', component: 'web-console' }], 'media-web-owner');
 const { mediaRelay, parseFrame, framePacket, jpegDimensions } = require('../src/services/MediaRelay') as typeof import('../src/services/MediaRelay');
 const { accountStore } = require('../src/services/AccountStore') as typeof import('../src/services/AccountStore');
 const { websocketLimits } = require('../src/services/WebSocketLimits') as typeof import('../src/services/WebSocketLimits');
@@ -20,7 +21,7 @@ const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDB
 test.after(() => fs.rmSync(directory, { recursive: true, force: true }));
 
 async function fixture(t: any) {
-  await Promise.all([owner.ready, foreign.ready, androidOnly.ready]);
+  await Promise.all([owner.ready, foreign.ready, androidOnly.ready, webOwner.ready]);
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0, ...websocketLimits }); server.on('connection', ws => mediaRelay.handleConnection(ws));
   await new Promise<void>(resolve => server.once('listening', resolve));
   const sockets: WebSocket[] = [];
@@ -210,6 +211,30 @@ test('android inference auto-binds as the only inference node and cannot publish
   assert.equal((await consumer.take('frame')).frame.header.sequence, 1);
   const publishing = await f.connect(androidOnly.session('android-only-inference').token, 'publish'); assert.equal(await publishing.closed, 4001);
   const subscribing = await f.connect(androidOnly.session('android-only-camera').token, 'subscribe'); assert.equal(await subscribing.closed, 4001);
+});
+
+test('web camera publishes and the web console can rebind it, while cameras cannot subscribe or publish inference frames', async t => {
+  const f = await fixture(t), stream = mediaRelay.streams(webOwner.accountId)[0];
+  assert.equal(stream.publisherDeviceId, webOwner.id('web-camera'));
+  assert.equal(stream.targetDeviceId, webOwner.id('web-inference')); assert.ok(stream.sourceId);
+  const producer = await f.connect(webOwner.session('web-camera').token, 'publish'), ready = await producer.take('media-ready');
+  assert.equal(ready.targetDeviceId, webOwner.id('web-inference'));
+  const consumer = await f.connect(webOwner.session('web-inference').token, 'subscribe'); await consumer.take('media-ready');
+  producer.ws.send(packet(ready, 1)); assert.equal((await producer.take('frame-ack')).sequence, 1);
+  assert.equal((await consumer.take('frame')).frame.header.sequence, 1);
+  const session = accountStore.authenticate(webOwner.session('web-console').token)!;
+  const rebound = mediaRelay.bind(session, webOwner.id('web-camera'), webOwner.id('web-inference'));
+  assert.equal(rebound.sourceId, stream.sourceId);
+  assert.throws(() => mediaRelay.bind(session, owner.id('camera'), webOwner.id('web-inference')), /not found/);
+  const subscribing = await f.connect(webOwner.session('web-camera').token, 'subscribe'); assert.equal(await subscribing.closed, 4001);
+  const publishing = await f.connect(webOwner.session('web-inference').token, 'publish'); assert.equal(await publishing.closed, 4001);
+});
+
+test('unknown components cannot publish or subscribe on the media channel', async t => {
+  const f = await fixture(t);
+  const notifier = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'android-notifier', deviceName: 'forged-notifier-publisher' });
+  const publishing = await f.connect(notifier.token, 'publish'); assert.equal(await publishing.closed, 4001);
+  const subscribing = await f.connect(notifier.token, 'subscribe'); assert.equal(await subscribing.closed, 4001);
 });
 
 test('android inference receives per-source sampling updates only for its own account', async t => {

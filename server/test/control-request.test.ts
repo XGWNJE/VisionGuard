@@ -43,7 +43,7 @@ test('cache maintenance requires account and capability; accepts only matching b
 });
 
 test('camera and sound configuration routes inside account, validates live state and requires matching device completion', async t => {
-  const owner = new AccountFixture([{name:'remote-camera',component:'android-camera'},{name:'remote-sound',component:'android-notifier'},
+  const owner = new AccountFixture([{name:'remote-camera',component:'android-camera'},{name:'remote-web-camera',component:'web-camera'},{name:'remote-sound',component:'android-notifier'},
     {name:'remote-web',component:'web-console'}], 'remote-config-owner');
   const foreign = new AccountFixture([{name:'remote-foreign',component:'web-console'}], 'remote-config-foreign');
   await Promise.all([owner.ready,foreign.ready]);
@@ -51,7 +51,7 @@ test('camera and sound configuration routes inside account, validates live state
   await new Promise<void>(resolve=>wss.once('listening',resolve)); const port=(wss.address() as {port:number}).port;
   const peers:WebSocket[]=[];t.after(()=>{peers.forEach(ws=>ws.terminate());wss.close();});
   async function peer(name:string,fixture=owner) {const ws=await connect(port);peers.push(ws);const reply=waitForMessage(ws,m=>m.type==='auth-result');ws.send(JSON.stringify(fixture.auth(name)));await reply;return ws;}
-  const web=await peer('remote-web'), camera=await peer('remote-camera'), notifier=await peer('remote-sound'), other=await peer('remote-foreign',foreign);
+  const web=await peer('remote-web'), camera=await peer('remote-camera'), browserCamera=await peer('remote-web-camera'), notifier=await peer('remote-sound'), other=await peer('remote-foreign',foreign);
   const cameraState={cameraResolution:'480p',cameraDimScreen:false,cameraHidePreview:false};
   const soundState={soundLoopCount:10,soundSelection:'system-default',audioPreview:'',audioEntries:[{id:'system-default',name:'默认',mutable:false}]};
   async function heartbeat(ws:WebSocket,message:object) {const reply=waitForMessage(ws,m=>m.type==='heartbeat-ack');ws.send(JSON.stringify(message));await reply;}
@@ -61,12 +61,15 @@ test('camera and sound configuration routes inside account, validates live state
   }
   await rejected('cameraResolution','720p');
   await heartbeat(camera,{type:'heartbeat',isMonitoring:true,isReady:true,sources:[],capabilities:['camera-config'],remoteSettings:cameraState});
+  await heartbeat(browserCamera,{type:'heartbeat',isMonitoring:true,isReady:true,sources:[],capabilities:['video-publish','stream-control','camera-config'],remoteSettings:cameraState});
+  await rejected('cameraResolution','720p','remote-web-camera');
   await heartbeat(notifier,{type:'heartbeat-notifier',capabilities:['sound-config','audio-library'],remoteSettings:soundState});
   await rejected('cameraResolution','720p');await rejected('cameraHidePreview','1');
   await rejected('soundLoopCount','11','remote-sound');await rejected('soundLoopCount','3','remote-camera');
   await rejected('soundLoopCount','3','remote-sound',other);await rejected('cameraHidePreview','true','remote-camera',other);
   await rejected('cameraDimScreen','true','remote-camera',web,{targetSourceId:'fake'});
   await heartbeat(camera,{type:'heartbeat',isMonitoring:false,isReady:true,sources:[],capabilities:['camera-config'],remoteSettings:cameraState});
+  await heartbeat(browserCamera,{type:'heartbeat',isMonitoring:false,isReady:true,sources:[],capabilities:['video-publish','stream-control','camera-config'],remoteSettings:cameraState});
   for(const [node,target,key,value] of [[camera,'remote-camera','cameraResolution','720p'],[notifier,'remote-sound','soundLoopCount','3']] as const) {
     const requestId=crypto.randomUUID(),relay=waitForMessage(node,m=>m.type==='set-config'&&m.requestId===requestId), forwarded=waitForMessage(web,m=>m.type==='command-ack'&&m.requestId===requestId);
     web.send(JSON.stringify({type:'set-config',requestId,targetDeviceId:owner.id(target),key,value}));
@@ -76,14 +79,62 @@ test('camera and sound configuration routes inside account, validates live state
     assert.equal((await completion).success,true);
     await rejected(key,value,target,web,{requestId});
   }
+  // Web 相机与控制台同源，走同一套相机配置契约。
+  {
+    const requestId=crypto.randomUUID(),relay=waitForMessage(browserCamera,m=>m.type==='set-config'&&m.requestId===requestId), forwarded=waitForMessage(web,m=>m.type==='command-ack'&&m.requestId===requestId);
+    web.send(JSON.stringify({type:'set-config',requestId,targetDeviceId:owner.id('remote-web-camera'),key:'cameraResolution',value:'720p'}));
+    assert.equal((await relay).value,'720p');assert.equal((await forwarded).phase,'forwarded');
+    const completion=waitForMessage(web,m=>m.type==='command-ack'&&m.requestId===requestId&&m.phase==='completed');
+    browserCamera.send(JSON.stringify({type:'command-ack',requestId,targetDeviceId:owner.id('remote-web-camera'),command:'set-config:cameraResolution',phase:'completed',success:true,reason:'配置已保存'}));
+    assert.equal((await completion).reason,'配置已保存');
+    await rejected('cameraResolution','720p','remote-web-camera',web,{requestId});
+  }
   const list=waitForMessage(web,m=>m.type==='device-list');web.send(JSON.stringify({type:'get-devices'}));const devices=(await list).devices;
   assert.deepEqual(devices.find((d:any)=>d.deviceId===owner.id('remote-camera')).remoteSettings,cameraState);
+  assert.deepEqual(devices.find((d:any)=>d.deviceId===owner.id('remote-web-camera')).remoteSettings,cameraState);
   assert.equal(devices.find((d:any)=>d.deviceId===owner.id('remote-sound')).remoteSettings.soundLoopCount,10);
   // Completion is a real execution receipt; the next heartbeat provides current readback.
 });
 
+test('camera resolution stays locked while either camera implementation reports streaming', async t => {
+  const owner = new AccountFixture([{ name: 'lock-camera', component: 'android-camera' }, { name: 'lock-web-camera', component: 'web-camera' },
+    { name: 'lock-console', component: 'web-console' }], 'resolution-lock-owner');
+  await owner.ready;
+  const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 }); wss.on('connection', handleConnection);
+  await new Promise<void>(resolve => wss.once('listening', resolve));
+  const port = (wss.address() as { port: number }).port;
+  const peers: WebSocket[] = [];
+  t.after(() => { peers.forEach(ws => ws.terminate()); wss.close(); });
+  async function peer(name: string) { const ws = await connect(port); peers.push(ws); const reply = waitForMessage(ws, m => m.type === 'auth-result'); ws.send(JSON.stringify(owner.auth(name))); await reply; return ws; }
+  const consolePeer = await peer('lock-console');
+  const cameraPeer = await peer('lock-camera');
+  const webCameraPeer = await peer('lock-web-camera');
+  const cameraState = { cameraResolution: '480p', cameraDimScreen: false, cameraHidePreview: false };
+  /** 相机推流时心跳 must 上报 isMonitoring=true；远程规格锁定依赖这一点。 */
+  async function heartbeat(node: WebSocket, streaming: boolean) {
+    const reply = waitForMessage(node, m => m.type === 'heartbeat-ack');
+    node.send(JSON.stringify({ type: 'heartbeat', isMonitoring: streaming, isReady: true, sources: [], capabilities: ['video-publish', 'stream-control', 'camera-config'], remoteSettings: cameraState }));
+    await reply;
+  }
+  async function attempt(name: string) {
+    const requestId = crypto.randomUUID();
+    const reply = waitForMessage(consolePeer, m => m.type === 'command-ack' && m.requestId === requestId && (m.phase === 'completed' || m.phase === 'forwarded'), 4000);
+    consolePeer.send(JSON.stringify({ type: 'set-config', requestId, targetDeviceId: owner.id(name), key: 'cameraResolution', value: '720p' }));
+    return reply;
+  }
+  for (const [node, name] of [[cameraPeer, 'lock-camera'], [webCameraPeer, 'lock-web-camera']] as const) {
+    await heartbeat(node, true);
+    const locked = await attempt(name);
+    assert.equal(locked.success, false, `${name} must reject a resolution change while streaming`);
+    assert.match(locked.reason, /停止推流/);
+    await heartbeat(node, false);
+    const accepted = await attempt(name);
+    assert.equal(accepted.success, true, `${name} must accept a resolution change after the stream stops: ${accepted.reason}`);
+  }
+});
+
 test('camera and notifier controls require declared capabilities, route only inside account and correlate actual completion', async t => {
-  const owner = new AccountFixture([{name:'camera-command',component:'android-camera'}, {name:'notifier-command',component:'android-notifier'},
+  const owner = new AccountFixture([{name:'camera-command',component:'android-camera'}, {name:'web-camera-command',component:'web-camera'}, {name:'notifier-command',component:'android-notifier'},
     {name:'console-command',component:'web-console'}], 'control-capability-owner');
   const foreign = new AccountFixture([{name:'foreign-console-command',component:'web-console'}], 'control-capability-other');
   await Promise.all([owner.ready,foreign.ready]);
@@ -95,21 +146,24 @@ test('camera and notifier controls require declared capabilities, route only ins
     const ws=await connect(port); peers.push(ws);
     const auth=waitForMessage(ws,m=>m.type==='auth-result'); ws.send(JSON.stringify(fixture.auth(name))); await auth; return ws;
   }
-  const console=await peer('console-command'), camera=await peer('camera-command'), notifier=await peer('notifier-command'), other=await peer('foreign-console-command',foreign);
+  const console=await peer('console-command'), camera=await peer('camera-command'), webCamera=await peer('web-camera-command'), notifier=await peer('notifier-command'), other=await peer('foreign-console-command',foreign);
   async function reject(ws:WebSocket,command:string,target:string) {
     const requestId=crypto.randomUUID(), reply=waitForMessage(ws,m=>m.type==='command-ack'&&m.requestId===requestId);
     ws.send(JSON.stringify({type:'command',requestId,command,targetDeviceId:owner.id(target)}));
     assert.equal((await reply).success,false);
   }
   await reject(console,'start-stream','camera-command'); await reject(console,'stop-alarm','notifier-command');
+  // The Web camera registers before its first heartbeat, so stream control is not yet a declared capability.
+  await reject(console,'start-stream','web-camera-command');
   for(const [ws,message] of [[camera,{type:'heartbeat',isMonitoring:false,isReady:true,components:{cameraApp:'foreground',cameraPermission:'granted',invalid:'foreground'},capabilities:['video-publish','stream-control','request-correlation'],sources:[]}],
+    [webCamera,{type:'heartbeat',isMonitoring:false,isReady:true,components:{cameraApp:'foreground',cameraPermission:'granted'},capabilities:['video-publish','stream-control','camera-config','request-correlation'],sources:[]}],
     [notifier,{type:'heartbeat-notifier',capabilities:['alarm-control','request-correlation','monitor-control']}]] as const) {
     const response=waitForMessage(ws,m=>m.type==='heartbeat-ack'); ws.send(JSON.stringify(message));assert.notEqual((await response).accepted,false);
   }
   const list=waitForMessage(console,m=>m.type==='device-list'); console.send(JSON.stringify({type:'get-devices'}));
   assert.deepEqual((await list).devices.find((d:any)=>d.deviceId===owner.id('camera-command')).components,{cameraApp:'foreground',cameraPermission:'granted'});
-  await reject(other,'stop-stream','camera-command');await reject(other,'stop-alarm','notifier-command');await reject(console,'start-stream','notifier-command');
-  for(const [command,name,node] of [['start-stream','camera-command',camera],['stop-stream','camera-command',camera],['stop-alarm','notifier-command',notifier]] as const) {
+  await reject(other,'stop-stream','camera-command');await reject(other,'stop-alarm','notifier-command');await reject(console,'start-stream','notifier-command');await reject(other,'start-stream','web-camera-command');
+  for(const [command,name,node] of [['start-stream','camera-command',camera],['stop-stream','camera-command',camera],['start-stream','web-camera-command',webCamera],['stop-stream','web-camera-command',webCamera],['stop-alarm','notifier-command',notifier]] as const) {
     const requestId=crypto.randomUUID(), forwarded=waitForMessage(console,m=>m.type==='command-ack'&&m.requestId===requestId),
       relay=waitForMessage(node,m=>m.type==='command'&&m.requestId===requestId);
     console.send(JSON.stringify({type:'command',requestId,command,targetDeviceId:owner.id(name)}));

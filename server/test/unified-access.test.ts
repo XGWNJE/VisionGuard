@@ -21,6 +21,8 @@ const { AccountFixture } = require('./helpers/accounts') as typeof import('./hel
 const fixtures = new AccountFixture(identities.map(identity => ({ name: identity.deviceId, component: identity.role === 'detector' ? 'windows-inference' : identity.role === 'lifecycle' ? 'windows-resident' : identity.role === 'notifier' ? 'android-notifier' : 'web-console' })));
 /** 新增的 android 推理节点单独登记，避免改动既有 identities 索引。 */
 const androidInference = new AccountFixture([{ name: 'android', component: 'android-inference' }], 'android-inference-owner');
+/** Web 相机推流节点与 Android 相机共用同一套采集发布能力边界。 */
+const webCamera = new AccountFixture([{ name: 'browser', component: 'web-camera' }], 'web-camera-owner');
 test.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
 const { handleConnection, maintainRealtime } = require('../src/services/ConnectionManager') as typeof import('../src/services/ConnectionManager');
 const { authenticateNode, allowedCapabilities, validateEvent } = require('../src/services/NodeProtocol') as typeof import('../src/services/NodeProtocol');
@@ -87,6 +89,20 @@ test('android inference subscribes to video and controls sources without claimin
   for (const capability of ['monitor-control', 'config-control', 'request-correlation', 'cache-maintenance',
     'screenshot-on-demand', 'source-control', 'video-subscribe', 'visual-inference']) assert.ok(granted.includes(capability), `missing ${capability}`);
   for (const capability of ['directml', 'video-publish', 'stream-control']) assert.equal(granted.includes(capability), false, `unexpected ${capability}`);
+});
+
+test('web camera publishes video and configures its camera without claiming inference or cache maintenance', async () => {
+  await webCamera.ready;
+  const identity = authenticateNode(webCamera.auth('browser'))!;
+  assert.equal(identity.component, 'web-camera'); assert.equal(identity.role, 'detector');
+  assert.equal(identity.nodeType, 'visual'); assert.equal(identity.platform, 'web');
+  const granted = allowedCapabilities(identity, ['video-publish', 'stream-control', 'camera-config', 'request-correlation',
+    'cache-maintenance', 'monitor-control', 'config-control', 'source-control', 'visual-inference', 'video-subscribe']);
+  for (const capability of ['video-publish', 'stream-control', 'camera-config', 'request-correlation']) assert.ok(granted.includes(capability), `missing ${capability}`);
+  for (const capability of ['cache-maintenance', 'monitor-control', 'config-control', 'source-control', 'visual-inference', 'video-subscribe']) {
+    assert.equal(granted.includes(capability), false, `unexpected ${capability}`);
+  }
+  assert.equal(validateEvent({ ...sensorEvent(), eventKind: 'visual-detection' }, identity), undefined);
 });
 
 test('event deadline rejects expired, future and overlong sensor events without requiring a picture', () => {

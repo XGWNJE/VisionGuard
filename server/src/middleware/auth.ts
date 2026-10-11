@@ -6,6 +6,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { accountStore } from '../services/AccountStore';
+import { isCameraComponent } from '../services/NodeComponents';
 
 /**
  * Express middleware: authenticate an opaque Bearer session
@@ -30,7 +31,7 @@ export function httpAuth(req: Request, res: Response, next: NextFunction): void 
 export function detectorHttpAuth(req: Request, res: Response, next: NextFunction): void {
   accountAuth(req, res, () => {
     const identity = res.locals.identity;
-    if (identity.role !== 'detector' || identity.component === 'android-camera') { res.status(403).json({ ok: false, error: 'inference identity required' }); return; }
+    if (identity.role !== 'detector' || isCameraComponent(identity.component)) { res.status(403).json({ ok: false, error: 'inference identity required' }); return; }
     next();
   });
 }

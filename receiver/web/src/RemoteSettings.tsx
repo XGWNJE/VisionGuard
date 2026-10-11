@@ -1,5 +1,6 @@
 import {useEffect, useId, useRef, useState} from 'react';
 import type {Ack, Device} from './protocol';
+import {isCameraComponent} from './protocol';
 import {audioImportMetadata, validAudioName, MAX_AUDIO_BYTES} from './remote-config';
 import { SlidersHorizontal, Volume2, Square, Upload } from 'lucide-react';
 
@@ -49,7 +50,7 @@ export function RemoteSettings({node,connected,acks,send}:Props) {
     } catch(e) {if(active.current)setError((e as Error).message);} finally {if(active.current)setLoading(false);}
   }
   if(!node.capabilities.some(c=>['camera-config','sound-config','audio-library'].includes(c)))return null;
-  return <section className="panel remote-settings"><div className="section-title"><h2>{node.component==='android-camera'?'相机远程配置':'声音策略与音频库'}</h2><SlidersHorizontal size={18} aria-hidden="true"/></div>
+  return <section className="panel remote-settings"><div className="section-title"><h2>{isCameraComponent(node.component)?'相机远程配置':'声音策略与音频库'}</h2><SlidersHorizontal size={18} aria-hidden="true"/></div>
     {!settings ? <p className="subtle">等待节点报告当前配置，请保持节点连接。</p> : <>
       {node.capabilities.includes('camera-config')&&<>
         <ConfigRow label="推流规格" current={settings.cameraResolution ?? ''} options={[{value:'480p',label:'480p'},{value:'720p',label:'720p'}]} disabled={disabled||node.isMonitoring} onSave={v=>save('cameraResolution',v)}/>

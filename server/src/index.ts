@@ -1,5 +1,5 @@
 // ┌─────────────────────────────────────────────────────────┐
-// │ index.ts  v0.6.11                                         │
+// │ index.ts  v0.6.12                                         │
 // │ 角色：服务器入口 — 组装 HTTP + WebSocket 服务器           │
 // │ 职责：加载配置 → 创建 Express app → 挂载路由 →           │
 // │       创建 HTTP server → 附加 WS server → 启动监听       │
@@ -72,6 +72,16 @@ app.use('/console', express.static(path.resolve(__dirname, 'console'), {
   },
 }));
 
+// Web 相机推流节点：与控制台同源同策略，媒体与 API 走同源 WebSocket。
+app.use('/camera', express.static(path.resolve(__dirname, 'camera'), {
+  setHeaders: res => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+  },
+}));
+
 // 更新包静态文件下载
 app.use('/releases', express.static(path.resolve(__dirname, '..', 'data', 'releases')));
 // 模型文件静态服务
@@ -110,7 +120,7 @@ cleanupScreenshots();
 startCleanupTimer();
 
 server.listen(config.port, config.host, () => {
-  console.log(`[server] 统一服务 v0.6.11 已启动`);
+  console.log(`[server] 统一服务 v0.6.12 已启动`);
   console.log(`[server] 隔离通道: ${config.channelId} / 数据目录: ${config.dataDir}`);
   console.log(`[server] HTTP + WS 监听地址: ${config.host}:${config.port}`);
   console.log(`[server] 截图模式: WebSocket 独立推送并备份；HTTP 上传${config.enableHttpScreenshotUpload ? '开启' : '关闭'}`);

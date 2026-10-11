@@ -66,7 +66,8 @@ function withVersionFixture(callback) {
     'detector/android-inference/app/build.gradle.kts',
     'notifier/android/app/build.gradle.kts',
     'server/package.json', 'server/package-lock.json', 'server/src/index.ts',
-    'server/data/releases.json', 'receiver/web/package.json', 'receiver/web/package-lock.json'
+    'server/data/releases.json', 'receiver/web/package.json', 'receiver/web/package-lock.json',
+    'detector/web/package.json', 'detector/web/package-lock.json'
   ];
   try {
     for (const file of files) {
@@ -143,6 +144,10 @@ test('0.x audit rejects resident or Web version drift and invalid existing packa
     const webPackage = JSON.parse(fs.readFileSync(web, 'utf8'));
     webPackage.version = '9.0.0';
     fs.writeFileSync(web, JSON.stringify(webPackage));
+    const webCamera = path.join(root, 'detector/web/package.json');
+    const webCameraPackage = JSON.parse(fs.readFileSync(webCamera, 'utf8'));
+    webCameraPackage.version = '9.0.0';
+    fs.writeFileSync(webCamera, JSON.stringify(webCameraPackage));
     const releasesPath = path.join(root, 'server/data/releases.json');
     const releases = JSON.parse(fs.readFileSync(releasesPath, 'utf8'));
     releases.wpf.url = '/releases/nonexistent.zip';
@@ -151,6 +156,7 @@ test('0.x audit rejects resident or Web version drift and invalid existing packa
     checkVersionSources(root, '0.5.1', errors);
     assert.ok(errors.some(error => error.includes('windows-resident')));
     assert.ok(errors.some(error => error.includes('receiver/web/package.json')));
+    assert.ok(errors.some(error => error.includes('detector/web/package.json')));
     assert.ok(errors.some(error => error.includes('invalid package metadata')));
   });
 });
