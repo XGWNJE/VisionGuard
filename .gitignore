@@ -121,6 +121,9 @@ detector/android-inference/keystore/
 detector/android-inference/**/*.jks
 
 # 推理加速测量自带模型：与生产模型一样不入版本控制（单个 640 模型就有几十 MiB）。
-# 本地复现方式：把模型放进该目录后跑 :app:assembleDebug，说明见该目录 README.md。
+# 资产在 **debug 源集**（只在调试构建里，正式包不带），本地复现方式见该目录 README.md。
+detector/android-inference/app/src/debug/assets/bench-models/
+detector/android-inference/app/src/debug/assets/bench-frames/
+# 旧位置：资产曾挂在 main 源集，规则保留一段时间，避免老的本地目录被误提交。
 detector/android-inference/app/src/main/assets/bench-models/
 detector/android-inference/app/src/main/assets/bench-frames/

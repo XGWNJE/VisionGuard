@@ -156,6 +156,13 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1,LICENSE.md,LICENSE-notice.md,DEPENDENCIES,NOTICE,NOTICE.txt,index.list}"
         }
     }
+    lint {
+        // `InvalidFragmentVersionForActivityResult` 是给「用了 Fragment 又用 ActivityResult API」的
+        // 工程准备的：那类工程若 Fragment 版本低于 1.3.0，回调会在重建后被丢。本端是纯 Compose +
+        // ComponentActivity，依赖里没有任何 Fragment（见下方依赖块），不存在该风险。
+        // 这条 warning 会被 lintVitalRelease 升格成 error，直接挡死 assembleRelease，因此显式关掉。
+        disable += "InvalidFragmentVersionForActivityResult"
+    }
 }
 
 dependencies {
