@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.BitmapFactory
 import android.util.Log
 import com.xgwnje.visionguard.inference.detect.ArgbImage
+import com.xgwnje.visionguard.inference.runtime.GpuRenderInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -238,7 +239,9 @@ object BundledAccelerationBenchmark {
     /**
      * 报告首行的设备指纹，拼装规则在 [AccelerationMeasure.deviceFingerprint]（有单测守住格式）。
      *
-     * `SOC_MODEL` 需要 API 31+，取不到就不带这一段。
+     * `SOC_MODEL` 需要 API 31+，取不到就不带这一段。GPU 渲染器/驱动取的是 GL 字符串
+     * （[GpuRenderInfo.fingerprint]），拿不到同样跳过：加速档读数要跨设备归因，就必须知道
+     * 这块 GPU 是谁家的、驱动什么版本。
      */
     private fun deviceFingerprint(): String {
         val soc = if (android.os.Build.VERSION.SDK_INT >= 31) {
@@ -251,7 +254,8 @@ object BundledAccelerationBenchmark {
             model = android.os.Build.MODEL,
             apiLevel = android.os.Build.VERSION.SDK_INT,
             soc = soc,
-            cores = Runtime.getRuntime().availableProcessors()
+            cores = Runtime.getRuntime().availableProcessors(),
+            gpu = GpuRenderInfo.fingerprint()
         )
     }
 }

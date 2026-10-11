@@ -23,19 +23,41 @@ object AccelerationMeasure {
      *
      * 除厂商/型号/API 外要带上**芯片型号与核心数**：档位结论里的「CPU 4 线程最优」是否与核心
      * 拓扑绑定，只能靠这两个字段判断。`soc` 取不到时跳过，不用占位符编造。
+     *
+     * [gpu] 是 [gpuFingerprint] 的结果：同一个 SoC 也可能配不同 GPU（Mali / Adreno），加速档的
+     * 读数只有带厂商与驱动版本才能跨设备归因。取不到同样跳过。
      */
     fun deviceFingerprint(
         manufacturer: String,
         model: String,
         apiLevel: Int,
         soc: String?,
-        cores: Int
+        cores: Int,
+        gpu: String? = null
     ): String = buildString {
         append("$manufacturer $model".trim())
         append(" / API $apiLevel")
         if (!soc.isNullOrBlank() && !soc.equals("unknown", ignoreCase = true)) append(" / $soc")
         append(" / $cores 核")
+        if (!gpu.isNullOrBlank()) append(" / GPU $gpu")
     }
+
+    /**
+     * GPU 指纹：渲染器 + 厂商 + 驱动版本（来自 EGL/GL 字符串）。
+     *
+     * 为什么必须记：加速档现在只有 MT8910（Mali）的读数，接入 Qualcomm（Adreno）后同一张表里
+     * 「谁快谁慢」分不清是芯片差异、驱动版本还是别的，没有这三个字段就无法归因。
+     * 渲染器取不到时返回 null——宁可没有这一行，也不写「未知 GPU」这种占位符。
+     */
+    fun gpuFingerprint(renderer: String?, vendor: String?, version: String?): String? {
+        val name = renderer.cleanup() ?: return null
+        val details = listOfNotNull(vendor.cleanup(), version.cleanup())
+        return if (details.isEmpty()) name else "$name（${details.joinToString("，")}）"
+    }
+
+    /** 去掉空白与 GL 字符串可能带的结尾 NUL；空串按取不到处理。 */
+    private fun String?.cleanup(): String? =
+        this?.trim()?.trimEnd('\u0000')?.trim()?.takeIf { it.isNotEmpty() }
 
     data class Result(
         val model: String,

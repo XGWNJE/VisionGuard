@@ -175,6 +175,39 @@ class AccelerationMeasureTest {
     }
 
     @Test
+    fun `报告首行带 GPU 渲染器与驱动，跨厂商读数可归因`() {
+        val mali = AccelerationMeasure.gpuFingerprint(
+            renderer = "Mali-G57 MC2",
+            vendor = "ARM",
+            version = "OpenGL ES 3.2 v1.r38p1-01eac0"
+        )
+        val adreno = AccelerationMeasure.gpuFingerprint(
+            renderer = "Adreno (TM) 650",
+            vendor = "Qualcomm",
+            version = "OpenGL ES 3.2 V@0530.0"
+        )
+        assertEquals("Mali-G57 MC2（ARM，OpenGL ES 3.2 v1.r38p1-01eac0）", mali)
+        assertEquals("Adreno (TM) 650（Qualcomm，OpenGL ES 3.2 V@0530.0）", adreno)
+        // 同一颗 SoC 的不同 GPU 必须能一眼分开，不能退化成同一行。
+        assertTrue(mali != adreno)
+
+        assertEquals(
+            "Xiaomi 26048RP6AC / API 37 / MT8910 / 8 核 / GPU $mali",
+            AccelerationMeasure.deviceFingerprint("Xiaomi", "26048RP6AC", 37, "MT8910", 8, mali)
+        )
+        // 缺 GPU 时不写这一段；缺厂商/驱动版本时只留拿到的部分，不编造。
+        assertEquals(
+            "Generic Device / API 33 / MT8910 / 8 核",
+            AccelerationMeasure.deviceFingerprint("Generic", "Device", 33, "MT8910", 8, null)
+        )
+        assertEquals("Mali-G57 MC2", AccelerationMeasure.gpuFingerprint("Mali-G57 MC2", null, "  "))
+        assertEquals("Mali-G57 MC2（ARM）", AccelerationMeasure.gpuFingerprint(" Mali-G57 MC2\u0000 ", "ARM", null))
+        // 渲染器拿不到就不给这一行——不写「未知 GPU」。
+        assertEquals(null, AccelerationMeasure.gpuFingerprint(null, "ARM", "OpenGL ES 3.2"))
+        assertEquals(null, AccelerationMeasure.gpuFingerprint("  ", "ARM", "OpenGL ES 3.2"))
+    }
+
+    @Test
     fun `LiteRT 加速器档位映射到 CPU GPU NPU`() {
         assertEquals(Accelerator.CPU, InferenceProvider.LITERT_ACCEL_CPU.litertAccelerator)
         assertEquals(Accelerator.GPU, InferenceProvider.LITERT_GPU.litertAccelerator)
