@@ -341,13 +341,15 @@ def quantize(
     calib_count: int,
     exclude_mode: str = "head",
     exclude_from: list[str] | None = None,
+    activation: str = "uint8",
+    suffix: str = "_int8",
 ) -> Path:
     from onnxruntime.quantization import QuantFormat, QuantType, quantize_dynamic, quantize_static
 
     size = read_model_size(model_path)
     target_dir = out_dir if out_dir else model_path.parent
     target_dir.mkdir(parents=True, exist_ok=True)
-    output = target_dir / f"{model_path.stem}_int8.onnx"
+    output = target_dir / f"{model_path.stem}{suffix}.onnx"
 
     started = time.time()
     if mode == "dynamic":
@@ -368,7 +370,7 @@ def quantize(
             model_output=str(output),
             calibration_data_reader=reader,
             quant_format=QuantFormat.QDQ,
-            activation_type=QuantType.QUInt8,
+            activation_type=QuantType.QInt8 if activation == "int8" else QuantType.QUInt8,
             weight_type=QuantType.QInt8,
             per_channel=True,
             nodes_to_exclude=excluded,
@@ -446,6 +448,14 @@ def main() -> int:
         help="量化范围：head=混用量程的检测头留浮点（默认），postprocess=仅排除 NMS，all/none 用于对照",
     )
     parser.add_argument("--exclude-from", type=str, default=None, help="按节点名子串追加排除起点，逗号分隔")
+    parser.add_argument(
+        "--activation",
+        choices=["uint8", "int8"],
+        default="uint8",
+        help="静态量化的激活类型。默认 uint8；ORT 的 NNAPI 提供器拒收 uint8 激活，"
+             "给硬件加速路径造产物时用 int8",
+    )
+    parser.add_argument("--suffix", type=str, default="_int8", help="输出文件名后缀（区分不同激活类型）")
     args = parser.parse_args()
 
     exclude_from = [p.strip() for p in (args.exclude_from or "").split(",") if p.strip()]
@@ -458,7 +468,8 @@ def main() -> int:
         return 0
 
     if args.model:
-        quantize(args.model, args.mode, args.out_dir, args.calib_dir, args.calib_count, args.exclude, exclude_from)
+        quantize(args.model, args.mode, args.out_dir, args.calib_dir, args.calib_count, args.exclude, exclude_from,
+                 args.activation, args.suffix)
         return 0
 
     models = sorted(args.model_dir.glob("*.onnx"))
@@ -468,7 +479,8 @@ def main() -> int:
     if not models:
         raise SystemExit(f"没有可量化的模型：{args.model_dir}")
     for model in models:
-        quantize(model, args.mode, args.out_dir, args.calib_dir, args.calib_count, args.exclude, exclude_from)
+        quantize(model, args.mode, args.out_dir, args.calib_dir, args.calib_count, args.exclude, exclude_from,
+                 args.activation, args.suffix)
     return 0
 
 

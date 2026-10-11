@@ -29,22 +29,73 @@ class LitertAcceleratedEngine private constructor(
     /** 环境实际报告的可用加速器，写进报告便于判断档位是否真的生效。 */
     val availableAccelerators: String,
     /** CPU 档实际生效的 XNNPACK / 线程设置，写进报告避免「有没有开」靠猜。 */
-    val cpuNote: String = ""
+    val cpuNote: String = "",
+    /** 模型输入的边界类型与量化参数（读不出就按 float32 处理）。 */
+    private val inputInfo: TfliteQuantization.TensorInfo? = null,
+    /** 模型输出的边界类型与量化参数。 */
+    private val outputInfo: TfliteQuantization.TensorInfo? = null
 ) {
 
     /** 后端标识：测量报告与心跳按它显示。 */
     val backend: String = provider.title
 
-    /** 运行一次推理；[tensor] 为 CHW `float[3 * modelSize * modelSize]`。 */
+    private val inputQuantized: Boolean get() = inputInfo?.quantized == true
+    private val outputQuantized: Boolean get() = outputInfo?.quantized == true
+    private val inputUnsigned: Boolean get() = inputInfo?.unsigned == true
+    private val outputUnsigned: Boolean get() = outputInfo?.unsigned == true
+    private val inputScales: List<Float> get() = inputInfo?.scales.orEmpty()
+    private val inputZeroPoints: List<Int> get() = inputInfo?.zeroPoints.orEmpty()
+    private val outputScales: List<Float> get() = outputInfo?.scales.orEmpty()
+    private val outputZeroPoints: List<Int> get() = outputInfo?.zeroPoints.orEmpty()
+
+    /**
+     * 运行一次推理；[tensor] 为 CHW `float[3 * modelSize * modelSize]`。
+     *
+     * 统一量化模型（int8 / uint8 边界）与 float32 模型共用这个入口：端侧只认 float 张量，
+     * 边界的量化换算在这里吸收。**必须**按模型自报的 scale 换算——按 float32 尺寸写缓冲会报
+     * `TensorBuffer host memory buffer size is smaller than the given data size`。
+     */
     fun run(tensor: FloatArray): FloatArray {
-        inputs.first().writeFloat(toNhwc(tensor))
-        val produced = model.run(inputs)
-        return (produced.firstOrNull() ?: outputs.first()).readFloat()
+        val nhwc = toNhwc(tensor)
+        if (inputQuantized) {
+            inputs.first().writeInt8(quantize(nhwc))
+        } else {
+            inputs.first().writeFloat(nhwc)
+        }
+        val produced = model.run(inputs).firstOrNull() ?: outputs.first()
+        return if (outputQuantized) dequantize(produced.readInt8()) else produced.readFloat()
     }
 
     fun close() {
         runCatching { model.close() }
         runCatching { environment.close() }
+    }
+
+    /** 模型边界的量化形态，写进报告便于判断是否与加速器要求匹配。 */
+    fun quantizationNote(): String =
+        "输入 ${if (inputQuantized) "量化(${inputScales.firstOrNull() ?: 0f})" else "FLOAT32"} / " +
+            "输出 ${if (outputQuantized) "量化(${outputScales.firstOrNull() ?: 0f})" else "FLOAT32"}"
+
+    private fun quantize(values: FloatArray): ByteArray {
+        val scales = inputScales.ifEmpty { listOf(1f) }
+        val zeroPoints = inputZeroPoints.ifEmpty { listOf(0) }
+        val low = if (inputUnsigned) 0f else -128f
+        val high = if (inputUnsigned) 255f else 127f
+        return ByteArray(values.size) { index ->
+            val channel = if (scales.size > 1) index % scales.size else 0
+            val scaled = values[index] / scales[channel] + zeroPoints.getOrElse(channel) { 0 }
+            scaled.coerceIn(low, high).toInt().toByte()
+        }
+    }
+
+    private fun dequantize(values: ByteArray): FloatArray {
+        val scales = outputScales.ifEmpty { listOf(1f) }
+        val zeroPoints = outputZeroPoints.ifEmpty { listOf(0) }
+        return FloatArray(values.size) { index ->
+            val channel = if (scales.size > 1) index % scales.size else 0
+            val stored = if (outputUnsigned) (values[index].toInt() and 0xFF).toFloat() else values[index].toFloat()
+            (stored - zeroPoints.getOrElse(channel) { 0 }) * scales[channel]
+        }
     }
 
     private fun toNhwc(tensor: FloatArray): FloatArray {
@@ -141,6 +192,9 @@ class LitertAcceleratedEngine private constructor(
             val dimensions = inputType.layout?.dimensions.orEmpty()
             val size = dimensions.getOrNull(1) ?: DEFAULT_MODEL_SIZE
 
+            // 量化参数只能从模型文件读：`TensorType` 只有 elementType 与 layout。
+            val quantization = TfliteQuantization.read(modelFile)
+
             return LitertAcceleratedEngine(
                 environment = environment,
                 model = model,
@@ -149,7 +203,11 @@ class LitertAcceleratedEngine private constructor(
                 modelSize = size,
                 provider = provider,
                 availableAccelerators = availableText,
-                cpuNote = cpuNote
+                cpuNote = cpuNote,
+                // 量化参数从模型文件里读：CompiledModel 的 TensorType 不暴露 scale / zero point，
+                // 而统一量化模型必须按 scale 把 float 换算成整数才能写进缓冲。
+                inputInfo = quantization?.first,
+                outputInfo = quantization?.second
             )
         }
 
