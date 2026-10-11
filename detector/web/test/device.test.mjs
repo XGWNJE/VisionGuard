@@ -56,6 +56,8 @@ test('camera capture targets follow the resolution ceiling and screen orientatio
   assert.equal(cameraSource.rotationFromOrientation(270), 270);
   assert.equal(cameraSource.rotationFromOrientation(45), 0);
   assert.equal(cameraSource.rotationFromOrientation(-90), 270);
+  // 真机实测发现：浏览器已把视频帧转正，再上报屏幕角度会让消费端重复旋转。
+  assert.equal(cameraSource.FRAME_ROTATION, 0);
   assert.deepEqual(cameraSource.preferredConstraints(undefined, '720p'), { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } });
   assert.deepEqual(cameraSource.preferredConstraints('camera-2', '480p'), { deviceId: { exact: 'camera-2' }, width: { ideal: 640 }, height: { ideal: 480 } });
 });

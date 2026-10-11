@@ -15,6 +15,9 @@ export function rotationFromOrientation(angle: number): number {
   return normalized === 90 || normalized === 180 || normalized === 270 ? normalized : 0;
 }
 
+/** 画布内容已被浏览器转正，方向字段固定为 0，避免消费端重复旋转。 */
+export const FRAME_ROTATION = 0;
+
 export function preferredConstraints(deviceId: string | undefined, resolution: '480p' | '720p'): MediaTrackConstraints {
   const ideal = resolution === '720p' ? { width: 1280, height: 720 } : { width: 640, height: 480 };
   return { ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }), ...{ width: { ideal: ideal.width }, height: { ideal: ideal.height } } };
@@ -110,8 +113,9 @@ export class CameraSource {  private stream?: MediaStream;
     const jpeg = trimJpeg(new Uint8Array(await blob.arrayBuffer()));
     const dimensions = jpeg && jpegDimensions(jpeg);
     if (!jpeg || !dimensions || dimensions.width !== size.width || dimensions.height !== size.height) return undefined;
-    return { jpeg, width: dimensions.width, height: dimensions.height,
-      rotation: rotationFromOrientation(window.screen?.orientation?.angle ?? 0), capturedAt };
+    // 浏览器已按设备方向把视频帧转正，画布画出来的就是当前方向的正常画面；
+    // 再上报屏幕角度会让消费端重复旋转，因此方向固定为 0，横竖屏由宽高表达。
+    return { jpeg, width: dimensions.width, height: dimensions.height, rotation: 0, capturedAt };
   }
 
   close(): void {
