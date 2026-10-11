@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet('Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'WpfPersonDetection', 'WpfParserContract', 'ResidentLaunch', 'ModelDownload', 'SourceAutoSave', 'CardLayoutPlan', 'PerformanceWatchdog')]
+    [ValidateSet('Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'WpfPersonDetection', 'WpfParserContract', 'ResidentLaunch', 'ModelDownload', 'SourceAutoSave', 'CardLayoutPlan', 'PerformanceWatchdog', 'WebCameraChain')]
     [string]$Mode = 'Discover',
 
     [ValidateSet('Auto', 'Physical', 'Emulator', 'None')]
@@ -28,7 +28,15 @@
     [string]$ResidentChannel = 'vnext-resident-e2e',
     # ModelDownload：打真实生产服务器验证模型下载与装配（界面下载按钮背后的同一条路径）。
     [string]$ModelDownloadKey = 'yolo26n_320',
-    [switch]$ModelDownloadLegacyProfile
+    [switch]$ModelDownloadLegacyProfile,
+    # WebCameraChain：真机浏览器摄像头 → 隔离服务中继 → 真实 Windows 视觉推理节点 → 人员报警落库。
+    [ValidateRange(1024,65535)][int]$WebCameraChainPort = 3124,
+    [string]$WebCameraChainChannel = 'web-camera-chain-e2e',
+    [ValidateSet('front','back','default')][string]$WebCameraChainCamera = 'front',
+    [string]$WebCameraChainModelsDirectory = '',
+    [ValidateRange(30,900)][int]$WebCameraChainPermissionTimeoutSeconds = 180,
+    [ValidateRange(30,900)][int]$WebCameraChainAlertTimeoutSeconds = 180,
+    [switch]$WebCameraChainKeepStreaming
 )
 
 $ErrorActionPreference = 'Stop'
@@ -789,6 +797,179 @@ function Run-PerformanceWatchdog {
         -Note "$($report.checks.Count) checks: 80% 阈值边界 / 30 秒持续 / 提示文案 / 口径常量" -Evidence $reportPath
 }
 
+function Resolve-WebCameraChainModels {
+    param([string]$Key)
+    # 模型目录只读复用已有缓存：显式参数 → 环境变量 → WPF 默认缓存 → 服务端模型目录。
+    $candidates = @()
+    if ($WebCameraChainModelsDirectory) { $candidates += (Resolve-RepoPath $WebCameraChainModelsDirectory) }
+    if ($env:VISIONGUARD_MODELS_DIR) { $candidates += $env:VISIONGUARD_MODELS_DIR }
+    if ($env:APPDATA) { $candidates += (Join-Path $env:APPDATA 'VisionGuard\models') }
+    $candidates += (Join-Path $repoRoot 'server\data\models')
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath (Join-Path $candidate "$Key.onnx"))) { return (Resolve-Path -LiteralPath $candidate).Path }
+    }
+    throw "找不到 $Key.onnx：先跑 -Mode ModelDownload -ModelDownloadKey $Key，或用 -WebCameraChainModelsDirectory 指定已有模型目录。"
+}
+
+function Run-WebCameraChain {
+    # 完整业务链：真机浏览器摄像头 → 统一服务中继 → 真实 Windows 视觉推理节点 → 人员检测报警落库。
+    # 只用隔离服务（回环明文 HTTP，回环地址对浏览器即安全上下文）、私有测试账号与隔离账号目录。
+    # 需要真实设备（模拟器没有可推流的摄像头）、Windows 统一包与 Release 账号探针。
+    # 设备首次授权需要人在设备上点 Chrome 的「访问该网站时允许」，脚本会等这一步。
+    $modelKey = 'yolo26n_320'
+    $tools = Get-AndroidTools
+    $devices = @(Get-AdbDevices -Adb $tools.Adb)
+    $selected = $null
+    if ($DeviceSerial) {
+        $selected = $devices | Where-Object { $_.Serial -eq $DeviceSerial -and $_.State -eq 'device' } | Select-Object -First 1
+        if (-not $selected) { throw "Requested device is not ready: $DeviceSerial" }
+    }
+    else {
+        $physical = @($devices | Where-Object { $_.State -eq 'device' -and -not $_.IsEmulator })
+        if ($physical.Count -eq 0) { throw 'WebCameraChain needs a ready physical device with a camera; an emulator has no camera to publish.' }
+        if ($physical.Count -gt 1) { throw 'Multiple physical devices found; use -DeviceSerial.' }
+        $selected = $physical[0]
+    }
+    if ($selected.IsEmulator) { throw 'WebCameraChain needs a physical device with a real camera.' }
+    $summary.selectedDevice = $selected.Serial
+    Add-Result -Name 'Device' -Status 'PASS' -Note $selected.Serial
+
+    $serverScript = Join-Path $repoRoot 'scripts\start-isolated-test-server.ps1'
+    $accountProbe = Join-Path $repoRoot 'tests\AccountMedia.Probe\bin\Release\net472\AccountMedia.Probe.exe'
+    if (-not (Test-Path -LiteralPath $accountProbe)) { throw 'Build tests/AccountMedia.Probe in Release before this mode.' }
+    $detectorExe = Join-Path $repoRoot 'detector\windows-package\bin\Release\runtimes\modern\VisionGuard.Detector.Windows.exe'
+    if (-not (Test-Path -LiteralPath $detectorExe)) { throw 'Build the Windows unified package first (visionguard-build -Target Windows).' }
+    $modelsDirectory = Resolve-WebCameraChainModels -Key $modelKey
+    if (Get-NetTCPConnection -LocalPort $WebCameraChainPort -State Listen -ErrorAction SilentlyContinue) { throw "Port $WebCameraChainPort is occupied; the existing process was left running." }
+
+    $chainRoot = Join-Path $repoRoot ".local\web-camera-chain\$WebCameraChainChannel"
+    $accountDirectory = Join-Path $chainRoot 'account'
+    $settingsDirectory = Join-Path $chainRoot 'settings'
+    $chainEvidence = Join-Path $artifactRoot 'web-camera-chain'
+    $logDirectory = Join-Path $chainEvidence 'logs'
+    foreach ($directory in @($accountDirectory, $settingsDirectory, $logDirectory)) { New-Item -ItemType Directory -Force -Path $directory | Out-Null }
+    $environmentPath = Join-Path $chainEvidence 'isolated-environment.json'
+    $environment = [ordered]@{
+        serviceUrl = "http://127.0.0.1:$WebCameraChainPort"
+        accountDir = $accountDirectory
+        settingsPath = $settingsDirectory
+        modelsDirectory = $modelsDirectory
+        logDirectory = $logDirectory
+    }
+    [System.IO.File]::WriteAllText($environmentPath, ($environment | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
+
+    $serverLog = Join-Path $chainEvidence 'isolated-server.log'
+    $serverErrorLog = Join-Path $chainEvidence 'isolated-server-error.log'
+    $server = $null
+    $detectorProcess = $null
+    $previousEnvironment = @{}
+    foreach ($name in @('VISIONGUARD_ACCOUNT_DIR', 'VISIONGUARD_SERVER_URL', 'VISIONGUARD_SETTINGS_PATH', 'VISIONGUARD_MODELS_DIR', 'VISIONGUARD_LOG_DIR', 'VISIONGUARD_LOGIN_PASSWORD', 'VISIONGUARD_MEDIA_DIAGNOSTICS', 'VISIONGUARD_CHAIN_PASSWORD')) {
+        $previousEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
+    }
+    try {
+        $server = Start-Process -FilePath 'powershell' -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $serverScript, '-Port', $WebCameraChainPort.ToString(), '-Channel', $WebCameraChainChannel, '-SkipBuild') -RedirectStandardOutput $serverLog -RedirectStandardError $serverErrorLog -WindowStyle Hidden -PassThru
+        $ready = $false
+        $deadline = (Get-Date).AddSeconds(60)
+        while ((Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+            try {
+                $health = Invoke-WebRequest -Uri "http://127.0.0.1:$WebCameraChainPort/health" -UseBasicParsing -TimeoutSec 2
+                if ($health.StatusCode -eq 200) { $ready = $true; break }
+            } catch { }
+            if ($server.HasExited) { throw "Isolated server exited: $serverErrorLog" }
+        }
+        if (-not $ready) { throw "Isolated server did not become ready: $serverErrorLog" }
+        Add-Result -Name 'Isolated service' -Status 'PASS' -Note "http://127.0.0.1:$WebCameraChainPort channel=$WebCameraChainChannel" -Evidence $serverLog
+
+        $testAccountsPath = Join-Path $repoRoot ".local\e2e-server\$WebCameraChainChannel\test-accounts.json"
+        $testAccounts = Get-Content -LiteralPath $testAccountsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $testAccount = $testAccounts | Where-Object { $_.username -eq 'vg-test' } | Select-Object -First 1
+        if (-not $testAccount) { throw 'The isolated vg-test account is missing.' }
+
+        # 真实 Windows 节点：共享账号探针登录到隔离实例，再由统一入口带着同一账号目录启动。
+        $env:VISIONGUARD_ACCOUNT_DIR = $accountDirectory
+        $env:VISIONGUARD_SERVER_URL = "http://127.0.0.1:$WebCameraChainPort"
+        $env:VISIONGUARD_SETTINGS_PATH = $settingsDirectory
+        $env:VISIONGUARD_MODELS_DIR = $modelsDirectory
+        $env:VISIONGUARD_LOGIN_PASSWORD = $testAccount.password
+        $loginOutput = & $accountProbe '--login' $env:VISIONGUARD_SERVER_URL $testAccount.username
+        if ($LASTEXITCODE -ne 0) { throw 'Windows account login failed.' }
+        $identity = ($loginOutput | Out-String) | ConvertFrom-Json
+        Remove-Item Env:VISIONGUARD_LOGIN_PASSWORD -ErrorAction SilentlyContinue
+        Add-Result -Name 'Windows node login' -Status 'PASS' -Note "deviceId=$($identity.deviceId)"
+        $env:VISIONGUARD_MEDIA_DIAGNOSTICS = '1'
+        $detectorProcess = Start-Process -FilePath $detectorExe -ArgumentList @('--isolated-environment', $environmentPath) -WorkingDirectory (Split-Path -Parent $detectorExe) -PassThru
+        Add-Result -Name 'Windows node launch' -Status 'PASS' -Note "pid=$($detectorProcess.Id)"
+
+        $chainScript = Join-Path $repoRoot 'scripts\web-camera-chain.js'
+        $env:VISIONGUARD_CHAIN_PASSWORD = $testAccount.password
+        $chainArguments = @($chainScript, '--service', $env:VISIONGUARD_SERVER_URL, '--username', $testAccount.username, '--password-env', 'VISIONGUARD_CHAIN_PASSWORD',
+            '--evidence', $chainEvidence, '--serial', $selected.Serial, '--adb', $tools.Adb, '--camera', $WebCameraChainCamera,
+            '--wpf-device-id', $identity.deviceId, '--permission-timeout', $WebCameraChainPermissionTimeoutSeconds.ToString(),
+            '--alert-timeout', $WebCameraChainAlertTimeoutSeconds.ToString())
+        if ($WebCameraChainKeepStreaming) { $chainArguments += '--keep-streaming' }
+        # 驱动输出必须实时可见（授权提示写在输出里），同时落一份 UTF-8 日志；原生 stderr 不能变成终止错误。
+        $chainLog = Join-Path $chainEvidence 'web-camera-chain-console.txt'
+        $previousPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $chainOutput = & node.exe @chainArguments 2>&1 | ForEach-Object { $line = $_.ToString(); Write-Host $line; $line }
+            $chainExit = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $previousPreference
+            $chainOutput | Set-Content -Encoding UTF8 $chainLog
+            Remove-Item Env:VISIONGUARD_CHAIN_PASSWORD -ErrorAction SilentlyContinue
+        }
+
+        $reportPath = Join-Path $chainEvidence 'web-camera-chain-report.json'
+        if (-not (Test-Path -LiteralPath $reportPath)) { throw "The chain report is missing: $chainLog" }
+        $chainReport = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $checks = [ordered]@{
+            secureContext = 'browser secure context with getUserMedia'
+            cameraRegistered = 'web-camera device registered by the page'
+            targetBound = 'page bound to the Windows node'
+            streaming = 'device camera publishing'
+            relayStreaming = 'service relay reports a live stream'
+            windowsSourceBound = 'Windows node created the remote source'
+            inferenceRunning = 'Windows node running inference on that source'
+            personAlertReceived = 'service stored the person alert'
+            serverScreenshot = 'service serves the alert screenshot'
+        }
+        foreach ($check in $checks.Keys) {
+            $value = $chainReport.checks.$check
+            $status = if ($value -eq $true) { 'PASS' } else { 'FAIL' }
+            Add-Result -Name "Web camera chain: $check" -Status $status -Note $checks[$check]
+        }
+        if ($chainExit -ne 0) {
+            $reasons = @($chainReport.failures | ForEach-Object { "$($_.name): $(($_.detail | Out-String).Trim())" }) -join '; '
+            throw "Web camera chain failed: $reasons (see $chainLog)"
+        }
+        $alertNote = 'person alert stored by the service'
+        if ($chainReport.alert) { $alertNote = "alertId=$($chainReport.alert.alertId) source=$($chainReport.alert.sourceName)" }
+        Add-Result -Name 'Web camera chain' -Status 'PASS' -Note $alertNote -Evidence $reportPath
+    }
+    finally {
+        Remove-Item Env:VISIONGUARD_CHAIN_PASSWORD -ErrorAction SilentlyContinue
+        # 只清理本轮隔离实例：按账号目录与命令行的隔离环境路径定位进程。
+        foreach ($process in @(Get-CimInstance Win32_Process -Filter "Name = 'VisionGuard.Detector.Windows.exe' OR Name = 'VisionGuard.Resident.Windows.exe'" -ErrorAction SilentlyContinue |
+                Where-Object { $_.CommandLine -and ($_.CommandLine.IndexOf($accountDirectory, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf($environmentPath, [StringComparison]::OrdinalIgnoreCase) -ge 0) })) {
+            Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+        if ($detectorProcess -and -not $detectorProcess.HasExited) { Stop-Process -Id $detectorProcess.Id -Force -ErrorAction SilentlyContinue }
+        foreach ($name in $previousEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name]) }
+        if ($server -and -not $server.HasExited) {
+            foreach ($connection in @(Get-NetTCPConnection -LocalPort $WebCameraChainPort -State Listen -ErrorAction SilentlyContinue)) {
+                $listener = Get-CimInstance Win32_Process -Filter "ProcessId = $($connection.OwningProcess)" -ErrorAction SilentlyContinue
+                if ($listener -and $listener.Name -eq 'node.exe' -and $listener.ParentProcessId -eq $server.Id) { Stop-Process -Id $listener.ProcessId -Force -ErrorAction SilentlyContinue }
+            }
+            try { $server.Kill() } catch { }
+        }
+        try { & $tools.Adb -s $selected.Serial reverse --remove "tcp:$WebCameraChainPort" *> $null } catch { }
+        try { & $tools.Adb -s $selected.Serial forward --remove 'tcp:9333' *> $null } catch { }
+    }
+}
+
 function Run-WpfPersonDetection {
     $fixtureDirectory = Resolve-RepoPath $WpfFixtureDirectory
     $modelPath = Resolve-RepoPath $WpfModelPath
@@ -907,6 +1088,7 @@ try {
         'SourceAutoSave' { Run-SourceAutoSave }
         'CardLayoutPlan' { Run-CardLayoutPlan }
         'PerformanceWatchdog' { Run-PerformanceWatchdog }
+        'WebCameraChain' { Run-WebCameraChain }
     }
 }
 catch {
