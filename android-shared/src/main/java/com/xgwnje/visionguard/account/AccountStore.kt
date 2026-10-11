@@ -324,6 +324,15 @@ fun AccountLogin(store: AccountStore, title: String, component: String, beforeLo
         if (store.allowsTestEndpoint) {
             TextButton({ advanced = !advanced }, enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text(if (advanced) "收起测试设置" else "隔离测试设置") }
             if (advanced) OutlinedTextField(endpoint, { endpoint = it }, label = { Text("隔离服务地址") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
+            if (advanced && PreviewSignIn.available) {
+                // 预览构建默认自动登录；要调登录界面就在这里打开，之后的启动停在登录页。
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(PreviewSignIn.debugLoginScreen, enabled = !busy, role = Role.Checkbox) { checked ->
+                    PreviewSignIn.debugLoginScreen = checked
+                }, verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(PreviewSignIn.debugLoginScreen, onCheckedChange = null, enabled = !busy, colors = VisionGuardControlColors.checkbox())
+                    Spacer(Modifier.width(8.dp)); Text("停在登录界面（调试登录流程）")
+                }
+            }
         }
         message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Button(onClick = {

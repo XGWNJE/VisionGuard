@@ -1,8 +1,10 @@
-param(
+﻿param(
     [ValidateSet('Service', 'Windows', 'PrepareWindows', 'AndroidPackages', 'Stop')]
     [string]$Target = 'Service',
     [ValidateSet('normal', 'limits', 'empty')]
-    [string]$Scene = 'normal'
+    [string]$Scene = 'normal',
+    # Windows 预览：显式要求停在登录界面调登录流程（默认自动登录）。
+    [switch]$LoginUi
 )
 $ErrorActionPreference = 'Stop'
 $taskRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -79,13 +81,19 @@ if (!$taskExisting) {
     if ($taskHealth.channel -ne 'console-preview') { throw 'The local service is not the UI preview instance.' }
 }
 $taskFixturePid = Assert-LocalOwner 4319 'ui-preview-data.js'
-if (!$taskFixturePid) {
-    $taskFixture = Start-Process node.exe -WindowStyle Hidden -WorkingDirectory $taskRoot -ArgumentList ('"' + (Join-Path $taskRoot 'scripts\ui-preview-data.js') + '"') -RedirectStandardOutput (Join-Path $taskDirectory 'data.stdout.log') -RedirectStandardError (Join-Path $taskDirectory 'data.stderr.log') -PassThru
-    $taskState.Fixture = $taskFixture.Id; Save-State
-    Wait-Local 'http://127.0.0.1:4319/' | Out-Null
+# 控制台模拟数据（fixture）只服务 Web 控制台预览：它自己登录时可能因设备归属冲突报 403，
+# 那不该拦住 Windows / Android 的界面验收——失败只警告，继续往下走。
+try {
+    if (!$taskFixturePid) {
+        $taskFixture = Start-Process node.exe -WindowStyle Hidden -WorkingDirectory $taskRoot -ArgumentList ('"' + (Join-Path $taskRoot 'scripts\ui-preview-data.js') + '"') -RedirectStandardOutput (Join-Path $taskDirectory 'data.stdout.log') -RedirectStandardError (Join-Path $taskDirectory 'data.stderr.log') -PassThru
+        $taskState.Fixture = $taskFixture.Id; Save-State
+        Wait-Local 'http://127.0.0.1:4319/' | Out-Null
+    }
+    Invoke-RestMethod "http://127.0.0.1:4319/scene?mode=$Scene" | Out-Null
+    Write-Host 'UI scenarios: http://127.0.0.1:4319/ ; console: http://127.0.0.1:4318/console/'
+} catch {
+    Write-Warning "控制台模拟数据未就绪，Web 控制台预览不可用（$($_.Exception.Message)）；Windows 与 Android 预览继续。"
 }
-Invoke-RestMethod "http://127.0.0.1:4319/scene?mode=$Scene" | Out-Null
-Write-Host 'UI scenarios: http://127.0.0.1:4319/ ; console: http://127.0.0.1:4318/console/'
 Write-Host "Private preview accounts: $taskRoot\.local\e2e-server\console-preview\test-accounts.json"
 
 if ($Target -in @('Windows', 'PrepareWindows')) {
@@ -112,19 +120,17 @@ if ($Target -in @('Windows', 'PrepareWindows')) {
     if ((Test-Path $taskCachedModel) -and !(Test-Path $taskPreviewModel)) { Copy-Item -LiteralPath $taskCachedModel -Destination $taskPreviewModel }
     [IO.File]::WriteAllText($taskSettings, ($taskLines -join "`r`n"), (New-Object Text.UTF8Encoding($false)))
     [IO.File]::WriteAllText($taskConfiguration, ($taskValues | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))
-    # Use the production session store so the first login also has account-scoped temporary sources.
-    Add-Type -AssemblyName System.Web.Extensions
-    Add-Type -AssemblyName System.Net.Http
-    [Reflection.Assembly]::LoadFrom((Join-Path $taskRoot 'detector\windows-resident\bin\Release\net472\VisionGuard.Resident.Windows.exe')) | Out-Null
-    [VisionGuard.Detector.Windows.Utils.AccountSession]::ConfigureIsolatedEnvironment($taskConfiguration)
-    $taskPrivateAccounts = Get-Content (Join-Path $taskRoot '.local\e2e-server\console-preview\test-accounts.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    $taskPreviewAccount = $taskPrivateAccounts | Where-Object username -eq 'vg-test'
-    $taskSession = [VisionGuard.Detector.Windows.Utils.AccountSession]::Login('http://127.0.0.1:4318', 'vg-test', $taskPreviewAccount.password, 'UI-preview-Windows')
-    [VisionGuard.Detector.Windows.Utils.AccountSession]::RenameDevice('[UI preview] Windows')
-    $taskScoped = Join-Path $taskWindows ('accounts\' + [VisionGuard.Detector.Windows.Utils.AccountSession]::ScopeKey)
-    New-Item -ItemType Directory -Force -Path $taskScoped | Out-Null
-    [IO.File]::WriteAllText((Join-Path $taskScoped 'settings.ini'), ($taskLines -join "`r`n"), (New-Object Text.UTF8Encoding($false)))
-    if ($Target -eq 'PrepareWindows') { Write-Host "Windows temporary preview sources prepared: $taskCount"; return }
+    # 预览账号经环境变量递给应用（隔离配置的字段契约不含账号密码，见 docs/60），应用启动即静默登录，
+    # 不再需要脚本反射加载驻留程序去预登录（那条路会因依赖目录不同而加载失败）。
+    if ($LoginUi) {
+        Remove-Item Env:VISIONGUARD_PREVIEW_SIGNIN -ErrorAction SilentlyContinue
+        Write-Host 'Preview sign-in disabled: the app stops at the login screen.'
+    } else {
+        $taskPrivateAccounts = Get-Content (Join-Path $taskRoot '.local\e2e-server\console-preview\test-accounts.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $taskPreviewAccount = $taskPrivateAccounts | Where-Object username -eq 'vg-test'
+        $env:VISIONGUARD_PREVIEW_SIGNIN = (@{ endpoint = 'http://127.0.0.1:4318'; username = 'vg-test'; password = $taskPreviewAccount.password } | ConvertTo-Json -Compress)
+    }
+    if ($Target -eq 'PrepareWindows') { Write-Host "Windows isolated environment prepared: $taskConfiguration"; return }
     $taskExecutable = Join-Path $taskRoot 'detector\windows-package\bin\Release\VisionGuard.Detector.Windows.exe'
     if (!(Test-Path -LiteralPath $taskExecutable)) { throw 'Build the Windows Release package first.' }
     Start-Process -FilePath $taskExecutable -WindowStyle Normal -ArgumentList @('--isolated-environment', ('"' + $taskConfiguration + '"')) -WorkingDirectory $taskWindows | Out-Null

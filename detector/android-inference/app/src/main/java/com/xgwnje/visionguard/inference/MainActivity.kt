@@ -30,6 +30,7 @@ import androidx.lifecycle.lifecycleScope
 import com.xgwnje.visionguard.account.AccountLogin
 import com.xgwnje.visionguard.account.AccountStore
 import com.xgwnje.visionguard.account.ApplicationOptions
+import com.xgwnje.visionguard.account.PreviewSignIn
 import com.xgwnje.visionguard.account.dark
 import com.xgwnje.visionguard.account.rememberAppearance
 import com.xgwnje.visionguard.inference.model.AccelerationBenchmark
@@ -87,6 +88,9 @@ class MainActivity : ComponentActivity() {
         applyImmersiveMode()
         val account = AccountStore.get(this)
         val runtime = InferenceRuntime.get(this)
+        // 预览构建内置本机隔离服务的地址与预览账号，启动即静默登录；正式包三个资源为空串，行为不变。
+        PreviewSignIn.configure(this, getString(R.string.preview_endpoint), getString(R.string.preview_username), getString(R.string.preview_password))
+        lifecycleScope.launch { PreviewSignIn.signIn(account, AppConstants.LOGIN_COMPONENT)?.let { runtime.setMessage(it, MessageTone.Error) } }
         // 测量构建先给测量入口：测量只用本机算力与包内模型，不应被登录条件挡住；
         // 点「进入完整应用」再走原有登录流程。正式构建没有这个首屏。
         val benchmarkFirst = isBenchmarkBuild()

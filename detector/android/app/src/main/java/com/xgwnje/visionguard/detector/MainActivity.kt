@@ -31,10 +31,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.lifecycleScope
 import com.xgwnje.visionguard.account.*
 import com.xgwnje.visionguard.detector.stream.*
 import com.xgwnje.visionguard.detector.ui.theme.VisionguardTheme
 import java.util.concurrent.Executors
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val executor = Executors.newSingleThreadExecutor()
@@ -74,6 +76,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         priorBrightness = window.attributes.screenBrightness
         val account = AccountStore.get(this)
+        // 预览构建内置本机隔离服务的地址与预览账号，启动即静默登录；正式包三个资源为空串，行为不变。
+        PreviewSignIn.configure(this, getString(R.string.preview_endpoint), getString(R.string.preview_username), getString(R.string.preview_password))
+        lifecycleScope.launch { PreviewSignIn.signIn(account, "android-camera")?.let { Toast.makeText(this@MainActivity, it, Toast.LENGTH_LONG).show() } }
         setContent {
             val session by account.session.collectAsState()
             val appearance = rememberAppearance()

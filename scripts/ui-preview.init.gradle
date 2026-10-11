@@ -3,6 +3,28 @@ def tasks = gradle.startParameter.taskNames.collect { it.tokenize(':').last().to
 if (tasks.any { it.contains('publish') || it.contains('bundle') }) {
     throw new GradleException('UI preview builds cannot publish or bundle an application.')
 }
+
+// 预览包内置本机隔离服务的地址与预览账号，应用启动即静默登录（见 android-shared 的 PreviewSignIn）。
+// 凭据只从隔离服务生成的忽略文件读取，不进版本库；文件不存在时注入空串，应用回落到登录页。
+// 地址默认 http://127.0.0.1:4318（真机靠 adb reverse 打通），可用 VISIONGUARD_PREVIEW_ENDPOINT 覆盖。
+def previewEndpoint = { ->
+    def value = System.getenv('VISIONGUARD_PREVIEW_ENDPOINT')
+    return (value == null || value.trim().isEmpty()) ? 'http://127.0.0.1:4318' : value.trim()
+}
+def previewAccount = { repository ->
+    def empty = [endpoint: '', username: '', password: '']
+    try {
+        def accountsFile = new File(repository, '.local/e2e-server/console-preview/test-accounts.json')
+        if (!accountsFile.isFile()) return empty
+        def account = new groovy.json.JsonSlurper().parse(accountsFile).find { it.username == 'vg-test' }
+        if (account == null) return empty
+        return [endpoint: previewEndpoint(), username: account.username, password: account.password]
+    } catch (Exception ignored) {
+        return empty
+    }
+}
+def xmlText = { value -> (value == null ? '' : value).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;') }
+
 allprojects {
     afterEvaluate { p ->
         if (!p.plugins.hasPlugin('com.android.application')) return
@@ -14,7 +36,14 @@ allprojects {
         // 用相对仓库根的工程路径做键：detector/ 下现在有两个 Android 工程，只看父目录名会撞在一起。
         def component = repository.toPath().relativize(rootDir.toPath()).toString().replace('\\', '/')
         if (!names.containsKey(component)) throw new GradleException('Unknown Android component for UI preview: ' + component)
-        new File(previewResources, 'strings.xml').setText('<resources><string name="app_name">' + names[component] + ' UI预览</string></resources>', 'UTF-8')
+        def account = previewAccount(repository)
+        def strings = '<resources>' +
+            '<string name="app_name">' + names[component] + ' UI预览</string>' +
+            '<string name="preview_endpoint" translatable="false">' + xmlText(account.endpoint) + '</string>' +
+            '<string name="preview_username" translatable="false">' + xmlText(account.username) + '</string>' +
+            '<string name="preview_password" translatable="false">' + xmlText(account.password) + '</string>' +
+            '</resources>'
+        new File(previewResources, 'strings.xml').setText(strings, 'UTF-8')
         p.android.sourceSets.release.res.srcDir(previewResources.parentFile)
         p.android.buildTypes.release.applicationIdSuffix = '.uipreview'
         p.android.buildTypes.release.debuggable = true

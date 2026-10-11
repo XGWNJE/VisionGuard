@@ -30,6 +30,10 @@ namespace VisionGuard.Detector.Windows
             if (args.Length >= 1 && args[0] == "--resident-launch")
                 return RunResidentLaunchProbe(args);
 
+            // 本地预览的内置登录：UI 预览脚本用环境变量递入隔离服务的账号，启动即登录，不停在登录页。
+            // 要调登录界面时加 `--login-ui`（ui-preview.ps1 的 -LoginUi），或干脆不带这个环境变量。
+            if (System.Array.IndexOf(args, "--login-ui") < 0) TryPreviewSignIn();
+
             // 先加载账号分区设置，驻留沿用已登录账号的同一设备身份。
             Utils.SettingsStore.Load();
 
@@ -102,6 +106,36 @@ namespace VisionGuard.Detector.Windows
         }
 
         private const uint AttachParentProcess = 0xFFFFFFFF;
+
+        /// <summary>
+        /// 本地预览的内置登录。环境变量 `VISIONGUARD_PREVIEW_SIGNIN` 是
+        /// `{"endpoint":"http://127.0.0.1:4318","username":"vg-test","password":"…"}`。
+        ///
+        /// 为什么用环境变量而不是隔离配置文件：隔离 JSON 的字段契约明确不含账号密码
+        /// （见 docs/60），凭据也就不会随配置落盘。正式运行没有这个变量，行为与以前完全一致。
+        /// 登录失败只记一条日志：用户仍可在登录页手填账号密码。
+        /// </summary>
+        private static void TryPreviewSignIn()
+        {
+            try
+            {
+                string raw = Environment.GetEnvironmentVariable("VISIONGUARD_PREVIEW_SIGNIN");
+                if (string.IsNullOrWhiteSpace(raw) || Utils.AccountSession.Current != null) return;
+                using (var document = System.Text.Json.JsonDocument.Parse(raw))
+                {
+                    var root = document.RootElement;
+                    string endpoint = root.TryGetProperty("endpoint", out var e) ? e.GetString() : null;
+                    string username = root.TryGetProperty("username", out var u) ? u.GetString() : null;
+                    string password = root.TryGetProperty("password", out var p) ? p.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password)) return;
+                    Utils.AccountSession.Login(endpoint, username, password);
+                }
+            }
+            catch (Exception error)
+            {
+                Utils.LogManager.StaticWarn("[PreviewSignIn] " + error.Message);
+            }
+        }
 
         [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool AttachConsole(uint processId);

@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.app.ActivityCompat
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -26,6 +27,7 @@ import com.xgwnje.visionguard.notifier.ui.main.NotificationHelpButton
 import com.xgwnje.visionguard.notifier.ui.settings.RingtoneLibraryScreen
 import com.xgwnje.visionguard.notifier.ui.settings.SettingsViewModel
 import com.xgwnje.visionguard.notifier.ui.theme.NotificationTheme
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     private var alarms: SharedPreferencesHelper? = null
@@ -39,6 +41,9 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= 33 && !PermissionUtils.canPostNotifications(this))
             ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), PermissionUtils.REQUEST_CODE_POST_NOTIFICATIONS)
         val account = AccountStore.get(this)
+        // 预览构建内置本机隔离服务的地址与预览账号，启动即静默登录；正式包三个资源为空串，行为不变。
+        PreviewSignIn.configure(this, getString(R.string.preview_endpoint), getString(R.string.preview_username), getString(R.string.preview_password))
+        lifecycleScope.launch { PreviewSignIn.signIn(account, "android-notifier")?.let { android.widget.Toast.makeText(this@MainActivity, it, android.widget.Toast.LENGTH_LONG).show() } }
         setContent {
             val session by account.session.collectAsState()
             val appearance = rememberAppearance()

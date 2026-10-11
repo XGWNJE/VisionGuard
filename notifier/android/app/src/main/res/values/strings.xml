@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">通知节点</string>
+    <!-- 预览构建注入本机隔离服务的地址与预览账号；正式包保持空串，行为不变 -->
+    <string name="preview_endpoint" translatable="false" />
+    <string name="preview_username" translatable="false" />
+    <string name="preview_password" translatable="false" />
     <string name="no_ringtone_selected">系统默认闹钟铃声</string>
     <string name="default_ringtone_name">默认提醒音</string>
     <string name="ringtone_file_missing">铃声已失效，将回落系统闹钟</string>
