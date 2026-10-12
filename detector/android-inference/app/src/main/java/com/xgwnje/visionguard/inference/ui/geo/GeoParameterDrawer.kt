@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,8 +45,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.xgwnje.visionguard.account.VisionGuardStatusColors
 import com.xgwnje.visionguard.icons.LucideIcons
+import com.xgwnje.visionguard.inference.detect.ArgbImage
 import com.xgwnje.visionguard.inference.detect.CocoClassMap
 import com.xgwnje.visionguard.inference.detect.DetectionParams
+import com.xgwnje.visionguard.inference.detect.MaskRegion
 import com.xgwnje.visionguard.inference.runtime.ModelDownloadState
 import com.xgwnje.visionguard.inference.model.ModelKeys
 import com.xgwnje.visionguard.inference.runtime.ModelState
@@ -55,10 +58,11 @@ import com.xgwnje.visionguard.inference.ui.formatElapsedMoment
 import com.xgwnje.visionguard.inference.ui.formatWallMoment
 import kotlinx.coroutines.launch
 
-/** 参数抽屉的分区：来源检查与检测参数合并到同一个抽屉，用拨档切换。 */
-enum class ParamSection(val title: String) {
+/** 来源抽屉的分区：来源检查、检测参数与遮罩合并到同一个抽屉，用拨档切换。 */
+enum class EditorPage(val title: String) {
     SOURCE("来源"),
-    DETECTION("检测参数")
+    DETECTION("检测参数"),
+    MASK("遮罩")
 }
 
 /** 抽屉内可用底部信息带直接定位的锚点。 */
@@ -72,17 +76,17 @@ private val fpsPresets = listOf(1, 3, 5)
 private val commonTargets = listOf("person", "bicycle", "car", "motorcycle", "bus", "truck", "cat", "dog", "backpack", "handbag")
 
 /**
- * 参数抽屉：拨档切「来源」与「检测参数」两页。
+ * 来源抽屉：拨档切「来源」「检测参数」「遮罩」三页。
  *
  * 检测参数页按统一节奏排布：三个机器控件逐段等高（主控件 / 操作行 / 快捷行），
- * 下面是模型插槽与检测目标两列。草稿状态放在抽屉层，切换分区不会丢。
+ * 下面是模型插槽与检测目标两列。参数与遮罩各有一份草稿，切页不会丢。
  */
 @Composable
-fun GeoParameterDrawer(
+fun GeoSourceDrawer(
     source: SourceView?,
     nowWallMs: Long,
     nowElapsedMs: Long,
-    initialSection: ParamSection,
+    initialPage: EditorPage,
     scrollTo: ParamAnchor?,
     models: List<ModelState>,
     downloads: Map<String, ModelDownloadState>,
@@ -90,6 +94,9 @@ fun GeoParameterDrawer(
     gpuAvailable: Boolean,
     /** 正在被运行中来源使用的档位键：这些档位不允许删除。 */
     usedModelKeys: Set<String>,
+    /** 遮罩页的画面与运行态。 */
+    maskFrame: ArgbImage?,
+    maskRunning: Boolean,
     onDismiss: () -> Unit,
     onRename: (String) -> String?,
     onSetLens: (Int) -> String?,
@@ -97,11 +104,16 @@ fun GeoParameterDrawer(
     onDownloadModel: suspend (String) -> String?,
     onDeleteModel: suspend (String) -> String?,
     onSave: (DetectionParams) -> String?,
+    onSaveMasks: (List<MaskRegion>) -> String?,
+    /** 参数说明跳帮助页：参数把帮助条目标题交给主界面。 */
+    onHelp: (String) -> Unit,
     onMessage: (String?) -> Unit
 ) {
     if (source == null) return
     val initial = source.params
-    var section by remember { mutableStateOf(initialSection) }
+    var page by remember { mutableStateOf(initialPage) }
+    // 遮罩草稿与参数草稿并列，切页/切来源都会重建。
+    val maskDraft = remember(source.sourceId, source.masks) { MaskDraft(source.masks) }
     val scrollState = rememberScrollState()
     // 普通 Map：布局回调写入不能进 State，否则会触发重组与布局互相触发的死循环。
     val anchors = remember { mutableMapOf<ParamAnchor, Float>() }
@@ -169,8 +181,8 @@ fun GeoParameterDrawer(
         if (failure == null) onMessage("检测规则已保存，重新启动来源后生效") else error = failure
     }
 
-    // 底部信息带点进来时定位到对应区块：等两帧让目标分区完成测量再滚动。
-    LaunchedEffect(section, scrollTo) {
+    // 底部状态带点进来时定位到对应区块：等两帧让目标分区完成测量再滚动。
+    LaunchedEffect(page, scrollTo) {
         if (scrollTo == null) return@LaunchedEffect
         withFrameNanos { }
         withFrameNanos { }
@@ -179,16 +191,16 @@ fun GeoParameterDrawer(
     }
 
     GeoDrawer(
-        title = "来源与参数 · ${source.sourceName}",
-        sectionId = "VISION / CONTROL",
+        title = "来源 · ${source.sourceName}",
+        sectionId = "VISION / SOURCE",
         onClose = onDismiss,
         width = Geo.ParamDrawer,
         scrollState = scrollState,
         footer = {
-            when (section) {
-                ParamSection.SOURCE -> GeoKey(onClick = onDismiss, label = "关闭")
+            when (page) {
+                EditorPage.SOURCE -> GeoKey(onClick = onDismiss, label = "关闭")
 
-                ParamSection.DETECTION -> {
+                EditorPage.DETECTION -> {
                     GeoKey(
                         onClick = { resetDraft() },
                         label = "还原",
@@ -205,17 +217,27 @@ fun GeoParameterDrawer(
                         busy = saving
                     )
                 }
+
+                EditorPage.MASK -> MaskPageFooter(
+                    draft = maskDraft,
+                    running = maskRunning,
+                    hasFrame = maskFrame != null,
+                    onCancel = onDismiss,
+                    onSave = onSaveMasks,
+                    onMessage = onMessage
+                )
             }
         }
     ) {
+        CompositionLocalProvider(LocalGeoHelp provides onHelp) {
         GeoShifter(
-            options = ParamSection.entries.map { it.name to it.title },
-            value = section.name,
-            onSelect = { name -> ParamSection.entries.firstOrNull { it.name == name }?.let { section = it } }
+            options = EditorPage.entries.map { it.name to it.title },
+            value = page.name,
+            onSelect = { name -> EditorPage.entries.firstOrNull { it.name == name }?.let { page = it } }
         )
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(Geo.BlockGap)) {
-            when (section) {
-                ParamSection.SOURCE -> SourceSection(
+            when (page) {
+                EditorPage.SOURCE -> SourceSection(
                     source = source,
                     nowWallMs = nowWallMs,
                     nowElapsedMs = nowElapsedMs,
@@ -226,7 +248,7 @@ fun GeoParameterDrawer(
                     onMessage = onMessage
                 )
 
-                ParamSection.DETECTION -> DetectionSection(
+                EditorPage.DETECTION -> DetectionSection(
                     locked = locked,
                     models = models,
                     downloads = downloads,
@@ -264,7 +286,10 @@ fun GeoParameterDrawer(
                     onDownloadModel = { key -> scope.launch { onDownloadModel(key)?.let(onMessage) } },
                     onRequestDeleteModel = { key -> pendingDeleteModel = key }
                 )
+
+                EditorPage.MASK -> MaskPage(draft = maskDraft, frame = maskFrame, running = maskRunning)
             }
+        }
         }
     }
 
@@ -299,7 +324,10 @@ private fun SourceSection(
     var confirmDelete by remember { mutableStateOf(false) }
     val running = source.state.isRunning
 
-    GeoSectionLabel("01", "运行状态", if (running) "运行中" else "已停止")
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        GeoSectionLabel("01", "运行状态", if (running) "运行中" else "已停止", Modifier.weight(1f))
+        HelpTopicKey("运行与启停")
+    }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         GeoLamp(
             source.state.error ?: source.state.statusText,
@@ -635,7 +663,10 @@ private fun ModelSlotBlock(
     onDelete: (String) -> Unit,
     onReview: () -> Unit
 ) {
-    GeoSectionLabel("04", "模型插槽", "下载 / 删除 / 选中")
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        GeoSectionLabel("04", "模型插槽", "下载 / 删除 / 选中", Modifier.weight(1f))
+        HelpTopicKey("模型档位与下载")
+    }
     ModelCartridges(
         models = models,
         downloads = downloads,
@@ -669,7 +700,10 @@ private fun MachineBlock(
     content: @Composable () -> Unit
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Geo.Gap)) {
-        GeoSectionLabel(index, title, trailing)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            GeoSectionLabel(index, title, trailing, Modifier.weight(1f))
+            HelpTopicKey("检测参数")
+        }
         content()
         if (error != null) {
             Text(error, color = VisionGuardStatusColors.error, style = MaterialTheme.typography.bodySmall, maxLines = 1)
@@ -818,7 +852,7 @@ private fun ModelCartridges(
                             progress != null && progress.total > 0 -> "下载 ${progress.percent}%"
                             progress != null -> "下载中…"
                             model.downloaded -> "已下载 · ${model.target.label}" + if (inUse) " · 使用中" else ""
-                            else -> "未下载 · 点右下角下载"
+                            else -> "未下载"
                         },
                         selected = model.key == selected,
                         enabled = enabled && model.downloaded && !gpuBlocked,
@@ -884,7 +918,10 @@ private fun TargetBlock(
     onToggleAllTargets: () -> Unit,
     locked: Boolean
 ) {
-    GeoSectionLabel("05", "检测目标", "至少一项")
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        GeoSectionLabel("05", "检测目标", "至少一项", Modifier.weight(1f))
+        HelpTopicKey("检测目标")
+    }
     GeoFlatTextField(
         value = search,
         onValueChange = onSearch,

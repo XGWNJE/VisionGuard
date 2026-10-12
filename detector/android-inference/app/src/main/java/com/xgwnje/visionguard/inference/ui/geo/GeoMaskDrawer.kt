@@ -58,34 +58,20 @@ import com.xgwnje.visionguard.inference.ui.rememberFrameBitmap
 import kotlin.math.abs
 
 /** 遮罩编辑工具。 */
-private enum class MaskTool { Draw, Move }
+internal enum class MaskTool { Draw, Move }
 
 /**
- * 遮罩抽屉：拖画矩形、选择移动、四角拉伸、键盘 1% 精调，草稿保存后才生效。
+ * 遮罩草稿：与参数草稿并列地挂在来源抽屉上，切页不会丢。
  *
  * 视觉底线见 [几何空间视觉语言参考](../../../../../../../docs/73-几何空间界面规范.md)：
- * 直角画布、48dp 把手触点且贴边内移、最小边长 2%；抽屉宽度按父约束取 ≤760。
+ * 直角画布、48dp 把手触点且贴边内移、最小边长 2%。
  */
-@Composable
-fun GeoMaskDrawer(
-    sourceName: String,
-    frame: ArgbImage?,
-    initial: List<MaskRegion>,
-    running: Boolean,
-    onDismiss: () -> Unit,
-    onSave: (List<MaskRegion>) -> String?,
-    onMessage: (String?) -> Unit
-) {
-    var masks by remember(initial) { mutableStateOf(initial) }
-    var selected by remember { mutableStateOf(-1) }
-    var tool by remember { mutableStateOf(MaskTool.Draw) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var clearing by remember { mutableStateOf(false) }
-    val locked = running
-
-    fun update(index: Int, transform: (MaskRegion) -> MaskRegion) {
-        masks = masks.mapIndexed { i, region -> if (i == index) transform(region) else region }
-    }
+internal class MaskDraft(val initial: List<MaskRegion>) {
+    var masks by mutableStateOf(initial)
+    var selected by mutableStateOf(-1)
+    var tool by mutableStateOf(MaskTool.Draw)
+    var error by mutableStateOf<String?>(null)
+    var clearing by mutableStateOf(false)
 
     fun restore() {
         masks = initial
@@ -94,142 +80,155 @@ fun GeoMaskDrawer(
         error = null
     }
 
-    GeoDrawer(
-        title = "隐私遮罩 · $sourceName",
-        sectionId = "VISION / MASK",
-        onClose = onDismiss,
-        width = Geo.ParamDrawer,
-        footer = {
-            GeoKey(
-                onClick = { restore() },
-                label = "还原当前值",
-                icon = LucideIcons.RotateCcw,
-                enabled = !locked
-            )
-            GeoKey(onClick = onDismiss, label = "取消")
-            GeoKey(
-                onClick = {
-                    if (locked) {
-                        error = "请先停止来源；遮罩是冷改动"
-                    } else if (!masks.all { validRegion(it) }) {
-                        error = "遮罩越界或尺寸小于 ${(Geo.MASK_MIN_EDGE * 100).toInt()}%"
-                    } else {
-                        val failure = onSave(masks)
-                        if (failure == null) onMessage("遮罩已保存，重新启动来源后生效") else error = failure
-                    }
-                },
-                label = "保存遮罩",
-                icon = LucideIcons.Check,
-                tone = GeoTone.Primary,
-                enabled = !locked && frame != null
-            )
-        }
-    ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            GeoLamp(if (locked) "运行中 · 只读" else "已停止 · 可编辑", if (locked) GeoLampTone.Warning else GeoLampTone.Neutral)
-            Spacer(Modifier.weight(1f))
-            Text(
-                "${masks.size} 个遮罩 / 仅保存在本机",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-        GeoHint(
-            if (locked) {
-                "停止检测后才能编辑和保存遮罩。"
-            } else {
-                "拖画矩形，选择后移动 / 拉伸；黑色区域在推理前涂黑，预览和报警截图同步遮挡。"
-            },
-            if (locked) GeoLampTone.Warning else GeoLampTone.Neutral
-        )
+    fun update(index: Int, transform: (MaskRegion) -> MaskRegion) {
+        masks = masks.mapIndexed { i, region -> if (i == index) transform(region) else region }
+    }
+}
 
-        Row(horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
-            GeoKey(
-                onClick = { tool = MaskTool.Draw },
-                label = "添加矩形",
-                icon = LucideIcons.Plus,
-                tone = if (tool == MaskTool.Draw) GeoTone.Primary else GeoTone.Secondary,
-                enabled = !locked && frame != null
-            )
-            GeoKey(
-                onClick = { tool = MaskTool.Move },
-                label = "选择 / 移动",
-                icon = LucideIcons.GripHorizontal,
-                tone = if (tool == MaskTool.Move) GeoTone.Primary else GeoTone.Secondary,
-                enabled = !locked && frame != null
-            )
-        }
-
-        MaskPlane(
-            frame = frame,
-            masks = masks,
-            selected = selected,
-            tool = tool,
-            locked = locked,
-            onSelect = { selected = it },
-            onAdd = { region ->
-                masks = masks + region
-                selected = masks.lastIndex
-                error = null
-            },
-            onUpdate = { index, transform ->
-                update(index, transform)
-                error = null
-            }
+/** 遮罩页正文：工具键、画布、遮罩列表与清空确认。 */
+@Composable
+internal fun MaskPage(draft: MaskDraft, frame: ArgbImage?, running: Boolean) {
+    val locked = running
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        GeoLamp(if (locked) "运行中 · 只读" else "已停止 · 可编辑", if (locked) GeoLampTone.Warning else GeoLampTone.Neutral)
+        Spacer(Modifier.weight(1f))
+        Text(
+            "${draft.masks.size} 个遮罩 / 仅保存在本机",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
         )
-        if (frame == null) {
-            Text(
-                "该来源还没有可编辑的画面；本机相机会在开始检测后产生画面，远程镜头需要控制台先绑定推流。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
+    }
+    GeoHint(
+        if (locked) {
+            "停止检测后才能编辑和保存遮罩。"
+        } else {
+            "拖画矩形，选择后移动 / 拉伸；黑色区域在推理前涂黑，预览和报警截图同步遮挡。"
+        },
+        if (locked) GeoLampTone.Warning else GeoLampTone.Neutral
+    )
 
-        GeoSectionLabel(null, "遮罩列表", "允许零遮罩")
-        MaskRack(
-            masks = masks,
-            selected = selected,
-            onSelect = { selected = it }
+    Row(horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
+        GeoKey(
+            onClick = { draft.tool = MaskTool.Draw },
+            label = "添加矩形",
+            icon = LucideIcons.Plus,
+            tone = if (draft.tool == MaskTool.Draw) GeoTone.Primary else GeoTone.Secondary,
+            enabled = !locked && frame != null
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
-            GeoKey(
-                onClick = {
-                    if (selected in masks.indices) {
-                        masks = masks.filterIndexed { i, _ -> i != selected }
-                        selected = -1
-                        error = null
-                    }
-                },
-                label = "删除选中",
-                icon = LucideIcons.Trash2,
-                enabled = !locked && selected in masks.indices
-            )
-            GeoKey(
-                onClick = { clearing = true },
-                label = "清空全部",
-                icon = LucideIcons.Trash2,
-                tone = GeoTone.Danger,
-                enabled = !locked && masks.isNotEmpty()
-            )
-        }
-        error?.let {
-            Text(it, color = VisionGuardStatusColors.error, style = MaterialTheme.typography.bodySmall)
-        }
+        GeoKey(
+            onClick = { draft.tool = MaskTool.Move },
+            label = "选择 / 移动",
+            icon = LucideIcons.GripHorizontal,
+            tone = if (draft.tool == MaskTool.Move) GeoTone.Primary else GeoTone.Secondary,
+            enabled = !locked && frame != null
+        )
+        HelpTopicKey("隐私遮罩")
     }
 
-    if (clearing) {
+    MaskPlane(
+        frame = frame,
+        masks = draft.masks,
+        selected = draft.selected,
+        tool = draft.tool,
+        locked = locked,
+        onSelect = { draft.selected = it },
+        onAdd = { region ->
+            draft.masks = draft.masks + region
+            draft.selected = draft.masks.lastIndex
+            draft.error = null
+        },
+        onUpdate = { index, transform ->
+            draft.update(index, transform)
+            draft.error = null
+        }
+    )
+    if (frame == null) {
+        Text(
+            "该来源还没有可编辑的画面；本机相机会在开始检测后产生画面，远程镜头需要控制台先绑定推流。",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+
+    GeoSectionLabel(null, "遮罩列表", "允许零遮罩")
+    MaskRack(
+        masks = draft.masks,
+        selected = draft.selected,
+        onSelect = { draft.selected = it }
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
+        GeoKey(
+            onClick = {
+                if (draft.selected in draft.masks.indices) {
+                    draft.masks = draft.masks.filterIndexed { i, _ -> i != draft.selected }
+                    draft.selected = -1
+                    draft.error = null
+                }
+            },
+            label = "删除选中",
+            icon = LucideIcons.Trash2,
+            enabled = !locked && draft.selected in draft.masks.indices
+        )
+        GeoKey(
+            onClick = { draft.clearing = true },
+            label = "清空全部",
+            icon = LucideIcons.Trash2,
+            tone = GeoTone.Danger,
+            enabled = !locked && draft.masks.isNotEmpty()
+        )
+    }
+    draft.error?.let {
+        Text(it, color = VisionGuardStatusColors.error, style = MaterialTheme.typography.bodySmall)
+    }
+
+    if (draft.clearing) {
         GeoConfirm(
             title = "清空全部遮罩",
-            text = "确认清空 ${masks.size} 个遮罩？保存后该来源会恢复全画面识别。",
+            text = "确认清空 ${draft.masks.size} 个遮罩？保存后该来源会恢复全画面识别。",
             confirmLabel = "清空",
-            onCancel = { clearing = false },
+            onCancel = { draft.clearing = false },
             onConfirm = {
-                masks = emptyList()
-                selected = -1
-                clearing = false
+                draft.masks = emptyList()
+                draft.selected = -1
+                draft.clearing = false
             }
         )
     }
+}
+
+/** 遮罩页页脚：还原 / 取消 / 保存，与参数页共用抽屉的页脚槽。 */
+@Composable
+internal fun MaskPageFooter(
+    draft: MaskDraft,
+    running: Boolean,
+    hasFrame: Boolean,
+    onCancel: () -> Unit,
+    onSave: (List<MaskRegion>) -> String?,
+    onMessage: (String?) -> Unit
+) {
+    GeoKey(
+        onClick = { draft.restore() },
+        label = "还原当前值",
+        icon = LucideIcons.RotateCcw,
+        enabled = !running
+    )
+    GeoKey(onClick = onCancel, label = "取消")
+    GeoKey(
+        onClick = {
+            when {
+                running -> draft.error = "请先停止来源；遮罩是冷改动"
+                !draft.masks.all { validRegion(it) } -> draft.error = "遮罩越界或尺寸小于 ${(Geo.MASK_MIN_EDGE * 100).toInt()}%"
+                else -> {
+                    val failure = onSave(draft.masks)
+                    if (failure == null) onMessage("遮罩已保存，重新启动来源后生效") else draft.error = failure
+                }
+            }
+        },
+        label = "保存遮罩",
+        icon = LucideIcons.Check,
+        tone = GeoTone.Primary,
+        enabled = !running && hasFrame
+    )
 }
 
 /** 画布：26dp 内衬，按画面比例等比，遮罩坐标相对画面矩形。 */

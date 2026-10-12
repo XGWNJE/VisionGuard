@@ -116,15 +116,20 @@ fun PreviewComposition(
     }
 }
 
-/** 来源滑架：序号、名称、运行状态与添加入口。 */
+/** 来源滑架：逐来源启停、抽屉入口与添加入口。 */
 @Composable
 fun SourceCarriage(
     sources: List<SourceView>,
     selectedSourceId: String?,
     maxSources: Int,
     nowElapsedMs: Long,
+    busySourceId: String?,
+    anyRunning: Boolean,
+    stoppingAll: Boolean,
     onSelect: (String) -> Unit,
     onInspect: (String) -> Unit,
+    onToggle: (String) -> Unit,
+    onStopAll: () -> Unit,
     onAdd: () -> Unit,
     addBlockedReason: String? = null,
     addFocus: FocusRequester,
@@ -136,7 +141,7 @@ fun SourceCarriage(
             .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape)
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+            Modifier.fillMaxWidth().height(Geo.Touch).padding(start = 16.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -145,7 +150,18 @@ fun SourceCarriage(
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f)
             )
-            Text("详情", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall.copy(fontSize = Geo.FontMeta))
+            // 兜底：多路来源都在跑时给一个一键停止，避免逐条点。
+            if (anyRunning) {
+                GeoKey(
+                    onClick = onStopAll,
+                    label = "全部停止",
+                    icon = LucideIcons.Pause,
+                    tone = GeoTone.Danger,
+                    busy = stoppingAll,
+                    enabled = !stoppingAll,
+                    minHeight = Geo.Touch
+                )
+            }
         }
         GeoDivider()
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
@@ -154,8 +170,9 @@ fun SourceCarriage(
                     index = index + 1,
                     source = source,
                     selected = source.sourceId == selectedSourceId,
-                    nowElapsedMs = nowElapsedMs,
+                    busy = busySourceId == source.sourceId,
                     onSelect = { onSelect(source.sourceId) },
+                    onToggle = { onToggle(source.sourceId) },
                     onInspect = { onInspect(source.sourceId) }
                 )
             }
@@ -184,13 +201,15 @@ private fun SourceStop(
     index: Int,
     source: SourceView,
     selected: Boolean,
-    nowElapsedMs: Long,
+    busy: Boolean,
     onSelect: () -> Unit,
+    onToggle: () -> Unit,
     onInspect: () -> Unit
 ) {
+    val running = source.state.isRunning
     val lamp = when {
         source.state.error != null -> GeoLampTone.Error
-        source.state.isRunning -> GeoLampTone.Success
+        running -> GeoLampTone.Success
         source.state.isReady -> GeoLampTone.Neutral
         else -> GeoLampTone.Warning
     }
@@ -224,9 +243,21 @@ private fun SourceStop(
             )
             GeoLamp(source.state.error ?: source.state.statusText, lamp)
         }
+        // 逐来源启停：只影响这一路，整体启停已从主界面移除。
+        GeoIconKey(
+            icon = when {
+                busy -> LucideIcons.LoaderCircle
+                running -> LucideIcons.Pause
+                else -> LucideIcons.Play
+            },
+            contentDescription = if (running) "停止 ${source.sourceName}" else "启动 ${source.sourceName}",
+            onClick = onToggle,
+            enabled = !busy,
+            tone = if (running) GeoTone.Secondary else GeoTone.Primary
+        )
         GeoIconKey(
             LucideIcons.ChevronRight,
-            "检查 ${source.sourceName}",
+            "打开 ${source.sourceName} 的来源、参数与遮罩",
             onClick = onInspect,
             modifier = Modifier.padding(end = 4.dp)
         )
@@ -234,88 +265,107 @@ private fun SourceStop(
     GeoDivider()
 }
 
-/** 操作台：后端 / 帧率 / 目标读数、启停压板与参数、遮罩方键。 */
+/**
+ * 底部状态带：左段与预览同宽（仪表读数 + 参数摘要），右段与来源列表同宽（连接状态 + 应用入口）。
+ *
+ * 两段用与上方相同的 weight / 固定宽度划分，所以横屏上下分界严格对齐；竖屏整条不分段。
+ */
 @Composable
-fun ActionDeck(
+fun StatusBar(
     source: SourceView?,
-    busy: Boolean,
     wide: Boolean,
-    onToggle: () -> Unit,
-    onParams: () -> Unit,
-    onMasks: () -> Unit,
-    paramsFocus: FocusRequester,
-    masksFocus: FocusRequester,
+    connectionText: String,
+    connectionTone: GeoLampTone,
+    onParamAnchor: (ParamAnchor) -> Unit,
+    onConnection: () -> Unit,
+    onHelp: () -> Unit,
+    onSettings: () -> Unit,
+    onAccount: () -> Unit,
+    helpFocus: FocusRequester,
+    settingsFocus: FocusRequester,
+    accountFocus: FocusRequester,
     modifier: Modifier = Modifier
 ) {
     val running = source?.state?.isRunning == true
     val topConfidence = source?.state?.detections?.maxByOrNull { it.confidence }?.confidence
-    val readouts: @Composable (Modifier) -> Unit = { readoutModifier ->
-        Row(readoutModifier, horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
-            Readout("实际帧率", if (running) "%.1f".format(source?.state?.actualFps ?: 0.0) else "0.0", "FPS", Modifier.weight(1f))
-            Readout(
-                "检测目标",
-                if (running && topConfidence != null) "${(topConfidence * 100).toInt()}" else "—",
-                if (running && topConfidence != null) "%" else null,
-                Modifier.weight(1f)
-            )
-            Readout(
-                "单帧耗时",
-                if (running && (source?.state?.inferenceMs ?: 0L) > 0) "${source?.state?.inferenceMs}" else "—",
-                if (running && (source?.state?.inferenceMs ?: 0L) > 0) "ms" else null,
-                Modifier.weight(1f)
-            )
+    val readouts: @Composable (Modifier) -> Unit = { barModifier ->
+        Column(barModifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Geo.GroupGap)) {
+                Readout("实际帧率", if (running) "%.1f".format(source?.state?.actualFps ?: 0.0) else "0.0", "FPS", Modifier.weight(1f))
+                Readout(
+                    "检测目标",
+                    if (running && topConfidence != null) "${(topConfidence * 100).toInt()}" else "—",
+                    if (running && topConfidence != null) "%" else null,
+                    Modifier.weight(1f)
+                )
+                Readout(
+                    "单帧耗时",
+                    if (running && (source?.state?.inferenceMs ?: 0L) > 0) "${source?.state?.inferenceMs}" else "—",
+                    if (running && (source?.state?.inferenceMs ?: 0L) > 0) "ms" else null,
+                    Modifier.weight(1f)
+                )
+            }
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Geo.Gap)
+            ) {
+                // 推理后端是技术标识而不是实时读数：放在摘要行里，长名字不再被读数格截断。
+                source?.state?.backend?.takeIf { it.isNotEmpty() }?.let { backend ->
+                    Text(
+                        "后端 $backend",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1
+                    )
+                }
+                source?.let { view ->
+                    StripItem("置信度", "${view.params.confidencePercent}%") { onParamAnchor(ParamAnchor.MACHINES) }
+                    StripItem("采样", "${view.params.targetFps} FPS") { onParamAnchor(ParamAnchor.MACHINES) }
+                    StripItem("冷却", "${view.params.cooldownSeconds} 秒") { onParamAnchor(ParamAnchor.MACHINES) }
+                    StripItem(null, ModelKeys.displayName(view.params.modelKey)) { onParamAnchor(ParamAnchor.MODELS) }
+                    StripItem(null, "${view.params.watchedClasses.size} 个目标") { onParamAnchor(ParamAnchor.TARGETS) }
+                }
+            }
         }
     }
-    val keys: @Composable (Modifier) -> Unit = { keyModifier ->
-        Row(keyModifier, horizontalArrangement = Arrangement.spacedBy(Geo.Gap), verticalAlignment = Alignment.CenterVertically) {
-            GeoKey(
-                onClick = onToggle,
-                tone = GeoTone.Primary,
-                // 首次启动前没有任何成功帧，不能用「已处理帧」当门槛：未运行时始终可尝试启动，
-                // 缺权限或未绑定由 runtime 返回原因。
-                enabled = source != null,
-                busy = busy,
-                icon = if (running) LucideIcons.Pause else LucideIcons.Play,
-                label = if (busy) "处理中…" else if (running) "停止检测" else "开始检测",
-                labelStyle = MaterialTheme.typography.titleMedium,
-                minHeight = Geo.PaddleHeight,
-                modifier = Modifier.weight(1f)
-            )
-            GeoKey(
-                onClick = onParams,
-                enabled = source != null,
-                icon = LucideIcons.SlidersHorizontal,
-                label = "参数",
-                minWidth = Geo.SquareKey,
-                minHeight = Geo.PaddleHeight,
-                modifier = Modifier.focusRequester(paramsFocus)
-            )
-            GeoKey(
-                onClick = onMasks,
-                enabled = source != null,
-                icon = LucideIcons.Scan,
-                label = "遮罩",
-                minWidth = Geo.SquareKey,
-                minHeight = Geo.PaddleHeight,
-                modifier = Modifier.focusRequester(masksFocus)
-            )
+    val entries: @Composable (Modifier) -> Unit = { entryModifier ->
+        Row(
+            entryModifier,
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Geo.Gap)
+        ) {
+            Box(
+                Modifier
+                    .clickable(onClick = onConnection)
+                    .heightIn(min = Geo.Touch)
+                    .padding(horizontal = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                GeoLamp(connectionText, connectionTone)
+            }
+            Spacer(Modifier.weight(1f))
+            GeoIconKey(LucideIcons.CircleHelp, "使用帮助", onHelp, modifier = Modifier.focusRequester(helpFocus))
+            GeoIconKey(LucideIcons.Settings, "全局设置", onSettings, modifier = Modifier.focusRequester(settingsFocus))
+            GeoIconKey(LucideIcons.UserRound, "账号菜单", onAccount, modifier = Modifier.focusRequester(accountFocus))
         }
     }
-    Column(
+    Row(
         modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = Geo.ScreenPadding, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(Geo.Gap)
+            .heightIn(min = Geo.StatusBar)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            // 工作区外层已经有 16dp 页边距：这里不再叠加，否则右段会与上方来源列表错开 16dp。
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Geo.Gap)
     ) {
+        readouts(Modifier.weight(1f))
         if (wide) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
-                readouts(Modifier.width(360.dp))
-                keys(Modifier.weight(1f))
-            }
+            // 与上方「来源列表」同宽：上下分界因此对齐。
+            Box(Modifier.width(Geo.SourceRail)) { entries(Modifier.fillMaxWidth()) }
         } else {
-            readouts(Modifier.fillMaxWidth())
-            keys(Modifier.fillMaxWidth())
+            entries(Modifier)
         }
     }
 }
@@ -337,66 +387,6 @@ private fun Readout(label: String, value: String, unit: String?, modifier: Modif
                 Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             }
         }
-    }
-}
-
-/**
- * 状态带：参数摘要与技术标识，右端放应用级入口（连接状态、帮助、设置、账号）。
- *
- * owner 要求不留头部标题行、把高度让给画面，所以应用级入口落在这一行里。
- * 运行状态（运行中只读 / 已停止）只在预览标题行说一次，这里不再重复。
- */
-@Composable
-fun ParameterStrip(
-    source: SourceView?,
-    connectionText: String,
-    connectionTone: GeoLampTone,
-    onParams: (ParamAnchor) -> Unit,
-    onConnection: () -> Unit,
-    onHelp: () -> Unit,
-    onSettings: () -> Unit,
-    onAccount: () -> Unit,
-    helpFocus: FocusRequester,
-    settingsFocus: FocusRequester,
-    accountFocus: FocusRequester,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = Geo.StatusBar)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(start = Geo.ScreenPadding, end = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(
-            Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Geo.Gap)
-        ) {
-            // 推理后端是技术标识而不是实时读数：放在摘要行里，长名字不再被读数格截断。
-            source?.state?.backend?.takeIf { it.isNotEmpty() }?.let { backend ->
-                Text(
-                    "后端 $backend",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1
-                )
-            }
-            source?.let { view ->
-                StripItem("置信度", "${view.params.confidencePercent}%") { onParams(ParamAnchor.MACHINES) }
-                StripItem("采样", "${view.params.targetFps} FPS") { onParams(ParamAnchor.MACHINES) }
-                StripItem("冷却", "${view.params.cooldownSeconds} 秒") { onParams(ParamAnchor.MACHINES) }
-                StripItem(null, ModelKeys.displayName(view.params.modelKey)) { onParams(ParamAnchor.MODELS) }
-                StripItem(null, "${view.params.watchedClasses.size} 个目标") { onParams(ParamAnchor.TARGETS) }
-            }
-        }
-        Box(Modifier.clickable(onClick = onConnection).padding(horizontal = 8.dp)) {
-            GeoLamp(connectionText, connectionTone)
-        }
-        GeoIconKey(LucideIcons.CircleHelp, "使用帮助", onHelp, modifier = Modifier.focusRequester(helpFocus))
-        GeoIconKey(LucideIcons.Settings, "全局设置", onSettings, modifier = Modifier.focusRequester(settingsFocus))
-        GeoIconKey(LucideIcons.UserRound, "账号菜单", onAccount, modifier = Modifier.focusRequester(accountFocus))
     }
 }
 

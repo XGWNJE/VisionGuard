@@ -33,6 +33,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,9 +75,11 @@ object Geo {
     val SquareKey = 56.dp
     val PressShift = 3.dp
 
-    /** 横屏底部两条：控制带（读数 + 启停 + 方键）与状态带（参数摘要 + 应用入口）。 */
-    val ControlBar = 72.dp
-    val StatusBar = 48.dp
+    /** 横屏右侧来源轨宽度：底部状态带右段用同一常量，两处分界因此对齐。 */
+    val SourceRail = 300.dp
+
+    /** 底部状态带：仪表读数 + 参数摘要 + 应用级入口，横屏按上方的分界切成两段。 */
+    val StatusBar = 64.dp
 
     /** 来源行：紧凑两行，4 路以上仍能同屏。 */
     val SourceRow = 64.dp
@@ -332,8 +335,7 @@ fun GeoHint(text: String, tone: GeoLampTone = GeoLampTone.Neutral, modifier: Mod
 
 /** 分区标题：`01 / 采样频率` 与右侧边界说明。 */
 @Composable
-fun GeoSectionLabel(index: String?, title: String, trailing: String? = null, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+fun GeoSectionLabel(index: String?, title: String, trailing: String? = null, modifier: Modifier = Modifier) {    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
         if (index != null) {
             Text(index, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.width(6.dp))
@@ -348,6 +350,21 @@ fun GeoSectionLabel(index: String?, title: String, trailing: String? = null, mod
             Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1)
         }
     }
+}
+
+/** 参数说明跳转：由抽屉层提供实现，深层区块直接放「?」入口。 */
+val LocalGeoHelp = compositionLocalOf<(String) -> Unit> { {} }
+
+/** 参数说明入口：点「?」把帮助条目标题交给抽屉层，由主界面切到帮助页。 */
+@Composable
+fun HelpTopicKey(topic: String, modifier: Modifier = Modifier) {
+    val onHelp = LocalGeoHelp.current
+    GeoIconKey(
+        LucideIcons.CircleHelp,
+        "说明：$topic",
+        onClick = { onHelp(topic) },
+        modifier = modifier
+    )
 }
 
 /** 字段标签。 */

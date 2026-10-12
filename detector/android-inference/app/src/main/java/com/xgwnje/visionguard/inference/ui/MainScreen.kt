@@ -42,24 +42,22 @@ import com.xgwnje.visionguard.inference.runtime.MessageTone
 import com.xgwnje.visionguard.inference.runtime.RuntimeUiState
 import com.xgwnje.visionguard.inference.source.SourceCaptureMode
 import com.xgwnje.visionguard.inference.source.SourceView
-import com.xgwnje.visionguard.inference.ui.geo.ActionDeck
+import com.xgwnje.visionguard.inference.ui.geo.EditorPage
 import com.xgwnje.visionguard.inference.ui.geo.Geo
 import com.xgwnje.visionguard.inference.ui.geo.GeoDivider
 import com.xgwnje.visionguard.inference.ui.geo.GeoHelpDrawer
 import com.xgwnje.visionguard.inference.ui.geo.GeoHint
 import com.xgwnje.visionguard.inference.ui.geo.GeoLampTone
-import com.xgwnje.visionguard.inference.ui.geo.GeoMaskDrawer
 import com.xgwnje.visionguard.inference.ui.geo.GeoMessageRibbon
 import com.xgwnje.visionguard.inference.ui.geo.GeoModal
-import com.xgwnje.visionguard.inference.ui.geo.GeoParameterDrawer
+import com.xgwnje.visionguard.inference.ui.geo.GeoSourceDrawer
 import com.xgwnje.visionguard.inference.ui.geo.MockWorkspaceData
 import com.xgwnje.visionguard.inference.ui.geo.ParamAnchor
-import com.xgwnje.visionguard.inference.ui.geo.ParamSection
 import com.xgwnje.visionguard.inference.ui.geo.UiPreviewFlags
 import com.xgwnje.visionguard.inference.ui.geo.GeoSettingsDrawer
-import com.xgwnje.visionguard.inference.ui.geo.ParameterStrip
 import com.xgwnje.visionguard.inference.ui.geo.PreviewComposition
 import com.xgwnje.visionguard.inference.ui.geo.SourceCarriage
+import com.xgwnje.visionguard.inference.ui.geo.StatusBar
 import kotlinx.coroutines.launch
 
 private enum class Overlay { NONE, SETTINGS, HELP }
@@ -86,12 +84,15 @@ fun MainScreen(
     val media by runtime.mediaState.collectAsState()
 
     var overlay by remember { mutableStateOf(Overlay.NONE) }
-    var parameterEditorFor by remember { mutableStateOf<String?>(null) }
-    var maskEditorFor by remember { mutableStateOf<String?>(null) }
+    // 来源、检测参数与遮罩合并成一个抽屉：记住为哪个来源打开、停在哪一页。
+    var editorFor by remember { mutableStateOf<String?>(null) }
+    var editorPage by remember { mutableStateOf(EditorPage.SOURCE) }
     var shutterHidden by remember { mutableStateOf(false) }
-    var paramSection by remember { mutableStateOf(ParamSection.DETECTION) }
     var paramAnchor by remember { mutableStateOf<ParamAnchor?>(null) }
     var busySourceId by remember { mutableStateOf<String?>(null) }
+    var stoppingAll by remember { mutableStateOf(false) }
+    // 参数旁的「?」跳帮助页时展开的条目标题。
+    var helpTopic by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     val nowWallMs = rememberSecondTick()
@@ -106,8 +107,6 @@ fun MainScreen(
     val helpFocus = remember { FocusRequester() }
     val settingsFocus = remember { FocusRequester() }
     val accountFocus = remember { FocusRequester() }
-    val paramsFocus = remember { FocusRequester() }
-    val masksFocus = remember { FocusRequester() }
     val addFocus = remember { FocusRequester() }
     var callerFocus by remember { mutableStateOf<FocusRequester?>(null) }
     val restoreFocus: () -> Unit = {
@@ -140,11 +139,10 @@ fun MainScreen(
         Modifier
             .fillMaxSize()
             .onPreviewKeyEvent { event ->
-                val modalOpen = overlay != Overlay.NONE || parameterEditorFor != null || maskEditorFor != null
+                val modalOpen = overlay != Overlay.NONE || editorFor != null
                 // 有确认框开着时只让确认框自己处理 Escape，避免一次按键把抽屉也关掉。
                 if (modalOpen && GeoModal.confirmDepth == 0 && event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
-                    parameterEditorFor = null
-                    maskEditorFor = null
+                    editorFor = null
                     closeOverlay()
                     true
                 } else {
@@ -175,10 +173,11 @@ fun MainScreen(
                         state = state,
                         selected = selected,
                         wide = wide,
-                        busy = selected != null && busySourceId == selected.sourceId,
+                        busySourceId = busySourceId,
                         shutterHidden = shutterHidden,
                         nowElapsedMs = nowElapsedMs,
                         maxSources = maxSources,
+                        stoppingAll = stoppingAll,
                         onSelect = runtime::selectSource,
                         onAdd = {
                             callerFocus = addFocus
@@ -190,46 +189,44 @@ fun MainScreen(
                         onToggleShutter = { shutterHidden = !shutterHidden },
                         onSourceInspect = { id ->
                             runtime.selectSource(id)
-                            callerFocus = paramsFocus
-                            paramSection = ParamSection.SOURCE
+                            editorPage = EditorPage.SOURCE
                             paramAnchor = null
-                            parameterEditorFor = id
+                            editorFor = id
                         },
-                        onToggle = {
-                            val source = selected
-                            if (source != null && busySourceId == null) {
-                                busySourceId = source.sourceId
+                        onToggleSource = { id ->
+                            if (busySourceId == null) {
+                                busySourceId = id
                                 scope.launch {
-                                    val failure = onToggleSource(source.sourceId)
+                                    val failure = onToggleSource(id)
                                     if (failure != null) runtime.setMessage(failure, MessageTone.Warning)
                                     busySourceId = null
                                 }
                             }
                         },
-                        onParams = {
-                            callerFocus = paramsFocus
-                            paramSection = ParamSection.DETECTION
-                            paramAnchor = ParamAnchor.MACHINES
-                            parameterEditorFor = selected?.sourceId
+                        onStopAll = {
+                            if (!stoppingAll) {
+                                stoppingAll = true
+                                scope.launch {
+                                    runtime.stopAll()
+                                    stoppingAll = false
+                                }
+                            }
                         },
-                        onMasks = { callerFocus = masksFocus; maskEditorFor = selected?.sourceId },
                         connectionText = connectionText,
                         connectionTone = connectionTone,
                         onConnection = { callerFocus = settingsFocus; overlay = Overlay.SETTINGS },
-                        onHelp = { callerFocus = helpFocus; overlay = Overlay.HELP },
+                        onHelp = { callerFocus = helpFocus; helpTopic = null; overlay = Overlay.HELP },
                         onSettings = { callerFocus = settingsFocus; overlay = Overlay.SETTINGS },
                         onAccount = { callerFocus = accountFocus; overlay = Overlay.SETTINGS },
                         helpFocus = helpFocus,
                         settingsFocus = settingsFocus,
                         accountFocus = accountFocus,
-                        paramsFocus = paramsFocus,
-                        masksFocus = masksFocus,
                         addFocus = addFocus,
                         onParamAnchor = { anchor ->
-                            callerFocus = paramsFocus
-                            paramSection = ParamSection.DETECTION
+                            callerFocus = null
                             paramAnchor = anchor
-                            parameterEditorFor = state.selectedSourceId
+                            editorPage = EditorPage.DETECTION
+                            editorFor = state.selectedSourceId
                         }
                     )
                 }
@@ -248,62 +245,68 @@ fun MainScreen(
                 onMessage = onMessage,
                 onOpenParams = {
                     overlay = Overlay.NONE
-                    callerFocus = paramsFocus
-                    paramSection = ParamSection.DETECTION
+                    callerFocus = null
                     paramAnchor = null
-                    parameterEditorFor = state.selectedSourceId
+                    editorPage = EditorPage.DETECTION
+                    editorFor = state.selectedSourceId
                 }
             )
     
-            Overlay.HELP -> GeoHelpDrawer(onClose = closeOverlay)
+            Overlay.HELP -> GeoHelpDrawer(initialTopic = helpTopic, onClose = { helpTopic = null; closeOverlay() })
     
             Overlay.NONE -> Unit
         }
     
-        val editingParams = state.sources.firstOrNull { it.sourceId == parameterEditorFor }
-        if (editingParams != null) {
-            GeoParameterDrawer(
-                source = editingParams,
+        // 正在编辑的来源被移除（远程解绑或本机删除）时收起抽屉，不留一个空壳在屏幕上。
+        LaunchedEffect(state.sources.map { it.sourceId }, editorFor) {
+            if (editorFor != null && state.sources.none { it.sourceId == editorFor }) {
+                editorFor = null
+                paramAnchor = null
+            }
+        }
+
+        val editing = state.sources.firstOrNull { it.sourceId == editorFor }
+        if (editing != null) {
+            GeoSourceDrawer(
+                source = editing,
                 nowWallMs = nowWallMs,
                 nowElapsedMs = nowElapsedMs,
-                initialSection = paramSection,
+                initialPage = editorPage,
                 scrollTo = paramAnchor,
                 models = state.models,
                 downloads = state.downloads,
                 gpuAvailable = state.gpuAvailable,
                 usedModelKeys = state.sources.filter { it.state.isRunning }.map { it.params.modelKey }.toSet(),
-                onDismiss = { parameterEditorFor = null; paramAnchor = null; restoreFocus() },
-                onRename = { runtime.renameSource(editingParams.sourceId, it) },
-                onSetLens = { runtime.setCameraLensFacing(editingParams.sourceId, it) },
+                maskFrame = editing.state.preview,
+                maskRunning = editing.state.isRunning,
+                onDismiss = { editorFor = null; paramAnchor = null; restoreFocus() },
+                onRename = { runtime.renameSource(editing.sourceId, it) },
+                onSetLens = { runtime.setCameraLensFacing(editing.sourceId, it) },
                 onDelete = {
                     scope.launch {
-                        runtime.removeSource(editingParams.sourceId)?.let(runtime::setMessage)
-                        parameterEditorFor = null
+                        runtime.removeSource(editing.sourceId)?.let(runtime::setMessage)
+                        editorFor = null
                     }
                 },
                 onDownloadModel = { runtime.downloadModel(it) },
                 onDeleteModel = { runtime.deleteModel(it) },
                 onSave = { params ->
-                    val failure = runtime.updateParams(editingParams.sourceId, params)
-                    if (failure == null) parameterEditorFor = null
+                    val failure = runtime.updateParams(editing.sourceId, params)
+                    if (failure == null) editorFor = null
                     failure
                 },
-                onMessage = onMessage
-            )
-        }
-    
-        val editingMasks = state.sources.firstOrNull { it.sourceId == maskEditorFor }
-        if (editingMasks != null) {
-            GeoMaskDrawer(
-                sourceName = editingMasks.sourceName,
-                frame = editingMasks.state.preview,
-                initial = editingMasks.masks,
-                running = editingMasks.state.isRunning,
-                onDismiss = { maskEditorFor = null; restoreFocus() },
-                onSave = { masks ->
-                    val failure = runtime.updateMasks(editingMasks.sourceId, masks)
-                    if (failure == null) maskEditorFor = null
+                onSaveMasks = { masks ->
+                    val failure = runtime.updateMasks(editing.sourceId, masks)
+                    if (failure == null) editorFor = null
                     failure
+                },
+                onHelp = { topic ->
+                    // 参数说明跳帮助页：先收起来源抽屉，再展开对应条目。
+                    editorFor = null
+                    paramAnchor = null
+                    helpTopic = topic
+                    callerFocus = helpFocus
+                    overlay = Overlay.HELP
                 },
                 onMessage = onMessage
             )
@@ -311,25 +314,25 @@ fun MainScreen(
     }
 }
 
-/** 工作区：预览、来源滑架、操作台与技术信息带。 */
+/** 工作区：上两栏（预览 / 来源列表）+ 底部状态带；上下用同一组宽度，分界严格对齐。 */
 @Composable
 private fun Workspace(
     state: RuntimeUiState,
     selected: SourceView?,
     wide: Boolean,
-    busy: Boolean,
+    busySourceId: String?,
     shutterHidden: Boolean,
     nowElapsedMs: Long,
     maxSources: Int,
+    stoppingAll: Boolean,
     onSelect: (String) -> Unit,
     onAdd: () -> Unit,
     addBlockedReason: String?,
     onToggleShutter: () -> Unit,
     onSourceInspect: (String) -> Unit,
+    onToggleSource: (String) -> Unit,
+    onStopAll: () -> Unit,
     onParamAnchor: (ParamAnchor) -> Unit,
-    onToggle: () -> Unit,
-    onParams: () -> Unit,
-    onMasks: () -> Unit,
     connectionText: String,
     connectionTone: GeoLampTone,
     onConnection: () -> Unit,
@@ -339,8 +342,6 @@ private fun Workspace(
     helpFocus: FocusRequester,
     settingsFocus: FocusRequester,
     accountFocus: FocusRequester,
-    paramsFocus: FocusRequester,
-    masksFocus: FocusRequester,
     addFocus: FocusRequester
 ) {
     val freshness = when {
@@ -350,6 +351,7 @@ private fun Workspace(
         selected.state.preview != null -> "已停止 · 最后一帧（${relativeAge(selected.state.lastProgressAtMs, nowElapsedMs)}）"
         else -> "已停止 · 暂无画面"
     }
+    val anyRunning = state.sources.any { it.state.isRunning }
     Column(
         Modifier.fillMaxSize().padding(Geo.ScreenPadding),
         verticalArrangement = Arrangement.spacedBy(Geo.Gap)
@@ -368,12 +370,17 @@ private fun Workspace(
                     selectedSourceId = state.selectedSourceId,
                     maxSources = maxSources,
                     nowElapsedMs = nowElapsedMs,
+                    busySourceId = busySourceId,
+                    anyRunning = anyRunning,
+                    stoppingAll = stoppingAll,
                     onSelect = onSelect,
                     onInspect = onSourceInspect,
+                    onToggle = onToggleSource,
+                    onStopAll = onStopAll,
                     onAdd = onAdd,
                     addBlockedReason = addBlockedReason,
                     addFocus = addFocus,
-                    modifier = Modifier.width(300.dp).fillMaxHeight()
+                    modifier = Modifier.width(Geo.SourceRail).fillMaxHeight()
                 )
             }
         } else {
@@ -389,28 +396,25 @@ private fun Workspace(
                 selectedSourceId = state.selectedSourceId,
                 maxSources = maxSources,
                 nowElapsedMs = nowElapsedMs,
+                busySourceId = busySourceId,
+                anyRunning = anyRunning,
+                stoppingAll = stoppingAll,
                 onSelect = onSelect,
                 onInspect = onSourceInspect,
+                onToggle = onToggleSource,
+                onStopAll = onStopAll,
                 onAdd = onAdd,
+                addBlockedReason = addBlockedReason,
                 addFocus = addFocus,
                 modifier = Modifier.fillMaxWidth().height(220.dp)
             )
         }
-        ActionDeck(
+        StatusBar(
             source = selected,
-            busy = busy,
             wide = wide,
-            onToggle = onToggle,
-            onParams = onParams,
-            onMasks = onMasks,
-            paramsFocus = paramsFocus,
-            masksFocus = masksFocus
-        )
-        ParameterStrip(
-            source = selected,
             connectionText = connectionText,
             connectionTone = connectionTone,
-            onParams = onParamAnchor,
+            onParamAnchor = onParamAnchor,
             onConnection = onConnection,
             onHelp = onHelp,
             onSettings = onSettings,
