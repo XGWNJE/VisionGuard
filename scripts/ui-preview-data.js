@@ -9,9 +9,20 @@ fs.mkdirSync(HERE, {recursive:true});
 const WebSocket = require(path.join(root, 'server/node_modules/ws'));
 const http = require('node:http');
 const zlib = require('node:zlib');
-const origin = 'http://127.0.0.1:4318';
-const account = JSON.parse(fs.readFileSync(path.join(root, '.local/e2e-server/console-preview/test-accounts.json'), 'utf8')).find(a => a.username === 'vg-test');
-const manifestPath = path.join(HERE, 'preview-manifest.json');
+// 服务地址与账号文件由 ui-preview.ps1 递进来：命令行优先（长驻进程用 WMI 完全脱离控制台启动，
+// 拿不到父进程环境变量），其次环境变量，最后回落到旧固定端口与旧目录。
+const argument = name => { const index = process.argv.indexOf(name); return index >= 0 ? process.argv[index + 1] : undefined; };
+const origin = (argument('--endpoint') || process.env.VISIONGUARD_PREVIEW_ENDPOINT || 'http://127.0.0.1:4318').replace(/\/$/, '');
+const accountsFile = (() => {
+  const configured = argument('--accounts') || process.env.VISIONGUARD_PREVIEW_ACCOUNTS_FILE;
+  if (configured && configured.trim()) return path.isAbsolute(configured) ? configured : path.join(root, configured);
+  return path.join(root, '.local/e2e-server/console-preview/test-accounts.json');
+})();
+const account = JSON.parse(fs.readFileSync(accountsFile, 'utf8')).find(a => a.username === 'vg-test');
+// 通道与状态目录从账号文件反推：本地服务固定用 local-service，不再与旧 console-preview 目录绑死。
+const channel = path.basename(path.dirname(accountsFile));
+const stateRoot = path.join(root, '.local/e2e-server', channel);
+const manifestPath = path.join(stateRoot, 'preview-manifest.json');
 const previous = fs.existsSync(manifestPath) ? JSON.parse(fs.readFileSync(manifestPath, 'utf8')) : {devices:{}, alertIds:[]};
 const manifest = {devices:{}, alertIds:previous.alertIds};
 const clients = [];
@@ -30,7 +41,7 @@ const specs = [
   {key:'tablet', component:'android-notifier', name:'【模拟】备用平板（离线）', offline:true},
 ];
 if (!Object.keys(previous.devices).length) {
-  const store=JSON.parse(fs.readFileSync(path.join(root,'.local/e2e-server/console-preview/accounts.json'),'utf8'));
+  const store=JSON.parse(fs.readFileSync(path.join(stateRoot,'accounts.json'),'utf8'));
   const accountId=store.accounts.find(a=>a.username===account.username).accountId;
   for(const spec of specs){const device=store.devices.find(d=>d.accountId===accountId&&d.deviceName===spec.name&&d.component===spec.component);if(device)previous.devices[spec.key]=device.deviceId;}
   const controller=store.devices.find(d=>d.accountId===accountId&&d.component==='web-console'&&d.deviceName.startsWith('preview-controller-'));if(controller)previous.devices.controller=controller.deviceId;
@@ -54,7 +65,7 @@ class Peer {
       {id:'system-default',name:'系统默认闹钟',mutable:false},{id:'silent',name:'静音',mutable:false},
       {id:'preset:vg_notifier_preset_target_spot',name:'【模拟】监控发现目标',mutable:false},
       {id:'library:'+'a'.repeat(64),name:('【模拟】合法名称上限'.repeat(8)).slice(0,64),mutable:true}]};
-    this.ws=new WebSocket('ws://127.0.0.1:4318/ws');
+    this.ws=new WebSocket(origin.replace(/^http/, 'ws')+'/ws');
     this.ws.on('message', raw => {
       const msg=JSON.parse(raw.toString()); this.messages.push(msg); if(this.messages.length>150)this.messages.shift();
       if(msg.type==='alert' && spec?.component==='android-notifier')this.send({type:'notification-receipt',alertId:msg.alertId});
@@ -130,17 +141,17 @@ async function login(component, key) {
   sessions.push(session);return session;
 }
 async function main() {
-  const health=await api('/health');assert.equal(health.channel,'console-preview');
+  const health=await api('/health');assert.equal(health.channel,channel);
   const consoleSession=await login('web-console','controller');
   const consolePeer=await new Peer(consoleSession).ready();
   // Isolated server UI data only. No real node files or business chain are exercised.
-  const cacheDir=path.join(root,'.local/e2e-server/console-preview/accounts',consoleSession.account.accountId,'screenshots');
+  const cacheDir=path.join(stateRoot,'accounts',consoleSession.account.accountId,'screenshots');
   fs.mkdirSync(cacheDir,{recursive:true});
   for(const name of ['ui-cache-expired-123.png','ui-cache-fresh-123.png']) {
     const file=path.join(cacheDir,name);fs.writeFileSync(file,Buffer.from('iVBORw0KGgo=','base64'));
     if(name.includes('expired')){const old=new Date(Date.now()-80*3600000);fs.utimesSync(file,old,old);}
   }
-  const administrator=JSON.parse(fs.readFileSync(path.join(root,'.local/e2e-server/console-preview/initial-administrator.json'),'utf8'));
+  const administrator=JSON.parse(fs.readFileSync(path.join(stateRoot,'initial-administrator.json'),'utf8'));
   const adminSession=await loginBody({username:administrator.username,password:administrator.password,component:'web-console',deviceIdentity:require('node:crypto').createHash('sha256').update('ui-preview-admin').digest('hex'),deviceModel:'模拟浏览器',...(previous.devices.admin?{deviceId:previous.devices.admin}:{})}, 'admin');
   manifest.devices.admin=adminSession.device.deviceId;
   try {
@@ -229,7 +240,7 @@ async function setScene(mode) {
   return {simulated:true,scene:mode,account:'vg-test',nodes:6,sources:specs.reduce((n,s)=>n+(s.sources?.length||0),0)};
 }
 function startControls(){
-  const html=`<!doctype html><meta charset="utf-8"><title>VisionGuard UI 模拟场景</title><style>body{font:16px system-ui;max-width:800px;margin:40px auto;padding:24px;background:#f5f5f5;color:#202020}button{padding:12px;margin:8px;border:1px solid #ccc;border-radius:8px;background:white;cursor:pointer}pre{white-space:pre-wrap}</style><h1>VisionGuard UI 模拟场景</h1><p>仅用于界面显示检查。使用 vg-test 登录各组件；空节点和空事件使用 vg-isolation 账号。</p><button onclick="scene('normal')">普通状态</button><button onclick="scene('limits')">最大名称、每节点 16 路来源及数值边界</button><button onclick="scene('empty')">空来源</button><button onclick="event()">追加模拟报警（上限场景含 100 个目标）</button><p><a href="http://127.0.0.1:4318/console/" target="_blank">打开控制台</a></p><details><summary>可复制的名称边界</summary><p>64 字可保存</p><textarea readonly rows="3" cols="64">${'名称'.repeat(32)}</textarea><p>65 字须拒绝整段粘贴或保存</p><textarea readonly rows="3" cols="64">${'名称'.repeat(32)+'超'}</textarea></details><pre id="result">准备就绪</pre><script>async function scene(mode){const r=await fetch('/scene?mode='+mode);document.getElementById('result').textContent=await r.text()}async function event(){const r=await fetch('/event');document.getElementById('result').textContent=await r.text()}</script>`;
+  const html=`<!doctype html><meta charset="utf-8"><title>VisionGuard UI 模拟场景</title><style>body{font:16px system-ui;max-width:800px;margin:40px auto;padding:24px;background:#f5f5f5;color:#202020}button{padding:12px;margin:8px;border:1px solid #ccc;border-radius:8px;background:white;cursor:pointer}pre{white-space:pre-wrap}</style><h1>VisionGuard UI 模拟场景</h1><p>仅用于界面显示检查。使用 vg-test 登录各组件；空节点和空事件使用 vg-isolation 账号。</p><button onclick="scene('normal')">普通状态</button><button onclick="scene('limits')">最大名称、每节点 16 路来源及数值边界</button><button onclick="scene('empty')">空来源</button><button onclick="event()">追加模拟报警（上限场景含 100 个目标）</button><p><a href="${origin}/console/" target="_blank">打开控制台</a></p><details><summary>可复制的名称边界</summary><p>64 字可保存</p><textarea readonly rows="3" cols="64">${'名称'.repeat(32)}</textarea><p>65 字须拒绝整段粘贴或保存</p><textarea readonly rows="3" cols="64">${'名称'.repeat(32)+'超'}</textarea></details><pre id="result">准备就绪</pre><script>async function scene(mode){const r=await fetch('/scene?mode='+mode);document.getElementById('result').textContent=await r.text()}async function event(){const r=await fetch('/event');document.getElementById('result').textContent=await r.text()}</script>`;
   controlServer=http.createServer(async(req,res)=>{
     try{
       const url=new URL(req.url,'http://127.0.0.1:4319');

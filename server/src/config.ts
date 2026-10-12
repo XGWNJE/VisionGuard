@@ -94,6 +94,18 @@ export const config = {
   protocolGate: process.env.VISIONGUARD_PROTOCOL_GATE === undefined
     ? process.env.NODE_ENV === 'production'
     : process.env.VISIONGUARD_PROTOCOL_GATE === '1',
+
+  /** 局域网信标：只有本地服务实例设置 `VISIONGUARD_LAN_BEACON=1`，生产实例不广播。 */
+  lanBeacon: process.env.VISIONGUARD_LAN_BEACON === '1',
+
+  /** 信标目标 UDP 端口；与 android-shared 的 LocalServiceDiscovery 常量一致。 */
+  lanBeaconPort: parsePositiveIntEnv('VISIONGUARD_LAN_BEACON_PORT', 45899, 1024, 65535),
+
+  /**
+   * 本地发行覆盖层路径：只有本地服务实例设置，放本地构建的夹具组件包；
+   * 为空表示线上实例，`/api/local/releases` 返回 404，`/api/update` 只读跟踪的 releases.json。
+   */
+  localReleasesFile: (process.env.VISIONGUARD_LOCAL_RELEASES_FILE || '').trim(),
 } as const;
 
 export function validateConfig(): void {

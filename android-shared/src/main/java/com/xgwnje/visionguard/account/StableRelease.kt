@@ -18,7 +18,19 @@ object StableReleasePolicy {
         requireNotNull(version(installed)) { "当前客户端版本无效" }
     ) > 0
     private fun time(value: String) = runCatching { Instant.parse(value) }.getOrNull()
-    fun select(releases: List<StableRelease>, installed: String, client: String): ClientUpdate? {
+
+    /**
+     * 本地服务版：只接受与当前本地服务同源的 `/releases/<资产名>`，其余仍走 GitHub 校验。
+     * 同源判断含 scheme、host、port 三项，避免把别的服务或别的主机的包当成自己的。
+     */
+    fun acceptsLocalAsset(url: String, base: String, name: String): Boolean {
+        val asset = runCatching { URI(url) }.getOrNull() ?: return false
+        val origin = runCatching { URI(base) }.getOrNull() ?: return false
+        return asset.scheme == "http" && asset.host == origin.host && asset.port == origin.port &&
+            asset.userInfo == null && asset.query == null && asset.path == "/releases/$name"
+    }
+
+    fun select(releases: List<StableRelease>, installed: String, client: String, localBase: String? = null): ClientUpdate? {
         val current = requireNotNull(version(installed)) { "当前客户端版本无效" }
         val prefix = when (client) {
             "android-camera" -> "VisionGuard-Detector-v"
@@ -35,10 +47,13 @@ object StableReleasePolicy {
             val name = "$prefix$number.apk"; val assets = release.assets.filter { it.name == name }
             if (assets.isEmpty()) continue
             require(assets.size == 1) { "发行文件重复" }
-            val asset = assets.single(); val uri = runCatching { URI(asset.url) }.getOrNull()
-            require(asset.state == "uploaded" && asset.size in 1..512L * 1024 * 1024 && Regex("sha256:[0-9a-fA-F]{64}").matches(asset.digest)
-                && uri?.scheme == "https" && uri.host == "github.com" && uri.userInfo == null && uri.port == -1
-                && uri.path == "/$REPOSITORY/releases/download/${release.tag}/$name") { "GitHub 发行文件元数据不完整或不可信" }
+            val asset = assets.single()
+            require(asset.state == "uploaded" && asset.size in 1..512L * 1024 * 1024 && Regex("sha256:[0-9a-fA-F]{64}").matches(asset.digest)) { "发行文件元数据不完整" }
+            if (localBase == null || !acceptsLocalAsset(asset.url, localBase, name)) {
+                val uri = runCatching { URI(asset.url) }.getOrNull()
+                require(uri?.scheme == "https" && uri.host == "github.com" && uri.userInfo == null && uri.port == -1
+                    && uri.path == "/$REPOSITORY/releases/download/${release.tag}/$name") { "GitHub 发行文件元数据不完整或不可信" }
+            }
             return ClientUpdate(number, asset)
         }
         return null

@@ -22,6 +22,8 @@ import { cleanupExpiredAlerts } from './services/AlertStore';
 import screenshotRouter from './routes/screenshot';
 import cacheRouter from './routes/cache';
 import updateRouter from './routes/update';
+import localReleasesRouter from './routes/localReleases';
+import { startLanBeacon } from './services/LanBeacon';
 import accountRouter from './routes/account';
 import { createApiLimiter } from './middleware/rateLimit';
 import { accountStore } from './services/AccountStore';
@@ -63,6 +65,8 @@ app.use(alertsQueryRouter);
 app.use(screenshotRouter);
 app.use(cacheRouter);
 app.use(updateRouter);
+// 本地服务实例的发行源：GitHub 发行形状，客户端在本地服务版里用它替代 api.github.com；线上实例 404。
+app.use(localReleasesRouter);
 app.use(accountRouter);
 app.use(streamsRouter);
 
@@ -132,4 +136,6 @@ server.listen(config.port, config.host, () => {
   console.log(`[server] 报警记录 TTL: ${config.alertTtlHours} 小时`);
   console.log(`[server] WS 最大连接数: ${config.maxWsConnections}`);
   console.log(`[server] 检测节点幽灵阈值: ${config.deviceOfflineMs / 1000}s / 控制台: ${config.receiverGhostThresholdMs / 1000}s`);
+  // 本地服务实例广播发现信标，Android 端据此自动识别地址与端口；生产实例不广播。
+  if (config.lanBeacon) startLanBeacon({ port: config.lanBeaconPort, channel: config.channelId, servicePort: config.port, version: config.version });
 });

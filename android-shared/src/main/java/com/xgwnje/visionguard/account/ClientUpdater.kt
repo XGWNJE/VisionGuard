@@ -55,14 +55,17 @@ class ClientUpdater(context: Context, private val client: String) {
     }
     @Synchronized fun check() {
         if (closed || mutable.value.busy) return
-        mutable.value = mutable.value.copy(busy = true, message = "正在检查 GitHub 稳定版…")
+        // 本地服务版：发行列表与组件包都由本地服务提供，离线也能演练更新；正式包仍查 GitHub 稳定发行。
+        val localBase = PreviewSignIn.localUpdateBase
+        mutable.value = mutable.value.copy(busy = true, message = if (localBase == null) "正在检查 GitHub 稳定版…" else "正在检查本地服务发行…")
         cancelled = false
         job = scope.launch { operations.withLock {
             try {
                 val installed = installedVersion()
                 val releases = mutableListOf<StableRelease>()
                 for (page in 1..10) {
-                    val request = Request.Builder().url("https://api.github.com/repos/${StableReleasePolicy.REPOSITORY}/releases?per_page=100&page=$page").header("User-Agent", "VisionGuard/$installed").header("Accept", "application/vnd.github+json").build()
+                    val url = if (localBase == null) "https://api.github.com/repos/${StableReleasePolicy.REPOSITORY}/releases?per_page=100&page=$page" else "$localBase/api/local/releases?per_page=100&page=$page"
+                    val request = Request.Builder().url(url).header("User-Agent", "VisionGuard/$installed").header("Accept", "application/vnd.github+json").build()
                     val rows = execute(request).use { response ->
                         check(response.isSuccessful) { "检查失败（HTTP ${response.code}）" }
                         val body = response.body ?: error("发行列表为空")
@@ -80,7 +83,7 @@ class ClientUpdater(context: Context, private val client: String) {
                     if (rows.length() < 100) break
                     check(page < 10) { "发行列表过长，无法完整判断版本" }
                 }
-                val update = StableReleasePolicy.select(releases, installedVersion(), client)
+                val update = StableReleasePolicy.select(releases, installedVersion(), client, localBase)
                 val ready = update != null && file(update).exists() && runCatching { verify(file(update), update) }
                     .onFailure { check(!cancelled && !closed) { "已取消" } }.isSuccess
                 complete(UpdateState(update = update, ready = ready, bytes = if (ready) update.asset.size else 0,

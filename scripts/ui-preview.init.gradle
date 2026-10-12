@@ -4,21 +4,32 @@ if (tasks.any { it.contains('publish') || it.contains('bundle') }) {
     throw new GradleException('UI preview builds cannot publish or bundle an application.')
 }
 
-// 预览包内置本机隔离服务的地址与预览账号，应用启动即静默登录（见 android-shared 的 PreviewSignIn）。
-// 凭据只从隔离服务生成的忽略文件读取，不进版本库；文件不存在时注入空串，应用回落到登录页。
-// 地址默认 http://127.0.0.1:4318（真机靠 adb reverse 打通），可用 VISIONGUARD_PREVIEW_ENDPOINT 覆盖。
+// 预览包内置本地服务的通道、地址与预览账号，应用启动先在局域网找服务、再静默登录（见 android-shared
+// 的 PreviewSignIn 与 LocalServiceDiscovery）。凭据只从本地服务生成的忽略文件读取，不进版本库；
+// 文件不存在时注入空串，应用回落到登录页。地址默认 http://127.0.0.1:4318，账号文件默认
+// console-preview 实例；两者都由 scripts/ui-preview.ps1 按当前端点清单传入覆盖，因此真机包直接
+// 指向局域网地址、并在服务换端口后自动跟随，不再需要 adb reverse 或重新构建。
+def resolveAccountsFile = { repository ->
+    def configured = System.getenv('VISIONGUARD_PREVIEW_ACCOUNTS_FILE')
+    if (configured != null && !configured.trim().isEmpty()) {
+        def candidate = new File(configured.trim())
+        return candidate.isAbsolute() ? candidate : new File(repository, configured.trim())
+    }
+    return new File(repository, '.local/e2e-server/console-preview/test-accounts.json')
+}
 def previewEndpoint = { ->
     def value = System.getenv('VISIONGUARD_PREVIEW_ENDPOINT')
     return (value == null || value.trim().isEmpty()) ? 'http://127.0.0.1:4318' : value.trim()
 }
 def previewAccount = { repository ->
-    def empty = [endpoint: '', username: '', password: '']
+    def empty = [endpoint: '', username: '', password: '', channel: '']
     try {
-        def accountsFile = new File(repository, '.local/e2e-server/console-preview/test-accounts.json')
+        def accountsFile = resolveAccountsFile(repository)
         if (!accountsFile.isFile()) return empty
         def account = new groovy.json.JsonSlurper().parse(accountsFile).find { it.username == 'vg-test' }
         if (account == null) return empty
-        return [endpoint: previewEndpoint(), username: account.username, password: account.password]
+        // 通道名取账号文件所在目录：客户端只认与它同一个通道的本地服务信标。
+        return [endpoint: previewEndpoint(), username: account.username, password: account.password, channel: accountsFile.parentFile.name]
     } catch (Exception ignored) {
         return empty
     }
@@ -42,6 +53,7 @@ allprojects {
             '<string name="preview_endpoint" translatable="false">' + xmlText(account.endpoint) + '</string>' +
             '<string name="preview_username" translatable="false">' + xmlText(account.username) + '</string>' +
             '<string name="preview_password" translatable="false">' + xmlText(account.password) + '</string>' +
+            '<string name="preview_channel" translatable="false">' + xmlText(account.channel) + '</string>' +
             '</resources>'
         new File(previewResources, 'strings.xml').setText(strings, 'UTF-8')
         p.android.sourceSets.release.res.srcDir(previewResources.parentFile)

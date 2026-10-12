@@ -117,7 +117,7 @@ test('console keeps a browser-camera entry in settings', () => {
 
 test('preview builds carry the isolated sign-in while release packages stay clean', () => {
   const gradle = fs.readFileSync(path.join(root, 'scripts/ui-preview.init.gradle'), 'utf8');
-  const previewKeys = ['preview_endpoint', 'preview_username', 'preview_password'];
+  const previewKeys = ['preview_endpoint', 'preview_username', 'preview_password', 'preview_channel'];
   // 预览构建注入三件套；正式构建没有这一步，应用回落到登录页。
   for (const key of previewKeys) {
     assert.match(gradle, new RegExp(`name="${key}"`), `ui-preview.init.gradle 没有注入 ${key}`);
@@ -164,4 +164,12 @@ test('preview builds carry the isolated sign-in while release packages stay clea
   // 停在登录界面必须连会话一起清：否则应用启动会恢复已保存的会话，照样进主界面。
   const previewSignIn = fs.readFileSync(path.join(root, 'android-shared/src/main/java/com/xgwnje/visionguard/account/PreviewSignIn.kt'), 'utf8');
   assert.match(previewSignIn, /debugLoginScreen\)[\s\S]{0,400}?store\.clear\(\)/, '停在登录界面没有清除本机会话');
+  // 本地服务版先按通道做局域网发现，找不到才回落内置地址；端口每次变化靠这一步自愈。
+  assert.match(previewSignIn, /LocalServiceDiscovery\.discover\(/, '本地服务版没有做局域网自动发现');
+  assert.match(previewSignIn, /localUpdateBase/, '本地服务版没有登记本地更新源');
+  const discovery = fs.readFileSync(path.join(root, 'android-shared/src/main/java/com/xgwnje/visionguard/account/LocalServiceDiscovery.kt'), 'utf8');
+  assert.match(discovery, /const val DISCOVERY_PORT = 45899/, '发现端口必须与服务端信标端口一致');
+  const lanBeacon = fs.readFileSync(path.join(root, 'server/src/services/LanBeacon.ts'), 'utf8');
+  assert.match(lanBeacon, /visionguard-local/, '服务端信标没有写约定的 service 标识');
+  assert.match(fs.readFileSync(path.join(root, 'server/src/config.ts'), 'utf8'), /VISIONGUARD_LAN_BEACON/, '服务端配置没有读取信标开关');
 });

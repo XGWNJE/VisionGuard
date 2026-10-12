@@ -1,7 +1,8 @@
 <resources>
     <string name="app_name">相机推流节点</string>
-    <!-- 预览构建注入本机隔离服务的地址与预览账号；正式包保持空串，行为不变 -->
+    <!-- 预览构建注入本地服务通道、地址与预览账号；正式包保持空串，行为不变 -->
     <string name="preview_endpoint" translatable="false" />
     <string name="preview_username" translatable="false" />
     <string name="preview_password" translatable="false" />
+    <string name="preview_channel" translatable="false" />
 </resources>

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import path from 'path';
 import fs from 'fs';
+import { localUpdateEntries, mergeLocalReleases, readLocalReleases } from './localReleases';
 
 const router = Router();
 
@@ -28,7 +29,7 @@ router.get('/api/update', (req, res) => {
   const platform = String(req.query.platform || '').toLowerCase();
   const currentVersion = String(req.query.version || '');
 
-  // 读取 releases.json
+  // 读取 releases.json；本地服务实例再叠加本地发行覆盖层（线上实例覆盖层为空，响应逐字不变）。
   const releasesPath = path.resolve(__dirname, '..', '..', 'data', 'releases.json');
   let releases: Record<string, { version: string; url: string; size: number; sha256?: string }> = {};
   try {
@@ -36,12 +37,12 @@ router.get('/api/update', (req, res) => {
   } catch {
     return res.status(500).json({ ok: false, error: 'releases config not found' });
   }
+  releases = mergeLocalReleases(releases, localUpdateEntries(readLocalReleases()));
 
   const info = releases[resolveReleaseKey(platform)];
   if (!info) {
     return res.status(404).json({ ok: false, error: `platform not found: ${platform}` });
   }
-
   const hasUpdate = compareVersion(currentVersion, info.version) < 0;
 
   res.json({

@@ -322,8 +322,8 @@ fun AccountLogin(store: AccountStore, title: String, component: String, beforeLo
             Spacer(Modifier.width(8.dp)); Text("记住账号密码")
         }
         if (store.allowsTestEndpoint) {
-            TextButton({ advanced = !advanced }, enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text(if (advanced) "收起测试设置" else "隔离测试设置") }
-            if (advanced) OutlinedTextField(endpoint, { endpoint = it }, label = { Text("隔离服务地址") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
+            TextButton({ advanced = !advanced }, enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.textButton(contentColor = VisionGuardStatusColors.onSuccessContainer)) { Text(if (advanced) "收起本地服务设置" else "本地服务设置") }
+            if (advanced) OutlinedTextField(endpoint, { endpoint = it }, label = { Text("本地服务地址") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
             if (advanced && PreviewSignIn.available) {
                 // 预览构建默认自动登录；要调登录界面就在这里打开，之后的启动停在登录页。
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(PreviewSignIn.debugLoginScreen, enabled = !busy, role = Role.Checkbox) { checked ->

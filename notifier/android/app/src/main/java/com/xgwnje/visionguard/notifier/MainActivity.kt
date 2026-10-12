@@ -41,8 +41,8 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= 33 && !PermissionUtils.canPostNotifications(this))
             ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), PermissionUtils.REQUEST_CODE_POST_NOTIFICATIONS)
         val account = AccountStore.get(this)
-        // 预览构建内置本机隔离服务的地址与预览账号，启动即静默登录；正式包三个资源为空串，行为不变。
-        PreviewSignIn.configure(this, getString(R.string.preview_endpoint), getString(R.string.preview_username), getString(R.string.preview_password))
+        // 预览构建内置本地服务通道、地址与预览账号：启动先在局域网找服务，启动即静默登录；正式包四个资源为空串，行为不变。
+        PreviewSignIn.configure(this, getString(R.string.preview_endpoint), getString(R.string.preview_username), getString(R.string.preview_password), getString(R.string.preview_channel))
         lifecycleScope.launch { PreviewSignIn.signIn(account, "android-notifier")?.let { android.widget.Toast.makeText(this@MainActivity, it, android.widget.Toast.LENGTH_LONG).show() } }
         setContent {
             val session by account.session.collectAsState()

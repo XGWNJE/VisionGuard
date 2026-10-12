@@ -42,4 +42,17 @@ class StableReleasePolicyTest {
         assertEquals("0.10.0", StableReleasePolicy.select(listOf(release("0.10.0", 4)), "0.9.0", "android-camera")!!.version)
         for (bad in listOf("1", "1.0", "01.0.0", "1.0.0-beta", "999999999999.0.0", "-1.0.0")) assertNull(StableReleasePolicy.version(bad))
     }
+    @Test fun localServiceSourceAcceptsOnlyItsOwnReleasePath() {
+        // 本地服务版：包由本地服务提供（明文私网地址）；同源判断含 scheme、host、port 与路径四要素，
+        // 生产模式（localBase 为 null）仍然只认 GitHub 发行路径。
+        val base = "http://192.168.31.58:4321"
+        val local = release("0.7.1", 4, "Inference").let { it.copy(assets = it.assets.map { a -> a.copy(url = "$base/releases/${a.name}") }) }
+        assertEquals("0.7.1", StableReleasePolicy.select(listOf(local), "0.7.0", "android-inference", base)!!.version)
+        assertTrue(runCatching { StableReleasePolicy.select(listOf(local), "0.7.0", "android-inference") }.isFailure)
+        for (other in listOf("http://192.168.31.59:4321/releases/VisionGuard-Inference-v0.7.1.apk",
+            "https://192.168.31.58:4321/releases/VisionGuard-Inference-v0.7.1.apk",
+            "$base/releases/other.apk", "$base/other/VisionGuard-Inference-v0.7.1.apk")) {
+            assertFalse(other, StableReleasePolicy.acceptsLocalAsset(other, base, "VisionGuard-Inference-v0.7.1.apk"))
+        }
+    }
 }
