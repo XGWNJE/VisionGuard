@@ -149,4 +149,16 @@ test('preview builds carry the isolated sign-in while release packages stay clea
   const program = fs.readFileSync(path.join(root, 'detector/windows-wpf/Program.cs'), 'utf8');
   assert.match(program, /VISIONGUARD_PREVIEW_SIGNIN/);
   assert.match(program, /--login-ui/, '缺少停在登录界面的调试入口');
+  // Web 两侧（控制台与 Web 相机）同样免登录：隔离实例把凭据交给服务端，端点只服务回环请求。
+  const isolatedServer = fs.readFileSync(path.join(root, 'scripts/start-isolated-test-server.ps1'), 'utf8');
+  assert.match(isolatedServer, /VISIONGUARD_PREVIEW_SIGNIN/, '隔离测试服务没有内置预览凭据');
+  const accountRoute = fs.readFileSync(path.join(root, 'server/src/routes/account.ts'), 'utf8');
+  assert.match(accountRoute, /preview-signin/, '服务端缺少预览凭据端点');
+  assert.match(accountRoute, /isLoopbackRequest/, '预览凭据端点必须限定回环请求');
+  assert.match(fs.readFileSync(path.join(root, 'server/src/config.ts'), 'utf8'), /VISIONGUARD_PREVIEW_SIGNIN/, '服务端配置没有读取预览凭据变量');
+  for (const relative of ['receiver/web/src/main.tsx', 'detector/web/src/main.tsx']) {
+    const text = fs.readFileSync(path.join(root, relative), 'utf8');
+    assert.match(text, /bootstrapProtocolVersion\(/, `${relative} 没有在登录前就位协议版本`);
+    assert.match(text, /debugLoginScreen\(/, `${relative} 没有保留停在登录界面的调试入口`);
+  }
 });

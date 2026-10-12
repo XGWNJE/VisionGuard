@@ -14,12 +14,27 @@ export function parseBindHost(value: string | undefined): string {
   return value?.trim() || '127.0.0.1';
 }
 
+/** 解析预览内置登录；缺字段或非法 JSON 一律当作未配置。 */
+export function parsePreviewSignIn(raw: string | undefined): { username: string; password: string } | null {
+  if (!raw?.trim()) return null;
+  try {
+    const parsed = JSON.parse(raw) as { username?: unknown; password?: unknown };
+    const username = typeof parsed?.username === 'string' ? parsed.username.trim() : '';
+    const password = typeof parsed?.password === 'string' ? parsed.password : '';
+    return username && password ? { username, password } : null;
+  } catch { return null; }
+}
+
 export const config = {
   /** 本进程版本号（= 根 VERSION），用于协议版本闸门与内部诊断。 */
   version: serverVersion,
 
   /** 进程标签；账号与会话由本实例私有数据目录确定。 */
   channelId: (process.env.VISIONGUARD_CHANNEL || 'vnext').trim(),
+
+  /** 本地预览的内置登录凭据；只有隔离实例设置 `VISIONGUARD_PREVIEW_SIGNIN`，生产实例为空。
+   *  端点另外只服务回环请求，见 routes/account.ts。 */
+  previewSignIn: parsePreviewSignIn(process.env.VISIONGUARD_PREVIEW_SIGNIN),
 
   /** 运行数据根目录；测试通道必须使用独立目录。 */
   dataDir: path.resolve(process.env.VISIONGUARD_DATA_DIR || path.resolve(__dirname, '..', 'data')),

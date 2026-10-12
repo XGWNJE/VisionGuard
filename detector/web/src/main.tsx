@@ -10,6 +10,7 @@ import { ControlClient, loginCamera, type ControlPorts, type ControlSocket } fro
 import { MediaPublisher, type MediaPorts, type MediaSocket } from './media';
 import { CameraSource, listCameras, type CameraDevice } from './cameraSource';
 import { setProtocolVersion, versionHeaders } from './session';
+import { bootstrapProtocolVersion, debugLoginScreen, previewCredentials } from './previewSignIn';
 
 const SESSION_KEY = 'visionguard.camera.session';
 const REMEMBER_KEY = 'visionguard.camera.remember';
@@ -27,6 +28,15 @@ async function fetchJson(path: string, init?: { method?: string; body?: string }
     throw new Error(RESPONSE_MESSAGES[response.status] ?? (response.status >= 500 ? '服务暂不可用' : '请求失败'));
   }
   return data;
+}
+
+/** 登录并写入本页会话；登录页与本地预览内置登录共用。 */
+async function loginAndStore(account: string, secret: string): Promise<LoginResult> {
+  const identity = await readOrCreateDeviceIdentity(indexedDbIdentityPort());
+  const next = await loginCamera(account.trim(), secret, identity, browserDeviceModel(navigator.platform), fetchJson);
+  setProtocolVersion(next.version);
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
+  return next;
 }
 
 function socketFactory<T extends ControlSocket | MediaSocket>(url: string): T {
@@ -78,6 +88,23 @@ export function App() {
   const bump = () => setRevision(revision => revision + 1);
 
   useEffect(() => {
+    let active = true;
+    void (async () => {
+      // 先把协议版本就位（取自 /health），否则部署实例上的登录会被 426 挡掉。
+      await bootstrapProtocolVersion();
+      if (!active || readStoredSession()) return;
+      if (debugLoginScreen()) return; // ?login：停在登录界面调登录流程
+      const preview = await previewCredentials();
+      if (!active || !preview) return;
+      try {
+        const next = await loginAndStore(preview.username, preview.password);
+        if (active) setSession(next);
+      } catch (error) { if (active) setLoginError(`内置预览登录失败：${error instanceof Error ? error.message : '登录失败'}`); }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
     if (!session) return;
     const mediaPorts: MediaPorts = { origin: location.origin, openSocket: url => socketFactory(url), now: () => performance.now(),
       setTimer: (callback, milliseconds) => window.setInterval(callback, milliseconds), clearTimer: handle => window.clearInterval(handle as number),
@@ -117,10 +144,7 @@ export function App() {
     setLoginError('');
     setBusy(true);
     try {
-      const identity = await readOrCreateDeviceIdentity(indexedDbIdentityPort());
-      const next = await loginCamera(username.trim(), password, identity, browserDeviceModel(navigator.platform), fetchJson);
-      setProtocolVersion(next.version);
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
+      const next = await loginAndStore(username, password);
       try { localStorage.setItem(REMEMBER_KEY, remember ? 'true' : 'false'); } catch { /* 存储不可用时不影响登录 */ }
       setSession(next);
     } catch (error) {

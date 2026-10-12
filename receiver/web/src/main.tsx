@@ -4,7 +4,9 @@ import { createRoot } from 'react-dom/client';
 import { Activity, ArrowLeft, Bell, BellOff, Camera, ChevronRight, CircleHelp, Clock, LogOut, Monitor, Pause, Play, Radio, RefreshCw, Search, Settings, ShieldCheck, Square, Users, X } from 'lucide-react';
 import { eventLabel, formatTime, isCameraComponent, isWithinEventTime, mergeDevices, parseEventTime, timeStandardLabel, typeLabel, websocketURL, type Ack, type AlarmTimeZone, type Alert, type Device, type Notifier, type Scope, type Stream, type Target, type TimeStandard } from './protocol';
 import { useRelay } from './useRelay';
-import { accountRequest, AccountRequestError, browserDeviceIdentity, browserDeviceModel, normalizeDisplayName, parseLogin, type Login } from './account';
+import { accountRequest, AccountRequestError, normalizeDisplayName, type Login } from './account';
+import { bootstrapProtocolVersion, debugLoginScreen, previewCredentials } from './previewSignIn';
+import { performConsoleLogin } from './consoleLogin';
 import { setProtocolVersion, versionHeaders } from './session.ts';
 import { AccountManagement } from './AccountManagement';
 import { clearRememberedLogin, readRememberedLogin, saveRememberedLogin } from './rememberedLogin';
@@ -51,10 +53,23 @@ function App() {
   useEffect(() => {
     let active = true;
     const abort = new AbortController(), timer = setTimeout(() => abort.abort(), 10_000);
-    void restoreSessionLogin(abort.signal).then(restored => {
-      if (active && restored && Date.parse(restored.expiresAt) > Date.now()) updateLogin(restored);
-    }).catch(() => { if (active) setLoginError('无法恢复登录会话，请检查浏览器站点存储权限'); })
-      .finally(() => { clearTimeout(timer); if (active) setRestoringSession(false); });
+    void (async () => {
+      // 先把协议版本就位（取自 /health），否则部署实例上的登录会被 426 挡掉。
+      await bootstrapProtocolVersion();
+      let restored: Login | null = null;
+      try { restored = await restoreSessionLogin(abort.signal); }
+      catch { if (active) setLoginError('无法恢复登录会话，请检查浏览器站点存储权限'); }
+      if (!active) return;
+      if (restored && Date.parse(restored.expiresAt) > Date.now()) { updateLogin(restored); return; }
+      if (debugLoginScreen()) return; // ?login：停在登录界面调登录流程
+      const preview = await previewCredentials();
+      if (!active || !preview) return;
+      try {
+        const { value, warning } = await performConsoleLogin(preview.username, preview.password);
+        if (!active) return;
+        updateLogin(value); setSessionWarning(warning); setPage('节点');
+      } catch (error) { if (active) setLoginError(`内置预览登录失败：${(error as Error).message}`); }
+    })().finally(() => { clearTimeout(timer); if (active) setRestoringSession(false); });
     return () => { active = false; clearTimeout(timer); abort.abort(); };
   }, []);
   useEffect(() => {
@@ -149,14 +164,11 @@ function LoginScreen({onLogin,error}:{onLogin:(value:Login,warning?:string)=>voi
     setBusy(true);setFailure('');
     try {
       websocketURL(location.origin);
-      const value=parseLogin(await accountRequest('/api/account/login',undefined,{username:username.trim(),password,component:'web-console',deviceIdentity:await browserDeviceIdentity(),deviceModel:browserDeviceModel()}));
+      const { value, warning } = await performConsoleLogin(username, password);
       if(remember) {
         try { await saveRememberedLogin({username:value.account.username,password}); }
-        catch { await accountRequest('/api/account/logout',value.token,{}).catch(()=>{});throw new Error('账号密码未能保存，请取消“记住账号密码”后重试'); }
+        catch { await accountRequest('/api/account/logout',value.token,{}).catch(()=>{});await clearSessionLogin().catch(()=>{});throw new Error('账号密码未能保存，请取消“记住账号密码”后重试'); }
       }
-      let warning='';
-      try { await saveSessionLogin(value); }
-      catch { await clearSessionLogin().catch(()=>{}); warning='本次登录未保存，刷新后需重新登录。使用 HTTPS 并允许站点存储可保持登录。'; }
       onLogin(value,warning);setPassword('');
     } catch(e) {setFailure((e as Error).message);} finally {setBusy(false);}
   }

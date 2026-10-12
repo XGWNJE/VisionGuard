@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateRange(1024, 65535)]
     [int]$Port = 3100,
     [ValidatePattern('^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$')]
@@ -55,6 +55,12 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Failed to provision test account $($taskAccount.username)." }
     }
 } finally { Remove-Item Env:VISIONGUARD_ACCOUNT_PASSWORD -ErrorAction SilentlyContinue }
+
+# 本地预览免登录：把测试账号作为内置凭据交给本实例，控制台与 Web 相机据此跳过手填登录。
+# 端点只服务回环请求（server/src/routes/account.ts），生产实例不设该变量、返回 404。
+$taskPreviewAccount = @($taskAccounts) | Where-Object { $_.username -eq 'vg-test' } | Select-Object -First 1
+if (-not $taskPreviewAccount) { $taskPreviewAccount = @($taskAccounts) | Select-Object -First 1 }
+$env:VISIONGUARD_PREVIEW_SIGNIN = (@{ username = $taskPreviewAccount.username; password = $taskPreviewAccount.password } | ConvertTo-Json -Compress)
 
 Write-Host "Starting isolated VisionGuard '$Channel' on port $Port"
 Write-Host "Data directory: $dataRoot"
