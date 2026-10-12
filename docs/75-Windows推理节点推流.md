@@ -12,7 +12,7 @@ Windows 视觉推理节点有两种互斥状态：**本地推理**（采集本�
 - 推流源只允许本机采集。已经接收到的远程镜头画面不能二次推流，避免 A→B→A 环路。
 - 接收端不感知发布端是相机还是推理节点：它照现有远程镜头来源建卡、复用遮罩 / 模型 / 参数 / 截图 / 报警。
 
-维护入口：`detector/windows-wpf/Runtime/DetectorCapabilities.cs`、`Services/MultiSourceMonitorCoordinator.cs`、`ViewModels/MultiSourceViewModel.cs`、`Views/MonitorPage.xaml`、`Views/MainWindow.xaml`。
+维护入口：`detector/windows-wpf/Runtime/DetectorCapabilities.cs`、`Services/MultiSourceMonitorCoordinator.cs`、`Services/StreamTargetService.cs`、`ViewModels/MultiSourceViewModel.cs`、`Views/MonitorPage.xaml`、`Views/MainWindow.xaml`。
 
 ## 推流支路
 
@@ -24,6 +24,7 @@ Windows 视觉推理节点有两种互斥状态：**本地推理**（采集本�
 - 正常停止发送 `stream-stop` 与原因 `user` 后关闭连接；断网、服务重启、连接被替换按 2 秒退避重连并重新走 `media-auth`。发布 2.5 秒无新帧由服务标记 `frame-stalled`，异常断开标记 `connection-lost`。
 - 界面在 `Views/MonitorPage.xaml` 的「本机状态」提供两态开关：两个整行按钮，当前态用选中底色与强调色标出，下方文案直接写出当前状态，长标签不再被窄栏截断。
 - 运行状态组按态分块：两态共用「状态 / 实际帧率」，推理态另有「后端 / 推理耗时 / 最后报警」，推流态另有「推流帧率 / 已确认帧 / 丢弃帧」。推流态的「状态」直接采用发布支路的说法——连接中、推流中、已停止、推流失败或服务端拒收原因，不用「客户端在发」盖掉「服务端没绑定目标」这类事实，拒收时状态行转警示色。「已确认帧」来自统一服务的 `frame-ack`，持续推进即表示服务端确实收到并在转发画面，卡在 #0 表示没连上或没绑定；「丢弃帧」是在途窗口已满被跳过的帧加上被服务端拒收的帧。窗口关闭、采集失败、未绑定目标分别给出可读原因。
+- 推流态下「检测规则」（模型 / 检测目标 / 置信度 / 目标帧率 / 报警冷却与调整入口）整块隐藏：这些设置在推流态不生效，改由提示文案说明「切回本机推理后可调整」；采集范围与遮罩仍是可查看的采集侧配置。
 
 ## 服务端放行
 
@@ -40,6 +41,7 @@ Windows 视觉推理节点有两种互斥状态：**本地推理**（采集本�
 - `start-stream` / `stop-stream` 的放行条件从「必须是相机组件」改成能力判断（`stream-control`），控制台无需为推流节点新增命令。
 - 推流态上报 `isMonitoring=false` 且不报来源，服务不会产生 `detection-interrupted` 误报；推流状态由流记录、`video-publish` 能力与心跳自报共同表达。心跳的 `components.publish` 沿用服务端组件状态的通用词表（`running` / `starting` / `error` / `stopped`），自造词会被整组丢弃、控制台看不到推流态。
 - 控制台按能力显示推流关联、推流状态与启停，并给出未绑定目标、采集源不可用等失败原因；不把相机的前台、摄像头权限与解锁条件套到 Windows 节点上。
+- 节点本机也能选目标：推流态的「推流目标」下拉列出同账号里除自己以外的推理节点（在线的排在前面，离线与正在推流的节点带后缀标出），选中即关联，与相机推流节点同一套交互；数据来自 `GET /api/devices` 与 `GET /api/streams`，关联走 `POST /api/streams/bind`，服务端只允许发布端为自己绑定。控制台仍是同等入口，两边改的是同一份绑定关系，服务端下发的 `stream-list` 会让本机显示同步。候选为空时每 10 秒重试一次，登录完成或目标上线后自动补齐；也可手动「刷新」。
 - 节点本机改态以本机意图为准，服务回报实际结果；推流期间改动采集目标或遮罩先停止再改。
 
 维护入口：`receiver/web/src/main.tsx`、`receiver/web/src/protocol.ts`、`receiver/web/src/RemoteSettings.tsx`。

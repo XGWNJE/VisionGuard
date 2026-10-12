@@ -78,25 +78,37 @@
                 <TextBlock Grid.Row="2" Text="最后报警" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
                 <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding LastAlertText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
             </Grid>
+            <Grid Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72"/>
+                    <ColumnDefinition/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" MinHeight="32"/>
+                    <RowDefinition Height="Auto" MinHeight="32"/>
+                    <RowDefinition Height="Auto" MinHeight="32"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="推流帧率" Style="{StaticResource CaptionText}" VerticalAlignment="Center" ToolTip="推流目标采样帧率，由目标推理节点的来源频率决定"/>
+                <TextBlock Grid.Column="1" Text="{Binding PublishTargetFps, StringFormat={}{0} FPS}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="1" Text="已确认帧" Style="{StaticResource CaptionText}" VerticalAlignment="Center" ToolTip="统一服务 frame-ack 累计确认到的帧序号；持续推进即表示服务端确实收到画面，一直停在 #0 说明没连上或没绑定"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding PublishLastAcknowledgedSequence, StringFormat=#\{0\}}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="2" Text="丢弃帧" Style="{StaticResource CaptionText}" VerticalAlignment="Center" ToolTip="在途窗口已满被跳过的帧，加上被服务端拒收的帧；拒收原因显示在上面的「状态」行"/>
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding PublishDroppedFrames}" VerticalAlignment="Center"/>
+            </Grid>
+            <!-- 推流目标：本机直接选同账号里的推理节点，选中即关联；控制台仍是同等入口，两边改的是同一份绑定。 -->
             <StackPanel Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="推流目标" Style="{StaticResource SectionLabel}" Margin="0,16,0,12"/>
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="72"/>
                         <ColumnDefinition/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" MinHeight="32"/>
-                        <RowDefinition Height="Auto" MinHeight="32"/>
-                        <RowDefinition Height="Auto" MinHeight="32"/>
-                    </Grid.RowDefinitions>
-                    <TextBlock Text="推流帧率" Style="{StaticResource CaptionText}" VerticalAlignment="Center" ToolTip="推流目标采样帧率，由目标推理节点的来源频率决定"/>
-                    <TextBlock Grid.Column="1" Text="{Binding PublishTargetFps, StringFormat={}{0} FPS}" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Row="1" Text="已确认帧" Style="{StaticResource CaptionText}" VerticalAlignment="Center" ToolTip="统一服务 frame-ack 累计确认到的帧序号；持续推进即表示服务端确实收到画面，一直停在 #0 说明没连上或没绑定"/>
-                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding PublishLastAcknowledgedSequence, StringFormat=#\{0\}}" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Row="2" Text="丢弃帧" Style="{StaticResource CaptionText}" VerticalAlignment="Center" ToolTip="在途窗口已满被跳过的帧，加上被服务端拒收的帧；拒收原因显示在上面的「状态」行"/>
-                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding PublishDroppedFrames}" VerticalAlignment="Center"/>
+                    <ComboBox Style="{StaticResource PaneComboBox}" ItemsSource="{Binding PushTargets}" SelectedItem="{Binding SelectedPushTarget, Mode=TwoWay}" DisplayMemberPath="DisplayName" IsEnabled="{Binding CanPickPushTarget}" ToolTip="同账号里的推理节点，离线与正在推流的节点也会列出并标注；也可以在控制台关联，两边是同一份绑定关系"/>
+                    <Button Grid.Column="1" Content="刷新" Style="{StaticResource PaneButton}" Command="{Binding RefreshPushTargetsCommand}" ToolTip="重新读取同账号的推理节点" Margin="8,0,0,0"/>
                 </Grid>
-                <TextBlock Text="推流目标由控制台关联：控制台 → 本节点 → 推流关联；未关联时服务端会拒收画面。推流只发送采集画面本身，本机遮罩与检测规则不参与。" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                <TextBlock Text="{Binding PushTargetText, StringFormat=当前目标：{0}}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                <TextBlock Text="{Binding PushTargetHint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0" Visibility="{Binding HasPushTargetHint, Converter={StaticResource BoolToVis}}"/>
+                <TextBlock Text="推流只发送采集画面本身：本机遮罩与检测规则在推流态不参与，切回本机推理后可调整。" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0"/>
             </StackPanel>
             <Grid Margin="0,8,0,24">
                 <Button Content="{Binding StartButtonText}" Style="{StaticResource PanePrimaryButton}" Command="{Binding StartCommand}" ToolTip="{Binding StartActionHint}" ToolTipService.ShowOnDisabled="True">
@@ -106,6 +118,8 @@
                 </Button>
                 <Button Content="{Binding StopButtonText}" Style="{StaticResource PaneButton}" Command="{Binding StopCommand}" Visibility="{Binding IsMonitoring, Converter={StaticResource BoolToVis}}"/>
             </Grid>
+            <!-- 检测规则只在推理态有意义：推流态不加载模型、不做检测，整块隐藏。 -->
+            <StackPanel Visibility="{Binding IsInferenceMode, Converter={StaticResource BoolToVis}}">
             <TextBlock Text="检测规则" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -140,6 +154,7 @@
                     </Style>
                 </TextBlock.Style>
             </TextBlock>
+            </StackPanel>
             <TextBlock Text="采集范围" Style="{StaticResource SectionLabel}" Margin="0,24,0,12"/>
             <TextBlock Text="{Binding TargetInfo}" TextWrapping="Wrap" ToolTip="{Binding TargetInfo}" Margin="0,0,0,12"/>
             <TextBlock Text="{Binding AspectRatioWarning}" TextWrapping="Wrap" Foreground="{DynamicResource WarningBrush}" Margin="0,0,0,8" Visibility="{Binding HasAspectRatioWarning, Converter={StaticResource BoolToVis}}"/>

@@ -27,7 +27,23 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private DateTime _lastPerformanceAlertUtc = DateTime.MinValue;
         private int _sourceLimit = MultiSourceMonitorCoordinator.MaximumSourceLimit;
         private int _viewGeneration;
+        private bool _pushTargetsLoading, _applyingPushTargets;
+        private string _pushTargetMessage = "";
+        private string _pushBoundTargetId = "";
+        private string _pushBoundTargetName = "";
+        private StreamTargetService.Target? _selectedPushTarget;
+        /// <summary>
+        /// 推流目标的重试定时器：应用启动时可能还没登录、目标节点也可能稍后才上线，
+        /// 因此在还没有候选节点时每 10 秒重试一次，拿到候选后停止空转。
+        /// </summary>
+        private readonly System.Windows.Threading.DispatcherTimer _pushTargetTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(10),
+        };
         public ObservableCollection<SourceViewModel> Sources { get; } = new();
+
+        /// <summary>同账号里可作为推流目标的推理节点；在线的排在前面。</summary>
+        public ObservableCollection<StreamTargetService.Target> PushTargets { get; } = new();
         public IReadOnlyList<MonitorSourceStatus> Statuses => _coordinator.Statuses;
         public SourceViewModel? SelectedSource
         {
@@ -51,6 +67,8 @@ namespace VisionGuard.Detector.Windows.ViewModels
         /// <summary>节点级状态开关：本机推理 / 推流到其他推理节点，二选一。</summary>
         public RelayCommand UseInferenceModeCommand { get; private set; } = null!;
         public RelayCommand UsePushModeCommand { get; private set; } = null!;
+        /// <summary>重新拉取可选的推流目标（同账号推理节点）。</summary>
+        public RelayCommand RefreshPushTargetsCommand { get; private set; } = null!;
 
         private void SwitchMode(SourcePublishMode mode)
         {
@@ -88,9 +106,17 @@ namespace VisionGuard.Detector.Windows.ViewModels
             AddSourceCommand = new RelayCommand(AddSource, () => CanAddSource);
             UseInferenceModeCommand = new RelayCommand(() => SwitchMode(SourcePublishMode.Inference), () => !IsInferenceMode);
             UsePushModeCommand = new RelayCommand(() => SwitchMode(SourcePublishMode.Push), () => !IsPushMode);
+            RefreshPushTargetsCommand = new RelayCommand(() => RefreshPushTargets(), () => IsPushMode && !_pushTargetsLoading);
+            _pushTargetTimer.Tick += (_, __) =>
+            {
+                if (IsPushMode && PushTargets.Count == 0) RefreshPushTargets();
+                else _pushTargetTimer.Stop();
+            };
             EnsureLegacyBackupAndMigration();
             EnsureSourceKeyMigration();
             LoadConfiguredSources();
+            // 开机就是推流态时也要能选目标：没有候选节点就按定时器重试，登录完成或目标上线后自动补齐。
+            if (IsPushMode) _pushTargetTimer.Start();
             // 独立配置探针允许不连接服务。
             if (_server != null)
             {
@@ -187,6 +213,10 @@ namespace VisionGuard.Detector.Windows.ViewModels
         }
         private void ApplyStreams(IReadOnlyList<RemoteStreamInfo> streams)
         {
+            // 服务端下发的绑定关系同时表达两件事：别人推给我的（建远程来源卡片）和我推给谁的（推流目标）。
+            var own = streams.FirstOrDefault(stream => stream.publisherDeviceId == AppConfig.DeviceId);
+            ApplyPushBinding(own?.targetDeviceId ?? "", "");
+            if (IsPushMode && PushTargets.Count == 0 && !_pushTargetsLoading) RefreshPushTargets();
             var bound = streams.Where(s => s.targetDeviceId == AppConfig.DeviceId && !string.IsNullOrWhiteSpace(s.sourceId)).ToArray();
             foreach (var removed in Sources.Where(s => s.IsRemoteStream && !bound.Any(b => b.sourceId == s.SourceId)).ToArray())
             {
@@ -326,7 +356,161 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 if (slot == null) continue;
                 try { Start(slot); } catch (Exception error) { _sourceLimitWarning = "切到" + NodeModeSummary + "后启动失败：" + error.Message; }
             }
+            if (mode == SourcePublishMode.Push) { RefreshPushTargets(); _pushTargetTimer.Start(); }
+            else { _pushTargetTimer.Stop(); _pushTargetMessage = ""; RaisePushTargetState(); }
             RefreshSummary();
+        }
+
+        // ── 推流目标：本机选择把画面推给同账号里的哪台推理节点 ──
+
+        /// <summary>
+        /// 当前选中的候选目标。用户改选中就立刻关联，不另加按钮——与相机推流节点的交互一致；
+        /// 代码在同步服务端状态时用 <see cref="_applyingPushTargets"/> 屏蔽这次回写。
+        /// </summary>
+        public StreamTargetService.Target? SelectedPushTarget
+        {
+            get => _selectedPushTarget;
+            set
+            {
+                if (!SetProperty(ref _selectedPushTarget, value)) return;
+                if (_applyingPushTargets || value == null) return;
+                BindPushTarget(value);
+            }
+        }
+
+        /// <summary>当前推流目标文案；未关联时明确写「未关联」。</summary>
+        public string PushTargetText
+        {
+            get
+            {
+                if (_pushBoundTargetId.Length == 0) return "未关联";
+                var target = PushTargets.FirstOrDefault(item => item.DeviceId == _pushBoundTargetId);
+                if (target != null) return target.DeviceName;
+                return _pushBoundTargetName.Length > 0 ? _pushBoundTargetName : "已关联（目标不在当前列表里）";
+            }
+        }
+
+        public string PushTargetHint
+        {
+            get
+            {
+                if (_pushTargetsLoading) return "正在读取同账号的推理节点…";
+                if (_pushTargetMessage.Length > 0) return _pushTargetMessage;
+                if (PushTargets.Count == 0) return "同账号暂时没有其他推理节点；节点上线后点「刷新」。";
+                if (_pushBoundTargetId.Length == 0) return "选中即关联；关联后点「开始推流」才会把画面发过去。";
+                return "";
+            }
+        }
+
+        public bool HasPushTargetHint => PushTargetHint.Length > 0;
+        public bool CanPickPushTarget => IsPushMode && PushTargets.Count > 0 && !_pushTargetsLoading;
+
+        /// <summary>拉取候选推理节点与本节点的绑定；网络调用走线程池，结果回界面线程。</summary>
+        internal void RefreshPushTargets()
+        {
+            if (!IsPushMode || _pushTargetsLoading) return;
+            string serviceUrl = AppConfig.ServerUrl, token = AppConfig.SessionToken, deviceId = AppConfig.DeviceId;
+            if (string.IsNullOrEmpty(deviceId) || string.IsNullOrEmpty(token))
+            {
+                _pushTargetMessage = "尚未登录账号，暂时无法选择推流目标。";
+                RaisePushTargetState();
+                return;
+            }
+            _pushTargetsLoading = true; _pushTargetMessage = "";
+            RaisePushTargetState();
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                var service = new StreamTargetService(serviceUrl, token, deviceId);
+                string error = service.Load();
+                Dispatch(() =>
+                {
+                    _pushTargetsLoading = false;
+                    if (error.Length > 0)
+                    {
+                        _pushTargetMessage = error;
+                        MediaDiagnostics.Write("[Publish] targets load failed: " + error);
+                        RaisePushTargetState();
+                        return;
+                    }
+                    PushTargets.Clear();
+                    foreach (var target in service.Targets) PushTargets.Add(target);
+                    _pushBoundTargetName = "";
+                    ApplyPushBinding(service.BoundTargetId, "");
+                    MediaDiagnostics.Write($"[Publish] targets loaded count={service.Targets.Count} online={service.Targets.Count(item => item.Online)} bound={service.BoundTargetId}");
+                    RaisePushTargetState();
+                });
+            });
+        }
+
+        private void BindPushTarget(StreamTargetService.Target target)
+        {
+            string serviceUrl = AppConfig.ServerUrl, token = AppConfig.SessionToken, deviceId = AppConfig.DeviceId;
+            if (string.IsNullOrEmpty(deviceId) || string.IsNullOrEmpty(token))
+            {
+                _pushTargetMessage = "尚未登录账号，暂时无法关联推流目标。";
+                SyncSelectedPushTarget();
+                RaisePushTargetState();
+                return;
+            }
+            _pushTargetMessage = "正在关联「" + target.DeviceName + "」…";
+            RaisePushTargetState();
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                string error = new StreamTargetService(serviceUrl, token, deviceId).Bind(target.DeviceId);
+                Dispatch(() =>
+                {
+                    if (error.Length > 0)
+                    {
+                        _pushTargetMessage = error;
+                        MediaDiagnostics.Write("[Publish] bind failed: " + error);
+                        SyncSelectedPushTarget();
+                    }
+                    else
+                    {
+                        _pushTargetMessage = "";
+                        ApplyPushBinding(target.DeviceId, target.DeviceName);
+                        MediaDiagnostics.Write($"[Publish] bound target={target.DeviceId} name={target.DeviceName}");
+                    }
+                    RaisePushTargetState();
+                });
+            });
+        }
+
+        /// <summary>用服务端下发的绑定关系刷新本机状态；名字优先取候选列表，取不到时保留已知名字。</summary>
+        private void ApplyPushBinding(string targetDeviceId, string knownName)
+        {
+            string next = targetDeviceId ?? "";
+            bool changed = _pushBoundTargetId != next;
+            _pushBoundTargetId = next;
+            if (next.Length == 0) _pushBoundTargetName = "";
+            else
+            {
+                var target = PushTargets.FirstOrDefault(item => item.DeviceId == next);
+                if (target != null) _pushBoundTargetName = target.DeviceName;
+                else if (knownName.Length > 0) _pushBoundTargetName = knownName;
+            }
+            if (changed) OnPropertyChanged(nameof(PushTargetText));
+            if (changed) MediaDiagnostics.Write($"[Publish] target binding changed bound={next}");
+            SyncSelectedPushTarget();
+        }
+
+        /// <summary>把下拉的选中项对齐到服务端的绑定关系，且不触发再次关联。</summary>
+        private void SyncSelectedPushTarget()
+        {
+            var match = _pushBoundTargetId.Length == 0
+                ? null : PushTargets.FirstOrDefault(item => item.DeviceId == _pushBoundTargetId);
+            _applyingPushTargets = true;
+            try { SelectedPushTarget = match; }
+            finally { _applyingPushTargets = false; }
+        }
+
+        private void RaisePushTargetState()
+        {
+            OnPropertyChanged(nameof(PushTargetText));
+            OnPropertyChanged(nameof(PushTargetHint));
+            OnPropertyChanged(nameof(HasPushTargetHint));
+            OnPropertyChanged(nameof(CanPickPushTarget));
+            RefreshPushTargetsCommand.RaiseCanExecuteChanged();
         }
 
         internal void Rename(SourceViewModel slot) => _coordinator.Rename(slot.SourceId, slot.SourceName);
@@ -437,6 +621,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             OnPropertyChanged(nameof(IsPushMode)); OnPropertyChanged(nameof(IsInferenceMode));
             OnPropertyChanged(nameof(CanUsePushMode)); OnPropertyChanged(nameof(NodeModeSummary));
             OnPropertyChanged(nameof(NodeModeHint));
+            RaisePushTargetState();
             foreach (var source in Sources) source.RaiseSourceActionStates();
         }
 
@@ -616,7 +801,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 (d.right - d.left).ToString("R", System.Globalization.CultureInfo.InvariantCulture), (d.bottom - d.top).ToString("R", System.Globalization.CultureInfo.InvariantCulture))));
         }
 
-        public void Dispose() => _coordinator.Dispose();
+        public void Dispose() { _pushTargetTimer.Stop(); _coordinator.Dispose(); }
     }
 
     public sealed class SourceViewModel : ViewModelBase

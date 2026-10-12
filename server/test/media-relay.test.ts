@@ -290,6 +290,9 @@ test('windows inference publishes after an explicit binding and cannot bind itse
   // 不能绑定到自己（自环），也不能把不可订阅的相机当目标。
   assert.throws(() => mediaRelay.bind(session, publisher.device.deviceId, publisher.device.deviceId), /not found/);
   assert.throws(() => mediaRelay.bind(session, publisher.device.deviceId, owner.id('camera')), /not found/);
+  // 节点本机的「推流目标」下拉走同一条绑定：发布端可以为自己绑定，别的设备不行。
+  assert.equal(mediaRelay.bind(accountStore.authenticate(publisher.token)!, publisher.device.deviceId, receiver.device.deviceId).targetDeviceId, receiver.device.deviceId);
+  assert.throws(() => mediaRelay.bind(accountStore.authenticate(receiver.token)!, publisher.device.deviceId, receiver.device.deviceId), /permission/);
   const producer = await f.connect(publisher.token, 'publish'), ready = await producer.take('media-ready');
   assert.equal(ready.streamId, stream.streamId); assert.equal(ready.targetDeviceId, receiver.device.deviceId);
   const consumer = await f.connect(receiver.token, 'subscribe'); await consumer.take('media-ready');

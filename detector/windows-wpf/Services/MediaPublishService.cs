@@ -360,7 +360,7 @@ namespace VisionGuard.Detector.Windows.Services
 
         private static string DescribeReject(string reason) => reason switch
         {
-            "unbound" => "服务端未绑定目标：请在控制台关联推理节点",
+            "unbound" => "服务端未绑定目标：请在本机「推流目标」里选择，或在控制台关联推理节点",
             "consumer-unavailable" => "目标推理节点未接入媒体通道",
             _ => "",
         };
