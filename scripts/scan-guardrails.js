@@ -2,9 +2,10 @@
 /**
  * 护栏扫描（guardrail scan）
  *
- * 定期找出两类工程改进点，供 owner / agent 复核后登记进 docs/06-任务清单.md：
+ * 双向体检，结果供 owner / agent 复核后登记进 docs/06-任务清单.md：
  *   1. 重复犯错：同一个文件或同一类主题被反复修复；
- *   2. 护栏候选：AGENTS.md 里的硬规则还没有对应的自动化检查。
+ *   2. 护栏缺口：AGENTS.md 里的硬规则还没有对应的自动化检查；
+ *   3. 护栏体检：现有检查里失效、重复、恒真或长期不动的部分——只加不减，护栏迟早变成负担。
  *
  * 用法：
  *   node scripts/scan-guardrails.js                 # 报告打印到 stdout
@@ -44,7 +45,8 @@ const STOP_WORDS = new Set([
   '通过', '失败', '成功', '一致', '错误', '修正', '发布', '版本', '证据', '更新', '支持', '导致',
   '出现', '保持', '确认', '检查', '完成', '恢复', '避免', '正确', '实际', '当前', '相关',
 ]);
-const PATH_PATTERN = /[\w./\\-]+\.(?:kt|kts|java|js|mjs|cjs|ts|tsx|jsx|cs|ps1|sh|py|json|yml|yaml|xml|md|gradle|toml|ini)/g;
+// 路径匹配要求「前面是非路径字符、扩展名后不再跟字母数字」，否则会把 package.json 截成 package.js。
+const PATH_PATTERN = /(?:^|[\s`'"(])([\w][\w./\\-]*\.(?:kt|kts|java|js|mjs|cjs|ts|tsx|jsx|cs|ps1|sh|py|json|yml|yaml|xml|md|gradle|toml|ini))(?![A-Za-z0-9])/g;
 
 /** 提交标题里的修复类条目。 */
 function fixSubjects(limit = 500) {
@@ -70,8 +72,8 @@ function recordEntries() {
 }
 
 function pathsIn(text) {
-  const found = text.match(PATH_PATTERN) || [];
-  return found.map(item => item.replace(/\\/g, '/')).filter(item => !item.startsWith('http'));
+  const found = [...text.matchAll(PATH_PATTERN)].map(match => match[1].replace(/\\/g, '/'));
+  return found.filter(item => !item.startsWith('http'));
 }
 
 function tokensIn(text) {
@@ -90,9 +92,92 @@ function tally(map, key, evidence) {
   return entry;
 }
 
+// ── 信号三：现有护栏体检（失效 / 重复 / 恒真 / 僵化） ────────────────
+
+const GUARD_FILE = /^(?:check-.*|.*\.test)\.js$/;
+
+function guardFiles() {
+  const dir = path.join(root, 'scripts');
+  return fs.existsSync(dir) ? fs.readdirSync(dir).filter(name => GUARD_FILE.test(name)).sort() : [];
+}
+
+/**
+ * 该路径在脚本里是否处于「断言不存在」的上下文：废弃清单、`!fs.existsSync(...)`、
+ * deprecated 注释等。这类命中是护栏在防旧入口复活，不是失效引用。
+ */
+function assertedAbsent(text, item) {
+  const lines = text.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index++) {
+    if (!lines[index].includes(item)) continue;
+    const window = lines.slice(Math.max(0, index - 8), index + 2).join('\n');
+    if (/deprecated|removed|forbidden|废弃|不应存在|不该存在|should not/i.test(window)) return true;
+    if (/!\s*(?:fs\.)?existsSync/.test(window)) return true;
+  }
+  return false;
+}
+
+function scanExistingGuards() {
+  const dir = path.join(root, 'scripts');
+  const plausiblePath = item => item.includes('/') && !item.includes('//') && !item.includes('/.') && !item.endsWith('/');
+  const entries = guardFiles().map(name => {
+    const filePath = path.join(dir, name);
+    const text = fs.readFileSync(filePath, 'utf8');
+    const referenced = [...new Set(pathsIn(text))].filter(item => !item.startsWith('http'));
+    // 同一路径可能写成相对仓库根、相对 scripts/ 或相对脚本自身目录，任一存在即算存在。
+    const exists = item => [root, dir, path.join(root, 'scripts')].some(base => fs.existsSync(path.join(base, item)));
+    const lastCommit = git(['log', '-1', '--pretty=format:%cs', '--', `scripts/${name}`]).trim();
+    const staleDays = lastCommit ? Math.round((Date.now() - Date.parse(lastCommit)) / 86400000) : null;
+    return {
+      name,
+      lines: text.split(/\r?\n/).length,
+      targets: referenced.filter(exists),
+    // 先排除「断言不存在」的上下文与文本片段；只报带目录、形状像仓库路径的命中，
+    // 裸文件名（package.json 之类）多是通用名或示例，噪声大于价值。
+    missing: referenced.filter(item => (
+      plausiblePath(item) && !exists(item) && !item.startsWith('.local/') && !assertedAbsent(text, item)
+    )),
+      skipped: /skip:\s*(?:true|process\.platform)/.test(text) || /\bt\.skip\(/.test(text),
+      weak: /assert\.ok\(\s*true\s*\)/.test(text),
+      lastCommit,
+      staleDays,
+    };
+  });
+
+  const overlaps = [];
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      const left = new Set(entries[i].targets);
+      const shared = entries[j].targets.filter(item => left.has(item));
+      if (shared.length >= 5) overlaps.push({ a: entries[i].name, b: entries[j].name, shared: shared.slice(0, 4) });
+    }
+  }
+  return { entries, overlaps };
+}
+
+/** 工作流里指向不存在脚本或目录的引用：看着在查、其实查不到的护栏最该先清。 */
+function scanWorkflowIssues() {
+  const dir = path.join(root, '.github/workflows');
+  const issues = [];
+  if (!fs.existsSync(dir)) return issues;
+  for (const name of fs.readdirSync(dir)) {
+    if (!/\.ya?ml$/.test(name)) continue;
+    const text = fs.readFileSync(path.join(dir, name), 'utf8');
+    for (const match of text.matchAll(/node\s+(?:--test\s+)?(scripts\/[\w./-]+\.js)/g)) {
+      if (!fs.existsSync(path.join(root, match[1]))) issues.push(`${name}: 引用不存在的脚本 ${match[1]}`);
+    }
+    for (const match of text.matchAll(/npm\s+--prefix\s+([\w./-]+)/g)) {
+      if (!fs.existsSync(path.join(root, match[1]))) issues.push(`${name}: npm --prefix 指向不存在的目录 ${match[1]}`);
+    }
+    if (/continue-on-error:\s*true/.test(text)) issues.push(`${name}: 有 continue-on-error: true 的步骤（失败不会让 CI 变红）`);
+  }
+  return issues;
+}
+
 function buildReport() {
   const commits = fixSubjects();
   const records = recordEntries();
+  const guardHealth = scanExistingGuards();
+  const workflowIssues = scanWorkflowIssues();
   const fileHits = new Map();
   const themeHits = new Map();
 
@@ -180,9 +265,72 @@ function buildReport() {
   lines.push('');
   lines.push('处置建议：逐条对照——「硬规则」里的每一条，如果能被脚本稳定判定，就应该有对应检查；找不到对应检查的规则就是护栏候选。');
   lines.push('');
-  lines.push('## 四、下一步');
+  lines.push('## 四、护栏体检：只加不减会让项目膨胀');
   lines.push('');
-  lines.push('复核上面的候选后，把确认要做的写进 [docs/06-任务清单.md](docs/06-任务清单.md) 的「现在要做的」；本报告不自动追加条目。');
+  lines.push(`现有检查脚本 ${guardHealth.entries.length} 个。下面是需要处置或至少确认的部分。`);
+  lines.push('');
+  lines.push('### 失效引用（引用了找不到的目标）');
+  lines.push('');
+  const brokenRefs = guardHealth.entries.filter(entry => entry.missing.length > 0);
+  if (brokenRefs.length === 0) {
+    lines.push('没有发现检查脚本引用不存在的文件。');
+  } else {
+    for (const entry of brokenRefs) {
+      lines.push(`- \`scripts/${entry.name}\` → 找不到：${entry.missing.slice(0, 4).map(item => `\`${item}\``).join('、')}`);
+    }
+    lines.push('');
+    lines.push('这些命中可能来自正则片段、示例文本或「断言该文件已删除」的用例，逐条确认后再动。');
+  }
+  lines.push('');
+  lines.push('### 工作流里的失效引用');
+  lines.push('');
+  if (workflowIssues.length === 0) {
+    lines.push('工作流引用的脚本与目录都存在。');
+  } else {
+    for (const issue of workflowIssues) lines.push(`- ${issue}`);
+  }
+  lines.push('');
+  lines.push('### 目标重叠（共同目标 ≥5 个，仅供人工判断）');
+  lines.push('');
+  if (guardHealth.overlaps.length === 0) {
+    lines.push('没有发现目标高度重叠的检查。');
+  } else {
+    for (const overlap of guardHealth.overlaps) {
+      lines.push(`- \`${overlap.a}\` ↔ \`${overlap.b}\`：共同目标 ${overlap.shared.map(item => `\`${item}\``).join('、')}`);
+    }
+    lines.push('');
+    lines.push('注意：提到同一批文件不等于重复——「契约检查 + 它的测试」属于正常配对，不要因此合并。');
+  }
+  lines.push('');
+  lines.push('### 恒真断言、跳过条件与僵化');
+  lines.push('');
+  const healthRows = [...guardHealth.entries]
+    .sort((a, b) => b.lines - a.lines)
+    .map(entry => {
+      const signals = [];
+      if (entry.skipped) signals.push('含 skip 条件');
+      if (entry.weak) signals.push('含恒真断言');
+      if (entry.lines > 400) signals.push('体量大');
+      if (entry.staleDays === null) signals.push('无提交记录');
+      else if (entry.staleDays > 90) signals.push(`已 ${entry.staleDays} 天未动`);
+      return { entry, signals };
+    })
+    .filter(row => row.signals.length > 0);
+  if (healthRows.length === 0) {
+    lines.push('没有命中这些信号。');
+  } else {
+    lines.push('| 检查 | 行数 | 最近提交 | 信号 |');
+    lines.push('| --- | --- | --- | --- |');
+    for (const row of healthRows) {
+      lines.push(`| \`${row.entry.name}\` | ${row.entry.lines} | ${row.entry.lastCommit || '—'} | ${row.signals.join('；')} |`);
+    }
+  }
+  lines.push('');
+  lines.push('处置建议：失效引用优先修或删（先排除示例文本与「断言已删除」的用例）；目标重叠多是正常配对，别急着合并；恒真断言与长期未动的检查，评估保留 / 降级为手动 / 删除。护栏数量不设目标，但每条都要说得清它在防什么、失败时谁会看到。');
+  lines.push('');
+  lines.push('## 五、下一步');
+  lines.push('');
+  lines.push('复核时两侧一起看：缺口该补就补，体检出的失效、重复、恒真项该删就删。确认要做的写进 [docs/06-任务清单.md](docs/06-任务清单.md) 的「现在要做的」；本报告不自动追加条目，也不自动改动任何检查。');
   lines.push('');
 
   return lines.join('\n');
