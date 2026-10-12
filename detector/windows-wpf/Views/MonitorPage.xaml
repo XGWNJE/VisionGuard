@@ -35,6 +35,42 @@
                 </Button>
                 <TextBlock Text="{Binding NodeModeHint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,12,0,24"/>
             </StackPanel>
+            <!-- 推流目标属于节点级设置，必须和两态开关同层：放进下面按来源作用域的 StackPanel 里，
+                 绑定会落到来源槽位上（下拉、当前目标、提示全为空）。本机直接选同账号里的推理节点，
+                 选中即关联；控制台仍是同等入口，两边改的是同一份绑定。 -->
+            <StackPanel Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}" Margin="0,0,0,24">
+                <TextBlock Text="推流目标" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid Grid.Column="0">
+                        <ComboBox Style="{StaticResource PaneComboBox}" ItemsSource="{Binding PushTargets}" SelectedItem="{Binding SelectedPushTarget, Mode=TwoWay}" DisplayMemberPath="DisplayName" IsEnabled="{Binding CanPickPushTarget}" ToolTip="同账号里的推理节点，离线与正在推流的节点也会列出并标注；也可以在控制台关联，两边是同一份绑定关系"/>
+                        <!-- 未选中时给下拉一个占位文案：空下拉看着像坏了。 -->
+                        <TextBlock Text="选择视觉推理节点" VerticalAlignment="Center" Margin="12,0,0,0" IsHitTestVisible="False" Foreground="{DynamicResource TextSecondary}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding SelectedPushTarget}" Value="{x:Null}"/>
+                                                <Condition Binding="{Binding CanPickPushTarget}" Value="True"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                    <Button Grid.Column="1" Content="刷新" Style="{StaticResource PaneButton}" Command="{Binding RefreshPushTargetsCommand}" ToolTip="重新读取同账号的推理节点" Margin="8,0,0,0"/>
+                </Grid>
+                <TextBlock Text="{Binding PushTargetText, StringFormat=当前目标：{0}}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                <TextBlock Text="{Binding PushTargetHint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0" Visibility="{Binding HasPushTargetHint, Converter={StaticResource BoolToVis}}"/>
+                <TextBlock Text="推流只发送采集画面本身：本机遮罩与检测规则在推流态不参与，切回本机推理后可调整。" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+            </StackPanel>
             <StackPanel DataContext="{Binding SelectedSource}">
             <TextBlock Text="当前来源" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
             <Grid MinHeight="36">
@@ -95,21 +131,6 @@
                 <TextBlock Grid.Row="2" Text="丢弃帧" Style="{StaticResource CaptionText}" VerticalAlignment="Center" ToolTip="在途窗口已满被跳过的帧，加上被服务端拒收的帧；拒收原因显示在上面的「状态」行"/>
                 <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding PublishDroppedFrames}" VerticalAlignment="Center"/>
             </Grid>
-            <!-- 推流目标：本机直接选同账号里的推理节点，选中即关联；控制台仍是同等入口，两边改的是同一份绑定。 -->
-            <StackPanel Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}">
-                <TextBlock Text="推流目标" Style="{StaticResource SectionLabel}" Margin="0,16,0,12"/>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <ComboBox Style="{StaticResource PaneComboBox}" ItemsSource="{Binding PushTargets}" SelectedItem="{Binding SelectedPushTarget, Mode=TwoWay}" DisplayMemberPath="DisplayName" IsEnabled="{Binding CanPickPushTarget}" ToolTip="同账号里的推理节点，离线与正在推流的节点也会列出并标注；也可以在控制台关联，两边是同一份绑定关系"/>
-                    <Button Grid.Column="1" Content="刷新" Style="{StaticResource PaneButton}" Command="{Binding RefreshPushTargetsCommand}" ToolTip="重新读取同账号的推理节点" Margin="8,0,0,0"/>
-                </Grid>
-                <TextBlock Text="{Binding PushTargetText, StringFormat=当前目标：{0}}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-                <TextBlock Text="{Binding PushTargetHint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0" Visibility="{Binding HasPushTargetHint, Converter={StaticResource BoolToVis}}"/>
-                <TextBlock Text="推流只发送采集画面本身：本机遮罩与检测规则在推流态不参与，切回本机推理后可调整。" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0"/>
-            </StackPanel>
             <Grid Margin="0,8,0,24">
                 <Button Content="{Binding StartButtonText}" Style="{StaticResource PanePrimaryButton}" Command="{Binding StartCommand}" ToolTip="{Binding StartActionHint}" ToolTipService.ShowOnDisabled="True">
                     <Button.Visibility>

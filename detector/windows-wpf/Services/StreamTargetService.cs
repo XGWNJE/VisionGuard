@@ -35,8 +35,10 @@ namespace VisionGuard.Detector.Windows.Services
                 get
                 {
                     string name = string.IsNullOrEmpty(DeviceName) ? DeviceId : DeviceName;
-                    if (Publishing) return name + "（推流中·暂时收不了）";
-                    return Online ? name : name + "（离线）";
+                    // 模拟节点 / 用户命名本身就可能带「（离线）」，不要再叠一层。
+                    if (Publishing) return name.Contains("（推流中") ? name : name + "（推流中·暂时收不了）";
+                    if (Online) return name;
+                    return name.EndsWith("（离线）", StringComparison.Ordinal) ? name : name + "（离线）";
                 }
             }
 
