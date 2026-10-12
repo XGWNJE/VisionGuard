@@ -46,10 +46,9 @@ import com.xgwnje.visionguard.inference.ui.geo.EditorPage
 import com.xgwnje.visionguard.inference.ui.geo.Geo
 import com.xgwnje.visionguard.inference.ui.geo.GeoDivider
 import com.xgwnje.visionguard.inference.ui.geo.GeoHelpDrawer
-import com.xgwnje.visionguard.inference.ui.geo.GeoHint
 import com.xgwnje.visionguard.inference.ui.geo.GeoLampTone
-import com.xgwnje.visionguard.inference.ui.geo.GeoMessageRibbon
 import com.xgwnje.visionguard.inference.ui.geo.GeoModal
+import com.xgwnje.visionguard.inference.ui.geo.GeoNotice
 import com.xgwnje.visionguard.inference.ui.geo.GeoSourceDrawer
 import com.xgwnje.visionguard.inference.ui.geo.MockWorkspaceData
 import com.xgwnje.visionguard.inference.ui.geo.ParamAnchor
@@ -134,6 +133,28 @@ fun MainScreen(
         else -> "服务已断开" to GeoLampTone.Error
     }
 
+    // 所有提示收进一个悬浮区：运行时消息（可关）、当前来源的错误、性能与恢复警告（状态驱动）。
+    val notices = buildList {
+        state.message?.let {
+            add(
+                GeoNotice(
+                    id = "message",
+                    text = it,
+                    tone = when (state.messageTone) {
+                        MessageTone.Error -> GeoLampTone.Error
+                        MessageTone.Warning -> GeoLampTone.Warning
+                        MessageTone.Success -> GeoLampTone.Success
+                        MessageTone.Info -> GeoLampTone.Neutral
+                    },
+                    dismissible = true
+                )
+            )
+        }
+        selected?.state?.error?.let { add(GeoNotice("source-error", it, GeoLampTone.Error)) }
+        selected?.state?.performanceWarning?.let { add(GeoNotice("perf", it, GeoLampTone.Warning)) }
+        state.recoveryWarning?.let { add(GeoNotice("recovery", it, GeoLampTone.Warning)) }
+    }.distinctBy { it.text }
+
     // 根层兜底：抽屉或确认框打开时按 Escape 一律关闭，不依赖焦点是否已经进抽屉。
     Box(
         Modifier
@@ -152,19 +173,6 @@ fun MainScreen(
     ) {
         Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().navigationBarsPadding()) {
-                state.message?.let { message ->
-                    GeoMessageRibbon(
-                        text = message,
-                        tone = when (state.messageTone) {
-                            MessageTone.Error -> GeoLampTone.Error
-                            MessageTone.Warning -> GeoLampTone.Warning
-                            MessageTone.Success -> GeoLampTone.Success
-                            MessageTone.Info -> GeoLampTone.Neutral
-                        },
-                        onDismiss = { runtime.clearMessage() }
-                    )
-                }
-    
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val wide = (maxWidth >= 840.dp || landscape && maxWidth >= 600.dp) &&
                         LocalDensity.current.fontScale <= 1.3f
@@ -178,6 +186,8 @@ fun MainScreen(
                         nowElapsedMs = nowElapsedMs,
                         maxSources = maxSources,
                         stoppingAll = stoppingAll,
+                        notices = notices,
+                        onDismissNotice = { _ -> runtime.clearMessage() },
                         onSelect = runtime::selectSource,
                         onToggleShutter = { shutterHidden = !shutterHidden },
                         onSourceInspect = { id ->
@@ -317,6 +327,8 @@ private fun Workspace(
     nowElapsedMs: Long,
     maxSources: Int,
     stoppingAll: Boolean,
+    notices: List<GeoNotice>,
+    onDismissNotice: (String) -> Unit,
     onSelect: (String) -> Unit,
     onToggleShutter: () -> Unit,
     onSourceInspect: (String) -> Unit,
@@ -351,6 +363,8 @@ private fun Workspace(
                     freshness = freshness,
                     shutterHidden = shutterHidden,
                     onToggleShutter = onToggleShutter,
+                    notices = notices,
+                    onDismissNotice = onDismissNotice,
                     modifier = Modifier.weight(1f).fillMaxHeight()
                 )
                 SourceCarriage(
@@ -373,6 +387,8 @@ private fun Workspace(
                 freshness = freshness,
                 shutterHidden = shutterHidden,
                 onToggleShutter = onToggleShutter,
+                notices = notices,
+                onDismissNotice = onDismissNotice,
                 modifier = Modifier.weight(1f).fillMaxWidth()
             )
             SourceCarriage(
@@ -403,8 +419,5 @@ private fun Workspace(
             settingsFocus = settingsFocus,
             accountFocus = accountFocus
         )
-        selected?.state?.error?.let { GeoHint(it, GeoLampTone.Error) }
-        selected?.state?.performanceWarning?.let { GeoHint(it, GeoLampTone.Warning) }
-        if (state.recoveryWarning != null) GeoHint(state.recoveryWarning, GeoLampTone.Warning)
     }
 }

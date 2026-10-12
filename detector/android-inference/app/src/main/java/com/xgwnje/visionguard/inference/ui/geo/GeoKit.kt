@@ -392,58 +392,54 @@ fun GeoInfoRow(label: String, value: String, labelWidth: Int = 96, valueColor: C
     }
 }
 
+/** 主界面提示：运行时消息、来源错误与恢复警告统一成一条，悬浮展示、不占布局。 */
+data class GeoNotice(
+    val id: String,
+    val text: String,
+    val tone: GeoLampTone,
+    /** 运行时消息可关闭；状态驱动的提示（来源错误、性能与恢复警告）不给关闭键。 */
+    val dismissible: Boolean = false
+)
+
 /**
- * 信息带：失败 / 等待 / 成功各自带语义色与图标，可关闭、长文可展开，不覆盖主操作。
+ * 悬浮提示区：叠在主预览面板上层，不挤压画面、来源列表与状态带的布局。
+ *
+ * 多条按顺序堆叠；长文最多三行，超出省略。
  */
 @Composable
-fun GeoMessageRibbon(
-    text: String,
-    tone: GeoLampTone,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember(text) { androidx.compose.runtime.mutableStateOf(false) }
-    val scheme = MaterialTheme.colorScheme
-    val (icon, contentColor, surface) = when (tone) {
-        GeoLampTone.Error -> Triple(LucideIcons.CircleAlert, VisionGuardStatusColors.error, scheme.errorContainer)
-        GeoLampTone.Warning -> Triple(LucideIcons.CircleHelp, VisionGuardStatusColors.warning, scheme.tertiaryContainer)
-        GeoLampTone.Success -> Triple(LucideIcons.CircleCheck, VisionGuardStatusColors.success, scheme.surfaceVariant)
-        GeoLampTone.Neutral -> Triple(LucideIcons.CircleHelp, scheme.onSurfaceVariant, scheme.surfaceVariant)
-    }
-    val long = text.length > 60
-    Row(
-        modifier
-            .fillMaxWidth()
-            .background(surface)
-            .padding(horizontal = Geo.ScreenPadding, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(icon, contentDescription = null, tint = contentColor, modifier = Modifier.size(16.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text,
-            color = contentColor,
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = if (expanded) Int.MAX_VALUE else 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
-        if (long) {
+fun GeoNoticeStack(notices: List<GeoNotice>, onDismiss: (String) -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(Geo.Gap)) {
+        notices.forEach { notice ->
+            val scheme = MaterialTheme.colorScheme
+            val (icon, content, surface) = when (notice.tone) {
+                GeoLampTone.Error -> Triple(LucideIcons.CircleAlert, VisionGuardStatusColors.error, scheme.errorContainer)
+                GeoLampTone.Warning -> Triple(LucideIcons.CircleHelp, VisionGuardStatusColors.warning, scheme.tertiaryContainer)
+                GeoLampTone.Success -> Triple(LucideIcons.CircleCheck, VisionGuardStatusColors.success, scheme.surfaceVariant)
+                GeoLampTone.Neutral -> Triple(LucideIcons.CircleHelp, scheme.onSurfaceVariant, scheme.surfaceVariant)
+            }
             Row(
                 Modifier
-                    .heightIn(min = Geo.Touch)
-                    .clickable { expanded = !expanded }
-                    .padding(horizontal = 8.dp),
+                    .fillMaxWidth()
+                    .background(surface, RectangleShape)
+                    .border(Geo.Border, scheme.outlineVariant, RectangleShape)
+                    .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Icon(icon, contentDescription = null, tint = content, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    if (expanded) "收起" else "详情",
-                    color = contentColor,
-                    style = MaterialTheme.typography.bodySmall
+                    notice.text,
+                    color = content,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
+                if (notice.dismissible) {
+                    GeoIconKey(LucideIcons.X, "关闭提示", onClick = { onDismiss(notice.id) })
+                }
             }
         }
-        GeoIconKey(LucideIcons.X, "关闭提示", onDismiss)
     }
 }
 

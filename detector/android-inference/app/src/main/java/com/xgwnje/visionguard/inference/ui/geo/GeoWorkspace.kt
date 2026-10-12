@@ -52,6 +52,8 @@ fun PreviewComposition(
     freshness: String,
     shutterHidden: Boolean,
     onToggleShutter: () -> Unit,
+    notices: List<GeoNotice> = emptyList(),
+    onDismissNotice: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val frame = source?.state?.preview
@@ -59,11 +61,13 @@ fun PreviewComposition(
     // 画面尺寸跟着画面走；帧率与耗时留在控制带读数里，避免同屏重复。
     val frameMeta = source?.state?.preview?.let { "${it.width}×${it.height}" }
     // 与来源列表同规格的面板：48dp 表头 + 分隔线 + 16dp 内衬，两栏顶部因此齐平。
-    Column(
+    // 提示条叠在面板上层，不参与布局测量，所以不会挤压画面。
+    Box(
         modifier
             .background(MaterialTheme.colorScheme.surface, RectangleShape)
             .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape)
     ) {
+        Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().height(Geo.Touch).padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -111,15 +115,17 @@ fun PreviewComposition(
                     onClick = onToggleShutter,
                     modifier = Modifier.align(Alignment.BottomStart).padding(12.dp)
                 )
-                if (source?.state?.error != null && !shutterHidden) {
-                    Text(
-                        source.state.error,
-                        color = VisionGuardStatusColors.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp)
-                    )
-                }
             }
+        }
+        }
+        if (notices.isNotEmpty()) {
+            GeoNoticeStack(
+                notices = notices,
+                onDismiss = onDismissNotice,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(start = Geo.ScreenPadding, end = Geo.ScreenPadding, top = Geo.Touch + Geo.Gap)
+            )
         }
     }
 }
