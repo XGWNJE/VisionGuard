@@ -289,44 +289,51 @@ fun StatusBar(
     val running = source?.state?.isRunning == true
     val topConfidence = source?.state?.detections?.maxByOrNull { it.confidence }?.confidence
     val readouts: @Composable (Modifier) -> Unit = { barModifier ->
-        Column(barModifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Geo.GroupGap)) {
-                Readout("实际帧率", if (running) "%.1f".format(source?.state?.actualFps ?: 0.0) else "0.0", "FPS", Modifier.weight(1f))
-                Readout(
-                    "检测目标",
-                    if (running && topConfidence != null) "${(topConfidence * 100).toInt()}" else "—",
-                    if (running && topConfidence != null) "%" else null,
-                    Modifier.weight(1f)
-                )
-                Readout(
-                    "单帧耗时",
-                    if (running && (source?.state?.inferenceMs ?: 0L) > 0) "${source?.state?.inferenceMs}" else "—",
-                    if (running && (source?.state?.inferenceMs ?: 0L) > 0) "ms" else null,
-                    Modifier.weight(1f)
-                )
-            }
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Geo.Gap)
-            ) {
-                // 推理后端是技术标识而不是实时读数：放在摘要行里，长名字不再被读数格截断。
-                source?.state?.backend?.takeIf { it.isNotEmpty() }?.let { backend ->
-                    Text(
-                        "后端 $backend",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 1
-                    )
-                }
-                source?.let { view ->
-                    StripItem("置信度", "${view.params.confidencePercent}%") { onParamAnchor(ParamAnchor.MACHINES) }
-                    StripItem("采样", "${view.params.targetFps} FPS") { onParamAnchor(ParamAnchor.MACHINES) }
-                    StripItem("冷却", "${view.params.cooldownSeconds} 秒") { onParamAnchor(ParamAnchor.MACHINES) }
-                    StripItem(null, ModelKeys.displayName(view.params.modelKey)) { onParamAnchor(ParamAnchor.MODELS) }
-                    StripItem(null, "${view.params.watchedClasses.size} 个目标") { onParamAnchor(ParamAnchor.TARGETS) }
-                }
-            }
+        // 一排等宽数据格：仪表与参数同一套「小标签 + 加粗值」样式，不再分大小两行。
+        Row(barModifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
+            Metric("实际帧率", if (running) "%.1f".format(source?.state?.actualFps ?: 0.0) else "0.0", "FPS", Modifier.weight(1f))
+            Metric(
+                "检测目标",
+                if (running && topConfidence != null) "${(topConfidence * 100).toInt()}" else "—",
+                if (running && topConfidence != null) "%" else null,
+                Modifier.weight(1f)
+            )
+            Metric(
+                "单帧耗时",
+                if (running && (source?.state?.inferenceMs ?: 0L) > 0) "${source?.state?.inferenceMs}" else "—",
+                if (running && (source?.state?.inferenceMs ?: 0L) > 0) "ms" else null,
+                Modifier.weight(1f)
+            )
+            Metric(
+                "置信度",
+                source?.let { "${it.params.confidencePercent}" } ?: "—",
+                if (source != null) "%" else null,
+                Modifier.weight(1f)
+            ) { onParamAnchor(ParamAnchor.MACHINES) }
+            Metric(
+                "采样",
+                source?.let { "${it.params.targetFps}" } ?: "—",
+                if (source != null) "FPS" else null,
+                Modifier.weight(1f)
+            ) { onParamAnchor(ParamAnchor.MACHINES) }
+            Metric(
+                "冷却",
+                source?.let { "${it.params.cooldownSeconds}" } ?: "—",
+                if (source != null) "秒" else null,
+                Modifier.weight(1f)
+            ) { onParamAnchor(ParamAnchor.MACHINES) }
+            Metric(
+                "模型",
+                source?.let { shortModelLabel(it.params.modelKey) } ?: "—",
+                null,
+                Modifier.weight(2f)
+            ) { onParamAnchor(ParamAnchor.MODELS) }
+            Metric(
+                "目标",
+                source?.let { "${it.params.watchedClasses.size}" } ?: "—",
+                if (source != null) "个" else null,
+                Modifier.weight(1f)
+            ) { onParamAnchor(ParamAnchor.TARGETS) }
         }
     }
     val entries: @Composable (Modifier) -> Unit = { entryModifier ->
@@ -335,9 +342,16 @@ fun StatusBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Geo.Gap)
         ) {
+            // 竖线落在右段最左：与上方来源列表的左边框是同一条线。
+            Spacer(
+                Modifier
+                    .width(Geo.Border)
+                    .height(Geo.Touch)
+                    .background(MaterialTheme.colorScheme.outlineVariant)
+            )
             Box(
                 Modifier
-                    .clickable(onClick = onConnection)
+                    .clickable(interactionSource = null, indication = null, onClick = onConnection)
                     .heightIn(min = Geo.Touch)
                     .padding(horizontal = 8.dp),
                 contentAlignment = Alignment.Center
@@ -350,58 +364,71 @@ fun StatusBar(
             GeoIconKey(LucideIcons.UserRound, "账号菜单", onAccount, modifier = Modifier.focusRequester(accountFocus))
         }
     }
-    Row(
-        modifier
-            .fillMaxWidth()
-            .heightIn(min = Geo.StatusBar)
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            // 工作区外层已经有 16dp 页边距：这里不再叠加，否则右段会与上方来源列表错开 16dp。
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(Geo.Gap)
-    ) {
-        readouts(Modifier.weight(1f))
-        if (wide) {
-            // 与上方「来源列表」同宽：上下分界因此对齐。
-            Box(Modifier.width(Geo.SourceRail)) { entries(Modifier.fillMaxWidth()) }
-        } else {
-            entries(Modifier)
-        }
-    }
-}
-
-@Composable
-private fun Readout(label: String, value: String, unit: String?, modifier: Modifier = Modifier) {
-    Column(modifier) {
-        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                value,
-                color = MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            unit?.let {
-                Spacer(Modifier.width(2.dp))
-                Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+    Column(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)) {
+        // 与上方两块面板同底色，只用一条顶线与一条竖线分段。
+        GeoDivider()
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = Geo.StatusBar)
+                .padding(vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(Geo.Gap)
+        ) {
+            readouts(Modifier.weight(1f))
+            if (wide) {
+                // 与上方「来源列表」同宽：上下分界因此对齐。
+                Box(Modifier.width(Geo.SourceRail)) { entries(Modifier.fillMaxWidth()) }
+            } else {
+                entries(Modifier)
             }
         }
     }
 }
 
+/** 状态带里的模型短名：`YOLO26M · 320 CPU` → `M·320 CPU`，避免在等宽格里被截断。 */
+private fun shortModelLabel(key: String): String =
+    ModelKeys.displayName(key).removePrefix("YOLO26").replace(" · ", "·")
+
+/** 底部状态带的数据格：小标签在上、加粗值在下；可点的格子跳到参数抽屉对应区块。 */
 @Composable
-private fun StripItem(label: String?, value: String, onClick: () -> Unit) {
-    Row(
+private fun Metric(
+    label: String,
+    value: String,
+    unit: String?,
+    modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null
+) {
+    val clickableModifier = if (onClick == null) {
         Modifier
-            .heightIn(min = Geo.Touch)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (label != null) {
-            Text("$label ", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+    } else {
+        Modifier.clickable(interactionSource = null, indication = null, onClick = onClick)
+    }
+    Column(modifier.then(clickableModifier).heightIn(min = Geo.Touch), verticalArrangement = Arrangement.Center) {
+        Text(
+            label,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = Geo.FontMeta),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                value,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+            unit?.let {
+                Spacer(Modifier.width(2.dp))
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = Geo.FontMeta)
+                )
+            }
         }
-        Text(value, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
     }
 }
