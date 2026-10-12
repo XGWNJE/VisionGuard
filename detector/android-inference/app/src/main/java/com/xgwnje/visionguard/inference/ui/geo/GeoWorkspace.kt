@@ -124,13 +124,12 @@ fun PreviewComposition(
     }
 }
 
-/** 来源滑架：逐来源启停、抽屉入口与添加入口。 */
+/** 来源滑架：逐来源启停、抽屉入口；本机相机默认已在列表，远程来源由控制台绑定后出现。 */
 @Composable
 fun SourceCarriage(
     sources: List<SourceView>,
     selectedSourceId: String?,
     maxSources: Int,
-    nowElapsedMs: Long,
     busySourceId: String?,
     anyRunning: Boolean,
     stoppingAll: Boolean,
@@ -138,9 +137,6 @@ fun SourceCarriage(
     onInspect: (String) -> Unit,
     onToggle: (String) -> Unit,
     onStopAll: () -> Unit,
-    onAdd: () -> Unit,
-    addBlockedReason: String? = null,
-    addFocus: FocusRequester,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -185,22 +181,15 @@ fun SourceCarriage(
                 )
             }
         }
-        GeoDivider()
-        addBlockedReason?.let {
+        if (sources.isEmpty()) {
+            GeoDivider()
             Text(
-                it,
+                "暂无来源；远程镜头由控制台把相机推流节点绑定到本节点后自动出现。",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
             )
         }
-        GeoKey(
-            onClick = onAdd,
-            enabled = addBlockedReason == null,
-            label = "添加来源",
-            icon = LucideIcons.Plus,
-            modifier = Modifier.fillMaxWidth().padding(12.dp).focusRequester(addFocus)
-        )
     }
 }
 

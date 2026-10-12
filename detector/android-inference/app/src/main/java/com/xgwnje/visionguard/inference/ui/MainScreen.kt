@@ -107,7 +107,6 @@ fun MainScreen(
     val helpFocus = remember { FocusRequester() }
     val settingsFocus = remember { FocusRequester() }
     val accountFocus = remember { FocusRequester() }
-    val addFocus = remember { FocusRequester() }
     var callerFocus by remember { mutableStateOf<FocusRequester?>(null) }
     val restoreFocus: () -> Unit = {
         callerFocus?.let { requester -> runCatching { requester.requestFocus() } }
@@ -120,11 +119,12 @@ fun MainScreen(
 
     val selected = state.sources.firstOrNull { it.sourceId == state.selectedSourceId }
     val maxSources = control.maxSources
-    // 添加来源只建本机相机：直接执行，不再弹一个只有「取消」的抽屉；不可添加时按钮禁用并说明原因。
-    val addBlockedReason = when {
-        state.sources.size >= maxSources -> "已达服务端来源上限 $maxSources 路"
-        state.sources.any { it.mode == SourceCaptureMode.LocalCamera } -> "本机相机只能一条，已在来源列表"
-        else -> null
+    // 本机相机默认就在来源列表里：进入界面时若还没有就登记一条，不需要手动添加。
+    // 远程来源仍由控制台把相机推流节点绑定到本节点后下发，本机不自行创建槽位。
+    LaunchedEffect(Unit) {
+        if (!mockData && runtime.state.value.sources.none { it.mode == SourceCaptureMode.LocalCamera }) {
+            runtime.addLocalCameraSource()?.let { failure -> runtime.setMessage(failure) }
+        }
     }
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
@@ -179,13 +179,6 @@ fun MainScreen(
                         maxSources = maxSources,
                         stoppingAll = stoppingAll,
                         onSelect = runtime::selectSource,
-                        onAdd = {
-                            callerFocus = addFocus
-                            scope.launch {
-                                runtime.addLocalCameraSource()?.let { failure -> runtime.setMessage(failure) }
-                            }
-                        },
-                        addBlockedReason = addBlockedReason,
                         onToggleShutter = { shutterHidden = !shutterHidden },
                         onSourceInspect = { id ->
                             runtime.selectSource(id)
@@ -221,7 +214,6 @@ fun MainScreen(
                         helpFocus = helpFocus,
                         settingsFocus = settingsFocus,
                         accountFocus = accountFocus,
-                        addFocus = addFocus,
                         onParamAnchor = { anchor ->
                             callerFocus = null
                             paramAnchor = anchor
@@ -326,8 +318,6 @@ private fun Workspace(
     maxSources: Int,
     stoppingAll: Boolean,
     onSelect: (String) -> Unit,
-    onAdd: () -> Unit,
-    addBlockedReason: String?,
     onToggleShutter: () -> Unit,
     onSourceInspect: (String) -> Unit,
     onToggleSource: (String) -> Unit,
@@ -341,11 +331,9 @@ private fun Workspace(
     onAccount: () -> Unit,
     helpFocus: FocusRequester,
     settingsFocus: FocusRequester,
-    accountFocus: FocusRequester,
-    addFocus: FocusRequester
+    accountFocus: FocusRequester
 ) {
-    val freshness = when {
-        selected == null -> "没有来源"
+    val freshness = when {        selected == null -> "没有来源"
         selected.state.isRunning && selected.state.preview == null -> "运行中 · 等待首帧"
         selected.state.isRunning -> "运行中 · 画面 ${relativeAge(selected.state.lastProgressAtMs, nowElapsedMs)}"
         selected.state.preview != null -> "已停止 · 最后一帧（${relativeAge(selected.state.lastProgressAtMs, nowElapsedMs)}）"
@@ -369,7 +357,6 @@ private fun Workspace(
                     sources = state.sources,
                     selectedSourceId = state.selectedSourceId,
                     maxSources = maxSources,
-                    nowElapsedMs = nowElapsedMs,
                     busySourceId = busySourceId,
                     anyRunning = anyRunning,
                     stoppingAll = stoppingAll,
@@ -377,9 +364,6 @@ private fun Workspace(
                     onInspect = onSourceInspect,
                     onToggle = onToggleSource,
                     onStopAll = onStopAll,
-                    onAdd = onAdd,
-                    addBlockedReason = addBlockedReason,
-                    addFocus = addFocus,
                     modifier = Modifier.width(Geo.SourceRail).fillMaxHeight()
                 )
             }
@@ -395,7 +379,6 @@ private fun Workspace(
                 sources = state.sources,
                 selectedSourceId = state.selectedSourceId,
                 maxSources = maxSources,
-                nowElapsedMs = nowElapsedMs,
                 busySourceId = busySourceId,
                 anyRunning = anyRunning,
                 stoppingAll = stoppingAll,
@@ -403,9 +386,6 @@ private fun Workspace(
                 onInspect = onSourceInspect,
                 onToggle = onToggleSource,
                 onStopAll = onStopAll,
-                onAdd = onAdd,
-                addBlockedReason = addBlockedReason,
-                addFocus = addFocus,
                 modifier = Modifier.fillMaxWidth().height(220.dp)
             )
         }
