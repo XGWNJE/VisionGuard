@@ -160,16 +160,13 @@ fun SourceCarriage(
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f)
             )
-            // 兜底：多路来源都在跑时给一个一键停止，避免逐条点。
+            // 兜底：多路来源都在跑时给一个一键停止。与状态带、抽屉里的方键同款，不用危险色抢表头。
             if (anyRunning) {
-                GeoKey(
+                GeoIconKey(
+                    icon = if (stoppingAll) LucideIcons.LoaderCircle else LucideIcons.Pause,
+                    contentDescription = "全部停止",
                     onClick = onStopAll,
-                    label = "全部停止",
-                    icon = LucideIcons.Pause,
-                    tone = GeoTone.Danger,
-                    busy = stoppingAll,
-                    enabled = !stoppingAll,
-                    minHeight = Geo.Touch
+                    enabled = !stoppingAll
                 )
             }
         }
