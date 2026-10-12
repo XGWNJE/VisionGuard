@@ -64,34 +64,27 @@ object Geo {
     /** 通用触点下限。 */
     val Touch = 48.dp
 
-    /** 左右各 16dp 内不放唯一入口。 */
-    val EdgeGesture = 16.dp
-
     val ScreenPadding = 16.dp
     val Gap = 8.dp
     val GroupGap = 16.dp
 
-    /** 启停压板。 */
-    val PaddleHeight = 80.dp
+    /** 启停压板与参数 / 遮罩方键：横屏控制带里的主操作，仍高于 48dp 触点下限。 */
+    val PaddleHeight = 56.dp
+    val SquareKey = 56.dp
     val PressShift = 3.dp
 
-    /** 参数 / 遮罩方键。 */
-    val SquareKey = 80.dp
+    /** 横屏底部两条：控制带（读数 + 启停 + 方键）与状态带（参数摘要 + 应用入口）。 */
+    val ControlBar = 72.dp
+    val StatusBar = 48.dp
 
-    /** 来源行。 */
-    val SourceRowMin = 76.dp
-    val SourceRowMax = 94.dp
+    /** 来源行：紧凑两行，4 路以上仍能同屏。 */
+    val SourceRow = 64.dp
     val SourceBar = 3.dp
 
     /** 采样滚筒。 */
     val WheelWidth = 112.dp
     val WheelHeight = 220.dp
     val WheelNumber = 40.sp
-
-    /** 冷却三位滚筒。 */
-    val DigitWidth = 60.dp
-    val DigitHeight = 146.dp
-    val DigitNumber = 36.sp
 
     /** 置信度滑轨。 */
     val RailHeight = 32.dp
@@ -130,9 +123,8 @@ object Geo {
     const val DRAWER_MS = 180
     const val PRESS_MS = 110
 
-    /** 字号下限：可点标签 ≥14，辅助与技术值 ≥10。 */
-    val FontLabel = 14.sp
-    val FontMeta = 10.sp
+    /** 字号下限：可点标签 ≥14，辅助与技术值 12。 */
+    val FontMeta = 12.sp
 
     /** 线宽。 */
     val Border = 1.dp

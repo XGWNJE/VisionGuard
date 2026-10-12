@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -57,6 +56,8 @@ fun PreviewComposition(
 ) {
     val frame = source?.state?.preview
     val image by com.xgwnje.visionguard.inference.ui.rememberFrameBitmap(frame, maxWidth = 1600)
+    // 画面尺寸跟着画面走；帧率与耗时留在控制带读数里，避免同屏重复。
+    val frameMeta = source?.state?.preview?.let { "${it.width}×${it.height}" }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(Geo.Gap)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -67,6 +68,15 @@ fun PreviewComposition(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f)
             )
+            frameMeta?.let {
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = Geo.FontMeta),
+                    maxLines = 1
+                )
+                Spacer(Modifier.width(12.dp))
+            }
             Text(freshness, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1)
         }
         Row(Modifier.fillMaxWidth().weight(1f)) {
@@ -125,7 +135,7 @@ fun SourceCarriage(
             .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape)
     ) {
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -134,7 +144,7 @@ fun SourceCarriage(
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f)
             )
-            Text("SELECT", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall.copy(fontSize = Geo.FontMeta))
+            Text("详情", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall.copy(fontSize = Geo.FontMeta))
         }
         GeoDivider()
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
@@ -177,7 +187,7 @@ private fun SourceStop(
     Row(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = Geo.SourceRowMin, max = Geo.SourceRowMax)
+            .height(Geo.SourceRow)
             .background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
             .clickable(onClick = onSelect),
         verticalAlignment = Alignment.CenterVertically
@@ -191,14 +201,14 @@ private fun SourceStop(
         Text(
             index.toString().padStart(2, '0'),
             color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.titleLarge.copy(fontSize = 28.sp, fontWeight = FontWeight.SemiBold),
+            style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, fontWeight = FontWeight.SemiBold),
             modifier = Modifier.padding(horizontal = 12.dp)
         )
         Column(Modifier.weight(1f)) {
             Text(
                 source.sourceName,
                 color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -231,7 +241,6 @@ fun ActionDeck(
     val topConfidence = source?.state?.detections?.maxByOrNull { it.confidence }?.confidence
     val readouts: @Composable (Modifier) -> Unit = { readoutModifier ->
         Row(readoutModifier, horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
-            Readout("推理后端", source?.state?.backend?.ifEmpty { "未报告" } ?: "未报告", null, Modifier.weight(1f))
             Readout("实际帧率", if (running) "%.1f".format(source?.state?.actualFps ?: 0.0) else "0.0", "FPS", Modifier.weight(1f))
             Readout(
                 "检测目标",
@@ -286,12 +295,12 @@ fun ActionDeck(
         modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = Geo.ScreenPadding, vertical = 12.dp),
+            .padding(horizontal = Geo.ScreenPadding, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(Geo.Gap)
     ) {
         if (wide) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
-                readouts(Modifier.width(340.dp))
+                readouts(Modifier.width(360.dp))
                 keys(Modifier.weight(1f))
             }
         } else {
@@ -322,9 +331,10 @@ private fun Readout(label: String, value: String, unit: String?, modifier: Modif
 }
 
 /**
- * 技术信息带：只读标识与参数摘要，右端放应用级入口（连接状态、帮助、设置、账号）。
+ * 状态带：参数摘要与技术标识，右端放应用级入口（连接状态、帮助、设置、账号）。
  *
  * owner 要求不留头部标题行、把高度让给画面，所以应用级入口落在这一行里。
+ * 运行状态（运行中只读 / 已停止）只在预览标题行说一次，这里不再重复。
  */
 @Composable
 fun ParameterStrip(
@@ -341,11 +351,10 @@ fun ParameterStrip(
     accountFocus: FocusRequester,
     modifier: Modifier = Modifier
 ) {
-    val running = source?.state?.isRunning == true
     Row(
         modifier
             .fillMaxWidth()
-            .heightIn(min = Geo.Touch)
+            .heightIn(min = Geo.StatusBar)
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(start = Geo.ScreenPadding, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -355,24 +364,18 @@ fun ParameterStrip(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(Geo.Gap)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    if (running) LucideIcons.LockKeyhole else LucideIcons.Pencil,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(14.dp)
-                )
-                Spacer(Modifier.width(6.dp))
+            // 推理后端是技术标识而不是实时读数：放在摘要行里，长名字不再被读数格截断。
+            source?.state?.backend?.takeIf { it.isNotEmpty() }?.let { backend ->
                 Text(
-                    if (running) "运行中只读" else "已停止 · 可编辑",
+                    "后端 $backend",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1
                 )
             }
             source?.let { view ->
                 StripItem("置信度", "${view.params.confidencePercent}%") { onParams(ParamAnchor.MACHINES) }
                 StripItem("采样", "${view.params.targetFps} FPS") { onParams(ParamAnchor.MACHINES) }
-                StripItem("耗时", if (view.state.inferenceMs > 0) "${view.state.inferenceMs} ms" else "—") { onParams(ParamAnchor.MACHINES) }
                 StripItem("冷却", "${view.params.cooldownSeconds} 秒") { onParams(ParamAnchor.MACHINES) }
                 StripItem(null, ModelKeys.displayName(view.params.modelKey)) { onParams(ParamAnchor.MODELS) }
                 StripItem(null, "${view.params.watchedClasses.size} 个目标") { onParams(ParamAnchor.TARGETS) }
