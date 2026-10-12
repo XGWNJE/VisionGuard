@@ -1,0 +1,35 @@
+name: Guardrail scan
+
+# 定期找出「重复犯的错」与「该固化成自动化检查」的工程点，产出候选报告。
+# 只读扫描：不改文档、不改代码、不发布；候选由 owner / agent 复核后登记进 docs/06-任务清单.md。
+
+on:
+  schedule:
+    # 每周一 04:07 UTC（北京时间 12:07），与文档审核的 03:17 错开。
+    - cron: '7 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # 需要提交历史做「重复修复」聚类。
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Scan repeated fixes and guardrail gaps
+        run: node scripts/scan-guardrails.js --out guardrail-report.md
+      - name: Summarize on the run page
+        run: cat guardrail-report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: guardrail-report
+          path: guardrail-report.md
+          retention-days: 30
