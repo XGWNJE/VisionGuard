@@ -25,6 +25,7 @@ It performs preflight before version sync, builds selected targets, prepares sig
 
 ## Non-negotiable gates
 
+- The released commit must already have a green Development checks run on GitHub. Preflight reads the run of `-GitHubTagTarget` (default `HEAD`), and refuses a non-success conclusion (including cancelled or still running) or a commit that was never pushed. Push first, wait for CI to pass, then release; local green builds cannot substitute for it.
 - Resolve current VPS connection facts through the configured Server-infra `server.local.env`; never hardcode a developer machine path, print secrets, or treat a stale path as authoritative. The deployment runtime root is controlled by the publish script and current infrastructure configuration.
 - Android packages must be signed and pass `apksigner verify`; `app-release-unsigned.apk` is compile-only evidence and never a release artifact.
 - Windows ZIPs must include the Resident runtime and exclude `.pdb`, `.lib`, `.dll.config`, `.onnx`, `Assets/`, and `alerts/`.

@@ -338,3 +338,26 @@ test('both release entrypoints keep assets private until uploaded size and diges
   const block = script.slice(script.indexOf('Assert-GitHubUploadedAssets -Artifacts'), script.indexOf('function Get-GitHubReleaseByTag'));
   assert.match(block, /if \(\$DraftOnly\) \{[^}]+Draft retained:[^}]+\}\s*else \{[^}]+--draft=false/);
 });
+
+test('release preflight refuses a commit whose Development checks are not green', () => {
+  const script = read('scripts/publish-release.ps1');
+
+  // v0.7.0 与 v0.7.1 都是在 Development checks 失败的情况下发出去的：发布脚本原来只查本地构建、
+  // 签名、上传与线上端点，从不看 GitHub Actions，CI 红着也照样发。CI 结论因此必须成为发布闸门。
+  assert.match(script, /function Assert-DevelopmentChecksGreen/, 'missing the Development checks gate');
+  assert.match(
+    script,
+    /actions\/workflows\/development\.yml\/runs\?head_sha=\$Commit/,
+    'the gate must read the Development checks runs of the released commit'
+  );
+  // 提交还没推上去时没有运行记录：先推送、等 CI 跑完再发布，不能用本地绿灯顶替。
+  assert.match(script, /Development checks have no run for \$Commit on GitHub/, 'the unpushed-commit branch is missing');
+  assert.match(script, /publishing requires success/, 'the non-success abort is missing');
+
+  // 闸门必须在版本同步、构建与上传之前跑，而且 GitHub-only 入口也要跑同一条检查。
+  const gateCall = script.indexOf('Assert-DevelopmentChecksGreen -Commit $ChecksCommit');
+  const syncVersion = script.indexOf('Write-Step "Sync version"');
+  assert.ok(gateCall > 0, 'preflight never calls the gate');
+  assert.ok(gateCall < syncVersion, 'the gate must run before version sync, build and upload');
+  assert.match(script, /Assert-DevelopmentChecksGreen -Commit \$targetCommit/, 'GitHub-only mode must run the gate too');
+});

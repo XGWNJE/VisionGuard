@@ -309,8 +309,47 @@ print("paramiko ok")
     }
 }
 
+function Assert-DevelopmentChecksGreen {
+    param([string]$Commit)
+
+    # CI 是发布的第一道闸门：目标提交必须在 GitHub 上跑过 Development checks 并 success。
+    # 本地构建、签名和上传都看不到工作流结论，v0.7.0 与 v0.7.1 就是在 CI 红着的情况下发出去的。
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        throw "GitHub CLI (gh) is required to verify Development checks before publishing."
+    }
+
+    $url = "repos/$GitHubRepository/actions/workflows/development.yml/runs?head_sha=$Commit&per_page=1&sort=created&direction=desc"
+    $runs = @()
+    try {
+        $runs = @((Invoke-NativeCapture -FilePath 'gh' -Arguments @('api', $url) | ConvertFrom-Json).workflow_runs)
+    }
+    catch {
+        throw "Cannot read Development checks for $Commit from GitHub: $($_.Exception.Message)"
+    }
+
+    # 提交还没推上去时这里没有运行记录：先推送，等 CI 跑完再发布，不能用本地绿灯顶替。
+    if ($runs.Count -eq 0) {
+        throw "Development checks have no run for $Commit on GitHub. Push the commit and wait for Development checks to pass before publishing."
+    }
+
+    $latest = $runs[0]
+    if ($latest.status -ne 'completed' -or $latest.conclusion -ne 'success') {
+        throw "Development checks for $Commit are $($latest.status)/$($latest.conclusion); publishing requires success. $($latest.html_url)"
+    }
+
+    Write-Host "preflight: Development checks passed for $Commit ($($latest.html_url))"
+}
+
 function Invoke-ReleasePreflight {
-    param([bool]$ServerDeployPlanned)
+    param(
+        [bool]$ServerDeployPlanned,
+        [string]$ChecksCommit = ''
+    )
+
+    if (-not $ChecksCommit) {
+        $ChecksCommit = Resolve-GitCommit -Revision $GitHubTagTarget
+    }
+    Assert-DevelopmentChecksGreen -Commit $ChecksCommit
 
     Write-Host "preflight: checking documentation contract"
     Invoke-Native -FilePath 'node' -Arguments @((Join-Path $repoRoot 'scripts\check-docs.js'))
@@ -826,6 +865,7 @@ function Invoke-GitHubOnlyPreflight {
     if (-not (Test-NativeSuccess -FilePath 'git' -Arguments @('merge-base', '--is-ancestor', $targetCommit, 'origin/main'))) {
         throw "GitHub tag target $targetCommit is not present in origin/main. Push the source commit before publishing."
     }
+    Assert-DevelopmentChecksGreen -Commit $targetCommit
     if ($Artifacts.Count -eq 0) {
         throw "GitHub-only preflight found no release assets."
     }
