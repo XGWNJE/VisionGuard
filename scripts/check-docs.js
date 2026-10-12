@@ -655,6 +655,62 @@ function checkTaskListContract(taskList, errors) {
   }
 }
 
+// 路线图的格式是固定契约：每个方向一小节，要点带加粗小标签。宽表格在 Markdown 里挤成一团、
+// 窄屏也没法读，所以连「不要表格」一起固化；要点长度与条数也设上限，防止再写成大段文字。
+const ROADMAP_HEADING = '## 后续开发';
+const ROADMAP_POINT_LIMIT = 220;
+const ROADMAP_POINTS_PER_ITEM = 6;
+
+function checkRoadmapFormat(markdown, errors = []) {
+  const relativePath = 'docs/05-路线图.md';
+  const lines = markdown.split(/\r?\n/);
+  if (!lines.some((line) => line.trim() === ROADMAP_HEADING)) {
+    errors.push(`[contract] ${relativePath} is missing ${ROADMAP_HEADING}`);
+  }
+  if (lines.some((line) => /^\s*\|[\s:|-]+\|\s*$/.test(line))) {
+    errors.push(`[contract] ${relativePath} must use per-direction sections instead of tables`);
+  }
+
+  const items = [];
+  let current = null;
+  for (const line of lines) {
+    const heading = line.match(/^### (\d+)\.\s+(\S.*?)\s*$/);
+    if (heading) {
+      current = { order: Number(heading[1]), title: line.trim(), points: [] };
+      items.push(current);
+      continue;
+    }
+    if (line.startsWith('### ')) { current = null; continue; }
+    if (current && line.trim().startsWith('- ')) current.points.push(line.trim());
+  }
+
+  if (items.length === 0) {
+    errors.push(`[contract] ${relativePath} has no numbered direction sections`);
+  }
+  let previous = 0;
+  for (const item of items) {
+    if (item.order <= previous) {
+      errors.push(`[contract] ${relativePath} direction numbers must increase: ${item.title}`);
+    }
+    previous = item.order;
+    if (item.points.length === 0) {
+      errors.push(`[contract] ${relativePath} direction ${item.order} needs at least one bullet`);
+    }
+    if (item.points.length > ROADMAP_POINTS_PER_ITEM) {
+      errors.push(`[contract] ${relativePath} direction ${item.order} has ${item.points.length} bullets; keep at most ${ROADMAP_POINTS_PER_ITEM}`);
+    }
+    for (const point of item.points) {
+      if (!/^- \*\*.+?\*\*\s*[:：]/.test(point)) {
+        errors.push(`[contract] ${relativePath} direction ${item.order} has a bullet without a bold label: ${point}`);
+      }
+      if ([...point].length > ROADMAP_POINT_LIMIT) {
+        errors.push(`[contract] ${relativePath} direction ${item.order} has a bullet longer than ${ROADMAP_POINT_LIMIT} characters`);
+      }
+    }
+  }
+  return errors;
+}
+
 function checkVerificationVersionClaims(version, verificationReport, errors) {
   for (const line of verificationReport.split(/\r?\n/)) {
     if (!/当前(?:版本)?为/.test(line) || !/(?:VERSION|package\.json)/.test(line)) {
@@ -827,6 +883,7 @@ function auditRepository(root = DEFAULT_ROOT) {
 
   checkDocumentLayout(docsFiles, contents, errors);
   checkTaskListContract(contents.get('docs/06-任务清单.md') || '', errors);
+  checkRoadmapFormat(contents.get('docs/05-路线图.md') || '', errors);
 
   return errors;
 }
@@ -865,6 +922,7 @@ module.exports = {
   checkReadmeVersion,
   checkSkillContract,
   checkTaskListContract,
+  checkRoadmapFormat,
   checkValidationContract,
   checkVerificationVersionClaims,
   checkVersionSources

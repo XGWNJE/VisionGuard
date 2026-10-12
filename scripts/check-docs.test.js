@@ -16,6 +16,7 @@ const {
   checkCurrentComponentNames,
   checkReadmeVersion,
   checkTaskListContract,
+  checkRoadmapFormat,
   checkVerificationVersionClaims
 } = require('./check-docs');
 
@@ -259,6 +260,39 @@ test('the task list keeps its fixed chapters and top-priority placement', () => 
   const demoted = audit(lines.join('\n'));
   assert.equal(demoted.length, 1);
   assert.ok(demoted[0].includes('top-priority chapter'));
+});
+
+test('the roadmap keeps per-direction sections with short labelled bullets', () => {
+  const valid = [
+    '# 路线图',
+    '',
+    '## 后续开发',
+    '',
+    '### 1. 通知节点锁屏漏收',
+    '',
+    '- **要解决**：锁屏后收不到报警。',
+    '- **卡在哪**：等换机后再看。',
+    '',
+    '### 3. 局域网与公网两种部署模式',
+    '',
+    '- **要解决**：更低的延迟与更好的隐私。'
+  ].join('\n');
+  assert.deepEqual(checkRoadmapFormat(valid, []), []);
+
+  const table = valid.replace('- **要解决**：锁屏后收不到报警。', '| 顺序 | 方向 |\n|---|---|\n| 1 | 锁屏 |');
+  assert.match(checkRoadmapFormat(table, []).join('\n'), /instead of tables/);
+
+  const unlabelled = valid.replace('- **要解决**：锁屏后收不到报警。', '- 锁屏后收不到报警。');
+  assert.match(checkRoadmapFormat(unlabelled, []).join('\n'), /without a bold label/);
+
+  const tooLong = valid.replace('- **要解决**：锁屏后收不到报警。', `- **要解决**：${'锁'.repeat(230)}`);
+  assert.match(checkRoadmapFormat(tooLong, []).join('\n'), /longer than 220 characters/);
+
+  const outOfOrder = valid.replace('### 3. 局域网与公网两种部署模式', '### 1. 局域网与公网两种部署模式');
+  assert.match(checkRoadmapFormat(outOfOrder, []).join('\n'), /direction numbers must increase/);
+
+  const emptyItem = valid.replace('- **要解决**：更低的延迟与更好的隐私。', '');
+  assert.match(checkRoadmapFormat(emptyItem, []).join('\n'), /needs at least one bullet/);
 });
 
 test('MIT license and contribution policy cannot silently drift', () => {
