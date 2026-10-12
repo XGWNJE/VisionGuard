@@ -90,8 +90,15 @@ object ModelKeys {
  * 从统一服务的 `/models/<文件名>` 静态端点按需下载；下载先写 `.tmp`，校验声明长度后
  * 再替换正式文件，长度不符时删除临时文件并报可读原因。清单外的历史文件由
  * [cleanupUnknownFiles] 盘点清理，避免旧档位一直占着磁盘。
+ *
+ * [serverUrl] 是取值函数而不是常量：模型必须从**当前登录会话所在的服务**下载。写死构建时的地址
+ * 会让本地服务版绕过局域网、跑到正式服务端去下（实测就是这个问题：LAN 调试却在走公网）。
  */
-class ModelStore(private val modelsDir: File, private val serverUrl: String) {
+class ModelStore(
+    private val modelsDir: File,
+    private val serverUrl: () -> String,
+    private val log: (String) -> Unit = { },
+) {
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -142,7 +149,9 @@ class ModelStore(private val modelsDir: File, private val serverUrl: String) {
         val fileName = ModelKeys.fileName(key, format)
         val target = File(modelsDir, fileName)
         val temporary = File(modelsDir, "$fileName.tmp")
-        val request = Request.Builder().url("$serverUrl/models/$fileName").get().build()
+        val base = serverUrl().trimEnd('/')
+        val request = Request.Builder().url("$base/models/$fileName").get().build()
+        log("开始下载 $fileName ← $base")
 
         try {
             http.newCall(request).execute().use { response ->

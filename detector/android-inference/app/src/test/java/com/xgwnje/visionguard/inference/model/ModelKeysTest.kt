@@ -80,7 +80,7 @@ class ModelKeysTest {
     @Test
     fun `下载产物落到对应文件名`() {
         val dir = temporary.newFolder("models")
-        val store = ModelStore(dir, "http://127.0.0.1:1")
+        val store = ModelStore(dir, serverUrl = { "http://127.0.0.1:1" })
         assertEquals("yolo26m_640_gpu.tflite", store.file("yolo26m_640").name)
         assertEquals("yolo26m_320_int8.onnx", store.file("yolo26m_320_int8").name)
         // GPU 档没有 ONNX 本体入口，但 CPU 引擎要能拿到同尺寸的量化本体
@@ -92,7 +92,7 @@ class ModelKeysTest {
     @Test
     fun `空目录里没有任何档位算已下载`() {
         val dir = temporary.newFolder("models-empty")
-        val store = ModelStore(dir, "http://127.0.0.1:1")
+        val store = ModelStore(dir, serverUrl = { "http://127.0.0.1:1" })
         ModelKeys.keys.forEach { key ->
             assertTrue("空目录不该算已下载：$key", !store.isDownloaded(key))
         }
@@ -107,7 +107,7 @@ class ModelKeysTest {
         val staleTmp = java.io.File(dir, "yolo26m_320_int8.onnx.tmp").apply { writeBytes(ByteArray(1024)) }
         val kept = java.io.File(dir, "yolo26m_320_int8.onnx").apply { writeBytes(ByteArray(2 * 1024 * 1024)) }
 
-        val store = ModelStore(dir, "http://127.0.0.1:1")
+        val store = ModelStore(dir, serverUrl = { "http://127.0.0.1:1" })
         val (files, bytes) = runBlocking { store.cleanupUnknownFiles() }
 
         assertEquals(3, files)

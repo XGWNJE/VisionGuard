@@ -54,7 +54,7 @@ class QuantizedModelContractTest {
         val modelsDir = temporary.newFolder("models")
         java.io.File(modelsDir, "${key}.onnx").writeText("x")
 
-        val store = ModelStore(modelsDir, "http://127.0.0.1:1")
+        val store = ModelStore(modelsDir, serverUrl = { "http://127.0.0.1:1" })
         assertEquals("${key}.onnx", store.file(key).name)
         assertEquals("${base}_gpu.tflite", store.file(base).name)
 

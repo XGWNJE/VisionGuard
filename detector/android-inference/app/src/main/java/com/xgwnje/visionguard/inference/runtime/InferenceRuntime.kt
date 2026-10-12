@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.SystemClock
+import android.util.Log
 import androidx.core.content.ContextCompat
 import com.google.gson.Gson
 import com.google.gson.JsonObject
@@ -116,7 +117,13 @@ class InferenceRuntime private constructor(private val context: Context) {
     private val mutableState = MutableStateFlow(RuntimeUiState())
     val state = mutableState.asStateFlow()
 
-    private val models = ModelStore(File(context.filesDir, "models"), AppConstants.SERVER_URL)
+    // 模型跟着当前会话的服务地址走：本地服务版必须从局域网服务下载，不能落到构建时内置的正式地址。
+    // 没有会话时（还没登录）回落到构建内置地址，仅用于给出可读报错。
+    private val models = ModelStore(
+        File(context.filesDir, "models"),
+        serverUrl = { account.session.value?.endpoint ?: AppConstants.SERVER_URL },
+        log = { Log.i("ModelStore", it) },
+    )
     private val remoteFrames = RemoteFrameStore(SystemClock::elapsedRealtime)
     private val camera = LocalCameraSource()
 
