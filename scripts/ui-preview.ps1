@@ -7,6 +7,7 @@
 #
 # 常用：
 #   .\scripts\ui-preview.ps1 -Target Service
+#   .\scripts\ui-preview.ps1 -Target Service -MockData -Scene limits     # 只在要看「有数据」的样子时
 #   .\scripts\ui-preview.ps1 -Target Android -Component Inference -Install -DeviceSerial <序号>
 #   .\scripts\ui-preview.ps1 -Target Resources -Refresh
 #   .\scripts\ui-preview.ps1 -Target Stop
@@ -32,7 +33,10 @@ param(
     [string]$FixtureComponent = 'None',
     [string]$FixtureVersion = '',
     # Resources：清掉本地夹具包与其覆盖层条目。
-    [switch]$ClearFixtures
+    [switch]$ClearFixtures,
+    # 本地服务的模拟数据（场景节点 / 事件 / 截图）：只在要检查「有数据时长什么样」时打开。
+    # 默认不启动，并且会把上一轮遗留的模拟数据停掉，避免在别的流程里把它当成真实节点。
+    [switch]$MockData
 )
 
 $ErrorActionPreference = 'Stop'
@@ -165,6 +169,14 @@ function Start-Fixture {
     } catch {
         Write-Warning "控制台模拟数据未就绪，Web 控制台预览不可用（$($_.Exception.Message)）；其余端继续。"
     }
+}
+function Stop-Fixture {
+    # 模拟数据按端口 + 脚本名双重确认归属，只停本项目起的实例。
+    $fixturePid = Assert-LocalOwner 4319 'ui-preview-data.js'
+    if (!$fixturePid) { return }
+    try { Invoke-RestMethod -Uri 'http://127.0.0.1:4319/stop' -TimeoutSec 3 | Out-Null }
+    catch { Stop-Process -Id $fixturePid -ErrorAction SilentlyContinue }
+    $state = Get-State; $state.Fixture = 0; Save-State $state
 }
 function Get-ReleaseEntries {
     # 跟踪的 releases.json 是线上原件，本地覆盖层叠加在它之上（同平台覆盖）。
@@ -339,8 +351,7 @@ function Install-Android {
 if ($Target -eq 'Stop') {
     $endpoint = $null
     if (Test-Path -LiteralPath $taskEndpointPath) { $endpoint = Get-Content -LiteralPath $taskEndpointPath -Raw -Encoding UTF8 | ConvertFrom-Json }
-    $fixturePid = Assert-LocalOwner 4319 'ui-preview-data.js'
-    if ($fixturePid) { try { Invoke-RestMethod -Uri 'http://127.0.0.1:4319/stop' -TimeoutSec 3 | Out-Null } catch { Stop-Process -Id $fixturePid -ErrorAction SilentlyContinue } }
+    Stop-Fixture
     if ($endpoint) {
         $servicePid = Assert-LocalOwner ([int]$endpoint.port) 'server\dist\index.js'
         if ($servicePid) { Stop-Process -Id $servicePid; Write-Host "已停止本地服务（端口 $($endpoint.port)，PID $servicePid）。" }
@@ -361,12 +372,16 @@ if ($Target -eq 'Resources') {
 }
 
 $endpoint = Start-LocalService
-if ($Target -in @('Service', 'Windows', 'PrepareWindows')) { Start-Fixture }
+# 模拟数据是可选开关：默认不启动，并把上一轮遗留的停掉（停止时会解绑模拟节点），
+# 这样在别的流程里不会把它当成真实设备。要检查「有数据」的样子时再加 -MockData。
+if ($MockData) { Start-Fixture } else { Stop-Fixture }
 
 if ($Target -eq 'Service') {
     Show-ResourceSummary (Get-ResourceReport)
     Write-Host "本地服务：$($endpoint.lanUrl)（通道 $taskChannel，端口 $($endpoint.port)）"
-    Write-Host "控制台：$($endpoint.loopbackUrl)/console/    场景页：http://127.0.0.1:4319/"
+    Write-Host "控制台：$($endpoint.loopbackUrl)/console/"
+    if ($MockData) { Write-Host "场景模拟数据：http://127.0.0.1:4319/（-MockData -Scene normal|limits|empty）" }
+    else { Write-Host '场景模拟数据：未启动（要检查「有数据」的样子时加 -MockData）' }
     Write-Host "预览账号：$taskAccountsPath（用户 $($endpoint.username)）"
     Write-Host "端点清单：$taskEndpointPath"
     Write-Host 'Android：.\scripts\ui-preview.ps1 -Target Android -Component Inference -Install'

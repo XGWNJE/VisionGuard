@@ -203,7 +203,20 @@ async function main() {
   startControls();
   console.log('UI preview scenarios: http://127.0.0.1:4319/ . Simulated data only.');
 }
-process.on('SIGINT',()=>{controlServer?.close();clients.forEach(c=>{clearInterval(c.timer);c.ws.close();});setTimeout(()=>process.exit(),200);});
+// 关掉模拟数据时把模拟节点一并解绑：接口按 deviceIdentity 认回同一批设备，
+// 留着它们只会在别的流程里以「离线节点」出现，容易被当成真实设备。
+async function unbindSimulatedDevices() {
+  const ids = Object.values(manifest.devices).filter(id => typeof id === 'string');
+  if (!ids.length) return;
+  try {
+    const session = await loginBody({ ...account, component: 'web-console', deviceIdentity: require('node:crypto').createHash('sha256').update('ui-preview|controller').digest('hex'), deviceModel: '模拟设备', ...(previous.devices.controller ? { deviceId: previous.devices.controller } : {}) }, 'controller');
+    for (const id of ids) { try { await api('/api/devices/' + id, session, undefined, 'DELETE'); } catch { /* 已解绑或不属于本账号 */ } }
+    manifest.devices = {};
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+    console.log('Simulated devices unbound.');
+  } catch (error) { console.error('Simulated device cleanup failed:', error.message); }
+}
+process.on('SIGINT',()=>{controlServer?.close();clients.forEach(c=>{clearInterval(c.timer);c.ws.close();});unbindSimulatedDevices().finally(()=>setTimeout(()=>process.exit(),200));});
 
 function testPng() {
   const crc=bytes=>{let c=0xffffffff;for(const b of bytes){c^=b;for(let i=0;i<8;i++)c=(c>>>1)^((c&1)?0xedb88320:0);}return(c^0xffffffff)>>>0;};
