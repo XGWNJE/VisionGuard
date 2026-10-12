@@ -273,7 +273,7 @@ test('the roadmap keeps per-direction sections with short labelled bullets', () 
     '- **要解决**：锁屏后收不到报警。',
     '- **卡在哪**：等换机后再看。',
     '',
-    '### 3. 局域网与公网两种部署模式',
+    '### 2. 局域网与公网两种部署模式',
     '',
     '- **要解决**：更低的延迟与更好的隐私。'
   ].join('\n');
@@ -288,8 +288,12 @@ test('the roadmap keeps per-direction sections with short labelled bullets', () 
   const tooLong = valid.replace('- **要解决**：锁屏后收不到报警。', `- **要解决**：${'锁'.repeat(230)}`);
   assert.match(checkRoadmapFormat(tooLong, []).join('\n'), /longer than 220 characters/);
 
-  const outOfOrder = valid.replace('### 3. 局域网与公网两种部署模式', '### 1. 局域网与公网两种部署模式');
-  assert.match(checkRoadmapFormat(outOfOrder, []).join('\n'), /direction numbers must increase/);
+  // 序号自适应：删掉一项后其余必须前移，既不能重号也不能留空号。
+  const duplicate = valid.replace('### 2. 局域网与公网两种部署模式', '### 1. 局域网与公网两种部署模式');
+  assert.match(checkRoadmapFormat(duplicate, []).join('\n'), /must restart at 1 and stay consecutive \(expected 2, found 1\)/);
+
+  const gap = valid.replace('### 2. 局域网与公网两种部署模式', '### 3. 局域网与公网两种部署模式');
+  assert.match(checkRoadmapFormat(gap, []).join('\n'), /must restart at 1 and stay consecutive \(expected 2, found 3\)/);
 
   const emptyItem = valid.replace('- **要解决**：更低的延迟与更好的隐私。', '');
   assert.match(checkRoadmapFormat(emptyItem, []).join('\n'), /needs at least one bullet/);

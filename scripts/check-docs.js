@@ -687,12 +687,13 @@ function checkRoadmapFormat(markdown, errors = []) {
   if (items.length === 0) {
     errors.push(`[contract] ${relativePath} has no numbered direction sections`);
   }
-  let previous = 0;
-  for (const item of items) {
-    if (item.order <= previous) {
-      errors.push(`[contract] ${relativePath} direction numbers must increase: ${item.title}`);
+  // 序号跟着内容走：删掉一个方向后其余自动前移，不留空号，所以要求从 1 开始连续。
+  items.forEach((item, index) => {
+    if (item.order !== index + 1) {
+      errors.push(`[contract] ${relativePath} direction numbers must restart at 1 and stay consecutive (expected ${index + 1}, found ${item.order}): ${item.title}`);
     }
-    previous = item.order;
+  });
+  for (const item of items) {
     if (item.points.length === 0) {
       errors.push(`[contract] ${relativePath} direction ${item.order} needs at least one bullet`);
     }
