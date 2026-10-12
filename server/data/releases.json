@@ -1,33 +1,33 @@
 {
-    "wpf":  {
-                "version":  "0.7.0",
-                "url":  "/releases/VisionGuard-WPF-v0.7.0.zip",
-                "size":  18041832,
-                "sha256":  "48344249E368A65C35F2E004BA7C7063A37C5D489711D162FC106CF3CE8ECA36"
-            },
-    "android-detector":  {
-                             "version":  "0.7.0",
-                             "url":  "/releases/VisionGuard-Detector-v0.7.0.apk",
-                             "size":  12004983,
-                             "sha256":  "2D12A18018D84EDD69B7F47E9E2A135891B006ECA9DF4BFEBDFEADBF82581A01"
-                         },
-    "android-receiver":  {
-                             "version":  "0.6.0",
-                             "url":  "/releases/VisionGuard-Receiver-v0.6.0.apk",
-                             "size":  11737841,
-                             "sha256":  "24D4E70BAFE3E09605441D55DE48829290EF0CA3436092458E6FB8A9F44B1DC1",
-                             "heldBack":  true
-                         },
-    "android-notifier":  {
-                             "version":  "0.7.0",
-                             "url":  "/releases/VisionGuard-Notifier-v0.7.0.apk",
-                             "size":  4649227,
-                             "sha256":  "3C60AFC74DF09E95547EC672AC039585E69EF062EEDD8700F4A8AA3198F243DE"
-                         },
-    "android-inference":  {
-                              "version":  "0.7.0",
-                              "url":  "/releases/VisionGuard-Inference-v0.7.0.apk",
-                              "size":  167655985,
-                              "sha256":  "95AE3651D29910948640DFB2630A6C04B6538094D24EB29989017623C0F5DE32"
-                          }
+  "wpf": {
+    "version": "0.7.0",
+    "url": "/releases/VisionGuard-WPF-v0.7.0.zip",
+    "size": 18041832,
+    "sha256": "48344249E368A65C35F2E004BA7C7063A37C5D489711D162FC106CF3CE8ECA36"
+  },
+  "android-detector": {
+    "version": "0.7.0",
+    "url": "/releases/VisionGuard-Detector-v0.7.0.apk",
+    "size": 12004983,
+    "sha256": "2D12A18018D84EDD69B7F47E9E2A135891B006ECA9DF4BFEBDFEADBF82581A01"
+  },
+  "android-receiver": {
+    "version": "0.6.0",
+    "url": "/releases/VisionGuard-Receiver-v0.6.0.apk",
+    "size": 11737841,
+    "sha256": "24D4E70BAFE3E09605441D55DE48829290EF0CA3436092458E6FB8A9F44B1DC1",
+    "heldBack": true
+  },
+  "android-notifier": {
+    "version": "0.7.0",
+    "url": "/releases/VisionGuard-Notifier-v0.7.0.apk",
+    "size": 4649227,
+    "sha256": "3C60AFC74DF09E95547EC672AC039585E69EF062EEDD8700F4A8AA3198F243DE"
+  },
+  "android-inference": {
+    "version": "0.7.0",
+    "url": "/releases/VisionGuard-Inference-v0.7.0.apk",
+    "size": 167655985,
+    "sha256": "95AE3651D29910948640DFB2630A6C04B6538094D24EB29989017623C0F5DE32"
+  }
 }
