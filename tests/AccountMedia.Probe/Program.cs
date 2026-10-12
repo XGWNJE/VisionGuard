@@ -488,7 +488,15 @@ internal static class Program
             service.UpdateHeartbeatParams(true, true, 5, .5f, "person", sources: new object[] { new { sourceId = "probe-source", sourceName = "probe" } });
             service.Configure("http://127.0.0.1:" + port, account.token, account.device.deviceId, "Registration probe");
             Require(fixture.Wait(15000), "Source registration contract timed out"); fixture.GetAwaiter().GetResult();
-            Require(new AlertOutbox(outboxPath).Snapshot().Count == 0, "Accepted alert remained in the outbox");
+            // 受理回执到达后客户端就该把报警移出发件箱。这里只给调度留时间，不假设某个固定毫秒数够用：
+            // CI 的 Windows 跑机曾偶发在「回执处理晚于夹具收尾」时读到旧文件，误报成产品丢回执。
+            int remaining = new AlertOutbox(outboxPath).Snapshot().Count;
+            for (var drainDeadline = DateTime.UtcNow.AddSeconds(5); remaining != 0 && DateTime.UtcNow < drainDeadline;)
+            {
+                Thread.Sleep(50);
+                remaining = new AlertOutbox(outboxPath).Snapshot().Count;
+            }
+            Require(remaining == 0, "Accepted alert remained in the outbox");
             string deliveryLog = File.ReadAllText(Path.Combine(directory, "logs", "alert-delivery.log"));
             Require(deliveryLog.Contains("reason=unknown-source") && deliveryLog.Contains("reason=storage-failed") && !deliveryLog.Contains(account.token), "Release rejection evidence missing or exposed credentials");
             Console.WriteLine("PASS initial source registration before queued alert, unknown-source/storage retry, stable ID and persistence ack");
