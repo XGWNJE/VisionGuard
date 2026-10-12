@@ -23,11 +23,16 @@ test('线上发布契约同时校验健康、更新元数据、文件大小和 R
     }
     if (options.method === 'HEAD') return response(200, null, { 'content-length': '123' });
     if (options.headers?.Range) return response(206);
+    // 生产实例上的预览免登录端点必须不存在。
+    if (text.endsWith('/api/account/preview-signin')) {
+      assert.equal(options.headers?.['x-visionguard-version'], '4.5.1');
+      return response(404);
+    }
     throw new Error(`unexpected URL: ${text}`);
   };
 
   await assert.doesNotReject(() => checkOnlineReleaseContract({ baseUrl: 'https://example.test/', releases, fetchImpl }));
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 5);
 });
 
 test('线上更新元数据漂移会失败', async () => {

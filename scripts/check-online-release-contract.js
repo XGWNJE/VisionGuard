@@ -62,6 +62,9 @@ async function checkOnlineReleaseContract({ baseUrl, releases, fetchImpl = fetch
     await expectResponse(fetchImpl, assetUrl, { headers: { Range: 'bytes=0-0' } }, 206);
     results.push(`${platform}=v${release.version}`);
   }
+
+  // 本地预览的内置登录不得出现在部署实例上：带版本请求必须是 404。
+  await expectResponse(fetchImpl, `${base}/api/account/preview-signin`, { headers: { 'x-visionguard-version': protocolVersion } }, 404);
   return results;
 }
 

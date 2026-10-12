@@ -1214,6 +1214,7 @@ function Verify-OnlineRelease {
 import json
 import os
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -1252,6 +1253,17 @@ for platform in platforms:
         if response.status != 206:
             raise SystemExit(f"{platform} Range expected 206, got {response.status}")
     print(f"online verified {platform}")
+
+# 本地预览的内置登录绝不能出现在部署实例上：带版本头请求它必须是 404。
+# 这条与上面的平台检查分开，因为它是“不该存在的东西”，失败即中止发布。
+preview_request = urllib.request.Request(base_url + "/api/account/preview-signin", headers={"x-visionguard-version": version})
+try:
+    with urllib.request.urlopen(preview_request, timeout=20) as response:
+        raise SystemExit(f"deployed instance must not expose preview sign-in, got {response.status}")
+except urllib.error.HTTPError as error:
+    if error.code != 404:
+        raise SystemExit(f"preview sign-in returned {error.code}; expected 404")
+print("preview sign-in absent on the deployed instance")
 '@
 
     try {
