@@ -241,6 +241,7 @@ namespace VisionGuard.Detector.Windows.Services
                 PublishTargetFps = runtime.Publisher.TargetFps,
                 PublishLastAcknowledgedSequence = runtime.Publisher.LastAcknowledgedSequence,
                 PublishDroppedFrames = runtime.Publisher.DroppedFrames,
+                PublishBlocked = runtime.Publisher.Rejected,
             };
         }
 

@@ -1,14 +1,39 @@
 <UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="VisionGuard.Detector.Windows.Views.MonitorPage">
     <ScrollViewer Style="{StaticResource PaneScrollViewer}" Visibility="{Binding HasSelectedSource, Converter={StaticResource BoolToVis}}">
         <StackPanel>
-            <!-- 节点级状态：本机推理 / 推流到其他推理节点，二选一。 -->
+            <!-- 节点级状态：本机推理 / 推流到其他推理节点，二选一。当前态用选中底色标出，
+                 两个按钮都占满整行，避免长标签被窄栏截断。 -->
             <StackPanel DataContext="{Binding}">
                 <TextBlock Text="本机状态" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
-                <UniformGrid Columns="2" Margin="0,0,0,8">
-                    <Button Content="本机推理" Style="{StaticResource PaneButton}" Command="{Binding UseInferenceModeCommand}" ToolTip="在本机模型上跑检测并产生报警" Margin="0,0,4,0"/>
-                    <Button Content="推流到其他推理节点" Style="{StaticResource PaneButton}" Command="{Binding UsePushModeCommand}" ToolTip="把本机采集画面推给其他推理节点，本机不推理、不报警" Margin="4,0,0,0"/>
-                </UniformGrid>
-                <TextBlock Text="{Binding NodeModeHint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,24"/>
+                <Button Content="本机推理" Command="{Binding UseInferenceModeCommand}" ToolTip="在本机模型上跑检测并产生报警" Margin="0,0,0,8">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource PaneButton}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsInferenceMode}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource SelectedBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource SelectedTextBrush}"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <Button Content="推流到其他推理节点" Command="{Binding UsePushModeCommand}" ToolTip="把本机采集画面推给其他推理节点，本机不推理、不报警">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource PaneButton}">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsPushMode}" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource SelectedBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource SelectedTextBrush}"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <TextBlock Text="{Binding NodeModeHint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,12,0,24"/>
             </StackPanel>
             <StackPanel DataContext="{Binding SelectedSource}">
             <TextBlock Text="当前来源" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
@@ -20,6 +45,8 @@
             </Grid>
             <TextBlock Text="{Binding SourceTypeText}" Style="{StaticResource CaptionText}" Margin="0,8,0,24"/>
             <TextBlock Text="运行状态" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+            <!-- 状态与实际帧率两态共用；推理专属行与推流专属行各自成块，
+                 整块隐藏，避免留下空行。 -->
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="72"/>
@@ -27,34 +54,50 @@
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" MinHeight="32"/>
-                    <RowDefinition Height="32"/>
-                    <RowDefinition Height="Auto" MinHeight="32"/>
-                    <RowDefinition Height="Auto" MinHeight="32"/>
-                    <RowDefinition Height="Auto" MinHeight="32"/>
-                    <RowDefinition Height="Auto" MinHeight="32"/>
-                    <RowDefinition Height="Auto" MinHeight="32"/>
-                    <RowDefinition Height="Auto" MinHeight="32"/>
                     <RowDefinition Height="Auto" MinHeight="32"/>
                 </Grid.RowDefinitions>
                 <TextBlock Text="状态" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
                 <TextBlock Grid.Column="1" Text="{Binding StatusText}" Style="{StaticResource SourceStatusText}" TextWrapping="Wrap" VerticalAlignment="Center" ToolTip="{Binding StatusToolTip}"/>
                 <TextBlock Grid.Row="1" Text="实际帧率" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
                 <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding FpsText}" VerticalAlignment="Center"/>
-                <TextBlock Grid.Row="2" Text="后端" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
-                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding BackendText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                <TextBlock Grid.Row="3" Text="推理耗时" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
-                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding InferenceText}" VerticalAlignment="Center"/>
-                <TextBlock Grid.Row="4" Text="最后报警" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
-                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding LastAlertText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                <TextBlock Grid.Row="5" Text="推流状态" Style="{StaticResource CaptionText}" VerticalAlignment="Center" Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}"/>
-                <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding PublishStatusText}" TextWrapping="Wrap" VerticalAlignment="Center" Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}"/>
-                <TextBlock Grid.Row="6" Text="推流帧率" Style="{StaticResource CaptionText}" VerticalAlignment="Center" ToolTip="推流目标采样帧率，由目标推理节点的来源频率决定" Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}"/>
-                <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding PublishTargetFps, StringFormat={}{0} FPS}" VerticalAlignment="Center" Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}"/>
-                <TextBlock Grid.Row="7" Text="已确认帧" Style="{StaticResource CaptionText}" VerticalAlignment="Center" ToolTip="统一服务回执累计确认的帧序号；推进即表示服务端已收到画面" Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}"/>
-                <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding PublishLastAcknowledgedSequence, StringFormat=#\{0\}}" VerticalAlignment="Center" Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}"/>
-                <TextBlock Grid.Row="8" Text="放弃帧" Style="{StaticResource CaptionText}" VerticalAlignment="Center" Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}"/>
-                <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding PublishDroppedFrames}" VerticalAlignment="Center" Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}"/>
             </Grid>
+            <Grid Visibility="{Binding IsInferenceMode, Converter={StaticResource BoolToVis}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="72"/>
+                    <ColumnDefinition/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" MinHeight="32"/>
+                    <RowDefinition Height="Auto" MinHeight="32"/>
+                    <RowDefinition Height="Auto" MinHeight="32"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="后端" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="{Binding BackendText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="1" Text="推理耗时" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding InferenceText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="2" Text="最后报警" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding LastAlertText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+            </Grid>
+            <StackPanel Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="72"/>
+                        <ColumnDefinition/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" MinHeight="32"/>
+                        <RowDefinition Height="Auto" MinHeight="32"/>
+                        <RowDefinition Height="Auto" MinHeight="32"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="推流帧率" Style="{StaticResource CaptionText}" VerticalAlignment="Center" ToolTip="推流目标采样帧率，由目标推理节点的来源频率决定"/>
+                    <TextBlock Grid.Column="1" Text="{Binding PublishTargetFps, StringFormat={}{0} FPS}" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Row="1" Text="已确认帧" Style="{StaticResource CaptionText}" VerticalAlignment="Center" ToolTip="统一服务 frame-ack 累计确认到的帧序号；持续推进即表示服务端确实收到画面，一直停在 #0 说明没连上或没绑定"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding PublishLastAcknowledgedSequence, StringFormat=#\{0\}}" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Row="2" Text="丢弃帧" Style="{StaticResource CaptionText}" VerticalAlignment="Center" ToolTip="在途窗口已满被跳过的帧，加上被服务端拒收的帧；拒收原因显示在上面的「状态」行"/>
+                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding PublishDroppedFrames}" VerticalAlignment="Center"/>
+                </Grid>
+                <TextBlock Text="推流目标由控制台关联：控制台 → 本节点 → 推流关联；未关联时服务端会拒收画面。推流只发送采集画面本身，本机遮罩与检测规则不参与。" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+            </StackPanel>
             <Grid Margin="0,8,0,24">
                 <Button Content="{Binding StartButtonText}" Style="{StaticResource PanePrimaryButton}" Command="{Binding StartCommand}" ToolTip="{Binding StartActionHint}" ToolTipService.ShowOnDisabled="True">
                     <Button.Visibility>

@@ -68,6 +68,9 @@ namespace VisionGuard.Detector.Windows.Services
         public long DroppedFrames { get; private set; }
         public long UnacknowledgedFrames { get { lock (_sync) return _inflight.Count; } }
 
+        /// <summary>服务端明确拒收当前推流（未绑定目标 / 目标未接入媒体通道）。</summary>
+        public bool Rejected => _rejectDetail.Length > 0;
+
         public void SetTargetFps(int fps)
         {
             TargetFps = Math.Max(1, Math.Min(5, fps));

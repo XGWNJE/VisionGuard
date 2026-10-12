@@ -76,5 +76,8 @@ namespace VisionGuard.Detector.Windows.Models
 
         /// <summary>因在途额度或编码失败被放弃的帧数。</summary>
         public long PublishDroppedFrames { get; init; }
+
+        /// <summary>服务端明确拒收（未绑定目标 / 目标未接入媒体通道），推流在发但没被收下。</summary>
+        public bool PublishBlocked { get; init; }
     }
 }

@@ -37,6 +37,7 @@ namespace VisionGuard.Detector.Windows.Services
         public int TargetFps => _service?.TargetFps ?? 0;
         public long LastAcknowledgedSequence => _service?.LastAcknowledgedSequence ?? 0;
         public long DroppedFrames => _service?.DroppedFrames ?? 0;
+        public bool Rejected => _service?.Rejected ?? false;
 
         public void Start(MonitorSource source)
         {

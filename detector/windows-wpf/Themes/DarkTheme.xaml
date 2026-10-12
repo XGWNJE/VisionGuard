@@ -311,6 +311,7 @@
 
     <Style TargetType="TextBlock" x:Key="SourceStatusText" BasedOn="{StaticResource CaptionText}">
         <Style.Triggers>
+            <DataTrigger Binding="{Binding IsPublishBlocked}" Value="True"><Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/></DataTrigger>
             <DataTrigger Binding="{Binding IsPerformanceInsufficient}" Value="True"><Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/></DataTrigger>
             <DataTrigger Binding="{Binding HasStatusError}" Value="True"><Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/></DataTrigger>
         </Style.Triggers>

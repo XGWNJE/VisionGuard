@@ -300,9 +300,9 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 if (!HasSources) return "先添加来源，再选择本机推理或推流。";
                 if (IsPushMode)
                     return CanUsePushMode
-                        ? "推流态只采只推：本机不加载模型、不产生报警。"
+                        ? "当前：推流到其他推理节点 —— 只采只推，本机不加载模型、不产生报警。"
                         : "推流需要至少一个窗口 / 屏幕来源；当前只有远程镜头。";
-                return "本机推理态在本机模型上跑检测并产生报警。";
+                return "当前：本机推理 —— 在本机模型上跑检测并产生报警。";
             }
         }
 
@@ -649,6 +649,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private string _publishStatusText = "";
         private int _publishTargetFps;
         private long _publishAcknowledged, _publishDropped;
+        private bool _publishBlocked;
 
         public string SourceId { get; private set; }
         private string _remoteStreamId = "", _remotePublisherName = "";
@@ -781,6 +782,9 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public bool CanStart => !IsMonitoring && IsReady && ModelManager.IsSupported(ModelKey) && (IsPushMode || ModelManager.IsDownloaded(ModelKey));
         /// <summary>本节点当前状态是否为推流（节点级，两个状态互斥）。</summary>
         public bool IsPushMode => _owner.IsPushMode;
+
+        /// <summary>本节点当前状态是否为本机推理。推流态隐藏只对推理有意义的行。</summary>
+        public bool IsInferenceMode => _owner.IsInferenceMode;
         public bool IsReady => IsRemoteStream ? !string.IsNullOrWhiteSpace(_remoteStreamId) && RemoteFrameStore.Shared.IsBound(_remoteStreamId) : _captureMode == CaptureMode.WindowHandle
             ? _targetWindow != null && CaptureSizeConstraints.IsValid(_targetWindow.Bounds)
             : CaptureSizeConstraints.IsValid(_screenRegion);
@@ -878,6 +882,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         {
             RemoveSourceCommand.RaiseCanExecuteChanged();
             OnPropertyChanged(nameof(IsPushMode));
+            OnPropertyChanged(nameof(IsInferenceMode));
             OnPropertyChanged(nameof(StartActionHint));
             OnPropertyChanged(nameof(StartButtonText));
             OnPropertyChanged(nameof(StopButtonText));
@@ -1254,11 +1259,14 @@ namespace VisionGuard.Detector.Windows.ViewModels
                     // 标题行空间有限，这里只放短提示；完整说明进 ToolTip 与弹窗。
                     ? $"性能不足 {status.ActualFps:0.0}/{status.TargetFps:0.0} FPS"
                 : IsPushMode
-                    ? (status.IsPublishing ? "推流中" : string.IsNullOrWhiteSpace(status.PublishStatusText) ? "未推流" : status.PublishStatusText)
+                    // 推流态只认发布支路的说法：连接中 / 推流中 / 失败或服务端拒收原因都来自这里，
+                    // 不能因为「客户端在发」就显示推流中而盖掉「服务端没绑定目标」这类事实。
+                    ? (string.IsNullOrWhiteSpace(status.PublishStatusText) ? "未推流" : status.PublishStatusText)
                 : status.IsMonitoring
                     ? "检测中"
                     : (IsReady ? (PreviewImage == null ? "就绪" : "已停止 · 保留最后画面") : (IsRemoteStream && IsTargetBound ? "镜头暂不可用 · 等待恢复" : !string.IsNullOrWhiteSpace(_targetWindowTitle) ? (string.IsNullOrWhiteSpace(_windowResolutionError) ? "窗口未找到" : _windowResolutionError) : "未配置"));
             HasStatusError = !string.IsNullOrWhiteSpace(status.Error);
+            IsPublishBlocked = status.PublishBlocked;
             StatusToolTip = HasStatusError ? StatusText : IsPerformanceInsufficient ? status.PerformanceWarning : StatusText;
         }
 
@@ -1266,6 +1274,9 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public int PublishTargetFps { get => _publishTargetFps; private set => SetProperty(ref _publishTargetFps, value); }
         public long PublishLastAcknowledgedSequence { get => _publishAcknowledged; private set => SetProperty(ref _publishAcknowledged, value); }
         public long PublishDroppedFrames { get => _publishDropped; private set => SetProperty(ref _publishDropped, value); }
+
+        /// <summary>服务端明确拒收当前推流：状态行改用警示色，提示这是需要处理的问题而不是正常推流。</summary>
+        public bool IsPublishBlocked { get => _publishBlocked; private set => SetProperty(ref _publishBlocked, value); }
 
         internal void ApplyFrame(BitmapSource image, List<Detection> detections, long inferenceMs)
         {
