@@ -55,4 +55,4 @@ NTP 校正报警时间，逐来源独立冷却。账号 / 服务 / 设备分区�
 
 构建入口为 `.agents/skills/visionguard-build/scripts/build-all.ps1 -Target AndroidInference`，版本读取根 `VERSION`；当前所有 ABI 合入一个 APK。签名所需材料仅放忽略文件或环境变量，构建结果见验证记录。
 
-**已接入发布流水线**：`publish-release.ps1` 的平台表含 `android-inference`，产出 `VisionGuard-Inference-v<版本>.apk` 并写入更新元数据（`/api/update?platform=android-inference`）。应用内「检查更新 → 下载安装」入口在「设置 → 维护」：`android-shared` 的 `ClientUpdater` 查 GitHub 稳定发行（与相机、通知节点同一机制），做版本比较、下载、sha256 与包名/版本/签名校验，再交给系统安装器；**它依赖发布时把推理节点包上传到 GitHub 发行**。Android 系统画面采集、Windows 窗口 / 驻留机制仍未实现。
+**已接入发布流水线**：`publish-release.ps1` 的平台表含 `android-inference`，产出 `VisionGuard-Inference-v<版本>.apk` 并写入更新元数据（`/api/update?platform=android-inference`）。应用内「检查更新 → 下载安装」入口在「设置 → 维护」：`android-shared` 的 `ClientUpdater` 查 GitHub 稳定发行（与相机、通知节点同一机制），做版本比较、下载、sha256 与包名/版本/签名校验，再交给系统安装器；**它依赖发布时把推理节点包上传到 GitHub 发行**。
