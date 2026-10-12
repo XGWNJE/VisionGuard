@@ -58,8 +58,16 @@ fun PreviewComposition(
     val image by com.xgwnje.visionguard.inference.ui.rememberFrameBitmap(frame, maxWidth = 1600)
     // 画面尺寸跟着画面走；帧率与耗时留在控制带读数里，避免同屏重复。
     val frameMeta = source?.state?.preview?.let { "${it.width}×${it.height}" }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(Geo.Gap)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    // 与来源列表同规格的面板：48dp 表头 + 分隔线 + 16dp 内衬，两栏顶部因此齐平。
+    Column(
+        modifier
+            .background(MaterialTheme.colorScheme.surface, RectangleShape)
+            .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().height(Geo.Touch).padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
                 source?.sourceName ?: "主预览",
                 color = MaterialTheme.colorScheme.onSurface,
@@ -79,11 +87,11 @@ fun PreviewComposition(
             }
             Text(freshness, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1)
         }
-        Row(Modifier.fillMaxWidth().weight(1f)) {
+        GeoDivider()
+        Box(Modifier.weight(1f).fillMaxWidth().padding(Geo.ScreenPadding)) {
             Box(
                 Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
+                    .fillMaxSize()
                     .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape)
                     .background(FrameBackdrop, RectangleShape)
             ) {
@@ -141,7 +149,7 @@ fun SourceCarriage(
             .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape)
     ) {
         Row(
-            Modifier.fillMaxWidth().height(Geo.Touch).padding(start = 16.dp, end = 4.dp),
+            Modifier.fillMaxWidth().height(Geo.Touch).padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
