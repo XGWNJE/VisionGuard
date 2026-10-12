@@ -43,7 +43,6 @@ import com.xgwnje.visionguard.inference.runtime.RuntimeUiState
 import com.xgwnje.visionguard.inference.source.SourceView
 import com.xgwnje.visionguard.inference.ui.geo.ActionDeck
 import com.xgwnje.visionguard.inference.ui.geo.AddSourceDrawer
-import com.xgwnje.visionguard.inference.ui.geo.EmptyWorkspace
 import com.xgwnje.visionguard.inference.ui.geo.Geo
 import com.xgwnje.visionguard.inference.ui.geo.GeoDivider
 import com.xgwnje.visionguard.inference.ui.geo.GeoHelpDrawer
@@ -163,65 +162,62 @@ fun MainScreen(
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val wide = (maxWidth >= 840.dp || landscape && maxWidth >= 600.dp) &&
                         LocalDensity.current.fontScale <= 1.3f
-                    if (state.sources.isEmpty()) {
-                        EmptyWorkspace(onAdd = { callerFocus = addFocus; overlay = Overlay.ADD })
-                    } else {
-                        Workspace(
-                            state = state,
-                            selected = selected,
-                            wide = wide,
-                            busy = busySourceId == selected?.sourceId,
-                            shutterHidden = shutterHidden,
-                            nowElapsedMs = nowElapsedMs,
-                            maxSources = maxSources,
-                            onSelect = runtime::selectSource,
-                            onAdd = { callerFocus = addFocus; overlay = Overlay.ADD },
-                            onToggleShutter = { shutterHidden = !shutterHidden },
-                            onSourceInspect = { id ->
-                                runtime.selectSource(id)
-                                callerFocus = paramsFocus
-                                paramSection = ParamSection.SOURCE
-                                paramAnchor = null
-                                parameterEditorFor = id
-                            },
-                            onToggle = {
-                                val source = selected
-                                if (source != null && busySourceId == null) {
-                                    busySourceId = source.sourceId
-                                    scope.launch {
-                                        val failure = onToggleSource(source.sourceId)
-                                        if (failure != null) runtime.setMessage(failure, MessageTone.Warning)
-                                        busySourceId = null
-                                    }
+                    // 无来源时同样进主工作区：画面区显示占位，来源滑架只剩添加来源，不另设独立空来源界面。
+                    Workspace(
+                        state = state,
+                        selected = selected,
+                        wide = wide,
+                        busy = selected != null && busySourceId == selected.sourceId,
+                        shutterHidden = shutterHidden,
+                        nowElapsedMs = nowElapsedMs,
+                        maxSources = maxSources,
+                        onSelect = runtime::selectSource,
+                        onAdd = { callerFocus = addFocus; overlay = Overlay.ADD },
+                        onToggleShutter = { shutterHidden = !shutterHidden },
+                        onSourceInspect = { id ->
+                            runtime.selectSource(id)
+                            callerFocus = paramsFocus
+                            paramSection = ParamSection.SOURCE
+                            paramAnchor = null
+                            parameterEditorFor = id
+                        },
+                        onToggle = {
+                            val source = selected
+                            if (source != null && busySourceId == null) {
+                                busySourceId = source.sourceId
+                                scope.launch {
+                                    val failure = onToggleSource(source.sourceId)
+                                    if (failure != null) runtime.setMessage(failure, MessageTone.Warning)
+                                    busySourceId = null
                                 }
-                            },
-                            onParams = {
-                                callerFocus = paramsFocus
-                                paramSection = ParamSection.DETECTION
-                                paramAnchor = ParamAnchor.MACHINES
-                                parameterEditorFor = selected?.sourceId
-                            },
-                            onMasks = { callerFocus = masksFocus; maskEditorFor = selected?.sourceId },
-                            connectionText = connectionText,
-                            connectionTone = connectionTone,
-                            onConnection = { callerFocus = settingsFocus; overlay = Overlay.SETTINGS },
-                            onHelp = { callerFocus = helpFocus; overlay = Overlay.HELP },
-                            onSettings = { callerFocus = settingsFocus; overlay = Overlay.SETTINGS },
-                            onAccount = { callerFocus = accountFocus; overlay = Overlay.SETTINGS },
-                            helpFocus = helpFocus,
-                            settingsFocus = settingsFocus,
-                            accountFocus = accountFocus,
-                            paramsFocus = paramsFocus,
-                            masksFocus = masksFocus,
-                            addFocus = addFocus,
-                            onParamAnchor = { anchor ->
-                                callerFocus = paramsFocus
-                                paramSection = ParamSection.DETECTION
-                                paramAnchor = anchor
-                                parameterEditorFor = state.selectedSourceId
                             }
-                        )
-                    }
+                        },
+                        onParams = {
+                            callerFocus = paramsFocus
+                            paramSection = ParamSection.DETECTION
+                            paramAnchor = ParamAnchor.MACHINES
+                            parameterEditorFor = selected?.sourceId
+                        },
+                        onMasks = { callerFocus = masksFocus; maskEditorFor = selected?.sourceId },
+                        connectionText = connectionText,
+                        connectionTone = connectionTone,
+                        onConnection = { callerFocus = settingsFocus; overlay = Overlay.SETTINGS },
+                        onHelp = { callerFocus = helpFocus; overlay = Overlay.HELP },
+                        onSettings = { callerFocus = settingsFocus; overlay = Overlay.SETTINGS },
+                        onAccount = { callerFocus = accountFocus; overlay = Overlay.SETTINGS },
+                        helpFocus = helpFocus,
+                        settingsFocus = settingsFocus,
+                        accountFocus = accountFocus,
+                        paramsFocus = paramsFocus,
+                        masksFocus = masksFocus,
+                        addFocus = addFocus,
+                        onParamAnchor = { anchor ->
+                            callerFocus = paramsFocus
+                            paramSection = ParamSection.DETECTION
+                            paramAnchor = anchor
+                            parameterEditorFor = state.selectedSourceId
+                        }
+                    )
                 }
             }
         }

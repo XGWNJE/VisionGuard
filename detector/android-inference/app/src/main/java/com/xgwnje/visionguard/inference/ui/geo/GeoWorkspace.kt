@@ -34,7 +34,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -265,6 +264,7 @@ fun ActionDeck(
             )
             GeoKey(
                 onClick = onParams,
+                enabled = source != null,
                 icon = LucideIcons.SlidersHorizontal,
                 label = "参数",
                 minWidth = Geo.SquareKey,
@@ -273,6 +273,7 @@ fun ActionDeck(
             )
             GeoKey(
                 onClick = onMasks,
+                enabled = source != null,
                 icon = LucideIcons.Scan,
                 label = "遮罩",
                 minWidth = Geo.SquareKey,
@@ -399,31 +400,5 @@ private fun StripItem(label: String?, value: String, onClick: () -> Unit) {
             Text("$label ", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         }
         Text(value, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold))
-    }
-}
-
-/** 空来源态：几何数字占位与唯一添加入口。 */
-@Composable
-fun EmptyWorkspace(onAdd: () -> Unit, modifier: Modifier = Modifier) {
-    Column(
-        modifier.fillMaxSize().padding(Geo.ScreenPadding),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            "00",
-            color = MaterialTheme.colorScheme.outlineVariant,
-            style = MaterialTheme.typography.titleLarge.copy(fontSize = 96.sp, fontWeight = FontWeight.Bold)
-        )
-        Text("还没有来源", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "添加本机相机；远程来源由相机推流绑定或控制台设定后自动出现。",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(16.dp))
-        GeoKey(onClick = onAdd, icon = LucideIcons.Plus, label = "添加来源", tone = GeoTone.Primary, minWidth = 160.dp)
     }
 }
