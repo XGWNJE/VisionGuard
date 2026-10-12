@@ -40,9 +40,9 @@ import com.xgwnje.visionguard.account.AppearancePreference
 import com.xgwnje.visionguard.inference.runtime.InferenceRuntime
 import com.xgwnje.visionguard.inference.runtime.MessageTone
 import com.xgwnje.visionguard.inference.runtime.RuntimeUiState
+import com.xgwnje.visionguard.inference.source.SourceCaptureMode
 import com.xgwnje.visionguard.inference.source.SourceView
 import com.xgwnje.visionguard.inference.ui.geo.ActionDeck
-import com.xgwnje.visionguard.inference.ui.geo.AddSourceDrawer
 import com.xgwnje.visionguard.inference.ui.geo.Geo
 import com.xgwnje.visionguard.inference.ui.geo.GeoDivider
 import com.xgwnje.visionguard.inference.ui.geo.GeoHelpDrawer
@@ -61,7 +61,7 @@ import com.xgwnje.visionguard.inference.ui.geo.PreviewComposition
 import com.xgwnje.visionguard.inference.ui.geo.SourceCarriage
 import kotlinx.coroutines.launch
 
-private enum class Overlay { NONE, SETTINGS, HELP, ADD }
+private enum class Overlay { NONE, SETTINGS, HELP }
 
 /**
  * 主界面：几何空间布局。
@@ -120,6 +120,12 @@ fun MainScreen(
 
     val selected = state.sources.firstOrNull { it.sourceId == state.selectedSourceId }
     val maxSources = control.maxSources
+    // 添加来源只建本机相机：直接执行，不再弹一个只有「取消」的抽屉；不可添加时按钮禁用并说明原因。
+    val addBlockedReason = when {
+        state.sources.size >= maxSources -> "已达服务端来源上限 $maxSources 路"
+        state.sources.any { it.mode == SourceCaptureMode.LocalCamera } -> "本机相机只能一条，已在来源列表"
+        else -> null
+    }
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     val (connectionText, connectionTone) = when {
@@ -172,7 +178,13 @@ fun MainScreen(
                         nowElapsedMs = nowElapsedMs,
                         maxSources = maxSources,
                         onSelect = runtime::selectSource,
-                        onAdd = { callerFocus = addFocus; overlay = Overlay.ADD },
+                        onAdd = {
+                            callerFocus = addFocus
+                            scope.launch {
+                                runtime.addLocalCameraSource()?.let { failure -> runtime.setMessage(failure) }
+                            }
+                        },
+                        addBlockedReason = addBlockedReason,
                         onToggleShutter = { shutterHidden = !shutterHidden },
                         onSourceInspect = { id ->
                             runtime.selectSource(id)
@@ -231,19 +243,17 @@ fun MainScreen(
                 appearance = appearance,
                 runtime = runtime,
                 onClose = { overlay = Overlay.NONE },
-                onMessage = onMessage
+                onMessage = onMessage,
+                onOpenParams = {
+                    overlay = Overlay.NONE
+                    callerFocus = paramsFocus
+                    paramSection = ParamSection.DETECTION
+                    paramAnchor = null
+                    parameterEditorFor = state.selectedSourceId
+                }
             )
     
             Overlay.HELP -> GeoHelpDrawer(onClose = { overlay = Overlay.NONE })
-    
-            Overlay.ADD -> AddSourceDrawer(
-                sources = state.sources,
-                maxSources = maxSources,
-                localLimit = 1,
-                onAddLocal = runtime::addLocalCameraSource,
-                onClose = closeOverlay,
-                onMessage = onMessage
-            )
     
             Overlay.NONE -> Unit
         }
@@ -311,6 +321,7 @@ private fun Workspace(
     maxSources: Int,
     onSelect: (String) -> Unit,
     onAdd: () -> Unit,
+    addBlockedReason: String?,
     onToggleShutter: () -> Unit,
     onSourceInspect: (String) -> Unit,
     onParamAnchor: (ParamAnchor) -> Unit,
@@ -358,6 +369,7 @@ private fun Workspace(
                     onSelect = onSelect,
                     onInspect = onSourceInspect,
                     onAdd = onAdd,
+                    addBlockedReason = addBlockedReason,
                     addFocus = addFocus,
                     modifier = Modifier.width(300.dp).fillMaxHeight()
                 )

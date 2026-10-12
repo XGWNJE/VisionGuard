@@ -68,7 +68,6 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -95,12 +94,11 @@ fun GeoDrawer(
     width: Dp = Geo.Drawer,
     footer: (@Composable () -> Unit)? = null,
     scrollState: ScrollState = rememberScrollState(),
+    // 默认由抽屉提供滚动；两栏布局的调用方（设置抽屉宽屏）自己安排滚动，避免嵌套滚动。
+    scrollable: Boolean = true,
     content: @Composable ColumnScope.() -> Unit
 ) {
     val reduced = rememberReducedMotion()
-    val configuration = LocalConfiguration.current
-    val available = configuration.screenWidthDp.dp
-    val drawerWidth = minOf(width, available)
     val focusRequester = remember { FocusRequester() }
     val focusRing = remember { GeoFocusRing() }
     var shown by remember { mutableStateOf(false) }
@@ -110,7 +108,9 @@ fun GeoDrawer(
         withFrameNanos { }
         runCatching { focusRequester.requestFocus() }
     }
-    Box(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // 宽度跟随父约束，而不是整屏宽度：分屏与自由窗口下不会算错。
+        val drawerWidth = minOf(width, maxWidth)
         Box(
             Modifier
                 .fillMaxSize()
@@ -162,11 +162,15 @@ fun GeoDrawer(
                     GeoIconKey(LucideIcons.X, "关闭面板", onClose)
                 }
                 GeoDivider()
-                Column(
-                    Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState).padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(Geo.GroupGap),
-                    content = content
-                )
+                if (scrollable) {
+                    Column(
+                        Modifier.weight(1f).fillMaxWidth().verticalScroll(scrollState).padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(Geo.GroupGap),
+                        content = content
+                    )
+                } else {
+                    Column(Modifier.weight(1f).fillMaxWidth(), content = content)
+                }
                 footer?.let {
                     GeoDivider()
                     Row(

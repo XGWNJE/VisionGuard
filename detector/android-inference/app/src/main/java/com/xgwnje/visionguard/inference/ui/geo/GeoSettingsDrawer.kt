@@ -9,11 +9,16 @@ import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -30,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalContext
@@ -77,27 +83,104 @@ fun GeoSettingsDrawer(
     appearance: AppearancePreference,
     runtime: InferenceRuntime,
     onClose: () -> Unit,
-    onMessage: (String?) -> Unit
+    onMessage: (String?) -> Unit,
+    onOpenParams: () -> Unit
 ) {
     var section by remember { mutableStateOf(SettingsSection.ACCOUNT) }
-    GeoDrawer(
-        title = "全局设置",
-        sectionId = "VISION / SETTINGS",
-        onClose = onClose,
-        width = Geo.ParamDrawer
-    ) {
-        GeoShifter(
-            options = SettingsSection.entries.map { it.name to it.title },
-            value = section.name,
-            onSelect = { name -> SettingsSection.entries.firstOrNull { it.name == name }?.let { section = it } }
-        )
-        when (section) {
-            SettingsSection.ACCOUNT -> AccountSection(session, control, media, runtime, onMessage)
-            SettingsSection.MODEL -> ModelSection(state)
-            SettingsSection.APPEARANCE -> AppearanceSection(appearance)
-            SettingsSection.BACKGROUND -> BackgroundSection(state, runtime)
-            SettingsSection.MAINTENANCE -> MaintenanceSection(runtime, onMessage)
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val wide = maxWidth >= 840.dp
+        GeoDrawer(
+            title = "全局设置",
+            sectionId = "VISION / SETTINGS",
+            onClose = onClose,
+            width = Geo.ParamDrawer,
+            scrollable = !wide
+        ) {
+            if (wide) {
+                // 宽屏：左栏分区导航 + 右栏内容，各自独立滚动，不嵌套。
+                Row(Modifier.fillMaxWidth().fillMaxHeight()) {
+                    Column(
+                        Modifier
+                            .width(200.dp)
+                            .fillMaxHeight()
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(vertical = 8.dp)
+                    ) {
+                        SettingsSection.entries.forEach { entry ->
+                            SettingsRailItem(entry, entry == section) { section = entry }
+                        }
+                    }
+                    GeoDivider(vertical = true)
+                    Column(
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .verticalScroll(rememberScrollState())
+                            .padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(Geo.GroupGap)
+                    ) {
+                        SettingsBody(section, session, control, media, appearance, state, runtime, onMessage, onOpenParams)
+                    }
+                }
+            } else {
+                GeoShifter(
+                    options = SettingsSection.entries.map { it.name to it.title },
+                    value = section.name,
+                    onSelect = { name -> SettingsSection.entries.firstOrNull { it.name == name }?.let { section = it } }
+                )
+                SettingsBody(section, session, control, media, appearance, state, runtime, onMessage, onOpenParams)
+            }
         }
+    }
+}
+
+/** 左栏分区导航：选中项带左缘主色条，与来源行同一套表达。 */
+@Composable
+private fun SettingsRailItem(section: SettingsSection, selected: Boolean, onSelect: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            // 固定 48dp：左缘色条用 fillMaxHeight，行高不固定会把每一项撑满整列。
+            .height(Geo.Touch)
+            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(onClick = onSelect)
+            .geoFocusable(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .width(Geo.SourceBar)
+                .fillMaxHeight()
+                .background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+        )
+        Text(
+            section.title,
+            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        )
+    }
+}
+
+/** 分区正文：宽屏两栏与窄屏拨档共用同一份实现。 */
+@Composable
+private fun SettingsBody(
+    section: SettingsSection,
+    session: AccountSession,
+    control: ControlState,
+    media: MediaState,
+    appearance: AppearancePreference,
+    state: RuntimeUiState,
+    runtime: InferenceRuntime,
+    onMessage: (String?) -> Unit,
+    onOpenParams: () -> Unit
+) {
+    when (section) {
+        SettingsSection.ACCOUNT -> AccountSection(session, control, media, runtime, onMessage)
+        SettingsSection.MODEL -> ModelSection(state, onOpenParams)
+        SettingsSection.APPEARANCE -> AppearanceSection(appearance)
+        SettingsSection.BACKGROUND -> BackgroundSection(state, runtime)
+        SettingsSection.MAINTENANCE -> MaintenanceSection(runtime, onMessage)
     }
 }
 
@@ -116,24 +199,35 @@ private fun AccountSection(
     var confirmLogout by remember { mutableStateOf(false) }
     var confirmPassword by remember { mutableStateOf(false) }
     var passwordError by remember { mutableStateOf<String?>(null) }
+    // 服务端下发 ISO-8601（UTC）：换成设备本地时间再显示，避免直接念一串 Z 时间。
+    val serverTimeText = remember(control.serverTimeIso) {
+        control.serverTimeIso?.let { iso ->
+            runCatching {
+                java.time.OffsetDateTime.parse(iso)
+                    .atZoneSameInstant(java.time.ZoneId.systemDefault())
+                    .format(java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm:ss"))
+            }.getOrNull() ?: iso
+        } ?: "未校时"
+    }
 
-    GeoSectionLabel("01", "账号与设备", "本机保存")
+    GeoSectionLabel(null, "账号与设备", "本机保存")
     GeoInfoRow("设备名称", session.deviceName)
     GeoInfoRow("账号名", session.username)
-    GeoInfoRow("设备身份", session.deviceId)
     GeoInfoRow("服务地址", session.endpoint)
+    // 设备身份是最长的一串技术值，排在最后，日常查看时先看到人可读的三项。
+    GeoInfoRow("设备身份", session.deviceId)
 
     GeoDivider()
-    GeoSectionLabel("02", "连接状态", "控制 ≠ 媒体 ≠ 回执")
+    GeoSectionLabel(null, "连接状态", "控制 ≠ 媒体 ≠ 回执")
     GeoInfoRow("控制通道", control.statusText + if (control.sourcesRegistered) "（来源已登记）" else "（来源未登记）")
     GeoInfoRow("媒体通道", media.statusText)
     GeoInfoRow("远程收帧", "已收 ${media.receivedFrames} · 丢弃 ${media.rejectedFrames}")
     GeoInfoRow("来源上限", "${control.maxSources} 路")
-    GeoInfoRow("服务时间", control.serverTimeIso ?: "未校时")
+    GeoInfoRow("服务时间", serverTimeText)
     GeoInfoRow("时区", control.timeZone ?: "未下发")
 
     GeoDivider()
-    GeoSectionLabel("03", "设备名称", "${deviceName.length}/64")
+    GeoSectionLabel(null, "设备名称", "${deviceName.length}/64")
     GeoFlatTextField(value = deviceName, onValueChange = { deviceName = it }, placeholder = "设备名称")
     Row(horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
         GeoKey(
@@ -156,7 +250,7 @@ private fun AccountSection(
     }
 
     GeoDivider()
-    GeoSectionLabel("04", "修改密码", "新密码 ≥8 字符")
+    GeoSectionLabel(null, "修改密码", "新密码 ≥8 字符")
     GeoFlatTextField(
         value = currentPassword,
         onValueChange = { currentPassword = it },
@@ -178,7 +272,7 @@ private fun AccountSection(
     )
 
     GeoDivider()
-    GeoSectionLabel("05", "会话", "退出会停止全部来源")
+    GeoSectionLabel(null, "会话", "退出会停止全部来源")
     GeoKey(
         onClick = { confirmLogout = true },
         label = "退出登录",
@@ -227,12 +321,12 @@ private fun AccountSection(
 }
 
 @Composable
-private fun ModelSection(state: RuntimeUiState) {
+private fun ModelSection(state: RuntimeUiState, onOpenParams: () -> Unit) {
     val backend = state.sources.firstOrNull { it.state.isRunning }?.state?.backend
         ?: state.sources.firstOrNull()?.state?.backend.orEmpty()
     val totalMasks = state.sources.sumOf { it.masks.size }
 
-    GeoSectionLabel("01", "推理状态", "逐来源上报")
+    GeoSectionLabel(null, "推理状态", "逐来源上报")
     GeoInfoRow("推理后端", backend.ifBlank { "未开始推理" })
     val latency = state.sources.firstOrNull { it.state.isRunning }?.state?.inferenceMs ?: 0L
     GeoInfoRow("单帧耗时", if (latency > 0) "$latency ms" else "—")
@@ -242,18 +336,24 @@ private fun ModelSection(state: RuntimeUiState) {
     GeoHint("CPU 档走 ONNX Runtime CPU，GPU 档走 LiteRT GPU；GPU 用不了时回落到同尺寸的 CPU 档，并在来源状态里说明原因。")
 
     GeoDivider()
-    GeoSectionLabel("02", "模型概览", "在参数抽屉里管理")
+    GeoSectionLabel(null, "模型概览", "在参数抽屉里管理")
     GeoInfoRow("本机 GPU 加速", if (state.gpuAvailable) "可用" else "不可用 · GPU 档不出现")
     GeoInfoRow("已下载档位", "${state.models.count { it.downloaded }} / ${state.models.size}")
     state.models.forEach { model ->
         GeoInfoRow(model.displayName, if (model.downloaded) model.target.label else "未下载")
     }
     GeoHint("模型的下载、删除与选择都在「来源 → 参数 → 模型插槽」：未下载的档位不可选中，使用中的档位不可删除。")
+    GeoKey(
+        onClick = onOpenParams,
+        label = "打开参数抽屉",
+        icon = LucideIcons.SlidersHorizontal,
+        enabled = state.sources.isNotEmpty()
+    )
 }
 
 @Composable
 private fun AppearanceSection(appearance: AppearancePreference) {
-    GeoSectionLabel("01", "主题模式", "本机记住选择")
+    GeoSectionLabel(null, "主题模式", "本机记住选择")
     GeoShifter(
         options = Appearance.entries.map { it.name to it.title },
         value = appearance.mode.name,
@@ -300,7 +400,7 @@ private fun BackgroundSection(state: RuntimeUiState, runtime: InferenceRuntime) 
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     val cameraStatus = state.cameraStatus
 
-    GeoSectionLabel("01", "后台运行", "本机授权不可远程绕过")
+    GeoSectionLabel(null, "后台运行", "本机授权不可远程绕过")
     GeoHint(
         "有来源在运行时保持前台服务，界面退到后台或锁屏后推理继续；运行意图按来源保存，进程被系统回收后服务按意图恢复。"
     )
@@ -328,7 +428,7 @@ private fun BackgroundSection(state: RuntimeUiState, runtime: InferenceRuntime) 
     GeoInfoRow("远程来源", "${state.sources.count { it.mode == SourceCaptureMode.RemoteStream }} 路")
 
     GeoDivider()
-    GeoSectionLabel("02", "权限入口", "只给系统入口说明")
+    GeoSectionLabel(null, "权限入口", "只给系统入口说明")
     GeoKey(
         onClick = {
             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))
@@ -354,7 +454,7 @@ private fun CrashSection(onMessage: (String?) -> Unit) {
         loaded = true
     }
 
-    GeoSectionLabel("05", "崩溃与退出记录", if (loaded) "${entries.size} 条" else "读取中")
+    GeoSectionLabel(null, "崩溃与退出记录", if (loaded) "${entries.size} 条" else "读取中")
     GeoHint("未捕获异常由本机处理器记录；native 崩溃、ANR 与内存回收从系统退出原因读取，并摘出与推理库相关的帧。")
     Row(horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
         GeoKey(
@@ -417,7 +517,7 @@ private fun MaintenanceSection(runtime: InferenceRuntime, onMessage: (String?) -
 
     if (UiPreviewFlags.available) {
         val mockData by UiPreviewFlags.mockData.collectAsState()
-        GeoSectionLabel("00", "UI 验收", "仅预览构建")
+        GeoSectionLabel(null, "UI 验收", "仅预览构建")
         GeoShifter(
             options = listOf("off" to "真实数据", "on" to "模拟数据"),
             value = if (mockData) "on" else "off",
@@ -427,14 +527,14 @@ private fun MaintenanceSection(runtime: InferenceRuntime, onMessage: (String?) -
         GeoDivider()
     }
 
-    GeoSectionLabel("01", "版本", "内测源码 0.x.y")
+    GeoSectionLabel(null, "版本", "内测源码 0.x.y")
     GeoInfoRow("应用", AppConstants.APP_TITLE)
     GeoInfoRow("版本", AppConstants.VERSION)
     GeoHint("android-inference 当前没有更新资产；升级入口只下载并安装官方稳定版，不改变本机配置。")
     ClientUpdateButton(AppConstants.LOGIN_COMPONENT)
 
     GeoDivider()
-    GeoSectionLabel("02", "临时缓存", "先盘点再清理")
+    GeoSectionLabel(null, "临时缓存", "先盘点再清理")
     GeoHint("只盘点与清理截图、诊断导出与安装包暂存；模型、账号、配置与回滚资料不会被清理。")
     Row(horizontalArrangement = Arrangement.spacedBy(Geo.Gap)) {
         GeoKey(
@@ -509,7 +609,7 @@ private fun AccelerationBenchmarkSection(onMessage: (String?) -> Unit) {
     val scope = rememberCoroutineScope()
     val state by BundledAccelerationBenchmark.state.collectAsState()
 
-    GeoSectionLabel("06", "推理加速测量", "自带模型，无需连电脑")
+    GeoSectionLabel(null, "推理加速测量", "自带模型，无需连电脑")
     GeoHint(
         "把各推理档位（ONNX CPU / NNAPI，LiteRT CPU / GPU / NPU）在同一张真实画面上逐个跑一遍，" +
             "报单帧耗时中位数并给出是否达标（门槛：加速档 ≤ 同运行时 CPU 的 0.70×）。只在本机运行，不上传。"

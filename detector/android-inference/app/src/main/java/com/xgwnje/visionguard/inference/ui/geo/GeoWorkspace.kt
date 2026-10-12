@@ -126,6 +126,7 @@ fun SourceCarriage(
     onSelect: (String) -> Unit,
     onInspect: (String) -> Unit,
     onAdd: () -> Unit,
+    addBlockedReason: String? = null,
     addFocus: FocusRequester,
     modifier: Modifier = Modifier
 ) {
@@ -160,8 +161,17 @@ fun SourceCarriage(
             }
         }
         GeoDivider()
+        addBlockedReason?.let {
+            Text(
+                it,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+        }
         GeoKey(
             onClick = onAdd,
+            enabled = addBlockedReason == null,
             label = "添加来源",
             icon = LucideIcons.Plus,
             modifier = Modifier.fillMaxWidth().padding(12.dp).focusRequester(addFocus)

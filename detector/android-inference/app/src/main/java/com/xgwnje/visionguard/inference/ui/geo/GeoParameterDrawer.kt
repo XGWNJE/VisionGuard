@@ -495,7 +495,6 @@ private fun DetectionSection(
                         modifier = Modifier.weight(1f)
                     ) {
                         WheelControl(value = targetFps, min = DetectionParams.MIN_TARGET_FPS, max = DetectionParams.MAX_TARGET_FPS, enabled = !locked, unit = "FPS", onChange = onTargetFps)
-                        ReadoutAction(value = "$targetFps", unit = "FPS")
                         QuickKeys(options = fpsPresets.map { it to "$it" }, selected = targetFps, enabled = !locked) { onTargetFps(it) }
                     }
                     MachineBlock(
@@ -507,7 +506,6 @@ private fun DetectionSection(
                     ) {
                         ConfidenceControl(value = confidence, enabled = !locked, onChange = onConfidence)
                         CounterAction(value = confidence, unit = "%", min = DetectionParams.MIN_CONFIDENCE_PERCENT, max = DetectionParams.MAX_CONFIDENCE_PERCENT, enabled = !locked, onChange = onConfidence)
-                        QuickKeys(options = confidencePresets.map { it to "$it%" }, selected = confidence, enabled = !locked) { onConfidence(it) }
                     }
                     MachineBlock(
                         index = "03",
@@ -517,25 +515,21 @@ private fun DetectionSection(
                         modifier = Modifier.weight(1.25f)
                     ) {
                         DigitsControl(value = cooldown, enabled = !locked, onChange = onCooldown)
-                        CounterAction(value = cooldown, unit = "秒", min = DetectionParams.MIN_COOLDOWN_SECONDS, max = DetectionParams.MAX_COOLDOWN_SECONDS, enabled = !locked, onChange = onCooldown)
                         QuickKeys(options = cooldownPresets.map { it to "${it}s" }, selected = cooldown, enabled = !locked) { onCooldown(it) }
                     }
                 }
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(Geo.GroupGap)) {
-                    MachineBlock("01", "采样频率", "1—5 FPS", fpsError, Modifier.fillMaxWidth()) {
+                    MachineBlock("01", "采样频率", "${DetectionParams.MIN_TARGET_FPS}—${DetectionParams.MAX_TARGET_FPS} FPS", fpsError, Modifier.fillMaxWidth()) {
                         WheelControl(value = targetFps, min = DetectionParams.MIN_TARGET_FPS, max = DetectionParams.MAX_TARGET_FPS, enabled = !locked, unit = "FPS", onChange = onTargetFps)
-                        ReadoutAction(value = "$targetFps", unit = "FPS")
                         QuickKeys(options = fpsPresets.map { it to "$it" }, selected = targetFps, enabled = !locked) { onTargetFps(it) }
                     }
-                    MachineBlock("02", "置信度", "10—95%", confidenceError, Modifier.fillMaxWidth()) {
+                    MachineBlock("02", "置信度", "${DetectionParams.MIN_CONFIDENCE_PERCENT}—${DetectionParams.MAX_CONFIDENCE_PERCENT}%", confidenceError, Modifier.fillMaxWidth()) {
                         ConfidenceControl(value = confidence, enabled = !locked, onChange = onConfidence)
                         CounterAction(value = confidence, unit = "%", min = DetectionParams.MIN_CONFIDENCE_PERCENT, max = DetectionParams.MAX_CONFIDENCE_PERCENT, enabled = !locked, onChange = onConfidence)
-                        QuickKeys(options = confidencePresets.map { it to "$it%" }, selected = confidence, enabled = !locked) { onConfidence(it) }
                     }
-                    MachineBlock("03", "报警冷却", "1—300 秒", cooldownError, Modifier.fillMaxWidth()) {
+                    MachineBlock("03", "报警冷却", "${DetectionParams.MIN_COOLDOWN_SECONDS}—${DetectionParams.MAX_COOLDOWN_SECONDS} 秒", cooldownError, Modifier.fillMaxWidth()) {
                         DigitsControl(value = cooldown, enabled = !locked, onChange = onCooldown)
-                        CounterAction(value = cooldown, unit = "秒", min = DetectionParams.MIN_COOLDOWN_SECONDS, max = DetectionParams.MAX_COOLDOWN_SECONDS, enabled = !locked, onChange = onCooldown)
                         QuickKeys(options = cooldownPresets.map { it to "${it}s" }, selected = cooldown, enabled = !locked) { onCooldown(it) }
                     }
                 }
@@ -754,22 +748,6 @@ private fun DigitsControl(value: Int, enabled: Boolean, onChange: (Int) -> Unit)
             )
             Spacer(Modifier.width(Geo.Gap))
         }
-    }
-}
-
-/** 操作行：只读读数，与加减计数行同高。 */
-@Composable
-private fun ReadoutAction(value: String, unit: String) {
-    Row(
-        Modifier.fillMaxWidth().height(Geo.BlockAction)
-            .background(MaterialTheme.colorScheme.surface, RectangleShape)
-            .border(Geo.Border, MaterialTheme.colorScheme.outlineVariant, RectangleShape),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center
-    ) {
-        Text(value, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.width(6.dp))
-        Text(unit, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
     }
 }
 
