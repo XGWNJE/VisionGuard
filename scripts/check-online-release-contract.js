@@ -33,13 +33,17 @@ async function checkOnlineReleaseContract({ baseUrl, releases, fetchImpl = fetch
   const health = await expectResponse(fetchImpl, `${base}/health`, undefined, 200);
   const healthBody = await health.json();
   if (healthBody.ok !== true) throw new Error(`/health returned unexpected body: ${JSON.stringify(healthBody)}`);
+  // 部署实例的 /api 前置协议版本闸门：用服务端自身版本声明（heldBack 平台也按服务端版本走），
+  // 否则所有 /api 请求都会被 426 静默出局。
+  const protocolVersion = String(healthBody.version || '');
+  if (!protocolVersion) throw new Error('/health did not report the protocol version');
 
   const results = [];
   for (const [platform, release] of Object.entries(releases)) {
     const updateUrl = new URL(`${base}/api/update`);
     updateUrl.searchParams.set('platform', platform);
     updateUrl.searchParams.set('version', '0.0.0');
-    const update = await expectResponse(fetchImpl, updateUrl, undefined, 200);
+    const update = await expectResponse(fetchImpl, updateUrl, { headers: { 'x-visionguard-version': protocolVersion } }, 200);
     const payload = await update.json();
 
     if (payload.latestVersion !== release.version || payload.downloadUrl !== release.url || Number(payload.size) !== Number(release.size)) {

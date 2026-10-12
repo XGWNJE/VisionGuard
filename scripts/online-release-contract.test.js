@@ -15,8 +15,10 @@ test('线上发布契约同时校验健康、更新元数据、文件大小和 R
   const fetchImpl = async (url, options = {}) => {
     const text = String(url);
     calls.push({ text, options });
-    if (text.endsWith('/health')) return response(200, { ok: true });
+    if (text.endsWith('/health')) return response(200, { ok: true, version: '4.5.1' });
     if (text.includes('/api/update?')) {
+      // 部署实例的 /api 前置协议版本闸门：校验请求必须带服务端版本声明。
+      assert.equal(options.headers?.['x-visionguard-version'], '4.5.1');
       return response(200, { latestVersion: '4.5.1', downloadUrl: releases.wpf.url, size: 123, sha256: 'abc123' });
     }
     if (options.method === 'HEAD') return response(200, null, { 'content-length': '123' });
@@ -30,7 +32,7 @@ test('线上发布契约同时校验健康、更新元数据、文件大小和 R
 
 test('线上更新元数据漂移会失败', async () => {
   const fetchImpl = async (url) => {
-    if (String(url).endsWith('/health')) return response(200, { ok: true });
+    if (String(url).endsWith('/health')) return response(200, { ok: true, version: '4.4.4' });
     return response(200, { latestVersion: '4.5.0', downloadUrl: '/wrong.apk', size: 1 });
   };
 

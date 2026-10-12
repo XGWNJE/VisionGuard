@@ -1,5 +1,5 @@
 // ┌─────────────────────────────────────────────────────────┐
-// │ index.ts  v0.6.12                                         │
+// │ index.ts  v0.7.0                                         │
 // │ 角色：服务器入口 — 组装 HTTP + WebSocket 服务器           │
 // │ 职责：加载配置 → 创建 Express app → 挂载路由 →           │
 // │       创建 HTTP server → 附加 WS server → 启动监听       │
@@ -124,7 +124,7 @@ cleanupScreenshots();
 startCleanupTimer();
 
 server.listen(config.port, config.host, () => {
-  console.log(`[server] 统一服务 v0.6.12 已启动`);
+  console.log(`[server] 统一服务 v0.7.0 已启动`);
   console.log(`[server] 隔离通道: ${config.channelId} / 数据目录: ${config.dataDir}`);
   console.log(`[server] 协议版本闸门: ${config.protocolGate ? `启用（只服务 ${config.version}）` : '关闭（本地/测试实例）'}`);
   console.log(`[server] HTTP + WS 监听地址: ${config.host}:${config.port}`);

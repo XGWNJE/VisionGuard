@@ -918,7 +918,30 @@ try:
             print("unchanged " + posixpath.basename(remote) + " " + expected)
             continue
         temp_remote = remote + ".tmp-" + str(int(time.time()))
-        sftp.put(local, temp_remote)
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                sftp.put(local, temp_remote)
+                last_error = None
+                break
+            except Exception as exc:
+                last_error = exc
+                print("upload retry " + str(attempt) + " for " + posixpath.basename(remote) + ": " + str(exc), flush=True)
+                try:
+                    sftp.remove(temp_remote)
+                except Exception:
+                    pass
+                # 上百 MB 的包在弱网下会整体断流，SFTP 通道随之失效：必须重连再传，不能原地重试。
+                try:
+                    sftp.close()
+                except Exception:
+                    pass
+                client.close()
+                time.sleep(min(30, 5 * attempt))
+                client.connect(hostname=host, port=port, username=user, password=password or None, key_filename=key_filename or None, timeout=30)
+                sftp = client.open_sftp()
+        if last_error is not None:
+            raise SystemExit("upload failed after retries: " + str(last_error))
         command = "mv -f {tmp} {remote} && sha256sum {remote}".format(
             tmp=shlex.quote(temp_remote),
             remote=shlex.quote(remote),
@@ -1203,7 +1226,9 @@ with open(os.environ["VG_RELEASES_JSON"], "r", encoding="utf-8") as handle:
 for platform in platforms:
     expected = metadata[platform]
     update_url = base_url + "/api/update?" + urllib.parse.urlencode({"platform": platform, "version": "0.0.0"})
-    with urllib.request.urlopen(update_url, timeout=20) as response:
+    # 部署实例的 /api 前置协议版本闸门：验证请求必须声明当前版本，否则被 426 静默出局。
+    update_request = urllib.request.Request(update_url, headers={"x-visionguard-version": version})
+    with urllib.request.urlopen(update_request, timeout=20) as response:
         payload = json.loads(response.read().decode("utf-8"))
     payload_version = payload.get("version", payload.get("latestVersion"))
     payload_url = payload.get("url", payload.get("downloadUrl"))
