@@ -16,7 +16,6 @@ const {
   checkCurrentComponentNames,
   checkReadmeVersion,
   checkTaskListContract,
-  checkRoadmapFormat,
   checkVerificationVersionClaims
 } = require('./check-docs');
 
@@ -267,43 +266,10 @@ test('the task list keeps its fixed chapters, a status callout and labelled bull
   // 事项编号是长期沿用的稳定标识：重号报错，但不要求连续（历史编号要能对上）。
   const repeated = audit(valid.replace('#### 7. Qualcomm 真机验证', '#### 6. Qualcomm 真机验证'));
   assert.ok(repeated.some((error) => error.includes('repeats item number 6')));
-});
 
-test('the roadmap keeps per-direction sections with short labelled bullets', () => {
-  const valid = [
-    '# 路线图',
-    '',
-    '## 后续开发',
-    '',
-    '### 1. 通知节点锁屏漏收',
-    '',
-    '- **要解决**：锁屏后收不到报警。',
-    '- **卡在哪**：等换机后再看。',
-    '',
-    '### 2. 局域网与公网两种部署模式',
-    '',
-    '- **要解决**：更低的延迟与更好的隐私。'
-  ].join('\n');
-  assert.deepEqual(checkRoadmapFormat(valid, []), []);
-
-  const table = valid.replace('- **要解决**：锁屏后收不到报警。', '| 顺序 | 方向 |\n|---|---|\n| 1 | 锁屏 |');
-  assert.match(checkRoadmapFormat(table, []).join('\n'), /instead of tables/);
-
-  const unlabelled = valid.replace('- **要解决**：锁屏后收不到报警。', '- 锁屏后收不到报警。');
-  assert.match(checkRoadmapFormat(unlabelled, []).join('\n'), /without a bold label/);
-
-  const tooLong = valid.replace('- **要解决**：锁屏后收不到报警。', `- **要解决**：${'锁'.repeat(230)}`);
-  assert.match(checkRoadmapFormat(tooLong, []).join('\n'), /longer than 220 characters/);
-
-  // 序号自适应：删掉一项后其余必须前移，既不能重号也不能留空号。
-  const duplicate = valid.replace('### 2. 局域网与公网两种部署模式', '### 1. 局域网与公网两种部署模式');
-  assert.match(checkRoadmapFormat(duplicate, []).join('\n'), /must restart at 1 and stay consecutive \(expected 2, found 1\)/);
-
-  const gap = valid.replace('### 2. 局域网与公网两种部署模式', '### 3. 局域网与公网两种部署模式');
-  assert.match(checkRoadmapFormat(gap, []).join('\n'), /must restart at 1 and stay consecutive \(expected 2, found 3\)/);
-
-  const emptyItem = valid.replace('- **要解决**：更低的延迟与更好的隐私。', '');
-  assert.match(checkRoadmapFormat(emptyItem, []).join('\n'), /needs at least one bullet/);
+  // 方向编号相反：跟着内容自适应，必须从 1 连续。
+  const gap = audit(valid.replace('### 2. 除手机推流节点以外的硬件节点', '### 3. 除手机推流节点以外的硬件节点'));
+  assert.ok(gap.some((error) => error.includes('direction numbers must restart at 1 and stay consecutive (expected 2, found 3)')));
 });
 
 test('MIT license and contribution policy cannot silently drift', () => {

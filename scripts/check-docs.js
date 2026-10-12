@@ -618,14 +618,15 @@ function checkDocumentLayout(docsFiles, contents, errors) {
   }
 }
 
-// 任务清单的章节是固定契约，顺序即阅读优先级：总览在最前，未完成事项次之，
-// 分支归属与口径边界放最后——每次必看的在前，偶尔才查的在后。
+// 任务清单与路线图合并成一份，章节顺序即阅读优先级：总览在最前，「现在要做的」次之，
+// 「以后要做的」再次，分支归属与口径边界放最后——每次必看的在前，偶尔才查的在后。
 const TASK_LIST_HEADINGS = [
-  '# 本次任务清单',
-  '## 未完成事项',
+  '# 任务清单与路线图',
+  '## 现在要做的',
   '### 高：能被立刻解决、且不解决就一直硌着',
   '### 中：影响真实部署质量，但可以排期',
   '### 低 / 待外部条件',
+  '## 以后要做的',
   '## 任务与分支对应',
   '## 口径与边界'
 ];
@@ -633,9 +634,9 @@ const TASK_LIST_HEADINGS = [
 function checkTaskListContract(taskList, errors) {
   const relativePath = 'docs/06-任务清单.md';
   const lines = taskList.split(/\r?\n/);
-  // 只认 1-3 级标题：`#### N. 事项` 是明细，不参与章节顺序比对。
+  // 只认 1-3 级标题，且跳过带编号的小节：`#### N. 事项` 与 `### N. 方向` 是明细，不参与章节顺序比对。
   const headings = lines
-    .map((line) => line.match(/^#{1,3}\s+(.+?)\s*#*$/))
+    .map((line) => line.match(/^#{1,3}\s+(?!\d+\.\s)(.+?)\s*#*$/))
     .filter(Boolean)
     .map((match) => match[0].trimEnd());
   if (JSON.stringify(headings) !== JSON.stringify(TASK_LIST_HEADINGS)) {
@@ -649,15 +650,28 @@ function checkTaskListContract(taskList, errors) {
     errors.push(`[contract] ${relativePath} must use labelled bullets instead of tables`);
   }
 
-  const items = collectNumberedSections(lines, 4);
+  // 现在要做的：编号长期沿用，只要求唯一（历史记录要能对上，所以不要求连续）。
+  const currentItems = collectNumberedSections(sliceSection(lines, '## 现在要做的', '## 以后要做的'), 4);
   const seen = new Set();
-  for (const item of items) {
+  for (const item of currentItems) {
     if (seen.has(item.order)) {
       errors.push(`[contract] ${relativePath} repeats item number ${item.order}: ${item.title}`);
     }
     seen.add(item.order);
     checkLabelledBullets(relativePath, 'item', item, errors);
   }
+
+  // 以后要做的：编号跟着内容自适应，从 1 连续，删掉一个方向其余自动前移。
+  const directions = collectNumberedSections(sliceSection(lines, '## 以后要做的', '## 任务与分支对应'), 3);
+  if (directions.length === 0) {
+    errors.push(`[contract] ${relativePath} has no numbered direction sections under 以后要做的`);
+  }
+  directions.forEach((item, index) => {
+    if (item.order !== index + 1) {
+      errors.push(`[contract] ${relativePath} direction numbers must restart at 1 and stay consecutive (expected ${index + 1}, found ${item.order}): ${item.title}`);
+    }
+  });
+  for (const item of directions) checkLabelledBullets(relativePath, 'direction', item, errors);
 }
 
 // 任务清单与路线图共用同一套排版契约：每个方向/事项一小节，要点用加粗小标签开头，
@@ -704,30 +718,12 @@ function checkLabelledBullets(relativePath, label, item, errors) {
   }
 }
 
-// 路线图的格式是固定契约：方向编号从 1 连续，序号跟着内容走、删掉一项其余自动前移。
-const ROADMAP_HEADING = '## 后续开发';
-
-function checkRoadmapFormat(markdown, errors = []) {
-  const relativePath = 'docs/05-路线图.md';
-  const lines = markdown.split(/\r?\n/);
-  if (!lines.some((line) => line.trim() === ROADMAP_HEADING)) {
-    errors.push(`[contract] ${relativePath} is missing ${ROADMAP_HEADING}`);
-  }
-  if (hasMarkdownTable(lines)) {
-    errors.push(`[contract] ${relativePath} must use per-direction sections instead of tables`);
-  }
-
-  const items = collectNumberedSections(lines, 3);
-  if (items.length === 0) {
-    errors.push(`[contract] ${relativePath} has no numbered direction sections`);
-  }
-  items.forEach((item, index) => {
-    if (item.order !== index + 1) {
-      errors.push(`[contract] ${relativePath} direction numbers must restart at 1 and stay consecutive (expected ${index + 1}, found ${item.order}): ${item.title}`);
-    }
-  });
-  for (const item of items) checkLabelledBullets(relativePath, 'direction', item, errors);
-  return errors;
+/** 取两个标题之间的行，供分节校验用。 */
+function sliceSection(lines, startHeading, endHeading) {
+  const start = lines.indexOf(startHeading);
+  const end = lines.indexOf(endHeading);
+  if (start < 0 || end < 0 || end <= start) return [];
+  return lines.slice(start + 1, end);
 }
 
 function checkVerificationVersionClaims(version, verificationReport, errors) {
@@ -902,7 +898,6 @@ function auditRepository(root = DEFAULT_ROOT) {
 
   checkDocumentLayout(docsFiles, contents, errors);
   checkTaskListContract(contents.get('docs/06-任务清单.md') || '', errors);
-  checkRoadmapFormat(contents.get('docs/05-路线图.md') || '', errors);
 
   return errors;
 }
@@ -941,7 +936,6 @@ module.exports = {
   checkReadmeVersion,
   checkSkillContract,
   checkTaskListContract,
-  checkRoadmapFormat,
   checkValidationContract,
   checkVerificationVersionClaims,
   checkVersionSources
