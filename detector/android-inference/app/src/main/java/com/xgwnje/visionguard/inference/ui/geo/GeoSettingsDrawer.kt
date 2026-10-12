@@ -340,7 +340,22 @@ private fun ModelSection(state: RuntimeUiState, onOpenParams: () -> Unit) {
     GeoInfoRow("本机 GPU 加速", if (state.gpuAvailable) "可用" else "不可用 · GPU 档不出现")
     GeoInfoRow("已下载档位", "${state.models.count { it.downloaded }} / ${state.models.size}")
     state.models.forEach { model ->
-        GeoInfoRow(model.displayName, if (model.downloaded) model.target.label else "未下载")
+        // 一行一项：档位名可省略，状态右对齐，长名不会再折成两行。
+        Row(Modifier.fillMaxWidth().height(28.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                model.displayName,
+                color = MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                if (model.downloaded) model.target.label else "未下载",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
     }
     GeoHint("模型的下载、删除与选择都在「来源 → 参数 → 模型插槽」：未下载的档位不可选中，使用中的档位不可删除。")
     GeoKey(

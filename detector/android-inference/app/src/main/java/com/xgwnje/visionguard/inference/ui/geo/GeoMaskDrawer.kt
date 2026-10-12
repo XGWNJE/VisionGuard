@@ -34,7 +34,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.RectangleShape
@@ -186,7 +185,7 @@ fun GeoMaskDrawer(
             )
         }
 
-        GeoSectionLabel("01", "遮罩列表", "允许零遮罩")
+        GeoSectionLabel(null, "遮罩列表", "允许零遮罩")
         MaskRack(
             masks = masks,
             selected = selected,
@@ -265,20 +264,24 @@ private fun MaskPlane(
                         awaitEachGesture {
                             val down = awaitFirstDown()
                             if (planeSize.width <= 0 || planeSize.height <= 0) return@awaitEachGesture
+                            // 选择 / 移动模式：点空白不再清掉已有选择，误触代价比「取消选择」更大。
+                            if (tool == MaskTool.Move) return@awaitEachGesture
                             val startX = (down.position.x / planeSize.width).coerceIn(0f, 1f)
                             val startY = (down.position.y / planeSize.height).coerceIn(0f, 1f)
-                            if (tool == MaskTool.Move) {
-                                onSelect(-1)
-                                return@awaitEachGesture
-                            }
+                            val travelThreshold = 16.dp.toPx()
+                            var travelled = 0f
                             var region = buildRegion(startX, startY, startX, startY)
                             drag(down.id) { change ->
+                                val dx = change.position.x - change.previousPosition.x
+                                val dy = change.position.y - change.previousPosition.y
+                                travelled += kotlin.math.sqrt(dx * dx + dy * dy)
                                 val endX = (change.position.x / planeSize.width).coerceIn(0f, 1f)
                                 val endY = (change.position.y / planeSize.height).coerceIn(0f, 1f)
                                 region = buildRegion(startX, startY, endX, endY)
                                 change.consume()
                             }
-                            onAdd(region)
+                            // 手指没有真正拖出去就当成误触：轻点不再生成最小尺寸的碎遮罩。
+                            if (travelled >= travelThreshold) onAdd(region)
                         }
                     }
             ) {
@@ -318,7 +321,6 @@ private fun MaskBox(
     onSelect: () -> Unit,
     onUpdate: ((MaskRegion) -> MaskRegion) -> Unit
 ) {
-    val focusRequester = remember { FocusRequester() }
     Box(
         Modifier
             .offset(x = planeWidth * region.x, y = planeHeight * region.y)
@@ -329,7 +331,7 @@ private fun MaskBox(
                 if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
                 RectangleShape
             )
-            .focusRequester(focusRequester)
+            .geoFocusable()
             .focusable(enabled = !locked)
             .onFocusChanged { if (it.isFocused) onSelect() }
             .onPreviewKeyEvent { event ->
@@ -435,6 +437,8 @@ private fun androidx.compose.foundation.layout.BoxScope.MaskHandle(
                     change.consume()
                 }
             }
+            .geoFocusable()
+            .focusable(enabled = !locked)
             .onPreviewKeyEvent { event ->
                 if (locked || event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 val delta = when (event.key) {

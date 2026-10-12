@@ -953,9 +953,9 @@ private fun TargetBlock(
 private fun SelectedTargetChip(label: String, enabled: Boolean, onRemove: () -> Unit) {
     Row(
         Modifier
-            .heightIn(min = 40.dp)
+            .heightIn(min = Geo.Touch)
             .background(MaterialTheme.colorScheme.primaryContainer, RectangleShape)
-            .clickable(enabled = enabled, onClick = onRemove)
+            .clickable(interactionSource = null, indication = null, enabled = enabled, onClick = onRemove)
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

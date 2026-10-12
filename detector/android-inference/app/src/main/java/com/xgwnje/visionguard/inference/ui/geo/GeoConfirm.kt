@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -47,6 +48,11 @@ fun GeoConfirm(
 ) {
     val cancelFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { cancelFocus.requestFocus() } }
+    // 记一层「有确认框开着」：根层 Escape 只在没有确认框时才关抽屉，否则一次 Escape 会连抽屉一起关。
+    DisposableEffect(Unit) {
+        GeoModal.confirmDepth += 1
+        onDispose { GeoModal.confirmDepth -= 1 }
+    }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Box(
             Modifier
@@ -87,10 +93,10 @@ fun GeoConfirm(
                     onClick = onConfirm,
                     label = confirmLabel,
                     icon = LucideIcons.Check,
-                    tone = GeoTone.Danger
+                    tone = GeoTone.Danger,
+                    modifier = Modifier.focusable()
                 )
             }
         }
-        Spacer(Modifier.height(0.dp))
     }
 }

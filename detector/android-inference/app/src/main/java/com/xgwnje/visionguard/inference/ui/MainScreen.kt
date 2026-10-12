@@ -50,6 +50,7 @@ import com.xgwnje.visionguard.inference.ui.geo.GeoHint
 import com.xgwnje.visionguard.inference.ui.geo.GeoLampTone
 import com.xgwnje.visionguard.inference.ui.geo.GeoMaskDrawer
 import com.xgwnje.visionguard.inference.ui.geo.GeoMessageRibbon
+import com.xgwnje.visionguard.inference.ui.geo.GeoModal
 import com.xgwnje.visionguard.inference.ui.geo.GeoParameterDrawer
 import com.xgwnje.visionguard.inference.ui.geo.MockWorkspaceData
 import com.xgwnje.visionguard.inference.ui.geo.ParamAnchor
@@ -140,7 +141,8 @@ fun MainScreen(
             .fillMaxSize()
             .onPreviewKeyEvent { event ->
                 val modalOpen = overlay != Overlay.NONE || parameterEditorFor != null || maskEditorFor != null
-                if (modalOpen && event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                // 有确认框开着时只让确认框自己处理 Escape，避免一次按键把抽屉也关掉。
+                if (modalOpen && GeoModal.confirmDepth == 0 && event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
                     parameterEditorFor = null
                     maskEditorFor = null
                     closeOverlay()
@@ -242,7 +244,7 @@ fun MainScreen(
                 media = media,
                 appearance = appearance,
                 runtime = runtime,
-                onClose = { overlay = Overlay.NONE },
+                onClose = closeOverlay,
                 onMessage = onMessage,
                 onOpenParams = {
                     overlay = Overlay.NONE
@@ -253,7 +255,7 @@ fun MainScreen(
                 }
             )
     
-            Overlay.HELP -> GeoHelpDrawer(onClose = { overlay = Overlay.NONE })
+            Overlay.HELP -> GeoHelpDrawer(onClose = closeOverlay)
     
             Overlay.NONE -> Unit
         }

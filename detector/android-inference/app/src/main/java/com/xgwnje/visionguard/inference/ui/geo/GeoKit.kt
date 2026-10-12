@@ -9,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -103,7 +104,8 @@ object Geo {
      */
     val BlockControl = 132.dp
     val BlockAction = 42.dp
-    val BlockQuick = 36.dp
+    /** 快捷行按 48dp 触点下限，不再为了紧凑牺牲可点区域。 */
+    val BlockQuick = 48.dp
 
     /** 模型插片与信息格。 */
     val ModelTile = 84.dp
@@ -139,8 +141,7 @@ fun rememberReducedMotion(): Boolean {
     }
 }
 
-/** 平面几何表面：直角、1dp 描边、无阴影。 */
-@Composable
+/** 平面几何表面：直角、1dp 描边、无阴影。 */@Composable
 fun GeoSurface(
     modifier: Modifier = Modifier,
     fill: Color = MaterialTheme.colorScheme.surface,
@@ -167,6 +168,15 @@ fun GeoDivider(modifier: Modifier = Modifier, vertical: Boolean = false) {
 
 /** 操作键语义。 */
 enum class GeoTone { Primary, Secondary, Danger }
+
+/**
+ * 当前打开的确认框层数。
+ *
+ * 根层 Escape 只在没有确认框时关抽屉；否则确认框和抽屉会被同一次按键一起关掉。
+ */
+object GeoModal {
+    var confirmDepth by mutableStateOf(0)
+}
 
 private data class GeoKeyColors(val container: Color, val content: Color, val border: Color)
 
@@ -219,6 +229,8 @@ fun GeoKey(
             .border(Geo.Border, colors.border, RectangleShape)
             .geoFocusable()
             .clickable(
+                interactionSource = interaction,
+                indication = null,
                 enabled = enabled && !busy,
                 role = Role.Button,
                 onClick = onClick
@@ -262,6 +274,8 @@ fun GeoIconKey(
             .border(Geo.Border, colors.border, RectangleShape)
             .geoFocusable()
             .clickable(
+                interactionSource = interaction,
+                indication = null,
                 enabled = enabled,
                 role = Role.Button,
                 onClick = onClick
@@ -461,7 +475,12 @@ fun GeoShifter(
                         .weight(1f)
                         .fillMaxHeight()
                         .geoFocusable()
-                        .clickable(enabled = enabled, role = Role.RadioButton) { onSelect(option.first) },
+                        .selectable(
+                            selected = selected,
+                            enabled = enabled,
+                            role = Role.RadioButton,
+                            onClick = { onSelect(option.first) }
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
