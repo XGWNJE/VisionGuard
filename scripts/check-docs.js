@@ -618,48 +618,94 @@ function checkDocumentLayout(docsFiles, contents, errors) {
   }
 }
 
-// 任务清单的章节是固定契约：章节名与顺序承载职责分工（现状与分支归属在前、未完成事项在后），
-// 自由增删章节会让入口链接、锚点和「只维护未完成事项」的边界一起漂移。
+// 任务清单的章节是固定契约，顺序即阅读优先级：总览在最前，未完成事项次之，
+// 分支归属与口径边界放最后——每次必看的在前，偶尔才查的在后。
 const TASK_LIST_HEADINGS = [
   '# 本次任务清单',
-  '## 任务与分支对应',
   '## 未完成事项',
   '### 高：能被立刻解决、且不解决就一直硌着',
   '### 中：影响真实部署质量，但可以排期',
-  '### 低 / 待外部条件'
+  '### 低 / 待外部条件',
+  '## 任务与分支对应',
+  '## 口径与边界'
 ];
-
-// 新增「高」档事项时保持最前，除非内容本身说明它不卡住任何人。
-const TOP_PRIORITY_HEADING = '### 高：能被立刻解决、且不解决就一直硌着';
 
 function checkTaskListContract(taskList, errors) {
   const relativePath = 'docs/06-任务清单.md';
-  const headings = taskList.split(/\r?\n/)
-    .map((line) => line.match(/^#{1,6}\s+(.+?)\s*#*$/))
+  const lines = taskList.split(/\r?\n/);
+  // 只认 1-3 级标题：`#### N. 事项` 是明细，不参与章节顺序比对。
+  const headings = lines
+    .map((line) => line.match(/^#{1,3}\s+(.+?)\s*#*$/))
     .filter(Boolean)
     .map((match) => match[0].trimEnd());
   if (JSON.stringify(headings) !== JSON.stringify(TASK_LIST_HEADINGS)) {
     errors.push(`[contract] ${relativePath} must keep the fixed chapters in order: ${TASK_LIST_HEADINGS.join(' / ')}; found: ${headings.join(' / ') || '(none)'}`);
     return;
   }
+  if (!lines.some((line) => /^>\s+\*\*当前状态/.test(line))) {
+    errors.push(`[contract] ${relativePath} must open with a 当前状态 callout so the newest state reads first`);
+  }
+  if (hasMarkdownTable(lines)) {
+    errors.push(`[contract] ${relativePath} must use labelled bullets instead of tables`);
+  }
 
-  let inTopPriorityChapter = true;
-  for (const line of taskList.split(/\r?\n/)) {
-    if (line.startsWith('### ')) {
-      inTopPriorityChapter = false;
+  const items = collectNumberedSections(lines, 4);
+  const seen = new Set();
+  for (const item of items) {
+    if (seen.has(item.order)) {
+      errors.push(`[contract] ${relativePath} repeats item number ${item.order}: ${item.title}`);
+    }
+    seen.add(item.order);
+    checkLabelledBullets(relativePath, 'item', item, errors);
+  }
+}
+
+// 任务清单与路线图共用同一套排版契约：每个方向/事项一小节，要点用加粗小标签开头，
+// 长度与条数设上限，防止再写成大段文字；两者都不用宽表格（Markdown 里挤成一团、窄屏没法读）。
+const BULLET_LENGTH_LIMIT = 220;
+const BULLETS_PER_SECTION = 6;
+
+function hasMarkdownTable(lines) {
+  return lines.some((line) => /^\s*\|[\s:|-]+\|\s*$/.test(line));
+}
+
+/** 收集 `##` / `###` / `####` 下形如 `N. 标题` 的小节及其要点。 */
+function collectNumberedSections(lines, level) {
+  const marker = '#'.repeat(level);
+  const items = [];
+  let current = null;
+  for (const line of lines) {
+    const heading = line.match(new RegExp(`^${marker} (\\d+)\\.\\s+(\\S.*?)\\s*$`));
+    if (heading) {
+      current = { order: Number(heading[1]), title: line.trim(), points: [] };
+      items.push(current);
       continue;
     }
-    if (/^- \[[ x]\] /.test(line) && line.includes('最高优先级') && !inTopPriorityChapter) {
-      errors.push(`[contract] ${relativePath} must keep the 最高优先级 item under the top-priority chapter`);
+    if (line.startsWith(`${marker} `) || /^#{1,6}\s/.test(line)) { current = null; continue; }
+    if (current && line.trim().startsWith('- ')) current.points.push(line.trim());
+  }
+  return items;
+}
+
+function checkLabelledBullets(relativePath, label, item, errors) {
+  if (item.points.length === 0) {
+    errors.push(`[contract] ${relativePath} ${label} ${item.order} needs at least one bullet`);
+  }
+  if (item.points.length > BULLETS_PER_SECTION) {
+    errors.push(`[contract] ${relativePath} ${label} ${item.order} has ${item.points.length} bullets; keep at most ${BULLETS_PER_SECTION}`);
+  }
+  for (const point of item.points) {
+    if (!/^- \*\*.+?\*\*\s*[:：]/.test(point)) {
+      errors.push(`[contract] ${relativePath} ${label} ${item.order} has a bullet without a bold label: ${point}`);
+    }
+    if ([...point].length > BULLET_LENGTH_LIMIT) {
+      errors.push(`[contract] ${relativePath} ${label} ${item.order} has a bullet longer than ${BULLET_LENGTH_LIMIT} characters`);
     }
   }
 }
 
-// 路线图的格式是固定契约：每个方向一小节，要点带加粗小标签。宽表格在 Markdown 里挤成一团、
-// 窄屏也没法读，所以连「不要表格」一起固化；要点长度与条数也设上限，防止再写成大段文字。
+// 路线图的格式是固定契约：方向编号从 1 连续，序号跟着内容走、删掉一项其余自动前移。
 const ROADMAP_HEADING = '## 后续开发';
-const ROADMAP_POINT_LIMIT = 220;
-const ROADMAP_POINTS_PER_ITEM = 6;
 
 function checkRoadmapFormat(markdown, errors = []) {
   const relativePath = 'docs/05-路线图.md';
@@ -667,48 +713,20 @@ function checkRoadmapFormat(markdown, errors = []) {
   if (!lines.some((line) => line.trim() === ROADMAP_HEADING)) {
     errors.push(`[contract] ${relativePath} is missing ${ROADMAP_HEADING}`);
   }
-  if (lines.some((line) => /^\s*\|[\s:|-]+\|\s*$/.test(line))) {
+  if (hasMarkdownTable(lines)) {
     errors.push(`[contract] ${relativePath} must use per-direction sections instead of tables`);
   }
 
-  const items = [];
-  let current = null;
-  for (const line of lines) {
-    const heading = line.match(/^### (\d+)\.\s+(\S.*?)\s*$/);
-    if (heading) {
-      current = { order: Number(heading[1]), title: line.trim(), points: [] };
-      items.push(current);
-      continue;
-    }
-    if (line.startsWith('### ')) { current = null; continue; }
-    if (current && line.trim().startsWith('- ')) current.points.push(line.trim());
-  }
-
+  const items = collectNumberedSections(lines, 3);
   if (items.length === 0) {
     errors.push(`[contract] ${relativePath} has no numbered direction sections`);
   }
-  // 序号跟着内容走：删掉一个方向后其余自动前移，不留空号，所以要求从 1 开始连续。
   items.forEach((item, index) => {
     if (item.order !== index + 1) {
       errors.push(`[contract] ${relativePath} direction numbers must restart at 1 and stay consecutive (expected ${index + 1}, found ${item.order}): ${item.title}`);
     }
   });
-  for (const item of items) {
-    if (item.points.length === 0) {
-      errors.push(`[contract] ${relativePath} direction ${item.order} needs at least one bullet`);
-    }
-    if (item.points.length > ROADMAP_POINTS_PER_ITEM) {
-      errors.push(`[contract] ${relativePath} direction ${item.order} has ${item.points.length} bullets; keep at most ${ROADMAP_POINTS_PER_ITEM}`);
-    }
-    for (const point of item.points) {
-      if (!/^- \*\*.+?\*\*\s*[:：]/.test(point)) {
-        errors.push(`[contract] ${relativePath} direction ${item.order} has a bullet without a bold label: ${point}`);
-      }
-      if ([...point].length > ROADMAP_POINT_LIMIT) {
-        errors.push(`[contract] ${relativePath} direction ${item.order} has a bullet longer than ${ROADMAP_POINT_LIMIT} characters`);
-      }
-    }
-  }
+  for (const item of items) checkLabelledBullets(relativePath, 'direction', item, errors);
   return errors;
 }
 

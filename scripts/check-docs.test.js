@@ -233,7 +233,7 @@ test('retired display names are rejected in current modules while version facts 
   assert.ok(errors.some(message => message.includes('40-Android相机节点.md')));
 });
 
-test('the task list keeps its fixed chapters and top-priority placement', () => {
+test('the task list keeps its fixed chapters, a status callout and labelled bullets', () => {
   const read = p => fs.readFileSync(path.join(root, p), 'utf8');
   const valid = read('docs/06-任务清单.md');
   const audit = (content) => {
@@ -249,17 +249,24 @@ test('the task list keeps its fixed chapters and top-priority placement', () => 
   assert.ok(renamed[0].includes('fixed chapters in order'));
   assert.ok(renamed[0].includes('### 高：能被立刻解决、且不解决就一直硌着'));
 
-  // 章节齐全但把标着「最高优先级」的条目挪到中档（检查按行号推进，挪到前面必须失效）。
-  // 取「高」档下的第一条，不绑定具体编号，任务清单增删条目不会让这条用例失效。
-  const lines = valid.split(/\r?\n/);
-  const topChapterLine = lines.indexOf('### 高：能被立刻解决、且不解决就一直硌着');
-  const promotionLine = lines.findIndex((line, index) => index > topChapterLine && /^- \[[ x]\] /.test(line));
-  assert.notEqual(promotionLine, -1);
-  const promotion = lines.splice(promotionLine, 1)[0].replace('- [ ] ', '- [ ] 最高优先级 · ');
-  lines.splice(lines.indexOf('### 中：影响真实部署质量，但可以排期') + 1, 0, promotion);
-  const demoted = audit(lines.join('\n'));
-  assert.equal(demoted.length, 1);
-  assert.ok(demoted[0].includes('top-priority chapter'));
+  // 最新状态用开头的引用块给出，读的人第一眼就能拿到。
+  const noCallout = audit(valid.replace(/^> \*\*当前状态.*$/m, '当前状态：随便一句话。'));
+  assert.ok(noCallout.some((error) => error.includes('当前状态 callout')));
+
+  // 不用宽表格。
+  const withTable = audit(`${valid}\n| 分支 | 状态 |\n|---|---|\n| main | 已推送 |\n`);
+  assert.ok(withTable.some((error) => error.includes('instead of tables')));
+
+  const itemBullet = '- **为什么**：静音锁屏回归有收件证据，但最初漏收的根因仍未确认。';
+  const unlabelled = audit(valid.replace(itemBullet, '- 静音锁屏回归有收件证据，但最初漏收的根因仍未确认。'));
+  assert.ok(unlabelled.some((error) => error.includes('without a bold label')));
+
+  const tooLong = audit(valid.replace(itemBullet, `- **为什么**：${'锁'.repeat(230)}`));
+  assert.ok(tooLong.some((error) => error.includes('longer than 220 characters')));
+
+  // 事项编号是长期沿用的稳定标识：重号报错，但不要求连续（历史编号要能对上）。
+  const repeated = audit(valid.replace('#### 7. Qualcomm 真机验证', '#### 6. Qualcomm 真机验证'));
+  assert.ok(repeated.some((error) => error.includes('repeats item number 6')));
 });
 
 test('the roadmap keeps per-direction sections with short labelled bullets', () => {
