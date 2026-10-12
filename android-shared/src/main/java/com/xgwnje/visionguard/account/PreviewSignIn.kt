@@ -53,6 +53,13 @@ object PreviewSignIn {
      * 已有会话（记住登录）不再重复登录：那会平白多一次网络往返，也会把设备身份刷新一遍。
      */
     suspend fun signIn(store: AccountStore, component: String): String? {
+        if (debugLoginScreen) {
+            // 只跳过静默登录还不够：应用启动会恢复已保存的会话，照样进主界面。停在登录页
+            // 就得把本机会话一起清掉（本地清除，不依赖网络）。
+            store.clear()
+            Log.i(TAG, "调试登录流程已开启，已清除本机会话，停在登录页")
+            return null
+        }
         if (store.session.value != null) return null
         val endpoint = this.endpoint ?: return null
         val username = this.username ?: return null

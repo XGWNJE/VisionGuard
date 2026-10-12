@@ -161,4 +161,7 @@ test('preview builds carry the isolated sign-in while release packages stay clea
     assert.match(text, /bootstrapProtocolVersion\(/, `${relative} 没有在登录前就位协议版本`);
     assert.match(text, /debugLoginScreen\(/, `${relative} 没有保留停在登录界面的调试入口`);
   }
+  // 停在登录界面必须连会话一起清：否则应用启动会恢复已保存的会话，照样进主界面。
+  const previewSignIn = fs.readFileSync(path.join(root, 'android-shared/src/main/java/com/xgwnje/visionguard/account/PreviewSignIn.kt'), 'utf8');
+  assert.match(previewSignIn, /debugLoginScreen\)[\s\S]{0,400}?store\.clear\(\)/, '停在登录界面没有清除本机会话');
 });
