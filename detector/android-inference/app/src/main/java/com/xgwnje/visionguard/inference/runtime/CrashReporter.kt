@@ -5,6 +5,7 @@ import android.app.ApplicationExitInfo
 import android.content.Context
 import android.os.Build
 import android.util.Log
+import androidx.annotation.RequiresApi
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -109,6 +110,7 @@ object CrashReporter {
     }
 
     /** 摘 tombstone / ANR 跟踪里与本项目相关的部分，避免整份文件进界面。 */
+    @RequiresApi(Build.VERSION_CODES.R)
     private fun readTrace(info: ApplicationExitInfo): String? = runCatching {
         val stream = info.traceInputStream ?: return null
         val lines = stream.bufferedReader().use { it.readLines() }

@@ -24,8 +24,13 @@ test('background launcher checks reject incomplete metadata without blocking sta
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => server.close());
-  const asset={name:'VisionGuard-WPF-v0.7.0.zip',browser_download_url:'https://github.com/XGWNJE/VisionGuard/releases/download/v0.7.0/VisionGuard-WPF-v0.7.0.zip',size:123,digest:'sha256:'+'a'.repeat(64),state:'uploaded'};
-  const release=assets=>[{tag_name:'v0.7.0',published_at:'2026-10-05T00:00:00Z',draft:false,prerelease:false,assets}];
+  // 夹具版本必须高于当前源码版本，否则“更高版本”分支根本走不到元数据校验：
+  // 旧写法写死 v0.7.0，客户端升到 0.7.1 后这两个用例就一直失败。
+  const currentVersion = fs.readFileSync(path.join(root, 'VERSION'), 'utf8').trim();
+  const [major, minor, patch] = currentVersion.split('.').map(Number);
+  const nextVersion = `${major}.${minor}.${patch + 1}`;
+  const asset={name:`VisionGuard-WPF-v${nextVersion}.zip`,browser_download_url:`https://github.com/XGWNJE/VisionGuard/releases/download/v${nextVersion}/VisionGuard-WPF-v${nextVersion}.zip`,size:123,digest:'sha256:'+'a'.repeat(64),state:'uploaded'};
+  const release=assets=>[{tag_name:`v${nextVersion}`,published_at:'2026-10-05T00:00:00Z',draft:false,prerelease:false,assets}];
   const cases = [
     { name: 'no newer version', body: [], code: 0 },
     { name: 'valid newer version stays noninteractive', body: release([asset]), code: 0 },
