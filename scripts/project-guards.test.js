@@ -108,6 +108,13 @@ test('publish script checks authorization before mutation while retaining read-o
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 });
 
+test('console keeps a browser-camera entry in settings', () => {
+  const consoleEntry = fs.readFileSync(path.join(root, 'receiver/web/src/main.tsx'), 'utf8');
+  // 浏览器相机没有安装包，用户只能从控制台进去；入口丢了就等于这个节点类型“消失”。
+  assert.match(consoleEntry, /href="\/camera\/"/, '控制台缺少浏览器相机入口');
+  assert.match(consoleEntry, /settings-camera/, '浏览器相机入口应挂在设置页');
+});
+
 test('preview builds carry the isolated sign-in while release packages stay clean', () => {
   const gradle = fs.readFileSync(path.join(root, 'scripts/ui-preview.init.gradle'), 'utf8');
   const previewKeys = ['preview_endpoint', 'preview_username', 'preview_password'];
