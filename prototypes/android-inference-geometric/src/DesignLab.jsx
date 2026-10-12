@@ -4,7 +4,7 @@ import { Key, Icon, Wheel, ConfidenceRail, Cooldown, Shifter, Slot, Checkbox, La
 import { MaskCanvas } from './MaskEditor.jsx';
 import { CameraFrame, SourceCarriage } from './SourceWorkspace.jsx';
 import { ModelDrawer, Info } from './Settings.jsx';
-import { validateName, createSeed } from './domain.mjs';
+import { validateName, createSeed, VERSION } from './domain.mjs';
 
 function ControlSample({id,api}){
   const [n,setN]=useState(id==='C07'?65:id==='C08'?30:3),[checked,setChecked]=useState(false),[name,setName]=useState('本机后置'),[pick,setPick]=useState('back'),[targets,setTargets]=useState(['person']),[model,setModel]=useState('yolo26n_320'),[masks,setMasks]=useState([{x:.55,y:.2,width:.22,height:.28}]),[selected,setSelected]=useState(0),[busy,setBusy]=useState(false),[message,setMessage]=useState('连接中断'),[sourceId,setSourceId]=useState('camera');
@@ -34,7 +34,7 @@ function ControlSample({id,api}){
   if(id==='C26')return <div className="sample-stack"><Checkbox label="记住账号密码" checked={checked} onChange={setChecked}/><Hint>仅演示扣合状态；原型不持久化账号密码。</Hint></div>;
   if(id==='C27')return <div className="sample-stack"><Lamp tone="warning">相机权限未授予</Lamp><Key icon="external" onClick={()=>api.onMessage('Web 无法绕过 Android 本机权限；此处仅演示入口说明。','warning')}>系统设置说明</Key></div>;
   if(id==='C28')return <div className="sample-stack"><Key icon="search" onClick={()=>setMessage('模拟可清理：12 项 / 18 MB')}>缓存盘点</Key><p>{message}</p><Key icon="delete" tone="danger" onClick={()=>api.onConfirm('临时缓存清理','仅过期截图 / 临时下载，保护模型、账号、配置、持久数据与回滚。',()=>setMessage('模拟清理完成：0 项'))}>确认清理</Key></div>;
-  if(id==='C29')return <div className="sample-stack"><Info label="源码版本" value="0.6.11"/><Key icon="restore" onClick={()=>setMessage('当前暂无更新资产；未解锁下载或安装。')}>检查更新</Key><Hint>{message}</Hint></div>;
+  if(id==='C29')return <div className="sample-stack"><Info label="源码版本" value={VERSION}/><Key icon="restore" onClick={()=>setMessage('当前暂无更新资产；未解锁下载或安装。')}>检查更新</Key><Hint>{message}</Hint></div>;
   if(id==='C30')return <div className="help-folds"><details><summary>运行与参数<Icon name="down"/></summary><p>参数、镜头与遮罩在停止后修改，下次启动生效。</p></details><Key icon="help" onClick={api.onHelp}>全部帮助</Key></div>;
   if(id==='C31')return <div className="sample-stack">{message?<div className="message-ribbon message-ribbon--error"><Icon name="error"/><span>{message}</span><Key icon="close" aria-label="关闭提示" onClick={()=>setMessage('')}/></div>:<Key onClick={()=>setMessage('来源连接中断')}>显示信息带</Key>}<Hint>长详情在独立检查区展开，不挤占主操作。</Hint></div>;
   if(id==='C32')return <div className="sample-stack"><Key icon="settings" onClick={api.onSettings}>打开设置抽屉</Key><Key icon="params" onClick={api.onParams}>打开参数设计稿</Key><Hint>Tab 限定模态内；Escape 关闭并恢复调用焦点。</Hint></div>;

@@ -1,6 +1,6 @@
 import { COCO } from './coco.mjs';
 
-export const VERSION = '0.6.11';
+export const VERSION = '0.7.0';
 export const LIMITS = Object.freeze({ confidence: [10, 95], fps: [1, 5], cooldown: [1, 300], name: 64, targets: 4096, sources: 16, maskEdge: .02 });
 export const MODEL_KEYS = ['yolo26n_320', 'yolo26n_640', 'yolo26s_320', 'yolo26s_640', 'yolo26m_320', 'yolo26m_640'];
 export const modelName = key => key.replace('yolo26', 'YOLO26').replace('_', ' · ');

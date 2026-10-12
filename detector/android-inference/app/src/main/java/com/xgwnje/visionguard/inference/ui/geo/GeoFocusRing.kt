@@ -14,7 +14,7 @@ import androidx.compose.ui.focus.onFocusChanged
  * 抽屉内的焦点环：按组合顺序登记可聚焦元素，Tab / Shift+Tab 在环内前后环绕。
  *
  * 只在抽屉打开时生效（[LocalGeoFocusRing] 为 null 时 [geoFocusable] 不改动元素），
- * 因此主界面的键盘遍历不受影响。依据见 `docs/73-几何空间界面规范.md` 的 C32 契约。
+ * 因此主界面的键盘遍历不受影响。
  */
 class GeoFocusRing {
     private val requesters = mutableListOf<FocusRequester>()
