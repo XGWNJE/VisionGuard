@@ -124,7 +124,10 @@ if ($Target -in @('Windows', 'PrepareWindows')) {
     # 不再需要脚本反射加载驻留程序去预登录（那条路会因依赖目录不同而加载失败）。
     if ($LoginUi) {
         Remove-Item Env:VISIONGUARD_PREVIEW_SIGNIN -ErrorAction SilentlyContinue
-        Write-Host 'Preview sign-in disabled: the app stops at the login screen.'
+        # 只禁用注入还不够：应用启动会恢复已保存的会话，于是照样进主界面。连同会话一起清掉，
+        # `-LoginUi` 才真的停在登录页。
+        Get-ChildItem -LiteralPath $taskValues.accountDir -Filter 'session-*.bin' -ErrorAction SilentlyContinue | Remove-Item -Force
+        Write-Host 'Preview sign-in disabled and saved sessions cleared: the app stops at the login screen.'
     } else {
         $taskPrivateAccounts = Get-Content (Join-Path $taskRoot '.local\e2e-server\console-preview\test-accounts.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         $taskPreviewAccount = $taskPrivateAccounts | Where-Object username -eq 'vg-test'
