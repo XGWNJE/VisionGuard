@@ -1,5 +1,5 @@
 import { accountStore, type AccountDevice } from './AccountStore';
-import { isCameraComponent } from './NodeComponents';
+import { canPublishVideo, canSubscribeVideo, isCameraComponent } from './NodeComponents';
 
 export type NodeRole = 'detector' | 'console' | 'notifier' | 'lifecycle';
 export type NodeType = 'visual' | 'sensor' | 'notification' | 'console' | 'resident';
@@ -56,13 +56,21 @@ export function validateEvent(value: any, identity: NodeIdentity, now = Date.now
 
 export function allowedCapabilities(identity: NodeIdentity, values: unknown): string[] {
   const common = ['monitor-control', 'config-control', 'request-correlation', 'cache-maintenance'];
+  // Windows 推理节点可切到「推流」态：本机采集窗口 / 屏幕画面推给其他推理节点。
+  // 发布放行看 video-publish，订阅放行看 video-subscribe；节点级二选一由客户端与媒体通道保证。
+  const publishable = canPublishVideo(identity.component) ? ['video-publish', 'stream-control'] : [];
   const allowed = isCameraComponent(identity.component)
     // Web 相机不实现本机临时缓存维护，因此不申请 cache-maintenance。
     ? (identity.component === 'web-camera' ? ['video-publish', 'stream-control', 'camera-config', 'request-correlation']
       : ['video-publish', 'stream-control', 'camera-config', 'request-correlation', 'cache-maintenance'])
     : identity.role === 'notifier' ? ['alarm-control', 'sound-config', 'audio-library', 'request-correlation', 'cache-maintenance']
     // directml 只描述 Windows 上的 DirectML 推理后端，Android 推理节点不申请该能力。
-    : identity.nodeType === 'visual' ? [...common, 'screenshot-on-demand', 'source-control', ...(identity.component === 'android-inference' ? [] : ['directml']), 'video-subscribe', 'visual-inference']
+    : identity.nodeType === 'visual' ? [...common, 'screenshot-on-demand', 'source-control', ...publishable, ...(identity.component === 'android-inference' ? [] : ['directml']), 'video-subscribe', 'visual-inference']
     : identity.nodeType === 'sensor' ? common : [];
   return Array.isArray(values) ? [...new Set(values.filter((v): v is string => typeof v === 'string' && allowed.includes(v)))] : [];
+}
+
+/** 该身份在媒体通道上的可用方向：发布看 video-publish，订阅看 video-subscribe，两者互斥。 */
+export function mediaDirections(identity: NodeIdentity): { publish: boolean; subscribe: boolean } {
+  return { publish: canPublishVideo(identity.component), subscribe: canSubscribeVideo(identity.component) };
 }

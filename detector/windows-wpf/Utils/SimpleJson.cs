@@ -51,6 +51,37 @@ namespace VisionGuard.Detector.Windows.Utils
             return fallback;
         }
 
+        /// <summary>安全获取整数值；缺失或类型不符时返回 fallback。</summary>
+        public static int GetInt(Dictionary<string, object> d, string key, int fallback = 0)
+        {
+            if (d != null && d.TryGetValue(key, out object? v) && v != null)
+            {
+                try { return Convert.ToInt32(v); } catch { }
+            }
+            return fallback;
+        }
+
+        /// <summary>安全获取长整数值；缺失或类型不符时返回 fallback。</summary>
+        public static long GetLong(Dictionary<string, object> d, string key, long fallback = 0)
+        {
+            if (d != null && d.TryGetValue(key, out object? v) && v != null)
+            {
+                try { return Convert.ToInt64(v); } catch { }
+            }
+            return fallback;
+        }
+
+        /// <summary>安全获取布尔值；缺失或类型不符时返回 fallback。</summary>
+        public static bool GetBool(Dictionary<string, object> d, string key, bool fallback = false)
+        {
+            if (d != null && d.TryGetValue(key, out object? v) && v != null)
+            {
+                if (v is bool b) return b;
+                try { return Convert.ToBoolean(v); } catch { }
+            }
+            return fallback;
+        }
+
         /// <summary>
         /// 反序列化 JSON 到指定类型，失败返回 default(T)。
         /// 用于解析持久化的复合对象列表（如 MaskRegions）。

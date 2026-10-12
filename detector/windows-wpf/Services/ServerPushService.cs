@@ -77,6 +77,8 @@ namespace VisionGuard.Detector.Windows.Services
         private string[] _hbModelOptions = Array.Empty<string>();
         private bool _hbCanSwitchModelWhileMonitoring;
         private object[] _hbSources = Array.Empty<object>();
+        /// <summary>节点级状态自报：本机推理为空串，推流态为 `streaming` / `connecting` / `faulted` 等。</summary>
+        private string _hbPublishState = "";
 
         private bool _disposed;
         private static readonly object AlertLogLock = new object();
@@ -166,11 +168,25 @@ namespace VisionGuard.Detector.Windows.Services
         }
         public void Disconnect() { Post(() => OnConnect("", "", "", "")); }
 
+        /// <summary>节点级状态查询（推流态不建立订阅连接）；由主 ViewModel 注入。</summary>
+        public Func<bool>? IsPushMode { get; set; }
+
+        /// <summary>
+        /// 切换节点级状态时同步媒体方向：推流态断开订阅连接，本机推理态按需重建。
+        /// 服务端强制「同一设备同一时间只能一个方向」，因此切换必须真的关掉另一条连接。
+        /// </summary>
+        public void ApplyMediaDirection(bool pushMode)
+        {
+            if (pushMode) { _media?.Dispose(); _media = null; return; }
+            if (_state == WsState.Connected && _session != null && _media == null && !string.IsNullOrEmpty(_serverUrl))
+                _media = new RemoteMediaService(_serverUrl, _apiKey, _deviceId);
+        }
+
         public void UpdateHeartbeatParams(bool isMonitoring, bool isReady,
             int cooldown, float confidence, string targets,
             int targetSamplingRate = 3, string modelKey = "",
             string[]? modelOptions = null, bool canSwitchModelWhileMonitoring = false,
-            object[]? sources = null)
+            object[]? sources = null, string publishState = "")
         {
             lock (_hbParamsLock)
             {
@@ -184,6 +200,7 @@ namespace VisionGuard.Detector.Windows.Services
                 _hbModelOptions = modelOptions == null ? Array.Empty<string>() : (string[])modelOptions.Clone();
                 _hbCanSwitchModelWhileMonitoring = canSwitchModelWhileMonitoring;
                 _hbSources = sources == null ? Array.Empty<object>() : (object[])sources.Clone();
+                _hbPublishState = publishState ?? "";
             }
         }
 
@@ -287,6 +304,7 @@ namespace VisionGuard.Detector.Windows.Services
             string[] modelOptions;
             bool canSwitchModelWhileMonitoring;
             object[] sources;
+            string publishState;
             lock (_hbParamsLock)
             {
                 isMonitoring = _hbIsMonitoring;
@@ -299,7 +317,11 @@ namespace VisionGuard.Detector.Windows.Services
                 modelOptions = (string[])_hbModelOptions.Clone();
                 canSwitchModelWhileMonitoring = _hbCanSwitchModelWhileMonitoring;
                 sources = (object[])_hbSources.Clone();
+                publishState = _hbPublishState;
             }
+            var components = new Dictionary<string, object> { ["detectorApp"] = "running" };
+            // 推流态只采只推：服务端据此把节点显示成“推流中”，与本地推理态区分。
+            if (!string.IsNullOrEmpty(publishState)) components["publish"] = publishState;
             s.SendJson(new Dictionary<string, object>
             {
                 ["type"] = "heartbeat",
@@ -316,7 +338,7 @@ namespace VisionGuard.Detector.Windows.Services
                 ["modelLabels"] = modelOptions.Where(ModelManager.IsSupported).ToDictionary(key => key, key => Data.CocoClassMap.EnglishNames.Select(name => new { value = name, label = Data.CocoClassMap.EnZh[name] }).ToArray()),
                 ["canSwitchModelWhileMonitoring"] = canSwitchModelWhileMonitoring,
                 ["capabilities"] = Runtime.DetectorCapabilities.Build(),
-                ["components"] = new Dictionary<string, object> { ["detectorApp"] = "running" },
+                ["components"] = components,
                 ["sources"] = sources,
             });
         }
@@ -494,7 +516,9 @@ namespace VisionGuard.Detector.Windows.Services
                 // maxSources=0 表示服务端未声明上限，此时保持本地已放开的范围，不收窄。
                 if (maxSources > 0) SourceLimitReceived?.Invoke(this, Net472Compat.Clamp(maxSources, 1, 16));
                 s.StartHeartbeat();
-                _media?.Dispose(); _media = new RemoteMediaService(_serverUrl, _apiKey, _deviceId);
+                // 两态互斥：推流态不建立订阅连接（该设备方向只允许发布），本机推理态才接收远程镜头。
+                _media?.Dispose(); _media = null;
+                if (!(IsPushMode?.Invoke() ?? false)) _media = new RemoteMediaService(_serverUrl, _apiKey, _deviceId);
                 // Register sources on this connection before sending queued events.
                 SendHeartbeatNow();
             }

@@ -1,6 +1,16 @@
 <UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" x:Class="VisionGuard.Detector.Windows.Views.MonitorPage">
     <ScrollViewer Style="{StaticResource PaneScrollViewer}" Visibility="{Binding HasSelectedSource, Converter={StaticResource BoolToVis}}">
-        <StackPanel DataContext="{Binding SelectedSource}">
+        <StackPanel>
+            <!-- 节点级状态：本机推理 / 推流到其他推理节点，二选一。 -->
+            <StackPanel DataContext="{Binding}">
+                <TextBlock Text="本机状态" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+                <UniformGrid Columns="2" Margin="0,0,0,8">
+                    <Button Content="本机推理" Style="{StaticResource PaneButton}" Command="{Binding UseInferenceModeCommand}" ToolTip="在本机模型上跑检测并产生报警" Margin="0,0,4,0"/>
+                    <Button Content="推流到其他推理节点" Style="{StaticResource PaneButton}" Command="{Binding UsePushModeCommand}" ToolTip="把本机采集画面推给其他推理节点，本机不推理、不报警" Margin="4,0,0,0"/>
+                </UniformGrid>
+                <TextBlock Text="{Binding NodeModeHint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,24"/>
+            </StackPanel>
+            <StackPanel DataContext="{Binding SelectedSource}">
             <TextBlock Text="当前来源" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
             <Grid MinHeight="36">
                 <Button x:Name="SourceNameText" Style="{StaticResource PaneButton}" HorizontalContentAlignment="Left" Click="SourceNameText_OnClick" ToolTip="修改来源名称">
@@ -21,6 +31,10 @@
                     <RowDefinition Height="Auto" MinHeight="32"/>
                     <RowDefinition Height="Auto" MinHeight="32"/>
                     <RowDefinition Height="Auto" MinHeight="32"/>
+                    <RowDefinition Height="Auto" MinHeight="32"/>
+                    <RowDefinition Height="Auto" MinHeight="32"/>
+                    <RowDefinition Height="Auto" MinHeight="32"/>
+                    <RowDefinition Height="Auto" MinHeight="32"/>
                 </Grid.RowDefinitions>
                 <TextBlock Text="状态" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
                 <TextBlock Grid.Column="1" Text="{Binding StatusText}" Style="{StaticResource SourceStatusText}" TextWrapping="Wrap" VerticalAlignment="Center" ToolTip="{Binding StatusToolTip}"/>
@@ -32,14 +46,22 @@
                 <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding InferenceText}" VerticalAlignment="Center"/>
                 <TextBlock Grid.Row="4" Text="最后报警" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
                 <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding LastAlertText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="5" Text="推流状态" Style="{StaticResource CaptionText}" VerticalAlignment="Center" Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}"/>
+                <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding PublishStatusText}" TextWrapping="Wrap" VerticalAlignment="Center" Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}"/>
+                <TextBlock Grid.Row="6" Text="推流帧率" Style="{StaticResource CaptionText}" VerticalAlignment="Center" ToolTip="推流目标采样帧率，由目标推理节点的来源频率决定" Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}"/>
+                <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding PublishTargetFps, StringFormat={}{0} FPS}" VerticalAlignment="Center" Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}"/>
+                <TextBlock Grid.Row="7" Text="已确认帧" Style="{StaticResource CaptionText}" VerticalAlignment="Center" ToolTip="统一服务回执累计确认的帧序号；推进即表示服务端已收到画面" Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}"/>
+                <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding PublishLastAcknowledgedSequence, StringFormat=#\{0\}}" VerticalAlignment="Center" Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}"/>
+                <TextBlock Grid.Row="8" Text="放弃帧" Style="{StaticResource CaptionText}" VerticalAlignment="Center" Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}"/>
+                <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding PublishDroppedFrames}" VerticalAlignment="Center" Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}"/>
             </Grid>
             <Grid Margin="0,8,0,24">
-                <Button Content="开始检测" Style="{StaticResource PanePrimaryButton}" Command="{Binding StartCommand}" ToolTip="{Binding StartActionHint}" ToolTipService.ShowOnDisabled="True">
+                <Button Content="{Binding StartButtonText}" Style="{StaticResource PanePrimaryButton}" Command="{Binding StartCommand}" ToolTip="{Binding StartActionHint}" ToolTipService.ShowOnDisabled="True">
                     <Button.Visibility>
                         <Binding Path="CanEdit" Converter="{StaticResource BoolToVis}"/>
                     </Button.Visibility>
                 </Button>
-                <Button Content="停止检测" Style="{StaticResource PaneButton}" Command="{Binding StopCommand}" Visibility="{Binding IsMonitoring, Converter={StaticResource BoolToVis}}"/>
+                <Button Content="{Binding StopButtonText}" Style="{StaticResource PaneButton}" Command="{Binding StopCommand}" Visibility="{Binding IsMonitoring, Converter={StaticResource BoolToVis}}"/>
             </Grid>
             <TextBlock Text="检测规则" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
             <Grid>
@@ -108,6 +130,7 @@
                     <Button Content="删除来源" Command="{Binding RemoveSourceCommand}" Style="{StaticResource PaneDangerButton}" ToolTip="{Binding DeleteActionHint}" ToolTipService.ShowOnDisabled="True"/>
                 </StackPanel>
             </Border>
+            </StackPanel>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

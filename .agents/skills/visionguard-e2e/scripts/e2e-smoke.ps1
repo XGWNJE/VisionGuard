@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet('Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'WpfPersonDetection', 'WpfParserContract', 'ResidentLaunch', 'ModelDownload', 'SourceAutoSave', 'CardLayoutPlan', 'PerformanceWatchdog', 'WebCameraChain')]
+    [ValidateSet('Discover', 'ServerBuild', 'ServerSmoke', 'AndroidDetectorSmoke', 'WpfPersonDetection', 'WpfParserContract', 'ResidentLaunch', 'ModelDownload', 'SourceAutoSave', 'CardLayoutPlan', 'PerformanceWatchdog', 'WebCameraChain', 'WindowsPushChain')]
     [string]$Mode = 'Discover',
 
     [ValidateSet('Auto', 'Physical', 'Emulator', 'None')]
@@ -36,7 +36,14 @@
     [string]$WebCameraChainModelsDirectory = '',
     [ValidateRange(30,900)][int]$WebCameraChainPermissionTimeoutSeconds = 180,
     [ValidateRange(30,900)][int]$WebCameraChainAlertTimeoutSeconds = 180,
-    [switch]$WebCameraChainKeepStreaming
+    [switch]$WebCameraChainKeepStreaming,
+    # WindowsPushChain：真实 Windows 节点推流态 → 隔离服务中继 → 另一个推理设备真实收到合法帧。
+    [ValidateRange(1024,65535)][int]$WindowsPushChainPort = 3125,
+    [string]$WindowsPushChainChannel = 'windows-push-chain-e2e',
+    [string]$WindowsPushChainFixtureImage = 'artifacts\v5\fixtures\vg-v5-person-zidane.jpg',
+    [ValidateRange(30,900)][int]$WindowsPushChainTimeoutSeconds = 180,
+    # 验证完成后保持推流这么多秒，供脚本抓两个真实实例的窗口截图（界面目检证据）。
+    [ValidateRange(0,300)][int]$WindowsPushChainCaptureDelaySeconds = 30
 )
 
 $ErrorActionPreference = 'Stop'
@@ -985,6 +992,329 @@ function Run-WebCameraChain {
     }
 }
 
+function Save-WindowScreenshot {
+    # 只抓取指定进程的主窗口（GDI PrintWindow）：给推流端 / 接收端的界面现状留证，
+    # 脚本断言不能代替界面目检。窗口必须在当前桌面可见（远程桌面最小化或锁屏时抓不到内容）。
+    param(
+        [Parameter(Mandatory = $true)][System.Diagnostics.Process]$Process,
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    Add-Type -AssemblyName System.Drawing
+    if (-not ('VisionGuardWindowCapture' -as [type])) {
+        Add-Type -Namespace '' -Name 'VisionGuardWindowCapture' -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool PrintWindow(System.IntPtr hWnd, System.IntPtr hdcBlt, uint nFlags);
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool SetForegroundWindow(System.IntPtr hWnd);
+[System.Runtime.InteropServices.DllImport("user32.dll")]
+public static extern bool GetWindowRect(System.IntPtr hWnd, out RECT rect);
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+'@
+    }
+
+    $Process.Refresh()
+    $handle = $Process.MainWindowHandle
+    if ($handle -eq [IntPtr]::Zero) { return $false }
+    [void][VisionGuardWindowCapture]::SetForegroundWindow($handle)
+    Start-Sleep -Milliseconds 400
+
+    $rect = New-Object VisionGuardWindowCapture+RECT
+    if (-not [VisionGuardWindowCapture]::GetWindowRect($handle, [ref]$rect)) { return $false }
+    $width = $rect.Right - $rect.Left
+    $height = $rect.Bottom - $rect.Top
+    if ($width -le 0 -or $height -le 0) { return $false }
+
+    $bitmap = New-Object System.Drawing.Bitmap($width, $height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    try {
+        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+        try {
+            $hdc = $graphics.GetHdc()
+            try { $captured = [VisionGuardWindowCapture]::PrintWindow($handle, $hdc, 2) }
+            finally { $graphics.ReleaseHdc($hdc) }
+        }
+        finally { $graphics.Dispose() }
+        if (-not $captured) { return $false }
+        $bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
+        return $true
+    }
+    finally { $bitmap.Dispose() }
+}
+
+function Run-WindowsPushChain {
+    # Windows 节点的「推流态」整条链：本机真实采集窗口 → 生产媒体契约 → 隔离统一服务中继 → 另一个真实推理节点收到并推理。
+    # 不使用合成帧：推流端与接收端都是 Release WPF 实例（各自独立账号目录 / 设备身份）。
+    # 断言：按能力放行的推流、显式绑定、帧头/JPEG 契约、序号单调、中继计数推进、推流端不产生本机报警、方向互斥。
+    # 同时抓两个实例的主窗口截图，界面现状由 owner 目检（脚本断言不替代目检）。
+    $modelKey = 'yolo26m_320'
+    $serverScript = Join-Path $repoRoot 'scripts\start-isolated-test-server.ps1'
+    $accountProbe = Join-Path $repoRoot 'tests\AccountMedia.Probe\bin\Release\net472\AccountMedia.Probe.exe'
+    if (-not (Test-Path -LiteralPath $accountProbe)) { throw 'Build tests/AccountMedia.Probe in Release before this mode.' }
+    $detectorExe = Join-Path $repoRoot 'detector\windows-package\bin\Release\runtimes\modern\VisionGuard.Detector.Windows.exe'
+    if (-not (Test-Path -LiteralPath $detectorExe)) { throw 'Build the Windows unified package first (visionguard-build -Target Windows).' }
+    $fixtureImage = Resolve-RepoPath $WindowsPushChainFixtureImage
+    if (-not (Test-Path -LiteralPath $fixtureImage)) { throw "Fixture image missing: $fixtureImage" }
+    if (Get-NetTCPConnection -LocalPort $WindowsPushChainPort -State Listen -ErrorAction SilentlyContinue) { throw "Port $WindowsPushChainPort is occupied; the existing process was left running." }
+
+    $chainRoot = Join-Path $repoRoot ".local\windows-push-chain\$WindowsPushChainChannel"
+    # 一次性隔离实例：账号目录与服务数据都从零开始，避免上一轮遗留的设备登记或绑定影响本轮断言。
+    $serverDataRoot = Join-Path $repoRoot ".local\e2e-server\$WindowsPushChainChannel"
+    foreach ($stale in @($chainRoot, $serverDataRoot)) {
+        if (Test-Path -LiteralPath $stale) { Remove-Item -LiteralPath $stale -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+    $accountDirectory = Join-Path $chainRoot 'account'
+    # VISIONGUARD_SETTINGS_PATH 是「设置文件」而不是目录：应用登录后会把它解析成
+    # <父目录>/accounts/<scope>/settings.ini（见 SettingsStore.ResolveSettingsPath）。
+    $settingsPath = Join-Path $chainRoot 'settings.ini'
+    $logDirectory = Join-Path $chainRoot 'logs'
+    $evidence = Join-Path $artifactRoot 'windows-push-chain'
+    foreach ($directory in @($accountDirectory, $chainRoot, $logDirectory, $evidence)) { New-Item -ItemType Directory -Force -Path $directory | Out-Null }
+    $environmentPath = Join-Path $evidence 'isolated-environment.json'
+    $environment = [ordered]@{
+        serviceUrl = "http://127.0.0.1:$WindowsPushChainPort"
+        accountDir = $accountDirectory
+        settingsPath = $settingsPath
+        modelsDirectory = (Join-Path $repoRoot 'server\data\models')
+        logDirectory = $logDirectory
+    }
+    [System.IO.File]::WriteAllText($environmentPath, ($environment | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
+
+    $serverLog = Join-Path $evidence 'isolated-server.log'
+    $serverErrorLog = Join-Path $evidence 'isolated-server-error.log'
+    $server = $null
+    $detectorProcess = $null
+    $fixtures = $null
+    $previousEnvironment = @{}
+    foreach ($name in @('VISIONGUARD_ACCOUNT_DIR', 'VISIONGUARD_SERVER_URL', 'VISIONGUARD_SETTINGS_PATH', 'VISIONGUARD_MODELS_DIR', 'VISIONGUARD_LOG_DIR', 'VISIONGUARD_LOGIN_PASSWORD', 'VISIONGUARD_CHAIN_PASSWORD', 'VISIONGUARD_MEDIA_DIAGNOSTICS')) {
+        $previousEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
+    }
+    # 服务数据是删掉重建的，但仍可能有上一轮留下的检测端进程带着旧账号目录在跑；按命令行里的隔离路径先清掉。
+    foreach ($staleProcess in @(Get-CimInstance Win32_Process -Filter "Name = 'VisionGuard.Detector.Windows.exe' OR Name = 'VisionGuard.Resident.Windows.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -and ($_.CommandLine.IndexOf($chainRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf($serverDataRoot, [StringComparison]::OrdinalIgnoreCase) -ge 0) })) {
+        Stop-Process -Id $staleProcess.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+    try {
+        # 中继侧发布 / 投递 / 回执都在这个开关后面：推流链路出问题时先拿到服务端视角的逐帧日志。
+        $env:VISIONGUARD_MEDIA_DIAGNOSTICS = '1'
+        $server = Start-Process -FilePath 'powershell' -ArgumentList @('-ExecutionPolicy', 'Bypass', '-File', $serverScript, '-Port', $WindowsPushChainPort.ToString(), '-Channel', $WindowsPushChainChannel, '-SkipBuild') -RedirectStandardOutput $serverLog -RedirectStandardError $serverErrorLog -WindowStyle Hidden -PassThru
+        $ready = $false
+        $deadline = (Get-Date).AddSeconds(60)
+        while ((Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+            try {
+                $health = Invoke-WebRequest -Uri "http://127.0.0.1:$WindowsPushChainPort/health" -UseBasicParsing -TimeoutSec 2
+                if ($health.StatusCode -eq 200) { $ready = $true; break }
+            } catch { }
+            if ($server.HasExited) { throw "Isolated server exited: $serverErrorLog" }
+        }
+        if (-not $ready) { throw "Isolated server did not become ready: $serverErrorLog" }
+        Add-Result -Name 'Isolated service' -Status 'PASS' -Note "http://127.0.0.1:$WindowsPushChainPort channel=$WindowsPushChainChannel" -Evidence $serverLog
+
+        $testAccountsPath = Join-Path $repoRoot ".local\e2e-server\$WindowsPushChainChannel\test-accounts.json"
+        $testAccounts = Get-Content -LiteralPath $testAccountsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $testAccount = $testAccounts | Where-Object { $_.username -eq 'vg-test' } | Select-Object -First 1
+        if (-not $testAccount) { throw 'The isolated vg-test account is missing.' }
+
+        # 推流端使用哪个采集源由设置文件决定：窗口标题与主进程名都要对上夹具窗口。
+        $env:VISIONGUARD_ACCOUNT_DIR = $accountDirectory
+        $env:VISIONGUARD_SERVER_URL = $environment.serviceUrl
+        $env:VISIONGUARD_SETTINGS_PATH = $settingsPath
+        $env:VISIONGUARD_MODELS_DIR = $environment.modelsDirectory
+        $env:VISIONGUARD_LOG_DIR = $logDirectory
+        $handleFile = Join-Path $evidence 'fixture-window-handles.txt'
+        $fixtures = Start-WpfFixtureWindows -ImagePaths @($fixtureImage) -HandleFile $handleFile
+        $fixtureWindow = $fixtures.Forms[0]
+
+        # 真实登录一次拿到设备身份，设置按「服务 + 账号 + 设备」作用域写入（与 SettingsStore 同一算法）。
+        $env:VISIONGUARD_LOGIN_PASSWORD = $testAccount.password
+        $loginOutput = & $accountProbe '--login' $env:VISIONGUARD_SERVER_URL $testAccount.username "Push Chain Publisher"
+        if ($LASTEXITCODE -ne 0) { throw 'Windows account login failed.' }
+        $identity = ($loginOutput | Out-String) | ConvertFrom-Json
+        Remove-Item Env:VISIONGUARD_LOGIN_PASSWORD -ErrorAction SilentlyContinue
+        Add-Result -Name 'Windows publisher login' -Status 'PASS' -Note "deviceId=$($identity.deviceId)"
+        if ($identity.scope) { $scopeKey = $identity.scope } else {
+            $sha = [System.Security.Cryptography.SHA256]::Create()
+            try { $scopeKey = (($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes("$($identity.service)|$($identity.accountId)|$($identity.deviceId)")) | ForEach-Object { $_.ToString('x2') }) -join '') }
+            finally { $sha.Dispose() }
+        }
+        $scopeDirectory = Join-Path $chainRoot (Join-Path 'accounts' $scopeKey)
+        New-Item -ItemType Directory -Force -Path $scopeDirectory | Out-Null
+        $scopedSettingsPath = Join-Path $scopeDirectory 'settings.ini'
+        $settings = @(
+            'Node.PublishMode=Push'
+            # 旧键迁移与一次性备份必须标记为已完成：否则应用加载时按「首次运行」重写来源，
+            # 把这份推流配置覆盖成默认屏幕来源（ui-preview.ps1 的 PrepareWindows 同样先标好这两个标记）。
+            'Source.LegacyMigrationCompleted=True'
+            'Source.KeyMigrationCompleted=True'
+            'Source.Indexes=1'
+            'Source.1.Initialized=True'
+            'Source.1.SourceId=default'
+            'Source.1.Name=推流窗口'
+            'Source.1.CaptureMode=WindowHandle'
+            "Source.1.TargetWindowTitle=$($fixtureWindow.Text)"
+            'Source.1.TargetWindowProcessName=powershell'
+            'Source.1.Fps=5'
+            'Source.1.Threshold=45'
+            'Source.1.Cooldown=5'
+            'Source.1.Targets=person'
+            'Source.1.ModelKey=yolo26m_320'
+        )
+        # 应用启动时已有会话，实际读取的是 <父目录>/accounts/<scope>/settings.ini；两处写成同一组值，
+        # 无论设置读取发生在登录前还是登录后都能拿到这份推流配置。
+        [System.IO.File]::WriteAllLines($settingsPath, $settings, (New-Object System.Text.UTF8Encoding($false)))
+        [System.IO.File]::WriteAllLines($scopedSettingsPath, $settings, (New-Object System.Text.UTF8Encoding($false)))
+        Add-Result -Name 'Push mode settings' -Status 'PASS' -Note $scopedSettingsPath
+
+        $env:VISIONGUARD_MEDIA_DIAGNOSTICS = '1'
+        $detectorProcess = Start-Process -FilePath $detectorExe -ArgumentList @('--isolated-environment', $environmentPath) -WorkingDirectory (Split-Path -Parent $detectorExe) -PassThru
+        Add-Result -Name 'Windows publisher launch' -Status 'PASS' -Note "pid=$($detectorProcess.Id)"
+
+        # 第二个真实实例（接收端）：控制台绑定后，它会把推流端建成远程镜头来源并开始推理。
+        $receiverRoot = Join-Path $chainRoot 'receiver'
+        $receiverAccountDirectory = Join-Path $receiverRoot 'account'
+        $receiverSettingsPath = Join-Path $receiverRoot 'settings.ini'
+        $receiverLogDirectory = Join-Path $receiverRoot 'logs'
+        foreach ($directory in @($receiverAccountDirectory, $receiverRoot, $receiverLogDirectory)) { New-Item -ItemType Directory -Force -Path $directory | Out-Null }
+        $receiverEnvironmentPath = Join-Path $evidence 'isolated-environment-receiver.json'
+        $receiverEnvironment = [ordered]@{
+            serviceUrl = "http://127.0.0.1:$WindowsPushChainPort"
+            accountDir = $receiverAccountDirectory
+            settingsPath = $receiverSettingsPath
+            modelsDirectory = $environment.modelsDirectory
+            logDirectory = $receiverLogDirectory
+        }
+        [System.IO.File]::WriteAllText($receiverEnvironmentPath, ($receiverEnvironment | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
+        # 接收端不先用探针登录：探针写入的会话与 WPF 登录用的是两套设备身份派生，会导致应用另外登记一台设备，
+        # 控制台随后把推流绑到探针那台、应用这台就什么都收不到。这里直接让真实实例自己登录，
+        # 由驱动从服务端设备列表里找出它（推流端设备 ID 已知，另一个在线推理设备就是接收端）。
+        $receiverSettings = @(
+            'Node.PublishMode=Inference'
+            'Source.LegacyMigrationCompleted=True'
+            'Source.KeyMigrationCompleted=True'
+            "Source.1.ModelKey=$modelKey"
+        )
+        [System.IO.File]::WriteAllLines($receiverSettingsPath, $receiverSettings, (New-Object System.Text.UTF8Encoding($false)))
+        # 第二个实例没有已保存会话：用与应用预览同一条内置登录通道（账号经环境变量递入，不进隔离配置），
+        # 让它自己登录并登记身份，避免探针与应用各自派生一套设备身份。
+        $env:VISIONGUARD_PREVIEW_SIGNIN = (@{ endpoint = $environment.serviceUrl; username = $testAccount.username; password = $testAccount.password } | ConvertTo-Json -Compress)
+        try {
+            $receiverProcess = Start-Process -FilePath $detectorExe -ArgumentList @('--isolated-environment', $receiverEnvironmentPath) -WorkingDirectory (Split-Path -Parent $detectorExe) -PassThru
+        }
+        finally { Remove-Item Env:VISIONGUARD_PREVIEW_SIGNIN -ErrorAction SilentlyContinue }
+        Add-Result -Name 'Windows receiver launch' -Status 'PASS' -Note "pid=$($receiverProcess.Id)"
+
+        $chainScript = Join-Path $repoRoot 'scripts\windows-push-chain.js'
+        $env:VISIONGUARD_CHAIN_PASSWORD = $testAccount.password
+        $captureMarker = Join-Path $evidence 'chain-capture-pending.txt'
+        $chainArguments = @($chainScript, '--service', $env:VISIONGUARD_SERVER_URL, '--username', $testAccount.username, '--password-env', 'VISIONGUARD_CHAIN_PASSWORD',
+            '--evidence', $evidence, '--publisher-device-id', $identity.deviceId, '--fixture-window-title', $fixtureWindow.Text,
+            '--capture-delay-seconds', $WindowsPushChainCaptureDelaySeconds.ToString(), '--capture-marker', $captureMarker,
+            '--timeout', $WindowsPushChainTimeoutSeconds.ToString())
+        $chainLog = Join-Path $evidence 'windows-push-chain-console.txt'
+        # 驱动在验证完成后进入保持窗口并写标记；脚本据此抓窗口截图，再等驱动退出。
+        $chainJob = Start-Job -ScriptBlock {
+            param($arguments)
+            $previousPreference = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            try {
+                $output = & node.exe @arguments 2>&1 | ForEach-Object { $_.ToString() }
+                [pscustomobject]@{ output = $output; exitCode = $LASTEXITCODE }
+            }
+            finally { $ErrorActionPreference = $previousPreference }
+        } -ArgumentList (, $chainArguments)
+        try {
+            # 驱动验证完成后进入「保持推流」窗口并写标记文件；这里轮询标记，
+            # 在两路连接都活着、界面上是推流中的时刻抓两个实例的主窗口，然后再等驱动退出。
+            $captureDeadline = (Get-Date).AddSeconds(900)
+            $captured = $false
+            while ((Get-Date) -lt $captureDeadline) {
+                if (-not $captured -and (Test-Path -LiteralPath $captureMarker)) {
+                    foreach ($instance in @(
+                            @{ Name = 'publisher'; Process = $detectorProcess },
+                            @{ Name = 'receiver'; Process = $receiverProcess })) {
+                        $shot = Join-Path $evidence ("window-$($instance.Name).png")
+                        $ok = Save-WindowScreenshot -Process $instance.Process -Path $shot
+                        Add-Result -Name "Window screenshot $($instance.Name)" -Status $(if ($ok) { 'PASS' } else { 'FAIL' }) -Note $shot
+                    }
+                    $captured = $true
+                }
+                if ($chainJob.State -ne 'Running') { break }
+                Start-Sleep -Milliseconds 500
+            }
+            if (-not $captured) {
+                Add-Result -Name 'Window screenshots' -Status 'FAIL' -Note 'the driver never signalled its capture window'
+            }
+            Wait-Job -Job $chainJob -Timeout 120 | Out-Null
+            $chainResult = Receive-Job -Job $chainJob
+            $chainExit = $chainResult.exitCode
+            $chainOutput = @($chainResult.output)
+            $chainOutput | ForEach-Object { Write-Host $_ }
+            $chainOutput | Set-Content -Encoding UTF8 $chainLog
+        }
+        finally {
+            Remove-Job -Job $chainJob -Force -ErrorAction SilentlyContinue
+            Remove-Item Env:VISIONGUARD_CHAIN_PASSWORD -ErrorAction SilentlyContinue
+        }
+
+        $reportPath = Join-Path $evidence 'windows-push-chain-report.json'
+        if (-not (Test-Path -LiteralPath $reportPath)) { throw "The chain report is missing: $chainLog" }
+        $chainReport = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $checks = [ordered]@{
+            receiverRegistered = 'a second inference device registered as the receiver'
+            publisherCapabilities = 'publisher declares video-publish / stream-control and no camera-config'
+            publisherUnboundByDefault = 'inference publisher is not auto-bound (no self-loop)'
+            publisherStreamBound = 'console bound the publisher to the receiver'
+            selfBindRejected = 'binding a node to itself is rejected'
+            pushStarted = 'remote start-stream command started the push branch'
+            pushStateReported = 'the pushing node self-reports its push state to the console'
+            receiverStreamBound = 'the relay keeps the binding to the real receiver'
+            frameStreamId = 'relayed frame carries the bound streamId'
+            frameSessionId = 'relayed frame carries the publisher media session'
+            frameSizeWithinContract = 'frame size stays within 1280x720'
+            frameRotationNormalized = 'rotation is normalized to 0 (direction from width/height)'
+            frameCapturedAtMonotonic = 'capturedAt is a positive safe integer'
+            frameSequenceMonotonic = 'sequence numbers strictly increase'
+            frameIdentityStable = 'streamId/sessionId stay stable across frames'
+            relayStreaming = 'the relay reports this binding as streaming'
+            relayStatsForwarded = 'relay forwarded frame statistics advance'
+            receiverInferring = 'the real receiver infers on the pushed stream'
+            noLocalAlertFromPublisher = 'the pushing node produced no local alert'
+        }
+        foreach ($check in $checks.Keys) {
+            $value = $chainReport.checks.$check
+            $status = if ($value -eq $true) { 'PASS' } else { 'FAIL' }
+            Add-Result -Name "Windows push chain: $check" -Status $status -Note $checks[$check]
+        }
+        if ($chainExit -ne 0) {
+            $reasons = @($chainReport.failures | ForEach-Object { "$($_.name): $(($_.detail | Out-String).Trim())" }) -join '; '
+            throw "Windows push chain failed: $reasons (see $chainLog)"
+        }
+        Add-Result -Name 'Windows push chain' -Status 'PASS' -Note "frames validated on the receiver side" -Evidence $reportPath
+    }
+    finally {
+        Remove-Item Env:VISIONGUARD_CHAIN_PASSWORD -ErrorAction SilentlyContinue
+        foreach ($process in @(Get-CimInstance Win32_Process -Filter "Name = 'VisionGuard.Detector.Windows.exe' OR Name = 'VisionGuard.Resident.Windows.exe'" -ErrorAction SilentlyContinue |
+                Where-Object { $_.CommandLine -and ($_.CommandLine.IndexOf($accountDirectory, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf($receiverAccountDirectory, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf($environmentPath, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf($receiverEnvironmentPath, [StringComparison]::OrdinalIgnoreCase) -ge 0) })) {
+            Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+        if ($detectorProcess -and -not $detectorProcess.HasExited) { Stop-Process -Id $detectorProcess.Id -Force -ErrorAction SilentlyContinue }
+        if ($receiverProcess -and -not $receiverProcess.HasExited) { Stop-Process -Id $receiverProcess.Id -Force -ErrorAction SilentlyContinue }
+        if ($fixtures) {
+            foreach ($form in $fixtures.Forms) { try { $form.Close(); $form.Dispose() } catch { } }
+            foreach ($image in $fixtures.Images) { try { $image.Dispose() } catch { } }
+        }
+        foreach ($name in $previousEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $previousEnvironment[$name]) }
+        if ($server -and -not $server.HasExited) {
+            foreach ($connection in @(Get-NetTCPConnection -LocalPort $WindowsPushChainPort -State Listen -ErrorAction SilentlyContinue)) {
+                $listener = Get-CimInstance Win32_Process -Filter "ProcessId = $($connection.OwningProcess)" -ErrorAction SilentlyContinue
+                if ($listener -and $listener.Name -eq 'node.exe' -and $listener.ParentProcessId -eq $server.Id) { Stop-Process -Id $listener.ProcessId -Force -ErrorAction SilentlyContinue }
+            }
+            try { $server.Kill() } catch { }
+        }
+    }
+}
+
 function Run-WpfPersonDetection {
     $fixtureDirectory = Resolve-RepoPath $WpfFixtureDirectory
     $modelPath = Resolve-RepoPath $WpfModelPath
@@ -1104,6 +1434,7 @@ try {
         'CardLayoutPlan' { Run-CardLayoutPlan }
         'PerformanceWatchdog' { Run-PerformanceWatchdog }
         'WebCameraChain' { Run-WebCameraChain }
+        'WindowsPushChain' { Run-WindowsPushChain }
     }
 }
 catch {

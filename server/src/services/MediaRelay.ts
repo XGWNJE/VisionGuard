@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import WebSocket from 'ws';
 import { accountStore, accountDirectory, AccountError, type AccountSession } from './AccountStore';
-import { isCameraComponent, isInferenceComponent } from './NodeComponents';
+import { isCameraComponent, isInferenceComponent, canPublishVideo, canSubscribeVideo } from './NodeComponents';
 import { wsVersionGate } from './protocol';
 
 export interface Stream {
@@ -135,15 +135,22 @@ export class MediaRelay {
       previous = saved.map(stream => ({ ...stream, isStreaming: false })); this.accounts.set(accountId, previous!);
     }
     const devices = accountStore.devices(accountId);
-    const cameras = devices.filter(device => isCameraComponent(device.component));
+    // 发布端按能力收集：相机组件，以及在推流态工作的 Windows 推理节点。
+    const publishers = devices.filter(device => canPublishVideo(device.component));
     const inference = devices.filter(device => isInferenceComponent(device.component));
-    const next = previous!.filter(stream => cameras.some(device => device.deviceId === stream.publisherDeviceId)).map(stream => ({ ...stream }));
-    for (const camera of cameras) {
-      let stream = next.find(item => item.publisherDeviceId === camera.deviceId);
-      if (!stream) { stream = { streamId: crypto.randomUUID(), publisherDeviceId: camera.deviceId, publisherName: camera.deviceName, sourceName: camera.deviceName, isStreaming: false }; next.push(stream); }
-      stream.publisherName = camera.deviceName; stream.sourceName = camera.deviceName;
-      if (stream.targetDeviceId && !inference.some(device => device.deviceId === stream!.targetDeviceId)) { delete stream.targetDeviceId; delete stream.sourceId; }
-      if (!stream.targetDeviceId && inference.length === 1 && next.filter(item => item.targetDeviceId === inference[0].deviceId).length < BINDING_LIMIT) { stream.targetDeviceId = inference[0].deviceId; stream.sourceId = crypto.randomUUID(); }
+    const next = previous!.filter(stream => publishers.some(device => device.deviceId === stream.publisherDeviceId)).map(stream => ({ ...stream }));
+    for (const device of publishers) {
+      const camera = isCameraComponent(device.component);
+      let stream = next.find(item => item.publisherDeviceId === device.deviceId);
+      if (!stream) {
+        stream = { streamId: crypto.randomUUID(), publisherDeviceId: device.deviceId, publisherName: device.deviceName, sourceName: device.deviceName, isStreaming: false };
+        // 相机沿用“唯一推理节点自动关联”；推理节点推流必须由控制台显式绑定，避免多节点互相推流成环。
+        if (camera && inference.length === 1) { stream.targetDeviceId = inference[0].deviceId; stream.sourceId = crypto.randomUUID(); }
+        next.push(stream);
+      }
+      stream.publisherName = device.deviceName; stream.sourceName = device.deviceName;
+      if (stream.targetDeviceId && !inference.some(item => item.deviceId === stream!.targetDeviceId)) { delete stream.targetDeviceId; delete stream.sourceId; }
+      if (camera && !stream.targetDeviceId && inference.length === 1 && next.filter(item => item.targetDeviceId === inference[0].deviceId).length < BINDING_LIMIT) { stream.targetDeviceId = inference[0].deviceId; stream.sourceId = crypto.randomUUID(); }
     }
     if (JSON.stringify(next) !== JSON.stringify(previous)) { this.save(accountId, next); this.clearChangedBindings(previous!, next); this.changed(accountId); }
   }
@@ -152,8 +159,9 @@ export class MediaRelay {
     const accountId = session.account.accountId;
     if (typeof publisherDeviceId !== 'string' || typeof targetDeviceId !== 'string') throw new AccountError(400, 'Invalid binding');
     const publisher = accountStore.device(accountId, publisherDeviceId), target = accountStore.device(accountId, targetDeviceId);
-    if (!isCameraComponent(publisher?.component) || !isInferenceComponent(target?.component)) throw new AccountError(404, 'Compatible devices not found');
-    if (session.device.role !== 'console' && !(isCameraComponent(session.device.component) && session.device.deviceId === publisherDeviceId)) throw new AccountError(403, 'Binding permission required');
+    // 目标必须是另一个可订阅的推理设备：推流节点不能绑定自己，避免自环。
+    if (!canPublishVideo(publisher?.component) || !canSubscribeVideo(target?.component) || publisherDeviceId === targetDeviceId) throw new AccountError(404, 'Compatible devices not found');
+    if (session.device.role !== 'console' && !(canPublishVideo(session.device.component) && session.device.deviceId === publisherDeviceId)) throw new AccountError(403, 'Binding permission required');
     const previous = this.streams(accountId);
     const current = previous.find(stream => stream.publisherDeviceId === publisherDeviceId);
     if (current?.targetDeviceId === targetDeviceId && current.sourceId) return { ...current };
@@ -187,7 +195,12 @@ export class MediaRelay {
           // 媒体通道与业务通道同一道版本闸门：旧版本端点连发布/订阅都进不来。
           if (!wsVersionGate(message)) { ws.close(4001, 'protocol mismatch'); return; }
           const session = message?.type === 'media-auth' ? accountStore.authenticate(message.token) : undefined;
-          if (!session || !((message.direction === 'publish' && isCameraComponent(session.device.component)) || (message.direction === 'subscribe' && isInferenceComponent(session.device.component)))) { ws.close(4001, 'media permission required'); return; }
+          // 发布按能力放行（相机组件与推流态的 Windows 推理节点），订阅按推理实现放行。
+          if (!session || !((message.direction === 'publish' && canPublishVideo(session.device.component)) || (message.direction === 'subscribe' && canSubscribeVideo(session.device.component)))) { ws.close(4001, 'media permission required'); return; }
+          // 同一节点在同一时间只能是一个方向：已订阅的设备不能发布，已发布的设备不能订阅。
+          // 客户端的两态开关保证正常路径不会同时来，这里是服务端侧的强制，防止绕过。
+          const oppositeLive = message.direction === 'publish' ? this.subscribers.has(session.device.deviceId) : this.publishers.has(session.device.deviceId);
+          if (oppositeLive) { ws.close(4001, 'media direction already in use'); return; }
           clearTimeout(timer); this.ensureAccount(session.account.accountId);
           if (message.direction === 'publish') {
             this.publishers.get(session.device.deviceId)?.ws.close(4000, 'publisher replaced');

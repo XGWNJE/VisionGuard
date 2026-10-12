@@ -991,7 +991,8 @@ function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
   if (!cacheCommand && notifierCommand && !(target as ReceiverClient).capabilities?.includes('alarm-control')) {
     ack.reason = '通知节点未提供报警控制'; sendJson(senderWs, ack); return;
   }
-  if (streamCommand && (!isCameraComponent((target as DetectorClient).identity.component) || !(target as DetectorClient).capabilities.includes('stream-control'))) {
+  // 推流控制按能力放行：相机组件与推流态的 Windows 推理节点都声明 stream-control。
+  if (streamCommand && !(target as DetectorClient).capabilities.includes('stream-control')) {
     ack.reason = '目标不支持推流控制'; sendJson(senderWs, ack); return;
   }
   if (detectorCommand && !notifierCommand && !(target as DetectorClient).capabilities.includes('monitor-control')) {

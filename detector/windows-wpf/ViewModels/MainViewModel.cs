@@ -31,6 +31,8 @@ namespace VisionGuard.Detector.Windows.ViewModels
             _settingsVm = new SettingsViewModel(null, null, () => MultiSourceVm.RefreshModelAvailability());
             _settingsVm.Load();
             MultiSourceVm = new MultiSourceViewModel(_serverPushService, _settingsVm);
+            // 推流态不建立媒体订阅连接：同一节点在服务端只允许一个方向。
+            _serverPushService.IsPushMode = () => MultiSourceVm.IsPushMode;
             _serverVm = new ServerViewModel(_serverPushService);
             GlobalSettingsVm = new GlobalSettingsViewModel(_settingsVm, _serverVm);
             _serverVm.AccountChanging += (_, _) => MultiSourceVm.PrepareAccountChange();
@@ -145,7 +147,9 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private void RefreshHeartbeat(ServerPushService sps)
         {
             var sourceStatuses = MultiSourceVm.Statuses;
-            object[] heartbeatSources = sourceStatuses.Where(x =>
+            // 推流态只采只推：不报检测来源，节点状态用 components.publish 表达，避免服务端误报检测中断。
+            var pushMode = MultiSourceVm.IsPushMode;
+            object[] heartbeatSources = pushMode ? Array.Empty<object>() : sourceStatuses.Where(x =>
                 MultiSourceVm.Sources.First(s => s.SourceId == x.SourceId).IsTargetBound).Select(x =>
                 {
                     var slot = MultiSourceVm.Sources.First(s => s.SourceId == x.SourceId);
@@ -162,7 +166,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                     };
                 }).ToArray();
             sps.UpdateHeartbeatParams(
-                isMonitoring: sourceStatuses.Any(x => x.IsMonitoring),
+                isMonitoring: !pushMode && sourceStatuses.Any(x => x.IsMonitoring),
                 isReady: sourceStatuses.Any(x => x.IsReady),
                 cooldown: MultiSourceVm.Sources.FirstOrDefault()?.Cooldown ?? 5,
                 confidence: (MultiSourceVm.Sources.FirstOrDefault()?.ThresholdPercent ?? 45) / 100f,
@@ -171,7 +175,8 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 modelKey: MultiSourceVm.Sources.FirstOrDefault()?.ModelKey ?? Utils.ModelManager.DefaultModelKey,
                 modelOptions: Utils.ModelManager.ModelKeys.Where(Utils.ModelManager.IsDownloaded).ToArray(),
                 canSwitchModelWhileMonitoring: false,
-                sources: heartbeatSources);
+                sources: heartbeatSources,
+                publishState: MultiSourceVm.NodePublishState);
             sps.SendHeartbeatNow();
             MultiSourceVm.RefreshSummary();
         }

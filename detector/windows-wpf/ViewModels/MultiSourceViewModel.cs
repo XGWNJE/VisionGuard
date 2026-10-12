@@ -48,6 +48,16 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public bool HasSourceNotice => !string.IsNullOrEmpty(SourceNotice);
         public RelayCommand AddSourceCommand { get; private set; } = null!;
 
+        /// <summary>节点级状态开关：本机推理 / 推流到其他推理节点，二选一。</summary>
+        public RelayCommand UseInferenceModeCommand { get; private set; } = null!;
+        public RelayCommand UsePushModeCommand { get; private set; } = null!;
+
+        private void SwitchMode(SourcePublishMode mode)
+        {
+            try { SwitchPublishMode(mode); }
+            catch (Exception error) { _sourceLimitWarning = error.Message; RefreshSummary(); }
+        }
+
         internal void RefreshModelAvailability()
         {
             foreach (var source in Sources)
@@ -76,6 +86,8 @@ namespace VisionGuard.Detector.Windows.ViewModels
             _settings = settings;
             _coordinator = new MultiSourceMonitorCoordinator();
             AddSourceCommand = new RelayCommand(AddSource, () => CanAddSource);
+            UseInferenceModeCommand = new RelayCommand(() => SwitchMode(SourcePublishMode.Inference), () => !IsInferenceMode);
+            UsePushModeCommand = new RelayCommand(() => SwitchMode(SourcePublishMode.Push), () => !IsPushMode);
             EnsureLegacyBackupAndMigration();
             EnsureSourceKeyMigration();
             LoadConfiguredSources();
@@ -171,6 +183,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             }
             SelectedSource = Sources.FirstOrDefault();
             PersistSourceIndexes();
+            MediaDiagnostics.Write($"[Publish] settings loaded mode={NodeModeSummary} sources={Sources.Count} capture={(Sources.FirstOrDefault()?.SourceTypeText ?? "none")}");
         }
         private void ApplyStreams(IReadOnlyList<RemoteStreamInfo> streams)
         {
@@ -246,6 +259,76 @@ namespace VisionGuard.Detector.Windows.ViewModels
         internal InferenceBackend PreferredBackend => _settings.PreferredBackend;
         internal void Select(SourceViewModel slot) => SelectedSource = slot;
 
+        /// <summary>
+        /// 节点级状态：本地推理（默认）或推流到其他推理节点。两种状态互斥，持久化在 `Node.PublishMode`。
+        /// </summary>
+        internal SourcePublishMode PublishMode { get; private set; } =
+            string.Equals(SettingsStore.GetString("Node.PublishMode", "Inference"), "Push", StringComparison.OrdinalIgnoreCase)
+                ? SourcePublishMode.Push : SourcePublishMode.Inference;
+
+        public bool IsPushMode => PublishMode == SourcePublishMode.Push;
+        public bool IsInferenceMode => PublishMode == SourcePublishMode.Inference;
+
+        /// <summary>推流态必须有可推的本地来源；远程镜头不能二次推流。</summary>
+        public bool CanUsePushMode => Sources.Any(source => !source.IsRemoteStream);
+
+        public string NodeModeSummary => IsPushMode ? "推流到其他推理节点" : "本机推理";
+
+        /// <summary>
+        /// 推流态自报给服务端的节点状态；本机推理态为空串。
+        /// 取值沿用服务端组件状态的通用词表（running / starting / error / stopped），
+        /// 服务端只放行这组值，自造词会被整组丢弃、控制台看不到推流态。
+        /// </summary>
+        public string NodePublishState
+        {
+            get
+            {
+                if (!IsPushMode) return "";
+                var statuses = _coordinator.Statuses.Where(status => status.PublishMode == SourcePublishMode.Push).ToArray();
+                if (statuses.Length == 0) return "stopped";
+                if (statuses.Any(status => status.IsPublishing)) return "running";
+                if (statuses.Any(status => status.PublishStatusText.Contains("失败") || status.PublishStatusText.Contains("未绑定"))) return "error";
+                if (statuses.Any(status => status.MonitoringExpected)) return "starting";
+                return "stopped";
+            }
+        }
+
+        public string NodeModeHint
+        {
+            get
+            {
+                if (!HasSources) return "先添加来源，再选择本机推理或推流。";
+                if (IsPushMode)
+                    return CanUsePushMode
+                        ? "推流态只采只推：本机不加载模型、不产生报警。"
+                        : "推流需要至少一个窗口 / 屏幕来源；当前只有远程镜头。";
+                return "本机推理态在本机模型上跑检测并产生报警。";
+            }
+        }
+
+        /// <summary>切换节点级状态：先停稳当前状态，再写入新模式并持久化。</summary>
+        internal void SwitchPublishMode(SourcePublishMode mode)
+        {
+            if (PublishMode == mode) return;
+            if (mode == SourcePublishMode.Push && !CanUsePushMode) throw new InvalidOperationException("推流需要至少一个窗口 / 屏幕来源。");
+            var running = Sources.Where(IsRunning).ToArray();
+            var restart = running.Where(source => source.CanStart).Select(source => source.SourceId).ToArray();
+            foreach (var slot in running) _coordinator.Stop(slot.SourceId);
+            foreach (var slot in Sources) _coordinator.SetPublishMode(slot.SourceId, mode, ModelManager.GetModelPath(slot.ModelKey));
+            PublishMode = mode;
+            // 服务端强制一个方向：切到推流先断订阅连接，切回本机推理再按需重建。
+            _server?.ApplyMediaDirection(mode == SourcePublishMode.Push);
+            SettingsStore.Set("Node.PublishMode", mode == SourcePublishMode.Push ? "Push" : "Inference");
+            SettingsStore.Save();
+            foreach (var sourceId in restart)
+            {
+                var slot = Sources.FirstOrDefault(s => s.SourceId == sourceId);
+                if (slot == null) continue;
+                try { Start(slot); } catch (Exception error) { _sourceLimitWarning = "切到" + NodeModeSummary + "后启动失败：" + error.Message; }
+            }
+            RefreshSummary();
+        }
+
         internal void Rename(SourceViewModel slot) => _coordinator.Rename(slot.SourceId, slot.SourceName);
 
         private bool IsRunning(SourceViewModel slot) =>
@@ -263,11 +346,14 @@ namespace VisionGuard.Detector.Windows.ViewModels
         internal void Start(SourceViewModel slot)
         {
             if (IsRunning(slot)) return;
+            var push = PublishMode == SourcePublishMode.Push;
             // 先做不会改变运行时状态的前置检查。若模型不存在，不能先重建来源：
             // 重建时排队的“就绪”状态会在异常提示之后送达，从而把实际错误伪装成“无响应”。
+            // 推流态不加载模型，因此不要求模型已下载。
             var modelPath = ModelManager.GetModelPath(slot.ModelKey);
-            if (!File.Exists(modelPath))
+            if (!push && !File.Exists(modelPath))
                 throw new FileNotFoundException($"模型 {slot.ModelKey} 未下载，请在“全局设置 → 推理与模型”中下载后重试。", modelPath);
+            if (push && slot.IsRemoteStream) throw new InvalidOperationException("远程镜头来源不能作为推流源。");
 
             if (!slot.ResolveWindowForStart()) throw new InvalidOperationException(slot.StatusText);
             Reconfigure(slot);
@@ -291,6 +377,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 {
                     if (command == "resume") StartConfigured(throwOnError: true);
                     else if (command == "pause") StopAll();
+                    else if (command == "stop-stream") StopAll();
                     else { _server.SendCommandAck(command, false, "设备不支持该命令", requestId); return false; }
                     _server.SendCommandAck(command, true, requestId: requestId);
                     return true;
@@ -322,8 +409,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             if (slot == null) { _server.SendCommandAck(command, false, "来源不存在", requestId, ackSourceId); return false; }
             try
             {
-                if (IsRunning(slot)) throw new InvalidOperationException("请先停止该来源再修改配置。");
-                if (key == "confidence") {
+                if (IsRunning(slot)) throw new InvalidOperationException("请先停止该来源再修改配置。");                if (key == "confidence") {
                     if (!double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var confidence) || confidence < .1 || confidence > .95 || Math.Abs(confidence * 100 - Math.Round(confidence * 100)) > .000001) throw new ArgumentException("置信度须为 10–95%，步长 1%。");
                     value = ((int)Math.Round(confidence * 100)).ToString();
                 }
@@ -334,12 +420,23 @@ namespace VisionGuard.Detector.Windows.ViewModels
             catch (Exception ex) { _server.SendCommandAck(command, false, ex.Message, requestId, ackSourceId); return false; }
         }
 
+        /// <summary>推流态的设备级「开始推流」：只启动本地来源，远程镜头来源不参与。</summary>
+        internal void StartPushing()
+        {
+            var local = Sources.Where(source => !source.IsRemoteStream).ToArray();
+            if (local.Length == 0) throw new InvalidOperationException("没有可推流的窗口 / 屏幕来源。");
+            foreach (var slot in local) Start(slot);
+        }
+
         public void RefreshSummary()
         {
             AddSourceCommand.RaiseCanExecuteChanged();
             OnPropertyChanged(nameof(SourceLimitText));
             OnPropertyChanged(nameof(HasSources)); OnPropertyChanged(nameof(SourceCountText));
             OnPropertyChanged(nameof(SourceNotice)); OnPropertyChanged(nameof(HasSourceNotice));
+            OnPropertyChanged(nameof(IsPushMode)); OnPropertyChanged(nameof(IsInferenceMode));
+            OnPropertyChanged(nameof(CanUsePushMode)); OnPropertyChanged(nameof(NodeModeSummary));
+            OnPropertyChanged(nameof(NodeModeHint));
             foreach (var source in Sources) source.RaiseSourceActionStates();
         }
 
@@ -549,6 +646,9 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private string _statusToolTip = "";
         private double _actualFps;
         private bool _isPerformanceInsufficient;
+        private string _publishStatusText = "";
+        private int _publishTargetFps;
+        private long _publishAcknowledged, _publishDropped;
 
         public string SourceId { get; private set; }
         private string _remoteStreamId = "", _remotePublisherName = "";
@@ -647,8 +747,14 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public string SourceTypeText => IsRemoteStream ? "远程镜头" : _captureMode == CaptureMode.WindowHandle ? "窗口采集" : "屏幕选区";
         public string ModelDisplayText => SourceParametersEditorViewModel.ModelLabel(ModelKey);
         public string TargetsDisplayText => string.Join("、", Targets.Split(',').Select(label => CocoClassMap.EnZh.TryGetValue(label, out var chinese) ? chinese : label));
-        public string EditActionHint => IsMonitoring ? "请先停止此来源再修改配置" : "修改当前来源配置";
-        public string StartActionHint => IsMonitoring ? "正在检测" : !IsReady ? "采集目标当前不可用，请核对目标或等待镜头恢复" : !ModelManager.IsDownloaded(ModelKey) ? "请先在全局设置中下载所选模型" : "开始检测";
+        public string EditActionHint => IsMonitoring ? "请先停止此来源再修改配置" : IsPushMode ? "推流态修改采集目标后需重新开始推流" : "修改当前来源配置";
+        public string StartActionHint => IsMonitoring
+            ? (IsPushMode ? "正在推流" : "正在检测")
+            : !IsReady ? "采集目标当前不可用，请核对目标或等待镜头恢复"
+            : IsPushMode ? "开始推流" : !ModelManager.IsDownloaded(ModelKey) ? "请先在全局设置中下载所选模型" : "开始检测";
+        /// <summary>启动按钮文案随节点级状态变化：推流态是「开始推流」。</summary>
+        public string StartButtonText => IsPushMode ? "开始推流" : "开始检测";
+        public string StopButtonText => IsPushMode ? "停止推流" : "停止检测";
         public string DeleteActionHint => IsRemoteStream ? "远程镜头的绑定由控制台管理" : IsMonitoring ? "请先停止此来源再删除" : "删除此来源";
         public bool IsPreviewVisible { get; internal set; }
         public int ThresholdPercent { get => _thresholdPercent; set { if (SetProperty(ref _thresholdPercent, Net472Compat.Clamp(value, 10, 95))) MarkDirty(); } }
@@ -671,7 +777,10 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public bool HasPendingApply => _pendingApply.Count > 0;
 
         public bool CanEdit => !IsMonitoring;
-        public bool CanStart => !IsMonitoring && IsReady && ModelManager.IsSupported(ModelKey) && ModelManager.IsDownloaded(ModelKey);
+        /// <summary>推流态不需要本机模型；本机推理态仍要求所选模型已下载。</summary>
+        public bool CanStart => !IsMonitoring && IsReady && ModelManager.IsSupported(ModelKey) && (IsPushMode || ModelManager.IsDownloaded(ModelKey));
+        /// <summary>本节点当前状态是否为推流（节点级，两个状态互斥）。</summary>
+        public bool IsPushMode => _owner.IsPushMode;
         public bool IsReady => IsRemoteStream ? !string.IsNullOrWhiteSpace(_remoteStreamId) && RemoteFrameStore.Shared.IsBound(_remoteStreamId) : _captureMode == CaptureMode.WindowHandle
             ? _targetWindow != null && CaptureSizeConstraints.IsValid(_targetWindow.Bounds)
             : CaptureSizeConstraints.IsValid(_screenRegion);
@@ -721,7 +830,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
         /// <summary>实测推理帧率（10 秒滚动窗口），由协调器的状态推送。</summary>
         public double ActualFps { get => _actualFps; private set { if (SetProperty(ref _actualFps, value)) OnPropertyChanged(nameof(FpsText)); } }
-        public string FpsText => IsMonitoring ? $"{ActualFps:0.0} FPS" : "0.0 FPS";
+        public string FpsText => IsPushMode ? $"{ActualFps:0.0} FPS" : IsMonitoring ? $"{ActualFps:0.0} FPS" : "0.0 FPS";
 
         /// <summary>实测帧率已持续低于目标（看门狗确认）：卡片显示短提示，宿主据此弹窗。</summary>
         public bool IsPerformanceInsufficient
@@ -768,6 +877,15 @@ namespace VisionGuard.Detector.Windows.ViewModels
         internal void RaiseSourceActionStates()
         {
             RemoveSourceCommand.RaiseCanExecuteChanged();
+            OnPropertyChanged(nameof(IsPushMode));
+            OnPropertyChanged(nameof(StartActionHint));
+            OnPropertyChanged(nameof(StartButtonText));
+            OnPropertyChanged(nameof(StopButtonText));
+            OnPropertyChanged(nameof(EditActionHint));
+            OnPropertyChanged(nameof(CanStart));
+            OnPropertyChanged(nameof(AspectRatioWarning));
+            OnPropertyChanged(nameof(HasAspectRatioWarning));
+            OnPropertyChanged(nameof(MaskInfo));
         }
 
         private string Prefix => $"Source.{_index}.";
@@ -855,7 +973,9 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 MaskRegions = new List<RectangleF>(MaskRegions), SaveAlertSnapshot = true,
             };
             if (config.WatchedClasses.Count == 0) config.WatchedClasses.Add("person");
-            return new MonitorSource(SourceId, string.IsNullOrWhiteSpace(SourceName) ? DisplayIndex : SourceName.Trim(), ModelKey, config, _owner.PreferredBackend);
+            var source = new MonitorSource(SourceId, string.IsNullOrWhiteSpace(SourceName) ? DisplayIndex : SourceName.Trim(), ModelKey, config, _owner.PreferredBackend);
+            source.PublishMode = _owner.PublishMode;
+            return source;
         }
 
         internal bool ResolveWindowForStart()
@@ -1124,11 +1244,17 @@ namespace VisionGuard.Detector.Windows.ViewModels
             // 因此直接用它作为“已确认性能不足”的标记，卡片与弹窗共用同一个判据。
             IsPerformanceInsufficient = !string.IsNullOrWhiteSpace(status.PerformanceWarning);
             BackendText = status.ActiveBackend == "Unavailable" ? "—" : status.ActiveBackend;
+            PublishStatusText = status.PublishStatusText;
+            PublishTargetFps = status.PublishTargetFps;
+            PublishLastAcknowledgedSequence = status.PublishLastAcknowledgedSequence;
+            PublishDroppedFrames = status.PublishDroppedFrames;
             StatusText = !string.IsNullOrWhiteSpace(status.Error)
                 ? $"异常：{status.Error}"
                 : IsPerformanceInsufficient
                     // 标题行空间有限，这里只放短提示；完整说明进 ToolTip 与弹窗。
                     ? $"性能不足 {status.ActualFps:0.0}/{status.TargetFps:0.0} FPS"
+                : IsPushMode
+                    ? (status.IsPublishing ? "推流中" : string.IsNullOrWhiteSpace(status.PublishStatusText) ? "未推流" : status.PublishStatusText)
                 : status.IsMonitoring
                     ? "检测中"
                     : (IsReady ? (PreviewImage == null ? "就绪" : "已停止 · 保留最后画面") : (IsRemoteStream && IsTargetBound ? "镜头暂不可用 · 等待恢复" : !string.IsNullOrWhiteSpace(_targetWindowTitle) ? (string.IsNullOrWhiteSpace(_windowResolutionError) ? "窗口未找到" : _windowResolutionError) : "未配置"));
@@ -1136,12 +1262,17 @@ namespace VisionGuard.Detector.Windows.ViewModels
             StatusToolTip = HasStatusError ? StatusText : IsPerformanceInsufficient ? status.PerformanceWarning : StatusText;
         }
 
+        public string PublishStatusText { get => _publishStatusText; private set => SetProperty(ref _publishStatusText, value); }
+        public int PublishTargetFps { get => _publishTargetFps; private set => SetProperty(ref _publishTargetFps, value); }
+        public long PublishLastAcknowledgedSequence { get => _publishAcknowledged; private set => SetProperty(ref _publishAcknowledged, value); }
+        public long PublishDroppedFrames { get => _publishDropped; private set => SetProperty(ref _publishDropped, value); }
+
         internal void ApplyFrame(BitmapSource image, List<Detection> detections, long inferenceMs)
         {
             PreviewImage = image; FrameWidth = image.PixelWidth; FrameHeight = image.PixelHeight; Detections.Clear();
             foreach (var d in detections) Detections.Add(new DetectionItem { Left = d.BoundingBox.Left, Top = d.BoundingBox.Top, Width = d.BoundingBox.Width, Height = d.BoundingBox.Height, Label = $"{d.Label} {(int)(d.Confidence * 100)}%" });
             LastFrameText = $"更新 {DateTime.Now:HH:mm:ss}";
-            InferenceText = $"{inferenceMs} ms";
+            InferenceText = inferenceMs < 0 ? "—" : $"{inferenceMs} ms";
         }
 
         /// <summary>

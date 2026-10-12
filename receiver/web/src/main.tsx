@@ -220,6 +220,7 @@ function DeviceSettings({node,nodes,streams,login,onChanged}:{node:Device;nodes:
 }
 function NodeContext({node,nodes,stream,notifier,onScope}:{node:Device;nodes:Device[];stream?:Stream;notifier?:Notifier;alerts:Alert[];login:Login;timeZone:AlarmTimeZone;onOpen:(alert:Alert)=>void;onScope:()=>void}) {
   if(node.nodeType==='notification')return <section className="panel"><div className="section-title"><h2>接收范围</h2><Bell size={18} aria-hidden="true"/></div><p>{!notifier?'等待服务报告接收范围':notifier.scope.mode==='all'?'接收全部检测节点':notifier.scope.targets.length?`接收指定的 ${notifier.scope.targets.length} 个节点 / 来源`:'尚未选择检测节点与来源，不接收检测事件'}</p><div className="actions"><button className="button secondary" onClick={onScope}>配置接收范围<ChevronRight size={16}/></button></div><p>收件确认只表示报警已保存，声音播放需在通知设备核对。</p></section>;
+  if(!isCameraComponent(node.component)&&node.capabilities.includes('video-publish'))return <section className="panel"><div className="section-title"><h2>推流关联</h2><Camera size={18} aria-hidden="true"/></div><dl><dt>目标视觉推理节点</dt><dd>{nodes.find(n=>n.deviceId===stream?.targetDeviceId)?.deviceName||stream?.targetDeviceId||'未关联'}</dd><dt>检测来源</dt><dd>{stream?.sourceName||'未上报'}</dd><dt>推流状态</dt><dd>{stream?.isStreaming?'正在推流':'未推流'}</dd></dl><p>该节点处于推流态：把本机窗口 / 屏幕采集画面推给目标推理节点，本机不推理、不产生报警。</p><p>在本机把节点状态切回「本机推理」后，才由本节点检测并上报报警。</p></section>;
   if(isCameraComponent(node.component))return <section className="panel"><div className="section-title"><h2>推流关联</h2><Camera size={18} aria-hidden="true"/></div><dl><dt>目标视觉推理节点</dt><dd>{nodes.find(n=>n.deviceId===stream?.targetDeviceId)?.deviceName||stream?.targetDeviceId||'未关联'}</dd><dt>检测来源</dt><dd>{stream?.sourceName||'未上报'}</dd><dt>推流状态</dt><dd>{stream?.isStreaming?'正在推流':'未推流'}</dd></dl><p>在「设备管理」调整关联，在「参数与配置」调整规格、预览和屏幕亮度。</p><p>相机前台、摄像头权限与设备解锁须在本机处理。</p></section>;
   return null;
 }
@@ -241,12 +242,17 @@ function NodeDetail({node,stream,connected,send,timeZone,acks,drafts,children,ma
   const source = node.sources.find(s => s.sourceId === sourceId);
   const can = (value:string) => node.capabilities.includes(value);
   const ready = connected && node.online && !controlPending;
-  const cameraStartReason = !stream?.targetDeviceId ? '请先关联视觉推理节点' : node.components?.cameraApp!=='foreground' ? '请在设备上打开相机应用并保持前台' : node.components?.cameraPermission!=='granted' ? '请在设备上授予摄像头权限' : '';
+  // 可发布视频的节点（相机推流节点，或切到推流态的 Windows 推理节点）。
+  const publisher = can('video-publish');
+  // 推理节点推流由本机状态自报（components.publish，取自服务端组件状态通用词表）；相机用流记录表达。
+  const pushState = node.components?.publish ?? '';
+  // 推流失败原因只对相机的前台 / 权限条件生效；推理节点推流看的是采集源是否可用。
+  const cameraStartReason = !publisher ? '' : !stream?.targetDeviceId ? '请先关联视觉推理节点' : isCameraComponent(node.component) && node.components?.cameraApp!=='foreground' ? '请在设备上打开相机应用并保持前台' : isCameraComponent(node.component) && node.components?.cameraPermission!=='granted' ? '请在设备上授予摄像头权限' : '';
   const sendCommand = (command:string) => issueCommand(command,source?.sourceId);
   const nodeAcks=acks.filter(ack=>ack.targetDeviceId===node.deviceId);
   return <div className="node-detail-layout"><div className="node-primary"><section className="panel node-summary">
     <div className="node-summary-main"><div className="node-detail-title"><NodeIcon node={node}/><div className="node-summary-identity"><div className="node-heading-line"><h2>{node.deviceName}</h2><span className={'status-tag '+(node.online ? 'good' : '')}>{node.online ? '在线' : '离线'}</span></div><div className="node-subtitle"><span>{typeLabel(node.nodeType,node.component)} · {node.platform}</span>
-{node.online&&<span className="node-working-state"><span className={'dot '+((stream?.isStreaming ?? node.isMonitoring) ? 'online' : '')}/>{isCameraComponent(node.component) ? (stream?.isStreaming?'推流中':stream?.stopReason==='connection-lost'||stream?.stopReason==='frame-stalled'?'推流中断':'未推流') : node.nodeType === 'notification' ? (node.online ? '通知服务已连接' : '通知服务未连接') : node.isMonitoring ? '检测中' : node.isReady ? '已就绪' : '未检测'}</span>}</div></div></div>
+{node.online&&<span className="node-working-state"><span className={'dot '+((stream?.isStreaming ?? node.isMonitoring) ? 'online' : '')}/>{isCameraComponent(node.component) ? (stream?.isStreaming?'推流中':stream?.stopReason==='connection-lost'||stream?.stopReason==='frame-stalled'?'推流中断':'未推流') : publisher ? (pushState==='running'||stream?.isStreaming?'推流中':pushState==='starting'?'推流连接中':pushState==='error'?'推流失败':stream?.stopReason==='connection-lost'||stream?.stopReason==='frame-stalled'?'推流中断':node.isMonitoring?'检测中':'未推流') : node.nodeType === 'notification' ? (node.online ? '通知服务已连接' : '通知服务未连接') : node.isMonitoring ? '检测中' : node.isReady ? '已就绪' : '未检测'}</span>}</div></div></div>
     <div className="actions primary-actions node-summary-actions">{can('monitor-control') && (!source || can('source-control')) && <button className="button" disabled={!ready} onClick={() => sendCommand((source?.isMonitoring ?? node.isMonitoring) ? 'pause' : 'resume')}>{(source?.isMonitoring ?? node.isMonitoring)?<Pause size={16}/>:<Play size={16}/>}{(source?.isMonitoring ?? node.isMonitoring) ? '暂停检测' : '开始检测'}</button>}
       {can('monitor-control') && (!source || can('source-control')) && <button className="button secondary" disabled={!ready} onClick={() => sendCommand('stop-alarm')}><BellOff size={16}/>停止报警</button>}
       {can('stream-control') && <><button className="button" disabled={!ready || !!stream?.isStreaming || !!cameraStartReason} onClick={()=>issueCommand('start-stream')}><Play size={16}/>开始推流</button><button className="button secondary" disabled={!ready} onClick={()=>issueCommand('stop-stream')}><Square size={16}/>停止推流</button></>}
@@ -259,7 +265,7 @@ function NodeDetail({node,stream,connected,send,timeZone,acks,drafts,children,ma
     {can('stream-control') && !stream?.isStreaming && cameraStartReason && <p className="subtle">{cameraStartReason}</p>}
     {can('alarm-control') && <p className="subtle">仅确认当前报警；如有排队报警，将继续播放。通知服务离线时需在设备上开启。</p>}
     {controlRequest && <p role={controlResult?.success||controlPending?'status':'alert'} className={controlResult?.success||controlPending?'subtle':'error'}>{controlResult?.phase==='completed' ? controlResult.reason || (controlResult.success?'已执行':'操作失败') : controlTimedOut ? '执行结果未确认，请刷新节点状态后重试' : controlResult?.phase==='forwarded' ? '已转发，等待节点执行' : '正在发送操作…'}</p>}
-    {!can('monitor-control') && node.online && node.nodeType==='visual' && !isCameraComponent(node.component) && <p className="subtle">此节点未提供检测启停能力。</p>}
+    {!can('monitor-control') && node.online && node.nodeType==='visual' && !publisher && <p className="subtle">此节点未提供检测启停能力。</p>}
   </section>
   <WorkspaceTabs id={tabsId} label="节点工作区" tabs={[{value:'run',label:'运行'},{value:'config',label:'参数与配置'},{value:'manage',label:'设备管理'}]} value={tab} onChange={setTab}/>
   <div role="tabpanel" id={`${tabsId}-panel-run`} aria-labelledby={`${tabsId}-tab-run`} hidden={tab!=='run'} className="workspace-body runtime-grid">

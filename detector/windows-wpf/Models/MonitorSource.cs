@@ -11,6 +11,12 @@ namespace VisionGuard.Detector.Windows.Models
         public MonitorConfig Config { get; set; }
         public InferenceBackend PreferredBackend { get; set; }
 
+        /// <summary>
+        /// 节点级状态：本机推理（默认）或推流到其他推理节点。推流态只采只推，不加载模型、不产生报警。
+        /// 两个状态互斥，切换由协调器先停稳再切。
+        /// </summary>
+        public SourcePublishMode PublishMode { get; set; } = SourcePublishMode.Inference;
+
         public MonitorSource(string sourceId, string sourceName, string modelKey, MonitorConfig config,
             InferenceBackend preferredBackend = InferenceBackend.DirectML)
         {
@@ -22,6 +28,9 @@ namespace VisionGuard.Detector.Windows.Models
             PreferredBackend = preferredBackend;
         }
     }
+
+    /// <summary>节点级状态：在本地推理，或把采集画面推流给其他推理节点。</summary>
+    public enum SourcePublishMode { Inference, Push }
 
     public sealed class MonitorSourceStatus
     {
@@ -49,5 +58,23 @@ namespace VisionGuard.Detector.Windows.Models
 
         /// <summary>实测帧率不足的可见提示（未确认不足时为空串）。</summary>
         public string PerformanceWarning { get; init; } = "";
+
+        /// <summary>节点级状态：本机推理或推流。</summary>
+        public SourcePublishMode PublishMode { get; init; } = SourcePublishMode.Inference;
+
+        /// <summary>推流态是否正在推流（已建立媒体连接并持续发送）。</summary>
+        public bool IsPublishing { get; init; }
+
+        /// <summary>推流状态说明（连接中 / 已停止 / 失败原因）。</summary>
+        public string PublishStatusText { get; init; } = "";
+
+        /// <summary>推流目标频率（服务按接收端来源状态下发，1–5 FPS）。</summary>
+        public int PublishTargetFps { get; init; }
+
+        /// <summary>最后收到确认的帧序号；用于确认中继确实在推进。</summary>
+        public long PublishLastAcknowledgedSequence { get; init; }
+
+        /// <summary>因在途额度或编码失败被放弃的帧数。</summary>
+        public long PublishDroppedFrames { get; init; }
     }
 }

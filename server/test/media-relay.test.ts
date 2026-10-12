@@ -19,6 +19,7 @@ const webOwner = new AccountFixture([{ name: 'web-camera', component: 'web-camer
 const { mediaRelay, parseFrame, framePacket, jpegDimensions } = require('../src/services/MediaRelay') as typeof import('../src/services/MediaRelay');
 const { accountStore } = require('../src/services/AccountStore') as typeof import('../src/services/AccountStore');
 const { websocketLimits } = require('../src/services/WebSocketLimits') as typeof import('../src/services/WebSocketLimits');
+const { allowedCapabilities, mediaDirections } = require('../src/services/NodeProtocol') as typeof import('../src/services/NodeProtocol');
 const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAQABADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwCnRRRX0x88f//Z', 'base64');
 test.after(() => fs.rmSync(directory, { recursive: true, force: true }));
 
@@ -66,7 +67,8 @@ test('tiny fragmented messages hit a structural bound before media authenticatio
 test('camera automatically binds to its account inference; foreign ownership and role escalation are denied', async t => {
   const f = await fixture(t), stream = mediaRelay.streams(owner.accountId)[0];
   assert.equal(stream.targetDeviceId, owner.id('inference')); assert.ok(stream.sourceId);
-  assert.equal(mediaRelay.streams(foreign.accountId).length, 0);
+  // 跨账号不共享流：别的账号里不会出现本账号相机的推流记录。
+  assert.equal(mediaRelay.streams(foreign.accountId).some(item => item.publisherDeviceId === owner.id('camera')), false);
   const session = accountStore.authenticate(owner.session('console').token)!;
   assert.throws(() => mediaRelay.bind(session, owner.id('camera'), foreign.id('foreign-inference')), /not found/);
   const denied = await f.connect(owner.session('console').token, 'publish'); assert.equal(await denied.closed, 4001);
@@ -215,7 +217,7 @@ test('android inference auto-binds as the only inference node and cannot publish
   const subscribing = await f.connect(androidOnly.session('android-only-camera').token, 'subscribe'); assert.equal(await subscribing.closed, 4001);
 });
 
-test('web camera publishes and the web console can rebind it, while cameras cannot subscribe or publish inference frames', async t => {
+test('web camera publishes and the web console can rebind it, while cameras cannot subscribe', async t => {
   const f = await fixture(t), stream = mediaRelay.streams(webOwner.accountId)[0];
   assert.equal(stream.publisherDeviceId, webOwner.id('web-camera'));
   assert.equal(stream.targetDeviceId, webOwner.id('web-inference')); assert.ok(stream.sourceId);
@@ -229,7 +231,6 @@ test('web camera publishes and the web console can rebind it, while cameras cann
   assert.equal(rebound.sourceId, stream.sourceId);
   assert.throws(() => mediaRelay.bind(session, owner.id('camera'), webOwner.id('web-inference')), /not found/);
   const subscribing = await f.connect(webOwner.session('web-camera').token, 'subscribe'); assert.equal(await subscribing.closed, 4001);
-  const publishing = await f.connect(webOwner.session('web-inference').token, 'publish'); assert.equal(await publishing.closed, 4001);
 });
 
 test('unknown components cannot publish or subscribe on the media channel', async t => {
@@ -262,6 +263,8 @@ test('multiple inference nodes require selection, bindings stay stable, and cloc
   const extra = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'windows-inference', deviceName: 'second-inference' });
   const third = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'android-camera', deviceName: 'third-camera' });
   assert.equal(mediaRelay.streams(owner.accountId).find(stream => stream.publisherDeviceId === third.device.deviceId)!.targetDeviceId, undefined);
+  // 推理节点不会自动获得绑定：推流态的 Windows 节点必须由控制台显式绑定，避免多节点互相推流成环。
+  assert.equal(mediaRelay.streams(owner.accountId).find(stream => stream.publisherDeviceId === owner.id('inference'))!.targetDeviceId, undefined);
   const session = accountStore.authenticate(owner.session('console').token)!;
   const binding = mediaRelay.bind(session, camera.device.deviceId, extra.device.deviceId);
   assert.equal(mediaRelay.bind(session, camera.device.deviceId, extra.device.deviceId).sourceId, binding.sourceId);
@@ -274,4 +277,78 @@ test('multiple inference nodes require selection, bindings stay stable, and cloc
   renewed.ws.send(packet(renewedReady, 1, { capturedAt: 100 })); await renewed.take('frame-ack');
   assert.equal((await consumer.take('frame')).frame.header.sessionId, renewedReady.sessionId);
   renewed.ws.send(packet(renewedReady, 2, { capturedAt: 1 })); assert.equal(await renewed.closed, 4002);
+});
+
+test('windows inference publishes after an explicit binding and cannot bind itself or deliver to a camera', async t => {
+  const f = await fixture(t);
+  // 两个 Windows 节点：A 推流、B 接收。A 不自动绑定，显式绑定后帧按中继契约送达 B。
+  const publisher = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'windows-inference', deviceName: 'publisher-node' });
+  const receiver = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'windows-inference', deviceName: 'receiver-node' });
+  const session = accountStore.authenticate(owner.session('console').token)!;
+  const stream = mediaRelay.bind(session, publisher.device.deviceId, receiver.device.deviceId);
+  assert.equal(stream.targetDeviceId, receiver.device.deviceId); assert.ok(stream.sourceId);
+  // 不能绑定到自己（自环），也不能把不可订阅的相机当目标。
+  assert.throws(() => mediaRelay.bind(session, publisher.device.deviceId, publisher.device.deviceId), /not found/);
+  assert.throws(() => mediaRelay.bind(session, publisher.device.deviceId, owner.id('camera')), /not found/);
+  const producer = await f.connect(publisher.token, 'publish'), ready = await producer.take('media-ready');
+  assert.equal(ready.streamId, stream.streamId); assert.equal(ready.targetDeviceId, receiver.device.deviceId);
+  const consumer = await f.connect(receiver.token, 'subscribe'); await consumer.take('media-ready');
+  producer.ws.send(packet(ready, 1)); assert.equal((await producer.take('frame-ack')).sequence, 1);
+  assert.equal((await consumer.take('frame')).frame.header.sequence, 1);
+});
+
+test('a camera cannot subscribe to the media channel', async t => {
+  const f = await fixture(t);
+  const cameraSubscribing = await f.connect(owner.session('camera').token, 'subscribe');
+  assert.equal(await cameraSubscribing.closed, 4001);
+});
+
+test('a live subscriber cannot also publish on the same device', async t => {
+  const f = await fixture(t);
+  const receiver = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'windows-inference', deviceName: 'direction-locked-receiver' });
+  const session = accountStore.authenticate(owner.session('console').token)!;
+  mediaRelay.bind(session, owner.id('camera'), receiver.device.deviceId);
+  const subscribed = await f.connect(receiver.token, 'subscribe'); await subscribed.take('media-ready');
+  const publishing = await f.connect(receiver.token, 'publish');
+  assert.equal(await publishing.closed, 4001);
+  // 反转方向也一样：先推流再订阅必须被拒。
+  const publisher = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'windows-inference', deviceName: 'direction-locked-publisher' });
+  mediaRelay.bind(session, publisher.device.deviceId, owner.id('inference'));
+  const streaming = await f.connect(publisher.token, 'publish'); await streaming.take('media-ready');
+  const subscribing = await f.connect(publisher.token, 'subscribe');
+  assert.equal(await subscribing.closed, 4001);
+});
+
+test('a media identity is publish or subscribe only', () => {
+  const camera = mediaDirections({ deviceId: 'c', deviceName: 'c', role: 'detector', nodeType: 'visual', platform: 'android', component: 'android-camera' } as any);
+  assert.deepEqual(camera, { publish: true, subscribe: false });
+  const android = mediaDirections({ deviceId: 'a', deviceName: 'a', role: 'detector', nodeType: 'visual', platform: 'android', component: 'android-inference' } as any);
+  assert.deepEqual(android, { publish: false, subscribe: true });
+  // Windows 推理节点两种方向都能申请，但一次连接只能选一个方向；本机状态保证不会同时跑两条支路。
+  const windows = mediaDirections({ deviceId: 'w', deviceName: 'w', role: 'detector', nodeType: 'visual', platform: 'windows', component: 'windows-inference' } as any);
+  assert.deepEqual(windows, { publish: true, subscribe: true });
+  const notifier = mediaDirections({ deviceId: 'n', deviceName: 'n', role: 'notifier', nodeType: 'notification', platform: 'android', component: 'android-notifier' } as any);
+  assert.deepEqual(notifier, { publish: false, subscribe: false });
+});
+
+test('windows inference cannot publish before an explicit binding and the relay reports the unbound drop', async t => {
+  const f = await fixture(t);
+  const publisher = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'windows-inference', deviceName: 'unbound-publisher' });
+  const stream = mediaRelay.streams(owner.accountId).find(item => item.publisherDeviceId === publisher.device.deviceId)!;
+  assert.ok(stream); assert.equal(stream.targetDeviceId, undefined);
+  const producer = await f.connect(publisher.token, 'publish'), ready = await producer.take('media-ready');
+  producer.ws.send(packet(ready, 1));
+  const ack = await producer.take('frame-ack');
+  assert.equal(ack.accepted, false); assert.equal(ack.dropReason, 'unbound');
+});
+
+test('windows inference declares publish and subscribe capabilities while android inference stays subscribe-only', () => {
+  const windows = allowedCapabilities({ deviceId: 'win-node', deviceName: 'win', role: 'detector', nodeType: 'visual', platform: 'windows', component: 'windows-inference' } as any,
+    ['monitor-control', 'stream-control', 'video-publish', 'video-subscribe', 'visual-inference', 'camera-config']);
+  assert.ok(windows.includes('video-publish')); assert.ok(windows.includes('stream-control')); assert.ok(windows.includes('video-subscribe'));
+  assert.equal(windows.includes('camera-config'), false);
+  const android = allowedCapabilities({ deviceId: 'android-node', deviceName: 'android', role: 'detector', nodeType: 'visual', platform: 'android', component: 'android-inference' } as any,
+    ['video-publish', 'stream-control', 'video-subscribe', 'visual-inference']);
+  assert.equal(android.includes('video-publish'), false); assert.equal(android.includes('stream-control'), false);
+  assert.ok(android.includes('video-subscribe'));
 });
