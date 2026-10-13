@@ -81,14 +81,15 @@ const CHECKS = [
   },
   {
     id: 'client-android',
-    why: 'Android 三个端都声明版本；版本一律运行期读取（`const val` 会被 Kotlin 编译期内联，构建复用旧 class 时会把声明冻结在旧值）',
+    why: 'Android 三个端都声明版本；版本只能是 `scripts/sync-version.js` 收管的源码字面量（`BuildConfig` 等生成常量会被 Kotlin 内联且增量构建不跟踪，声明会冻结在旧值）',
     requirements: [
+      { file: 'detector/android/app/src/main/java/com/xgwnje/visionguard/detector/AppConstants.kt', pattern: /const val VERSION = "\d+\.\d+\.\d+"/ },
+      { file: 'detector/android/app/src/main/java/com/xgwnje/visionguard/detector/stream/CameraPublisher.kt', pattern: /put\("version", com\.xgwnje\.visionguard\.detector\.AppConstants\.VERSION\)/ },
+      { file: 'detector/android-inference/app/src/main/java/com/xgwnje/visionguard/inference/AppConstants.kt', pattern: /const val VERSION = "\d+\.\d+\.\d+"/ },
       { file: 'detector/android-inference/app/src/main/java/com/xgwnje/visionguard/inference/net/ControlClient.kt', pattern: /addProperty\("version", com\.xgwnje\.visionguard\.inference\.AppConstants\.VERSION\)/ },
       { file: 'detector/android-inference/app/src/main/java/com/xgwnje/visionguard/inference/net/MediaClient.kt', pattern: /addProperty\("version", com\.xgwnje\.visionguard\.inference\.AppConstants\.VERSION\)/ },
-      { file: 'detector/android-inference/app/src/main/java/com/xgwnje/visionguard/inference/AppConstants.kt', pattern: /val VERSION: String = BuildConfig\.VERSION_NAME/ },
-      { file: 'detector/android/app/src/main/java/com/xgwnje/visionguard/detector/stream/CameraPublisher.kt', pattern: /put\("version", com\.xgwnje\.visionguard\.detector\.AppConstants\.VERSION\)/ },
-      { file: 'notifier/android/app/src/main/java/com/xgwnje/visionguard/notifier/node/NotificationNodeService.kt', pattern: /put\("version", AppConstants\.VERSION\)/ },
-      { file: 'notifier/android/app/src/main/java/com/xgwnje/visionguard/notifier/AppConstants.kt', pattern: /val VERSION: String = BuildConfig\.VERSION_NAME/ }
+      { file: 'notifier/android/app/src/main/java/com/xgwnje/visionguard/notifier/AppConstants.kt', pattern: /const val VERSION = "\d+\.\d+\.\d+"/ },
+      { file: 'notifier/android/app/src/main/java/com/xgwnje/visionguard/notifier/node/NotificationNodeService.kt', pattern: /put\("version", AppConstants\.VERSION\)/ }
     ]
   },
   {
@@ -137,7 +138,35 @@ function checkProtocolDeclarations(root = DEFAULT_ROOT) {
       if (!requirement.pattern.test(content)) violations.push({ id: check.id, file: requirement.file, reason: `未命中 ${requirement.pattern}`, why: check.why });
     }
   }
-  return violations.concat(strayVersionLiterals(root));
+  return violations.concat(strayVersionLiterals(root), protocolVersionFromBuildConfig(root));
+}
+
+/**
+ * 协议版本声明不得取自编译期常量。
+ *
+ * Kotlin 会把 Java 的 `static final`（`BuildConfig.VERSION_NAME`）在编译期内联成字面量，
+ * 而且增量构建不跟踪这个生成文件的变化；复用旧 class 时声明就冻结在旧值，
+ * 而 manifest 与设置页仍是新版本（2026-10-14 通知节点两次实测）。协议版本只认源码里由
+ * `scripts/sync-version.js` 收管的字面量。
+ */
+const PROTOCOL_VERSION_FILES = [
+  'detector/android/app/src/main/java/com/xgwnje/visionguard/detector/stream/CameraPublisher.kt',
+  'detector/android-inference/app/src/main/java/com/xgwnje/visionguard/inference/net/ControlClient.kt',
+  'detector/android-inference/app/src/main/java/com/xgwnje/visionguard/inference/net/MediaClient.kt',
+  'notifier/android/app/src/main/java/com/xgwnje/visionguard/notifier/node/NotificationNodeService.kt',
+  'android-shared/src/main/java/com/xgwnje/visionguard/account/AccountStore.kt'
+];
+
+function protocolVersionFromBuildConfig(root = DEFAULT_ROOT) {
+  const violations = [];
+  for (const relative of PROTOCOL_VERSION_FILES) {
+    const file = path.join(root, relative);
+    if (!fs.existsSync(file)) continue;
+    if (/BuildConfig\.VERSION_NAME/.test(fs.readFileSync(file, 'utf-8'))) {
+      violations.push({ id: 'version-runtime-source', file: relative, reason: '协议版本取自 BuildConfig 常量', why: '协议版本必须写成 sync-version 收管的源码字面量；BuildConfig 等生成常量会被 Kotlin 内联且增量构建不跟踪，声明会冻结在旧值' });
+    }
+  }
+  return violations;
 }
 
 /**
@@ -189,4 +218,4 @@ function main() {
 
 if (require.main === module) process.exit(main());
 
-module.exports = { checkProtocolDeclarations, strayVersionLiterals, readVersion, CHECKS };
+module.exports = { checkProtocolDeclarations, protocolVersionFromBuildConfig, strayVersionLiterals, readVersion, CHECKS };

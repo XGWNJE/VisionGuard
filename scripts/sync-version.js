@@ -71,6 +71,20 @@ function main() {
     `VERSION = "${newVersion}"`
   );
 
+  // 4.1 视觉推理节点（Android）与通知节点的协议版本字面量；Java 生成的 BuildConfig 常量会被
+  // Kotlin 内联且增量构建不跟踪，必须写在源码里由本脚本收管，否则发版后声明会冻结在旧值。
+  for (const constantsFile of [
+    ['detector', 'android-inference', 'inference'],
+    ['notifier', 'android', 'notifier']
+  ]) {
+    const [top, module, packageName] = constantsFile;
+    replaceInFile(
+      path.join(ROOT, top, module, 'app', 'src', 'main', 'java', 'com', 'xgwnje', 'visionguard', packageName, 'AppConstants.kt'),
+      /VERSION = "[\d.]+"/,
+      `VERSION = "${newVersion}"`
+    );
+  }
+
   // Server 与 Web 的工程及锁文件版本。
   for (const directory of ['server', 'receiver/web', 'detector/web']) {
     for (const fileName of ['package.json', 'package-lock.json']) {

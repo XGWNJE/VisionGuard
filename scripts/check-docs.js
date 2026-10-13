@@ -115,6 +115,8 @@ function checkVersionSources(root, version, errors) {
     ['detector/android/app/build.gradle.kts', `versionName = "${version}"`],
     ['detector/android/app/build.gradle.kts', `versionCode = ${versionCode}`],
     ['detector/android/app/src/main/java/com/xgwnje/visionguard/detector/AppConstants.kt', `VERSION = "${version}"`],
+    ['detector/android-inference/app/src/main/java/com/xgwnje/visionguard/inference/AppConstants.kt', `VERSION = "${version}"`],
+    ['notifier/android/app/src/main/java/com/xgwnje/visionguard/notifier/AppConstants.kt', `VERSION = "${version}"`],
     ['server/src/index.ts', `统一服务 v${version} 已启动`]
   ];
   for (const project of [

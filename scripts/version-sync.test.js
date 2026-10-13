@@ -64,7 +64,9 @@ function withVersionFixture(callback) {
     'detector/android/app/build.gradle.kts',
     'detector/android/app/src/main/java/com/xgwnje/visionguard/detector/AppConstants.kt',
     'detector/android-inference/app/build.gradle.kts',
+    'detector/android-inference/app/src/main/java/com/xgwnje/visionguard/inference/AppConstants.kt',
     'notifier/android/app/build.gradle.kts',
+    'notifier/android/app/src/main/java/com/xgwnje/visionguard/notifier/AppConstants.kt',
     'server/package.json', 'server/package-lock.json', 'server/src/index.ts',
     'server/data/releases.json', 'receiver/web/package.json', 'receiver/web/package-lock.json',
     'detector/web/package.json', 'detector/web/package-lock.json'
