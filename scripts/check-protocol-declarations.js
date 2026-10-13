@@ -81,13 +81,14 @@ const CHECKS = [
   },
   {
     id: 'client-android',
-    why: 'Android 三个端都声明版本；推理节点的版本取构建版本，不写死',
+    why: 'Android 三个端都声明版本；版本一律运行期读取（`const val` 会被 Kotlin 编译期内联，构建复用旧 class 时会把声明冻结在旧值）',
     requirements: [
       { file: 'detector/android-inference/app/src/main/java/com/xgwnje/visionguard/inference/net/ControlClient.kt', pattern: /addProperty\("version", com\.xgwnje\.visionguard\.inference\.AppConstants\.VERSION\)/ },
       { file: 'detector/android-inference/app/src/main/java/com/xgwnje/visionguard/inference/net/MediaClient.kt', pattern: /addProperty\("version", com\.xgwnje\.visionguard\.inference\.AppConstants\.VERSION\)/ },
-      { file: 'detector/android-inference/app/src/main/java/com/xgwnje/visionguard/inference/AppConstants.kt', pattern: /VERSION: String = BuildConfig\.VERSION_NAME/ },
+      { file: 'detector/android-inference/app/src/main/java/com/xgwnje/visionguard/inference/AppConstants.kt', pattern: /val VERSION: String = BuildConfig\.VERSION_NAME/ },
       { file: 'detector/android/app/src/main/java/com/xgwnje/visionguard/detector/stream/CameraPublisher.kt', pattern: /put\("version", com\.xgwnje\.visionguard\.detector\.AppConstants\.VERSION\)/ },
-      { file: 'notifier/android/app/src/main/java/com/xgwnje/visionguard/notifier/node/NotificationNodeService.kt', pattern: /put\("version", com\.xgwnje\.visionguard\.notifier\.BuildConfig\.VERSION_NAME\)/ }
+      { file: 'notifier/android/app/src/main/java/com/xgwnje/visionguard/notifier/node/NotificationNodeService.kt', pattern: /put\("version", AppConstants\.VERSION\)/ },
+      { file: 'notifier/android/app/src/main/java/com/xgwnje/visionguard/notifier/AppConstants.kt', pattern: /val VERSION: String = BuildConfig\.VERSION_NAME/ }
     ]
   },
   {

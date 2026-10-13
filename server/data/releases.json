@@ -21,8 +21,8 @@
   "android-notifier": {
     "version": "0.7.3",
     "url": "/releases/VisionGuard-Notifier-v0.7.3.apk",
-    "size": 4652047,
-    "sha256": "0D6ECF7F2F06A94405FC9BC3BB3D5D626C9FFF4D2C080022697044976AD2D1E0"
+    "size": 4652051,
+    "sha256": "9CA139C6C4C2C1E6D9D458E73586FC0599FABEF817A199E6C20CB20D4B667BF2"
   },
   "android-inference": {
     "version": "0.7.3",

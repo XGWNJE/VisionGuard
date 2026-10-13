@@ -1568,6 +1568,19 @@ if (Test-TargetEnabled @('Android', 'AndroidInference')) {
 }
 
 if ($artifacts.Count -gt 0) {
+    # 打包产物必须真的声明自己的版本：Android 的协议版本由 APK 内 DEX 字符串给出，
+    # Kotlin 内联 BuildConfig 常量 + 增量构建复用旧 class 时会静默冻结在旧值（2026-10-14 通知节点实例）。
+    $androidArtifacts = @($artifacts | Where-Object { $_.FileName -like '*.apk' })
+    if ($androidArtifacts.Count -gt 0) {
+        Write-Step "Verify packaged protocol version"
+        foreach ($androidArtifact in $androidArtifacts) {
+            Invoke-Native -FilePath 'node' -Arguments @(
+                (Join-Path $repoRoot 'scripts\check-apk-protocol-version.js'),
+                '--apk', $androidArtifact.Path,
+                '--version', $Version
+            )
+        }
+    }
     Save-ReleasesJson -Metadata $metadata
 }
 
