@@ -119,6 +119,14 @@ function assertedAbsent(text, item) {
   return false;
 }
 
+/**
+ * 该路径是否被 Git 忽略（构建产物、缓存、本地资料）。
+ * 这类文件本来就不在仓库里，CI 检出时一律不存在，不能算护栏失效引用。
+ */
+function ignoredPath(base, item) {
+  try { execFileSync('git', ['check-ignore', '-q', '--', item], { cwd: base, stdio: 'ignore' }); return true; } catch { return false; }
+}
+
 function scanExistingGuards(base = root) {
   const dir = path.join(base, 'scripts');
   const plausiblePath = item => item.includes('/') && !item.includes('//') && !item.includes('/.') && !item.endsWith('/');
@@ -137,7 +145,7 @@ function scanExistingGuards(base = root) {
     // 先排除「断言不存在」的上下文与文本片段；只报带目录、形状像仓库路径的命中，
     // 裸文件名（package.json 之类）多是通用名或示例，噪声大于价值。
     missing: referenced.filter(item => (
-      plausiblePath(item) && !exists(item) && !item.startsWith('.local/') && !assertedAbsent(text, item)
+      plausiblePath(item) && !exists(item) && !item.startsWith('.local/') && !assertedAbsent(text, item) && !ignoredPath(base, item)
     )),
       skipped: /skip:\s*(?:true|process\.platform)/.test(text) || /\bt\.skip\(/.test(text),
       weak: /assert\.ok\(\s*true\s*\)/.test(text),
@@ -391,6 +399,7 @@ module.exports = {
   buildReport,
   deterministicFindings,
   assertedAbsent,
+  ignoredPath,
   scanExistingGuards,
   scanWorkflowIssues,
   guardFiles,

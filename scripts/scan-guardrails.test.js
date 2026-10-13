@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { deterministicFindings, assertedAbsent, scanWorkflowIssues, guardFiles } = require('./scan-guardrails');
+const { deterministicFindings, assertedAbsent, scanWorkflowIssues, guardFiles, ignoredPath } = require('./scan-guardrails');
 
 const REPOSITORY = path.resolve(__dirname, '..');
 // 拼出来而不是写整串：本文件自己也在被扫描的脚本目录里，字面出现会被恒真断言检查命中。
@@ -75,6 +75,14 @@ test('工作流扫描能识别工作流文件本身', (t) => {
 
 test('仓库本身通过硬检查', () => {
   assert.deepEqual(deterministicFindings(REPOSITORY), []);
+});
+
+test('被 Git 忽略的构建产物不算失效引用', () => {
+  // CI 检出里没有 server/dist，本地有：这类路径按构建产物处理，不能把 CI 弄红。
+  assert.equal(ignoredPath(REPOSITORY, 'server/dist/index.js'), true);
+  assert.equal(ignoredPath(REPOSITORY, 'server/data/models'), true);
+  assert.equal(ignoredPath(REPOSITORY, 'scripts/check-docs.js'), false);
+  assert.equal(ignoredPath(REPOSITORY, 'docs/00-文档索引.md'), false);
 });
 
 test('仓库里的检查脚本都被硬检查覆盖到', () => {
