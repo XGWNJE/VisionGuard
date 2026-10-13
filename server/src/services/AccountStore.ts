@@ -35,6 +35,9 @@ const DEVICE_NAMES = { 'web-console': '控制台', 'android-notifier': '通知�
 function publicDevice(device: StoredDevice): AccountDevice { const { identityKey: _private, version: _version, ...value } = device; return value; }
 /** 声明的版本归一为空串表示未声明；目录与旧版本端点一并隐藏。 */
 function declaredVersion(value: unknown): string { return typeof value === 'string' ? value.trim().slice(0, 24) : ''; }
+/** 闸门实例上只有声明了本版协议的端点可见：节点目录、控制台节点名册与推流视图共用这一条。
+ *  闸门只服务上线部署实例，本地 / 测试实例照常显示全部设备。 */
+function visibleUnderGate(device: StoredDevice): boolean { return !config.protocolGate || device.version === PROTOCOL_VERSION; }
 const tokenHash = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
 export class AccountError extends Error { constructor(readonly status: number, message: string) { super(message); } }
 export function validUsername(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(value); }
@@ -200,7 +203,7 @@ export class AccountStore {
    *  闸门只服务上线部署实例，本地/测试实例照常显示全部设备，跑链路与 UI 检查不受影响。 */
   directoryDevices(accountId: string): AccountDevice[] {
     return this.data.devices
-      .filter(item => item.accountId === accountId && item.role !== 'lifecycle' && (!config.protocolGate || item.version === PROTOCOL_VERSION))
+      .filter(item => item.accountId === accountId && item.role !== 'lifecycle' && visibleUnderGate(item))
       .map(publicDevice);
   }
   /** 记录端点声明的版本；未声明记为空串。值没变时不落盘，避免心跳式重复写。 */
@@ -215,7 +218,10 @@ export class AccountStore {
     const session = this.authenticate(token);
     if (session) this.recordVersion(session.account.accountId, session.device.deviceId, session.device.component, version);
   }
-  identities(accountId: string): AccountDevice[] { return this.data.devices.filter(item => item.accountId === accountId).map(publicDevice); }
+  /** 控制台节点名册（通知范围与目录共用）：与节点目录同一道版本判定，旧版本端点不出现在名册里。 */
+  identities(accountId: string): AccountDevice[] {
+    return this.data.devices.filter(item => item.accountId === accountId && visibleUnderGate(item)).map(publicDevice);
+  }
   device(accountId: string, deviceId: string): AccountDevice | undefined { return this.devices(accountId).find(item => item.deviceId === deviceId); }
   rename(accountId: string, deviceId: string, deviceName: unknown): void {
     if (!this.device(accountId, deviceId)) throw new AccountError(404, 'Device not found');

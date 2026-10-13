@@ -95,6 +95,29 @@ test('the node directory only lists endpoints that declared the served version',
   assert.ok((await f.directory(console.token)).some(item => item.deviceId === legacy.device.deviceId));
 });
 
+test('the console node list hides endpoints that did not declare the served version', async t => {
+  const f = await fixture(t);
+  const console = await device('web-console');
+  const current = await device('android-inference');
+  const legacy = await device('windows-inference', { version: '0.0.1' });
+  const silent = await device('android-notifier', { version: undefined });
+
+  // 控制台的节点列表来自通知范围通道（detectors / notifiers），必须与节点目录同一口径，
+  // 否则旧版本端点虽不在 /api/devices 里，仍会出现在控制台节点目录。
+  const client = await f.declare({ type: 'auth', token: console.token, version: PROTOCOL_VERSION });
+  assert.equal((await client.take('auth-result')).success, true);
+  const scopes = await client.take('notification-scopes');
+  const listed = [...scopes.detectors, ...scopes.notifiers].map((item: any) => item.deviceId);
+  assert.ok(listed.includes(current.device.deviceId));
+  assert.equal(listed.includes(legacy.device.deviceId), false);
+  assert.equal(listed.includes(silent.device.deviceId), false);
+
+  // 按本版协议重新声明即回到名册。
+  accountStore.recordVersion(console.account.accountId, legacy.device.deviceId, 'windows-inference', PROTOCOL_VERSION);
+  const refreshed = await f.declare({ type: 'auth', token: console.token, version: PROTOCOL_VERSION });
+  assert.ok((await refreshed.take('notification-scopes')).detectors.some((item: any) => item.deviceId === legacy.device.deviceId));
+});
+
 test('a websocket auth declaring another version is cut and leaves the directory', async t => {
   const f = await fixture(t);
   const console = await device('web-console');

@@ -59,7 +59,10 @@ const CHECKS = [
     id: 'server-visibility-and-unbind',
     why: '节点目录与推流视图只认声明了本版协议的端点；解除绑定放控制台 / 发布端 / 被动方',
     requirements: [
-      { file: 'server/src/services/AccountStore.ts', pattern: /!config\.protocolGate \|\| item\.version === PROTOCOL_VERSION/ },
+      { file: 'server/src/services/AccountStore.ts', pattern: /function visibleUnderGate\(device: StoredDevice\): boolean \{ return !config\.protocolGate \|\| device\.version === PROTOCOL_VERSION; \}/ },
+      // 控制台节点目录走的是通知范围名册（identities → registeredNodes），这条通道漏了过滤就会残留旧端点。
+      { file: 'server/src/services/AccountStore.ts', pattern: /directoryDevices\(accountId: string\)[\s\S]{0,200}?visibleUnderGate\(item\)/ },
+      { file: 'server/src/services/AccountStore.ts', pattern: /identities\(accountId: string\)[\s\S]{0,200}?visibleUnderGate\(item\)/ },
       { file: 'server/src/services/MediaRelay.ts', pattern: /accountStore\.directoryDevices\(accountId\)/ },
       { file: 'server/src/services/ConnectionManager.ts', pattern: /accountStore\.directoryDevices\(session\.account\.accountId\)/ },
       { file: 'server/src/services/MediaRelay.ts', pattern: /session\.device\.deviceId === targetDeviceId/ },
@@ -105,6 +108,7 @@ const CHECKS = [
     requirements: [
       { file: 'server/test/protocol-gate.test.ts', pattern: /wsVersionGate\(\{ type: 'auth', version: '0\.0\.1' \}, true\)/ },
       { file: 'server/test/version-directory.test.ts', pattern: /the node directory only lists endpoints that declared the served version/ },
+      { file: 'server/test/version-directory.test.ts', pattern: /the console node list hides endpoints that did not declare the served version/ },
       { file: 'server/test/media-relay.test.ts', pattern: /one publisher pushes several sources to the same inference node/ }
     ]
   }
