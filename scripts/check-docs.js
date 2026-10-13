@@ -638,7 +638,7 @@ function checkDocumentLayout(docsFiles, contents, errors) {
 const TODO_HEADINGS = ['# 待办', '## 待办', '## 分支', '## 口径'];
 const TODO_PRIORITY_ORDER = ['高', '中', '低'];
 const TODO_LINE_LIMIT = 200;
-const TODO_ITEM_PATTERN = /^- \*\*(\d+) · ([^*]+?)\*\*（(高|中|低)[^）]*）——\S/;
+const TODO_ITEM_PATTERN = /^- \[[ x]\] \*\*(\d+) · ([^*]+?)\*\*（(?:\*\*)?(高|中|低)(?:\*\*)?[^）]*）——\s*\S/;
 const TODO_PLAN_LINK_PATTERN = /]\(plans\/(\d+)-[^)]*\)/g;
 
 function hasMarkdownTable(lines) {
@@ -692,7 +692,7 @@ function checkTaskListContract(taskList, errors) {
   let rank = -1;
   for (const item of items) {
     if (!TODO_ITEM_PATTERN.test(item.line)) {
-      errors.push(`[contract] ${relativePath} has a bullet that is not one item line (\`- **编号 · 标题**（优先级）——做什么\`): ${item.line}`);
+      errors.push(`[contract] ${relativePath} has a bullet that is not one item line (\`- [ ] **编号 · 标题**（优先级 ｜ 分支）——做什么\`): ${item.line}`);
       continue;
     }
     if (seen.has(item.order)) {
@@ -751,7 +751,7 @@ function checkPlanDocuments(root, taskList, index, errors) {
       errors.push(`[plan] ${relativePath} duplicates the plan number ${order}`);
     }
     seen.add(order);
-    if (!new RegExp(`^- \\*\\*${order} · `, 'm').test(taskList)) {
+    if (!new RegExp(`^- \\[[ x]\\] \\*\\*${order} · `, 'm').test(taskList)) {
       errors.push(`[plan] ${relativePath} is not bound to a live 待办 ${order}; delete it together with its entry`);
     }
     if (!taskList.includes(`](plans/${entry.name})`)) {

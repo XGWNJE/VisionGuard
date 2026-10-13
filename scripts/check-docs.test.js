@@ -263,23 +263,29 @@ test('the todo list keeps its chapters, one-line items, priorities and plan link
   const withTable = audit(`${valid}\n| 分支 | 状态 |\n|---|---|\n| main | 已推送 |\n`);
   assert.ok(withTable.some((error) => error.includes('instead of tables')));
 
-  const item = valid.split(/\r?\n/).find((line) => line.startsWith('- **15 · '));
+  const item = valid.split(/\r?\n/).find((line) => line.startsWith('- [ ] **15 · '));
   assert.ok(item);
 
-  // 条目必须是一条带优先级的完整行。
-  const untagged = audit(valid.replace(item, '- **15 · 来源抽屉与设置抽屉分区清点**——没有优先级标签。'));
+  // 勾选框是列表样式的一部分：勾上也合法（完成即删，不该长期留着 [x]）。
+  assert.deepEqual(audit(valid.replace('- [ ] **6 · ', '- [x] **6 · ')), []);
+
+  // 条目必须是一条带勾选框与优先级的完整行。
+  const untagged = audit(valid.replace(item, '- [ ] **15 · 来源抽屉与设置抽屉分区清点**——没有优先级标签。'));
   assert.ok(untagged.some((error) => error.includes('not one item line')));
 
+  const noCheckbox = audit(valid.replace('- [ ] **6 · 校准集换成相机实拍**', '- **6 · 校准集换成相机实拍**'));
+  assert.ok(noCheckbox.some((error) => error.includes('not one item line')));
+
   // 编号长期沿用、全局唯一。
-  const repeated = audit(valid.replace('- **6 · 校准集换成相机实拍**', '- **15 · 校准集换成相机实拍**'));
+  const repeated = audit(valid.replace('- [ ] **6 · 校准集换成相机实拍**', '- [ ] **15 · 校准集换成相机实拍**'));
   assert.ok(repeated.some((error) => error.includes('repeats item number 15')));
 
   // 顺序即优先级：低排在高/中之后才合法。
-  const unordered = audit(valid.replace('- **15 · 来源抽屉与设置抽屉分区清点**（高', '- **15 · 来源抽屉与设置抽屉分区清点**（低'));
+  const unordered = audit(valid.replace('- [ ] **15 · 来源抽屉与设置抽屉分区清点**（**高**', '- [ ] **15 · 来源抽屉与设置抽屉分区清点**（**低**'));
   assert.ok(unordered.some((error) => error.includes('keep the list sorted')));
 
   // 超过一行就写计划文档，不允许在待办里铺开。
-  const tooLong = audit(valid.replace(item, `- **15 · 来源抽屉与设置抽屉分区清点**（高）——${'锁'.repeat(210)}`));
+  const tooLong = audit(valid.replace(item, `- [ ] **15 · 来源抽屉与设置抽屉分区清点**（**高**）——${'锁'.repeat(210)}`));
   assert.ok(tooLong.some((error) => error.includes('longer than 200 characters')));
 
   // 计划文档编号必须与条目编号一致（否则就是挂错了条目）。

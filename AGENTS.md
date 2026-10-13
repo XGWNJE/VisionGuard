@@ -38,7 +38,7 @@
 ## 文档与验证入口
 
 - README 只留介绍、组件入口、常用命令和文档入口；模块专题维护当前事实，不复制待办与完整测试报告。新增专题只登记 `docs/00-文档索引.md`，发行说明只登记 `docs/releases/README.md`，待办计划只登记在 [待办](docs/06-待办.md) 的对应条目上（`docs/plans/` 不进索引、不平铺）。
-- [验证记录](docs/90-验证记录.md)是证据与未覆盖项唯一来源，保留最近三个发行版本和当前专项，更早汇总并保留必要原始证据；[待办](docs/06-待办.md)是待办与方向的唯一入口：一份极简列表，一条一行，写清优先级、做什么与卡点，编号稳定唯一、顺序即优先级；需要展开的细节放 `docs/plans/` 计划文档并由条目链接，待办完成或取消时条目与计划文档一并删除。不列真实设备验收、观感反馈或上线观察待办。owner 发现真实使用问题后主动反馈，再登记处理任务；移除验收待办不表示已通过验证。提交前压缩重复、过时记录。
+- [验证记录](docs/90-验证记录.md)是证据与未覆盖项唯一来源，保留最近三个发行版本和当前专项，更早汇总并保留必要原始证据；[待办](docs/06-待办.md)是待办与方向的唯一入口：一份极简列表，一条一行（未完成项带 `- [ ]` 勾选框），写清优先级、做什么与卡点，编号稳定唯一、顺序即优先级；需要展开的细节放 `docs/plans/` 计划文档并由条目链接，待办完成或取消时条目与计划文档一并删除。不列真实设备验收、观感反馈或上线观察待办。owner 发现真实使用问题后主动反馈，再登记处理任务；移除验收待办不表示已通过验证。提交前压缩重复、过时记录。
 - 中文 Markdown 为 UTF-8 无 BOM；含非 ASCII 的 PowerShell 为 UTF-8 with BOM，由编码测试校验。
 - 修改文档、入口、协议、版本 / 域名边界后运行 `node scripts/check-docs.js`、`node scripts/check-protocol-declarations.js`、`node scripts/scan-guardrails.js --check`、`node --test scripts/check-docs.test.js scripts/release-workflow.test.js scripts/release-notes.test.js scripts/check-powershell-encoding.test.js scripts/project-guards.test.js scripts/check-protocol-declarations.test.js scripts/scan-guardrails.test.js`，以及 `npm --prefix receiver/web test` 与 `npm --prefix detector/web test`。护栏体检发现的问题当场修，不留待复核。
 - 编译用 `visionguard-build`；运行 / 设备烟测用 `visionguard-e2e`；明确授权的发布用 `visionguard-release`。详细命令、ServerBuild / person / FPS 证据标准见[运维文档](docs/60-构建验证与发布.md)，执行前按任务读取对应 Skill。
