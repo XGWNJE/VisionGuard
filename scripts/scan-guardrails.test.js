@@ -80,6 +80,7 @@ test('仓库本身通过硬检查', () => {
 test('被 Git 忽略的构建产物不算失效引用', () => {
   // CI 检出里没有 server/dist，本地有：这类路径按构建产物处理，不能把 CI 弄红。
   assert.equal(ignoredPath(REPOSITORY, 'server/dist/index.js'), true);
+  assert.equal(ignoredPath(REPOSITORY, 'server/data/accounts.json'), true);
   assert.equal(ignoredPath(REPOSITORY, 'server/data/models'), true);
   assert.equal(ignoredPath(REPOSITORY, 'scripts/check-docs.js'), false);
   assert.equal(ignoredPath(REPOSITORY, 'docs/00-文档索引.md'), false);

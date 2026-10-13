@@ -124,7 +124,12 @@ function assertedAbsent(text, item) {
  * 这类文件本来就不在仓库里，CI 检出时一律不存在，不能算护栏失效引用。
  */
 function ignoredPath(base, item) {
-  try { execFileSync('git', ['check-ignore', '-q', '--', item], { cwd: base, stdio: 'ignore' }); return true; } catch { return false; }
+  // 目录型规则带结尾斜杠（`.gitignore` 里的 `server/data/models/`），而路径可能已经不存在，
+  // 所以两种写法都问一次 Git。
+  const candidates = item.endsWith('/') ? [item] : [item, `${item}/`];
+  return candidates.some(candidate => {
+    try { execFileSync('git', ['check-ignore', '-q', '--', candidate], { cwd: base, stdio: 'ignore' }); return true; } catch { return false; }
+  });
 }
 
 function scanExistingGuards(base = root) {
