@@ -1,7 +1,8 @@
 name: Guardrail scan
 
-# 定期找出「重复犯的错」与「该固化成自动化检查」的工程点，产出候选报告。
-# 只读扫描：不改文档、不改代码、不发布；候选由 owner / agent 复核后登记进 docs/06-任务清单.md。
+# 每周出一次「重复犯错」与「护栏缺口」的候选报告，供 owner 有空时看。
+# 只读扫描：不改文档、不改代码、不发布；候选要登记进 docs/06-任务清单.md 时由人决定。
+# 能稳定判定的那部分不在这里等人看——`scan-guardrails.js --check` 在 Documentation audit 里随每次 CI 跑，红了就修。
 
 on:
   schedule:

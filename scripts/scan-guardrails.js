@@ -9,9 +9,12 @@
  *
  * 用法：
  *   node scripts/scan-guardrails.js                 # 报告打印到 stdout
- *   node scripts/scan-guardrails.js --out <file>    # 同时写入文件（CI 用）
+ *   node scripts/scan-guardrails.js --out <file>    # 同时写入文件（周报 artifact）
+ *   node scripts/scan-guardrails.js --check         # 只跑能稳定判定的硬检查，有命中即退出码 1
  *
- * 这是启发式报告：只做聚类与罗列，不自动改动任何文档，结论由人工判断。
+ * 报告是启发式聚类：只列候选，不自动改动任何文档，谁看谁判断，不依赖任何会话或人来跑。
+ * `--check` 那一半不依赖复核，随每次 CI 失败即修：工作流引用了不存在的脚本 / 目录、
+ * `continue-on-error: true`、检查脚本里的恒真断言，以及非测试检查脚本引用了仓库里不存在的目标。
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -19,13 +22,13 @@ const { execFileSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
 
-function read(relative) {
-  try { return fs.readFileSync(path.join(root, relative), 'utf8'); } catch { return ''; }
+function read(relative, base = root) {
+  try { return fs.readFileSync(path.join(base, relative), 'utf8'); } catch { return ''; }
 }
 
-function git(args) {
+function git(args, cwd = root) {
   try {
-    return execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
   } catch {
     return '';
   }
@@ -96,8 +99,8 @@ function tally(map, key, evidence) {
 
 const GUARD_FILE = /^(?:check-.*|.*\.test)\.js$/;
 
-function guardFiles() {
-  const dir = path.join(root, 'scripts');
+function guardFiles(base = root) {
+  const dir = path.join(base, 'scripts');
   return fs.existsSync(dir) ? fs.readdirSync(dir).filter(name => GUARD_FILE.test(name)).sort() : [];
 }
 
@@ -110,22 +113,22 @@ function assertedAbsent(text, item) {
   for (let index = 0; index < lines.length; index++) {
     if (!lines[index].includes(item)) continue;
     const window = lines.slice(Math.max(0, index - 8), index + 2).join('\n');
-    if (/deprecated|removed|forbidden|废弃|不应存在|不该存在|should not/i.test(window)) return true;
+    if (/deprecated|removed|forbidden|retired|legacy|废弃|退役|废止|已取消|不应存在|不该存在|should not/i.test(window)) return true;
     if (/!\s*(?:fs\.)?existsSync/.test(window)) return true;
   }
   return false;
 }
 
-function scanExistingGuards() {
-  const dir = path.join(root, 'scripts');
+function scanExistingGuards(base = root) {
+  const dir = path.join(base, 'scripts');
   const plausiblePath = item => item.includes('/') && !item.includes('//') && !item.includes('/.') && !item.endsWith('/');
-  const entries = guardFiles().map(name => {
+  const entries = guardFiles(base).map(name => {
     const filePath = path.join(dir, name);
     const text = fs.readFileSync(filePath, 'utf8');
     const referenced = [...new Set(pathsIn(text))].filter(item => !item.startsWith('http'));
     // 同一路径可能写成相对仓库根、相对 scripts/ 或相对脚本自身目录，任一存在即算存在。
-    const exists = item => [root, dir, path.join(root, 'scripts')].some(base => fs.existsSync(path.join(base, item)));
-    const lastCommit = git(['log', '-1', '--pretty=format:%cs', '--', `scripts/${name}`]).trim();
+    const exists = item => [base, dir].some(basePath => fs.existsSync(path.join(basePath, item)));
+    const lastCommit = git(['log', '-1', '--pretty=format:%cs', '--', `scripts/${name}`], base).trim();
     const staleDays = lastCommit ? Math.round((Date.now() - Date.parse(lastCommit)) / 86400000) : null;
     return {
       name,
@@ -155,22 +158,41 @@ function scanExistingGuards() {
 }
 
 /** 工作流里指向不存在脚本或目录的引用：看着在查、其实查不到的护栏最该先清。 */
-function scanWorkflowIssues() {
-  const dir = path.join(root, '.github/workflows');
+function scanWorkflowIssues(base = root) {
+  const dir = path.join(base, '.github/workflows');
   const issues = [];
   if (!fs.existsSync(dir)) return issues;
   for (const name of fs.readdirSync(dir)) {
     if (!/\.ya?ml$/.test(name)) continue;
     const text = fs.readFileSync(path.join(dir, name), 'utf8');
     for (const match of text.matchAll(/node\s+(?:--test\s+)?(scripts\/[\w./-]+\.js)/g)) {
-      if (!fs.existsSync(path.join(root, match[1]))) issues.push(`${name}: 引用不存在的脚本 ${match[1]}`);
+      if (!fs.existsSync(path.join(base, match[1]))) issues.push(`${name}: 引用不存在的脚本 ${match[1]}`);
     }
     for (const match of text.matchAll(/npm\s+--prefix\s+([\w./-]+)/g)) {
-      if (!fs.existsSync(path.join(root, match[1]))) issues.push(`${name}: npm --prefix 指向不存在的目录 ${match[1]}`);
+      if (!fs.existsSync(path.join(base, match[1]))) issues.push(`${name}: npm --prefix 指向不存在的目录 ${match[1]}`);
     }
     if (/continue-on-error:\s*true/.test(text)) issues.push(`${name}: 有 continue-on-error: true 的步骤（失败不会让 CI 变红）`);
   }
   return issues;
+}
+
+/**
+ * 硬检查：命中了就是真问题，不需要谁复核，随每次 CI 失败即修。
+ * 需要判断力的部分（重复修复聚类、目标重叠、长期未动、体量大）只留在报告里。
+ */
+function deterministicFindings(base = root) {
+  const findings = scanWorkflowIssues(base).slice();
+  const guardHealth = scanExistingGuards(base);
+  for (const entry of guardHealth.entries) {
+    if (entry.weak) findings.push(`scripts/${entry.name}: 含恒真断言（assert.ok(true)），这条检查永远不会失败`);
+  }
+  // 测试里的路径多是临时夹具，只有 check-*.js 这类真检查才按「引用了不存在的目标」判定。
+  for (const entry of guardHealth.entries) {
+    if (/\.test\.js$/.test(entry.name) || entry.missing.length === 0) continue;
+    const targets = entry.missing.slice(0, 4).map(item => `\`${item}\``).join('、');
+    findings.push(`scripts/${entry.name}: 引用了不存在的目标 ${targets}`);
+  }
+  return findings;
 }
 
 function buildReport() {
@@ -222,6 +244,8 @@ function buildReport() {
   lines.push(`生成时间：${new Date().toISOString()}；修复类提交 ${commits.length} 条、验证记录条目 ${records.length} 条。`);
   lines.push('');
   lines.push('本报告只列候选，供复核后登记进 [docs/06-任务清单.md](docs/06-任务清单.md)；不自动改动文档。');
+  lines.push('');
+  lines.push('能稳定判定的部分（工作流引用、`continue-on-error`、恒真断言、检查脚本的失效引用）不在这里等人复核——`node scripts/scan-guardrails.js --check` 在每次 CI 里当硬检查跑，红了就修；下面是需要判断的候选。');
   lines.push('');
   lines.push('## 一、重复犯错：同一文件被反复修复');
   lines.push('');
@@ -336,13 +360,39 @@ function buildReport() {
   return lines.join('\n');
 }
 
-const report = buildReport();
-const outIndex = process.argv.indexOf('--out');
-if (outIndex >= 0 && process.argv[outIndex + 1]) {
-  const target = path.resolve(root, process.argv[outIndex + 1]);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, report, 'utf8');
-  console.log(`Guardrail scan written: ${path.relative(root, target)}`);
-} else {
-  console.log(report);
+function main() {
+  if (process.argv.includes('--check')) {
+    const findings = deterministicFindings();
+    if (findings.length === 0) {
+      console.log('Guardrail health check passed: 工作流引用、continue-on-error、恒真断言与检查脚本的失效引用都没有命中。');
+      return 0;
+    }
+    console.error(`Guardrail health check failed: ${findings.length} 项要修。`);
+    for (const finding of findings) console.error(`- ${finding}`);
+    return 1;
+  }
+
+  const report = buildReport();
+  const outIndex = process.argv.indexOf('--out');
+  if (outIndex >= 0 && process.argv[outIndex + 1]) {
+    const target = path.resolve(root, process.argv[outIndex + 1]);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, report, 'utf8');
+    console.log(`Guardrail scan written: ${path.relative(root, target)}`);
+  } else {
+    console.log(report);
+  }
+  return 0;
 }
+
+if (require.main === module) process.exit(main());
+
+module.exports = {
+  buildReport,
+  deterministicFindings,
+  assertedAbsent,
+  scanExistingGuards,
+  scanWorkflowIssues,
+  guardFiles,
+  main,
+};

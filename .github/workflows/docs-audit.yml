@@ -32,8 +32,11 @@ jobs:
       - name: Audit protocol version declarations and the version gate
         run: node scripts/check-protocol-declarations.js
 
+      - name: Check guardrail health (broken references, disabled steps, weak assertions)
+        run: node scripts/scan-guardrails.js --check
+
       - name: Test documentation guardrails
-        run: node --test scripts/check-docs.test.js scripts/release-workflow.test.js scripts/release-notes.test.js scripts/version-sync.test.js scripts/project-guards.test.js scripts/online-release-contract.test.js scripts/check-protocol-declarations.test.js
+        run: node --test scripts/check-docs.test.js scripts/release-workflow.test.js scripts/release-notes.test.js scripts/version-sync.test.js scripts/project-guards.test.js scripts/online-release-contract.test.js scripts/check-protocol-declarations.test.js scripts/scan-guardrails.test.js
 
   online-release-contract:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
