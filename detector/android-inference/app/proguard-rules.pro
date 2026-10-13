@@ -31,3 +31,13 @@
 -keep @androidx.room.Entity class *
 -dontwarn androidx.work.**
 -dontwarn androidx.room.**
+
+# LiteRT 的原生桥（liblitert_jni.so）按硬编码类名查找 Java 类型来构造返回值与抛异常。
+# R8 只自动保住带 native 方法的类（Environment / CompiledModel / TensorBuffer / TensorType），
+# 这几个只被原生层按名字用到、又不在任何被保签名里的类型会被删掉或改名：
+#   TensorType$ElementType、TensorType$Layout、TensorBufferRequirements、LiteRtException
+# 缺类时原生层走的不是 Java 异常，而是致命 CHECK（库内 `LiteRT check failed:` 系条件串）→ 进程 abort。
+# LiteRT 只在 GPU 档使用（CPU 档走 ONNX Runtime），所以症状是发行包一选 GPU 档就闪退，
+# debug 包正常；AAR 自带的规则只保 @UsedByReflection 标注的成员，靠不住，必须在这里整体保留。
+# 判据与真机证据见 docs/90-验证记录.md 的「Android 推理节点选 GPU 档闪退」一节。
+-keep class com.google.ai.edge.litert.** { *; }
