@@ -13,7 +13,7 @@ import org.junit.Test
 class InferenceLimitsTest {
 
     @Test
-    fun `GPU 档按扫描下限三十二路记`() {
+    fun `GPU 档按理论上限三十二路封顶`() {
         ModelKeys.gpuKeys.forEach { key ->
             assertEquals(32, InferenceLimits.perConfiguration(key, gpu = true))
         }

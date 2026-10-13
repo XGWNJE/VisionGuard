@@ -10,11 +10,11 @@ package com.xgwnje.visionguard.inference.model
  * |---|---|---|
  * | ONNX CPU 4 线程 + `yolo26m_320_int8` | 4 路 | 4 路 159.5 ms（6.3 帧/秒 ✓）；8 路 322.1 ms（3.1 ✗） |
  * | ONNX CPU 4 线程 + `yolo26m_640_int8` | 2 路 | 2 路 151.4 ms（6.6 ✓）；4 路 548.0 ms（1.8 ✗） |
- * | LiteRT GPU + `yolo26m_320_gpu.tflite` | 32 路 | 8 / 16 / 32 路单路 21.5 / 21.1 / 21.0 ms，未触底 |
- * | LiteRT GPU + `yolo26m_640_gpu.tflite` | 32 路 | 32 路仍 15.4 帧/秒，受内存而非算力约束 |
+ * | LiteRT GPU + `yolo26m_320_gpu.tflite` | 32 路（理论封顶） | 8 / 16 / 32 路单路 21.5 / 21.1 / 21.0 ms，未触底 |
+ * | LiteRT GPU + `yolo26m_640_gpu.tflite` | 32 路（理论封顶） | 32 路仍 15.4 帧/秒，受内存而非算力约束 |
  *
  * GPU 档在 CPU 上（`gpu = false`）不登记：GPU 档本来就不下发 ONNX 本体，跑到 CPU 说明配置异常，
- * 按保守值拦。数值是**实测下限**，不是理论值。
+ * 按保守值拦。CPU 两档是**实测下限**；GPU 两档实测到 32 路仍未触底，按理论上限 32 路封顶、不再上探。
  */
 object InferenceLimits {
 
@@ -25,7 +25,7 @@ object InferenceLimits {
     private val limits: Map<String, Int> = buildMap {
         put(entry("yolo26m_320_int8", gpu = false), 4)
         put(entry("yolo26m_640_int8", gpu = false), 2)
-        // 截断图在 GPU 上是排队执行：路数翻倍只降单路帧率，32 路仍未触底，故按 32 记。
+        // 截断图在 GPU 上是排队执行：路数翻倍只降单路帧率，32 路仍未触底，按理论上限 32 封顶。
         ModelKeys.gpuKeys.forEach { put(entry(it, gpu = true), 32) }
     }
 
