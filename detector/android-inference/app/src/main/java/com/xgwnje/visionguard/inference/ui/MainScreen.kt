@@ -290,6 +290,16 @@ fun MainScreen(
                         editorFor = null
                     }
                 },
+                onUnbind = { publisherDeviceId ->
+                    val failure = runtime.unbindRemotePublisher(publisherDeviceId)
+                    if (failure == null) {
+                        // 来源随服务端 stream-list 消失，本机不等推送就先收起抽屉，不留一个空壳。
+                        editorFor = null
+                        paramAnchor = null
+                        runtime.setMessage("已解除绑定，该发布端的来源会停止推给本机")
+                    }
+                    failure
+                },
                 onDownloadModel = { runtime.downloadModel(it) },
                 onDeleteModel = { runtime.deleteModel(it) },
                 onSave = { params ->
