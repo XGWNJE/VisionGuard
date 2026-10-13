@@ -62,7 +62,8 @@ data class AccountSession(val endpoint: String, val token: String, val expiresAt
     val scope: String get() = "$endpoint|$accountId|$deviceId"
 }
 
-private class AccountHttpException(val status: Int, message: String) : IllegalStateException(message)
+/** 平台接口返回非 2xx 时抛出；`status` 供调用方把 403 / 404 等失败原因分开表达。 */
+internal class AccountHttpException(val status: Int, message: String) : IllegalStateException(message)
 
 /** The account UI is shared by Compose 1.6 and 1.10 clients. */
 @OptIn(ExperimentalComposeUiApi::class)

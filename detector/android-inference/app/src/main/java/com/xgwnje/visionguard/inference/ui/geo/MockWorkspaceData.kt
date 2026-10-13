@@ -46,6 +46,7 @@ object MockWorkspaceData {
                 masks = listOf(MaskRegion(0.06f, 0.10f, 0.18f, 0.42f)),
                 cameraLensFacing = 1,
                 remotePublisherName = null,
+                remotePublisherDeviceId = null,
                 state = SourceRuntimeState(
                     isRunning = true,
                     isReady = true,
@@ -81,6 +82,7 @@ object MockWorkspaceData {
                 masks = emptyList(),
                 cameraLensFacing = 0,
                 remotePublisherName = "推流节点 · 东门",
+                remotePublisherDeviceId = "mock-publisher-east-gate",
                 state = SourceRuntimeState(
                     isReady = true,
                     backend = "CPU",
@@ -105,6 +107,7 @@ object MockWorkspaceData {
                 masks = emptyList(),
                 cameraLensFacing = 0,
                 remotePublisherName = "推流节点 · 北侧仓库（备用）",
+                remotePublisherDeviceId = "mock-publisher-north-store",
                 state = SourceRuntimeState(
                     isRunning = true,
                     monitoringExpected = true,
@@ -129,6 +132,7 @@ object MockWorkspaceData {
                 masks = emptyList(),
                 cameraLensFacing = 0,
                 remotePublisherName = null,
+                remotePublisherDeviceId = null,
                 state = SourceRuntimeState(
                     performanceWarning = "推理耗时波动较大",
                     statusText = "等待推流"

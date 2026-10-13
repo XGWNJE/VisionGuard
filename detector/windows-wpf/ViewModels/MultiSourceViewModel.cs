@@ -69,6 +69,8 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public RelayCommand UsePushModeCommand { get; private set; } = null!;
         /// <summary>重新拉取可选的推流目标（同账号推理节点）。</summary>
         public RelayCommand RefreshPushTargetsCommand { get; private set; } = null!;
+        /// <summary>解除本节点的推流目标绑定；一次解掉本节点所有来源，被动方与控制台同样能解。</summary>
+        public RelayCommand UnbindPushTargetCommand { get; private set; } = null!;
 
         private void SwitchMode(SourcePublishMode mode)
         {
@@ -107,6 +109,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             UseInferenceModeCommand = new RelayCommand(() => SwitchMode(SourcePublishMode.Inference), () => !IsInferenceMode);
             UsePushModeCommand = new RelayCommand(() => SwitchMode(SourcePublishMode.Push), () => !IsPushMode);
             RefreshPushTargetsCommand = new RelayCommand(() => RefreshPushTargets(), () => IsPushMode && !_pushTargetsLoading);
+            UnbindPushTargetCommand = new RelayCommand(() => UnbindPushTarget(), () => IsPushMode && !_pushTargetsLoading && _pushBoundTargetId.Length > 0);
             _pushTargetTimer.Tick += (_, __) =>
             {
                 if (IsPushMode && PushTargets.Count == 0) RefreshPushTargets();
@@ -249,7 +252,8 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
         internal bool CanAddSource => Sources.Count < _sourceLimit;
         internal bool CanRemoveSource(SourceViewModel slot)
-            => Sources.Contains(slot) && !IsRunning(slot) && !slot.IsRemoteStream;
+            => Sources.Contains(slot) && !IsRunning(slot)
+               && (!slot.IsRemoteStream || slot.RemotePublisherDeviceId.Length > 0);
 
         internal void AddSource()
         {
@@ -279,11 +283,44 @@ namespace VisionGuard.Detector.Windows.ViewModels
         internal void RemoveSource(SourceViewModel slot)
         {
             if (!CanRemoveSource(slot)) return;
+            // 远程来源不能在本机删除配置，只能解除发布端的绑定（绑定是发布端级的，解掉后它的所有来源都停推）。
+            if (slot.IsRemoteStream) { UnbindRemoteSource(slot); return; }
             if (ThemedMessageBox.Show($"删除来源“{slot.SourceName}”？", "删除来源",
                     MessageBoxButton.YesNo, MessageBoxImage.Warning, "删除来源", destructive: true) != MessageBoxResult.Yes) return;
             slot.DiscardEditing(); _coordinator.Remove(slot.SourceId); Sources.Remove(slot);
             if (ReferenceEquals(SelectedSource, slot)) SelectedSource = Sources.FirstOrDefault();
             PersistSourceIndexes(); RefreshSummary();
+        }
+
+        /// <summary>本机作为被动方解除某台发布端的推流绑定：成功即移除这张远程来源卡。</summary>
+        private void UnbindRemoteSource(SourceViewModel slot)
+        {
+            string publisherDeviceId = slot.RemotePublisherDeviceId;
+            if (publisherDeviceId.Length == 0)
+            {
+                ThemedMessageBox.Show("这张远程来源没有记录发布端身份，无法在本机解除；请在控制台处理。",
+                    "解除绑定", MessageBoxButton.OK, MessageBoxImage.Warning, "知道了");
+                return;
+            }
+            if (ThemedMessageBox.Show($"解除“{slot.SourceName}”的推流绑定？\n该发布端的全部来源都会停止推给本机；对方重新关联后会再次出现。",
+                    "解除绑定", MessageBoxButton.YesNo, MessageBoxImage.Warning, "解除绑定", destructive: true) != MessageBoxResult.Yes) return;
+            string serviceUrl = Utils.AppConfig.ServerUrl, token = Utils.AppConfig.SessionToken, deviceId = Utils.AppConfig.DeviceId;
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                string error = new Services.StreamTargetService(serviceUrl, token, deviceId).UnbindPublisher(publisherDeviceId);
+                Dispatch(() =>
+                {
+                    if (error.Length > 0)
+                    {
+                        ThemedMessageBox.Show(error, "解除绑定失败", MessageBoxButton.OK, MessageBoxImage.Warning, "知道了");
+                        return;
+                    }
+                    Utils.MediaDiagnostics.Write($"[Publish] remote unbind publisher={publisherDeviceId} source={slot.SourceName}");
+                    slot.FinishEditing(); _coordinator.Remove(slot.SourceId); slot.ForgetRemoteBinding(); Sources.Remove(slot);
+                    if (ReferenceEquals(SelectedSource, slot)) SelectedSource = Sources.FirstOrDefault();
+                    RefreshSummary();
+                });
+            });
         }
 
         internal InferenceBackend PreferredBackend => _settings.PreferredBackend;
@@ -397,7 +434,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 if (_pushTargetsLoading) return "正在读取同账号的推理节点…";
                 if (_pushTargetMessage.Length > 0) return _pushTargetMessage;
                 if (PushTargets.Count == 0) return "同账号暂时没有其他推理节点；节点上线后点「刷新」。";
-                if (_pushBoundTargetId.Length == 0) return "选中即关联；关联后点「开始推流」才会把画面发过去。";
+                if (_pushBoundTargetId.Length == 0) return "选中即关联；关联后每个来源各自点「开始推流」，可以并行推多路来源。";
                 return "";
             }
         }
@@ -476,6 +513,35 @@ namespace VisionGuard.Detector.Windows.ViewModels
             });
         }
 
+        /// <summary>解除本节点的推流目标：服务端只允许控制台、发布端自己与被推的被动方解绑。</summary>
+        private void UnbindPushTarget()
+        {
+            string serviceUrl = AppConfig.ServerUrl, token = AppConfig.SessionToken, deviceId = AppConfig.DeviceId;
+            if (string.IsNullOrEmpty(deviceId) || string.IsNullOrEmpty(token))
+            {
+                _pushTargetMessage = "尚未登录账号，暂时无法解除推流目标。";
+                RaisePushTargetState();
+                return;
+            }
+            _pushTargetMessage = "正在解除推流目标…";
+            RaisePushTargetState();
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                string error = new StreamTargetService(serviceUrl, token, deviceId).Unbind();
+                Dispatch(() =>
+                {
+                    if (error.Length > 0) _pushTargetMessage = error;
+                    else
+                    {
+                        _pushTargetMessage = "";
+                        ApplyPushBinding("", "");
+                        MediaDiagnostics.Write("[Publish] target unbound");
+                    }
+                    RaisePushTargetState();
+                });
+            });
+        }
+
         /// <summary>用服务端下发的绑定关系刷新本机状态；名字优先取候选列表，取不到时保留已知名字。</summary>
         private void ApplyPushBinding(string targetDeviceId, string knownName)
         {
@@ -511,6 +577,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             OnPropertyChanged(nameof(HasPushTargetHint));
             OnPropertyChanged(nameof(CanPickPushTarget));
             RefreshPushTargetsCommand.RaiseCanExecuteChanged();
+            UnbindPushTargetCommand.RaiseCanExecuteChanged();
         }
 
         internal void Rename(SourceViewModel slot) => _coordinator.Rename(slot.SourceId, slot.SourceName);
@@ -837,8 +904,11 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private bool _publishBlocked;
 
         public string SourceId { get; private set; }
-        private string _remoteStreamId = "", _remotePublisherName = "";
+        private string _remoteStreamId = "", _remotePublisherName = "", _remotePublisherDeviceId = "";
         public bool IsRemoteStream => _captureMode == CaptureMode.RemoteStream;
+
+        /// <summary>远程来源记住的发布端设备 ID：本机作为被动方要自己解除绑定时用它。</summary>
+        internal string RemotePublisherDeviceId => _remotePublisherDeviceId;
         public string DisplayIndex => $"来源 {_index}";
 
         /// <summary>
@@ -941,7 +1011,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         /// <summary>启动按钮文案随节点级状态变化：推流态是「开始推流」。</summary>
         public string StartButtonText => IsPushMode ? "开始推流" : "开始检测";
         public string StopButtonText => IsPushMode ? "停止推流" : "停止检测";
-        public string DeleteActionHint => IsRemoteStream ? "远程镜头的绑定由控制台管理" : IsMonitoring ? "请先停止此来源再删除" : "删除此来源";
+        public string DeleteActionHint => IsRemoteStream ? (RemotePublisherDeviceId.Length > 0 ? "解除与发布端的绑定（该发布端所有来源一起解）" : "远程来源的绑定由控制台管理") : IsMonitoring ? "请先停止此来源再删除" : "删除此来源";
         public bool IsPreviewVisible { get; internal set; }
         public int ThresholdPercent { get => _thresholdPercent; set { if (SetProperty(ref _thresholdPercent, Net472Compat.Clamp(value, 10, 95))) MarkDirty(); } }
         public int TargetFps { get => _targetFps; set { if (SetProperty(ref _targetFps, Net472Compat.Clamp(value, 1, 5))) MarkDirty(); } }
@@ -1093,6 +1163,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             _captureMode = Enum.TryParse<CaptureMode>(SettingsStore.GetString(Prefix + "CaptureMode", CaptureMode.ScreenRegion.ToString()), out var mode) && Enum.IsDefined(typeof(CaptureMode), mode) ? mode : CaptureMode.ScreenRegion;
             _remoteStreamId = SettingsStore.GetString(Prefix + "RemoteStreamId", "");
             _remotePublisherName = SettingsStore.GetString(Prefix + "RemotePublisherName", "");
+            _remotePublisherDeviceId = SettingsStore.GetString(Prefix + "RemotePublisherDeviceId", "");
             _targetWindowTitle = SettingsStore.GetString(Prefix + "TargetWindowTitle", string.Empty);
             _targetWindowClassName = SettingsStore.GetString(Prefix + "TargetWindowClassName", string.Empty);
             _targetWindowProcessName = SettingsStore.GetString(Prefix + "TargetWindowProcessName", string.Empty);
@@ -1354,6 +1425,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             SettingsStore.Set(Prefix + "SourceId", SourceId);
             SettingsStore.Set(Prefix + "RemoteStreamId", _remoteStreamId);
             SettingsStore.Set(Prefix + "RemotePublisherName", _remotePublisherName);
+            SettingsStore.Set(Prefix + "RemotePublisherDeviceId", _remotePublisherDeviceId);
             SettingsStore.Set(Prefix + "Initialized", true); SettingsStore.Set(Prefix + "Name", DisplayNamePolicy.IsValid(SourceName) ? SourceName.Trim() : _saved?.SourceName ?? DisplayIndex);
             SettingsStore.Set(Prefix + "CaptureMode", _captureMode.ToString()); SettingsStore.Set(Prefix + "TargetWindowTitle", _targetWindowTitle);
             SettingsStore.Set(Prefix + "TargetWindowClassName", _targetWindowClassName); SettingsStore.Set(Prefix + "TargetWindowProcessName", _targetWindowProcessName);
@@ -1367,6 +1439,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         internal void BindRemote(RemoteStreamInfo stream)
         {
             SourceId = stream.sourceId; _remoteStreamId = stream.streamId; _remotePublisherName = stream.publisherName;
+            _remotePublisherDeviceId = stream.publisherDeviceId;
             _captureMode = CaptureMode.RemoteStream; _sourceName = string.IsNullOrWhiteSpace(stream.sourceName) ? stream.publisherName : stream.sourceName;
             _targetWindow = null; _screenRegion = Rectangle.Empty; _windowSubRegion = Rectangle.Empty; ClearMasksInternal();
             PersistCurrent(); SettingsStore.Save(); _saved = CaptureState();
@@ -1381,6 +1454,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         {
             SettingsStore.Set(Prefix + "SourceId", _index == 1 ? "default" : $"signal-{_index}");
             SettingsStore.Set(Prefix + "RemoteStreamId", ""); SettingsStore.Set(Prefix + "RemotePublisherName", "");
+            SettingsStore.Set(Prefix + "RemotePublisherDeviceId", ""); _remotePublisherDeviceId = "";
             SettingsStore.Set(Prefix + "CaptureMode", CaptureMode.ScreenRegion.ToString()); SettingsStore.Set(Prefix + "ScreenRegion", "");
             SettingsStore.Set(Prefix + "Name", $"来源 {_index}"); SettingsStore.Set(Prefix + "Masks", ""); SettingsStore.Save();
         }

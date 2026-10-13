@@ -101,6 +101,8 @@ fun GeoSourceDrawer(
     onRename: (String) -> String?,
     onSetLens: (Int) -> String?,
     onDelete: () -> Unit,
+    /** 远程来源解除发布端绑定：成功返回 null，失败返回可读文案。 */
+    onUnbind: suspend (String) -> String?,
     onDownloadModel: suspend (String) -> String?,
     onDeleteModel: suspend (String) -> String?,
     onSave: (DetectionParams) -> String?,
@@ -245,6 +247,7 @@ fun GeoSourceDrawer(
                     onRename = onRename,
                     onSetLens = onSetLens,
                     onDelete = onDelete,
+                    onUnbind = onUnbind,
                     onMessage = onMessage
                 )
 
@@ -318,10 +321,15 @@ private fun SourceSection(
     onRename: (String) -> String?,
     onSetLens: (Int) -> String?,
     onDelete: () -> Unit,
+    /** 远程来源解除发布端绑定：成功返回 null，失败返回可读文案。 */
+    onUnbind: suspend (String) -> String?,
     onMessage: (String?) -> Unit
 ) {
     var name by remember(source.sourceId, source.sourceName) { mutableStateOf(source.sourceName) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var confirmUnbind by remember(source.sourceId) { mutableStateOf(false) }
+    var unbinding by remember(source.sourceId) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val running = source.state.isRunning
 
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -394,6 +402,28 @@ private fun SourceSection(
         }
     }
 
+    if (source.mode == SourceCaptureMode.RemoteStream) {
+        GeoDivider()
+        Column(Modifier.fillMaxWidth()) {
+            GeoSectionLabel("03", "远程绑定", "发布端级")
+            val publisherLabel = source.remotePublisherName?.takeIf { it.isNotBlank() } ?: "该发布端"
+            // 老来源可能没记下发布端身份：没有 publisherDeviceId 就发不出解绑请求，只提示到控制台处理。
+            if (source.remotePublisherDeviceId.isNullOrBlank()) {
+                GeoHint("这张远程来源没有记录发布端身份，无法在本机解除绑定；请在控制台处理。", GeoLampTone.Warning)
+            } else {
+                GeoHint("绑定按发布端生效：解除后「$publisherLabel」推给本机的所有来源都会停止，来源会从列表消失；对方重新关联后会再次出现。")
+                Spacer(Modifier.height(Geo.Gap))
+                GeoKey(
+                    onClick = { confirmUnbind = true },
+                    label = "解除绑定",
+                    icon = LucideIcons.CloudOff,
+                    tone = GeoTone.Danger,
+                    busy = unbinding
+                )
+            }
+        }
+    }
+
     if (source.mode == SourceCaptureMode.LocalCamera) {
         GeoDivider()
         Column(Modifier.fillMaxWidth().onGloballyPositioned { anchors[ParamAnchor.LENS] = it.positionInParent().y }) {
@@ -433,6 +463,24 @@ private fun SourceSection(
             onConfirm = {
                 confirmDelete = false
                 onDelete()
+            }
+        )
+    }
+    if (confirmUnbind) {
+        GeoConfirm(
+            title = "解除绑定",
+            text = "解除「${source.sourceName}」的推流绑定？该发布端的全部来源都会停止推给本机，来源随即从列表消失；对方重新关联后会再次出现。",
+            confirmLabel = "解除",
+            cancelEnabled = !unbinding,
+            onCancel = { if (!unbinding) confirmUnbind = false },
+            onConfirm = {
+                confirmUnbind = false
+                unbinding = true
+                scope.launch {
+                    val failure = onUnbind(source.remotePublisherDeviceId.orEmpty())
+                    unbinding = false
+                    failure?.let(onMessage)
+                }
             }
         )
     }

@@ -82,6 +82,11 @@ main { padding: 24px; flex: 1; min-width: 0; }
 .master-resizer > span { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 4px; height: 32px; border-radius: 2px; background: var(--border); }
 .master-resizer:hover > span, .master-resizer:focus-visible > span { background: var(--accent); }
 .master-resizer:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+/* 推流关联：一个绑定下一台发布端每个来源一路，逐路列状态。 */
+.push-source-list { list-style: none; display: grid; gap: 4px; margin: 12px 0 0; padding: 0; }
+.push-source-list > li { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 2px 12px; padding: 8px 0; border-top: 1px solid var(--border); }
+.push-source-list .push-source-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.push-source-list small { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
 .node-list { padding: 16px 0 0; overflow: hidden; position: sticky; top: 16px; }
 .node-list > .section-title, .directory-filters { padding: 0 12px; }
 .directory-filters { display: grid; gap: 8px; margin-bottom: 12px; }

@@ -44,6 +44,7 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <Grid Grid.Column="0">
                         <ComboBox Style="{StaticResource PaneComboBox}" ItemsSource="{Binding PushTargets}" SelectedItem="{Binding SelectedPushTarget, Mode=TwoWay}" DisplayMemberPath="DisplayName" IsEnabled="{Binding CanPickPushTarget}" ToolTip="同账号里的推理节点，离线与正在推流的节点也会列出并标注；也可以在控制台关联，两边是同一份绑定关系"/>
@@ -66,6 +67,7 @@
                         </TextBlock>
                     </Grid>
                     <Button Grid.Column="1" Content="刷新" Style="{StaticResource PaneButton}" Command="{Binding RefreshPushTargetsCommand}" ToolTip="重新读取同账号的推理节点" Margin="8,0,0,0"/>
+                    <Button Grid.Column="2" Content="解除关联" Style="{StaticResource PaneButton}" Command="{Binding UnbindPushTargetCommand}" ToolTip="解除本节点的推流目标；本节点所有来源一起解绑，被动方与控制台也能解" Margin="8,0,0,0"/>
                 </Grid>
                 <TextBlock Text="{Binding PushTargetText, StringFormat=当前目标：{0}}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                 <TextBlock Text="{Binding PushTargetHint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0" Visibility="{Binding HasPushTargetHint, Converter={StaticResource BoolToVis}}"/>

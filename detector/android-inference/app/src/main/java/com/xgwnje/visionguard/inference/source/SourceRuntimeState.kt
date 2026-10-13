@@ -48,6 +48,8 @@ data class SourceView(
     val masks: List<MaskRegion>,
     val cameraLensFacing: Int,
     val remotePublisherName: String?,
+    /** 发布端设备 ID：本机作为被动方要解除绑定时用它；没有记录的老来源为 null。 */
+    val remotePublisherDeviceId: String?,
     val state: SourceRuntimeState
 )
 

@@ -9,6 +9,7 @@ import androidx.core.content.ContextCompat
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.xgwnje.visionguard.account.AccountHttpException
 import com.xgwnje.visionguard.account.AccountSession
 import com.xgwnje.visionguard.account.AccountStore
 import com.xgwnje.visionguard.account.TemporaryCache
@@ -53,6 +54,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
 import java.security.MessageDigest
 
 /**
@@ -271,6 +273,7 @@ class InferenceRuntime private constructor(private val context: Context) {
                 masks = runtime.masks,
                 cameraLensFacing = runtime.config.cameraLensFacing,
                 remotePublisherName = runtime.config.remotePublisherName,
+                remotePublisherDeviceId = runtime.config.remotePublisherDeviceId,
                 state = runtime.state.value
             )
         }
@@ -314,6 +317,32 @@ class InferenceRuntime private constructor(private val context: Context) {
         publishSources()
         media.setWanted(settings.sources().any { it.mode == SourceCaptureMode.RemoteStream })
         return null
+    }
+
+    /**
+     * 本机作为被动方解除某台发布端的推流绑定。
+     *
+     * 绑定是发布端级的：解掉后该发布端的所有来源一起停止推给本机，来源随服务端下发的
+     * `stream-list` 一起消失，本机不自行删除配置。与服务端一致，控制台、发布端自己与被推的
+     * 被动方都能解。成功返回 null；失败返回可读文案，403 / 404 与网络失败分开表达。
+     */
+    suspend fun unbindRemotePublisher(publisherDeviceId: String): String? {
+        if (publisherDeviceId.isBlank()) return "这张远程来源没有记录发布端身份，无法在本机解除；请在控制台处理"
+        return try {
+            account.request("/api/streams/unbind", "POST", org.json.JSONObject().put("publisherDeviceId", publisherDeviceId))
+            null
+        } catch (error: AccountHttpException) {
+            when (error.status) {
+                401 -> "登录已失效，请重新登录"
+                403 -> "没有权限解除这条绑定"
+                404 -> "当前没有这条绑定，可能已在控制台解除"
+                else -> error.message?.takeIf { it.isNotBlank() } ?: "解除绑定失败（${error.status}）"
+            }
+        } catch (error: IOException) {
+            "无法连接统一服务，请检查网络与服务地址"
+        } catch (error: Exception) {
+            error.message?.takeIf { it.isNotBlank() } ?: "解除绑定失败"
+        }
     }
 
     fun renameSource(sourceId: String, name: String): String? {
