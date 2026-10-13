@@ -73,10 +73,37 @@ namespace VisionGuard.Detector.Windows.Services
             var preview = PreviewFrame;
             if (preview != null)
             {
-                try { preview(this, new PublishedFrame((Bitmap)bitmap.Clone())); }
+                try { preview(this, new PublishedFrame(CloneIndependent(bitmap))); }
                 catch { }
             }
             return new PublishedFrame(bitmap);
+        }
+
+        /// <summary>
+        /// 预览副本必须是**独立像素缓冲**：`Bitmap.Clone()` 走 GDI+ 的 copy-on-write，会与编码线程共享同一块像素，
+        /// 界面线程转 HBITMAP 与发布线程缩放同时发生时就可能互等挂死（实测栈见 GdiGate 注释）。
+        /// 这里显式画到一张新位图，彻底断开共享。
+        /// </summary>
+        private static Bitmap CloneIndependent(Bitmap source)
+        {
+            return Utils.GdiGate.Run(() =>
+            {
+                var copy = new Bitmap(source.Width, source.Height, System.Drawing.Imaging.PixelFormat.Format24bppRgb);
+                try
+                {
+                    using (var graphics = Graphics.FromImage(copy))
+                    {
+                        graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+                        graphics.DrawImageUnscaled(source, 0, 0);
+                    }
+                    return copy;
+                }
+                catch
+                {
+                    copy.Dispose();
+                    throw;
+                }
+            });
         }
 
         public void Dispose()

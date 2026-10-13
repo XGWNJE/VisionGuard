@@ -120,7 +120,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             // 独立配置探针允许不连接服务。
             if (_server != null)
             {
-                _server.SourceLimitReceived += (_, limit) => Application.Current.Dispatcher.Invoke(() => ApplySourceLimit(limit));
+                _server.SourceLimitReceived += (_, limit) => Dispatch(() => ApplySourceLimit(limit));
                 _server.StreamsReceived += (_, streams) =>
                 {
                     int generation = _viewGeneration;

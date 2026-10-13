@@ -386,44 +386,56 @@ namespace VisionGuard.Detector.Windows.Services
             => socket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(SimpleJson.ToJson(value))),
                 WebSocketMessageType.Text, true, _stop.Token).GetAwaiter().GetResult();
 
-        /// <summary>等比缩放到契约上限；超出才缩放，不做放大。返回的位图由调用方 Dispose。</summary>
+        /// <summary>
+        /// 等比缩放到契约上限；超出才缩放，不做放大。返回的位图由调用方 Dispose。
+        /// 全程在 GDI+ 闸门内：界面线程正在把采集副本转成 BitmapSource 时，这里不与它抢同一族 GDI+ 资源。
+        /// </summary>
         public static Bitmap ScaleToContract(Bitmap source)
         {
-            int width = source.Width, height = source.Height;
-            int longEdge = Math.Max(width, height), shortEdge = Math.Min(width, height);
-            if (longEdge <= MaximumLongEdge && shortEdge <= MaximumShortEdge) return new Bitmap(source);
-            double scale = Math.Min(MaximumLongEdge / (double)longEdge, MaximumShortEdge / (double)shortEdge);
-            int targetW = Math.Max(1, (int)Math.Round(width * scale)), targetH = Math.Max(1, (int)Math.Round(height * scale));
-            var scaled = new Bitmap(targetW, targetH, PixelFormat.Format24bppRgb);
-            using (var graphics = Graphics.FromImage(scaled))
+            return GdiGate.Run(() =>
             {
-                graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                graphics.DrawImage(source, 0, 0, targetW, targetH);
-            }
-            return scaled;
+                int width = source.Width, height = source.Height;
+                int longEdge = Math.Max(width, height), shortEdge = Math.Min(width, height);
+                if (longEdge <= MaximumLongEdge && shortEdge <= MaximumShortEdge) return new Bitmap(source);
+                double scale = Math.Min(MaximumLongEdge / (double)longEdge, MaximumShortEdge / (double)shortEdge);
+                int targetW = Math.Max(1, (int)Math.Round(width * scale)), targetH = Math.Max(1, (int)Math.Round(height * scale));
+                var scaled = new Bitmap(targetW, targetH, PixelFormat.Format24bppRgb);
+                using (var graphics = Graphics.FromImage(scaled))
+                {
+                    graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    graphics.DrawImage(source, 0, 0, targetW, targetH);
+                }
+                return scaled;
+            });
         }
 
         /// <summary>编码为 JPEG（质量 55）并自检 EOI 与 SOF 尺寸，不合格的帧直接丢弃；宽高为编码后的尺寸。</summary>
         private static byte[]? EncodeJpeg(PublishedFrame frame, out int width, out int height)
         {
-            width = 0; height = 0;
-            using (var scaled = ScaleToContract(frame.Bitmap))
-            using (var stream = new MemoryStream())
+            int encodedWidth = 0, encodedHeight = 0;
+            // 缩放与 JPEG 编码都是 GDI+ 操作，与界面线程的位图转换走同一道闸门（lock 可重入，嵌套 ScaleToContract 安全）。
+            byte[]? encoded = GdiGate.Run<byte[]?>(() =>
             {
-                var codec = FindJpegCodec();
-                if (codec == null) return null;
-                var parameters = new EncoderParameters(1);
-                parameters.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, JpegQuality);
-                scaled.Save(stream, codec, parameters);
-                byte[] bytes = stream.ToArray();
-                if (bytes.Length < 4 || bytes[0] != 0xff || bytes[1] != 0xd8
-                    || bytes[bytes.Length - 2] != 0xff || bytes[bytes.Length - 1] != 0xd9) return null;
-                if (!JpegDimensionsMatch(bytes, scaled.Width, scaled.Height)) return null;
-                // 帧头必须写这里返回的尺寸：JPEG 里记录的就是缩放后的宽高，写原始尺寸会被中继判为非法帧。
-                width = scaled.Width; height = scaled.Height;
-                return bytes;
-            }
+                using (var scaled = ScaleToContract(frame.Bitmap))
+                using (var stream = new MemoryStream())
+                {
+                    var codec = FindJpegCodec();
+                    if (codec == null) return null;
+                    var parameters = new EncoderParameters(1);
+                    parameters.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, JpegQuality);
+                    scaled.Save(stream, codec, parameters);
+                    byte[] bytes = stream.ToArray();
+                    if (bytes.Length < 4 || bytes[0] != 0xff || bytes[1] != 0xd8
+                        || bytes[bytes.Length - 2] != 0xff || bytes[bytes.Length - 1] != 0xd9) return null;
+                    if (!JpegDimensionsMatch(bytes, scaled.Width, scaled.Height)) return null;
+                    // 帧头必须写这里返回的尺寸：JPEG 里记录的就是缩放后的宽高，写原始尺寸会被中继判为非法帧。
+                    encodedWidth = scaled.Width; encodedHeight = scaled.Height;
+                    return bytes;
+                }
+            });
+            width = encodedWidth; height = encodedHeight;
+            return encoded;
         }
 
         private static ImageCodecInfo? FindJpegCodec()
