@@ -88,7 +88,9 @@ class MediaClient(
                     if (now - lastResponseAt > STALL_TIMEOUT_MS) {
                         drop()
                         update { it.copy(statusText = "媒体无响应，正在重连") }
-                    } else if (now - lastHeartbeatAt >= HEARTBEAT_INTERVAL_MS) {
+                    } else if (mutableState.value.authenticated && now - lastHeartbeatAt >= HEARTBEAT_INTERVAL_MS) {
+                        // 心跳必须在 media-ready（认证完成）之后才发：部署实例对连接的第一条消息跑协议版本闸门，
+                        // 抢在 media-auth 之前发不带 version 的心跳会让整条媒体连接被判 protocol mismatch。
                         lastHeartbeatAt = now
                         if (socket?.send(JsonObject().apply { addProperty("type", "media-heartbeat") }.let(gson::toJson)) != true) drop()
                     }
@@ -126,6 +128,9 @@ class MediaClient(
                             addProperty("type", "media-auth")
                             addProperty("token", value.token)
                             addProperty("direction", "subscribe")
+                            // 媒体通道与业务通道共用同一道协议版本闸门：部署实例按 version 放行，
+                            // 缺字段的端点在握手阶段就被静默出局（本地/测试实例 protocolGate=false 看不出来）。
+                            addProperty("version", com.xgwnje.visionguard.inference.AppConstants.VERSION)
                         }
                         if (!ws.send(gson.toJson(request))) drop()
                     }
@@ -172,24 +177,7 @@ class MediaClient(
             }
 
             "stream-list" -> {
-                val own = value.deviceId
-                val streams = body.arr("streams")?.mapNotNull { element ->
-                    val item = element.asJsonObject
-                    if (item.string("targetDeviceId") != own) return@mapNotNull null
-                    val streamId = item.string("streamId") ?: return@mapNotNull null
-                    val sourceId = item.string("sourceId")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-                    RemoteStream(
-                        streamId = streamId,
-                        publisherDeviceId = item.string("publisherDeviceId") ?: "",
-                        publisherName = item.string("publisherName") ?: "",
-                        targetDeviceId = own,
-                        sourceId = sourceId,
-                        sourceName = item.string("sourceName") ?: "",
-                        isStreaming = item.boolean("isStreaming"),
-                        stopReason = item.string("stopReason")
-                    )
-                } ?: emptyList()
-
+                val streams = parseRemoteStreams(value.deviceId, body)
                 streamToSource = streams.associate { it.streamId to it.sourceId }
                 val live = streams.map { it.streamId }.toSet()
                 store.retainStreams(live)

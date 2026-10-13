@@ -51,6 +51,32 @@ data class RemoteStream(
 )
 
 /**
+ * `stream-list` 解析：控制通道与媒体通道下发同一份条目，按本机 `targetDeviceId` 过滤。
+ *
+ * 两个通道共用一份实现：控制通道在认证后与每次绑定变化时都会通告，媒体通道在订阅握手后通告；
+ * 只认媒体通道会让「还没有任何远程来源」的新节点永远收不到第一条流。
+ */
+fun parseRemoteStreams(ownDeviceId: String, body: JsonObject): List<RemoteStream> {
+    val items = body.arr("streams") ?: return emptyList()
+    return items.mapNotNull { element ->
+        val item = element.asJsonObject
+        if (item.string("targetDeviceId") != ownDeviceId) return@mapNotNull null
+        val streamId = item.string("streamId") ?: return@mapNotNull null
+        val sourceId = item.string("sourceId")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+        RemoteStream(
+            streamId = streamId,
+            publisherDeviceId = item.string("publisherDeviceId") ?: "",
+            publisherName = item.string("publisherName") ?: "",
+            targetDeviceId = ownDeviceId,
+            sourceId = sourceId,
+            sourceName = item.string("sourceName") ?: "",
+            isStreaming = item.boolean("isStreaming"),
+            stopReason = item.string("stopReason")
+        )
+    }
+}
+
+/**
  * 统一服务控制通道（`/ws`）。
  *
  * 与 Windows `Services/ServerPushService.cs` 同一契约：认证 → 每 3 秒心跳 → 收到心跳回执后才发送
@@ -65,7 +91,9 @@ class ControlClient(
     private val onFlushAlerts: () -> Unit,
     private val onScreenshotRequested: (alertId: String) -> Unit,
     private val onAlertAck: (alertId: String, accepted: Boolean, duplicate: Boolean, reason: String) -> Unit,
-    private val onDeviceUpdated: (JsonObject) -> Unit
+    private val onDeviceUpdated: (JsonObject) -> Unit,
+    /** 控制通道下发的流列表：与媒体通道同源，用来建立（含第一条）远程来源。 */
+    private val onStreamsChanged: (List<RemoteStream>) -> Unit
 ) {
     private val gson = Gson()
     private val mutableState = MutableStateFlow(ControlState())
@@ -232,6 +260,9 @@ class ControlClient(
             }
 
             "device-updated" -> body.obj("device")?.let(onDeviceUpdated)
+
+            // 服务端在认证后与每次绑定变化时都会在控制通道通告流列表：新节点靠它建立第一条远程来源。
+            "stream-list" -> onStreamsChanged(parseRemoteStreams(value.deviceId, body))
 
             "kicked" -> {
                 update { it.copy(statusText = "已被服务端断开：${body.string("reason") ?: "未知原因"}") }

@@ -146,7 +146,8 @@ class InferenceRuntime private constructor(private val context: Context) {
         onDeviceUpdated = { device ->
             // 共享账号仓库使用 org.json，这里把 Gson 消息转成同一表示后再落盘改名。
             scope.launch { runCatching { account.updateDevice(org.json.JSONObject(device.toString())) } }
-        }
+        },
+        onStreamsChanged = ::handleStreamsChanged
     )
     private val media: MediaClient = MediaClient(
         account = account,
@@ -430,6 +431,9 @@ class InferenceRuntime private constructor(private val context: Context) {
                 changed = true
             }
             if (changed) rebuildRuntimes()
+            // 远程来源的有无决定媒体通道是否需要连接：服务端刚建立的第一条流也要据此把通道拉起来，
+            // 否则新节点会停在「控制通道已连接、媒体通道不连」的死角。
+            media.setWanted(settings.sources().any { it.mode == SourceCaptureMode.RemoteStream })
         }
     }
 
