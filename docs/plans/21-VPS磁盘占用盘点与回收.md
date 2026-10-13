@@ -59,7 +59,7 @@
 
 | 操作 | 回收 | 说明 |
 |---|---|---|
-| `journald.conf` 设 `SystemMaxUse=512M` | ~384M | 共享 journal，对应[待办 9](../06-待办.md#待办)；改动前协调并留证 |
+| `journald.conf` 设 `SystemMaxUse=512M` | ~384M | 共享 journal，已复核本轮不动（901.3 MB / 上限约 960 MB，约 5% 来自本项目）；改动前与 `Server-infra` 协调并留证，依据见[共享 journal 处置结论](../90-验证记录.md#共享-journal-处置结论2026-10-11-复核) |
 
 合计候选约 **1.4G**（A 约 420M、B 约 680M、C 约 384M）。
 
