@@ -124,12 +124,9 @@ function assertedAbsent(text, item) {
  * 这类文件本来就不在仓库里，CI 检出时一律不存在，不能算护栏失效引用。
  */
 function ignoredPath(base, item) {
-  // 目录型规则带结尾斜杠（`.gitignore` 里的 `server/data/models/`），而路径可能已经不存在，
-  // 所以两种写法都问一次 Git。
-  const candidates = item.endsWith('/') ? [item] : [item, `${item}/`];
-  return candidates.some(candidate => {
-    try { execFileSync('git', ['check-ignore', '-q', '--', candidate], { cwd: base, stdio: 'ignore' }); return true; } catch { return false; }
-  });
+  // 按文件路径问 Git 是否被忽略。只认这一种判定：目录型规则（`server/data/models/`）需要结尾斜杠，
+  // 而对不存在的路径补斜杠会命中 `.gitignore` 里的宽泛目录规则、把正常引用也判成忽略，得不偿失。
+  try { execFileSync('git', ['check-ignore', '-q', '--', item], { cwd: base, stdio: 'ignore' }); return true; } catch { return false; }
 }
 
 function scanExistingGuards(base = root) {
