@@ -8,6 +8,14 @@ const { releaseFileName } = require('./sync-version');
 const DEFAULT_ROOT = path.resolve(__dirname, '..');
 const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 
+// 文档布局的固定入口：长期专题平铺在 docs/，发行说明在 docs/releases/，
+// 待办的细节计划在 docs/plans/，待办本身是 docs/06-待办.md。
+const DOCS_INDEX_PATH = 'docs/00-文档索引.md';
+const TODO_PATH = 'docs/06-待办.md';
+const PLAN_DIRECTORY = 'docs/plans';
+const RELEASE_DIRECTORY = 'docs/releases';
+const PLAN_FILE_PATTERN = /^\d+-[^/]*[\u4e00-\u9fff][^/]*\.md$/;
+
 const COMPONENTS = [
   { label: '视觉推理节点', platform: 'Windows', relativePath: 'detector/windows-wpf', source: 'detector/windows-wpf/App.xaml.cs' },
   { label: '视觉推理节点', platform: 'Android', relativePath: 'detector/android-inference', source: 'detector/android-inference/app/build.gradle.kts' },
@@ -599,131 +607,157 @@ function checkEvidencePaths(root, documents, errors) {
 
 function checkIndexCoverage(docsFiles, index, releaseIndex, errors) {
   for (const relativePath of docsFiles) {
-    if (relativePath === 'docs/00-文档索引.md') continue;
-    const release = relativePath.startsWith('docs/releases/') && relativePath !== 'docs/releases/README.md';
-    const target = path.posix.relative(release ? 'docs/releases' : 'docs', relativePath);
-    requireText(release ? releaseIndex : index, `](${target})`, release ? 'docs/releases/README.md' : 'docs/00-文档索引.md', `navigation for ${target}`, errors);
+    if (relativePath === DOCS_INDEX_PATH) continue;
+    // 待办的细节计划不进文档索引：它们由 06-待办 的对应条目登记（见 checkPlanDocuments）。
+    if (relativePath.startsWith(PLAN_DIRECTORY + '/')) continue;
+    const release = relativePath.startsWith(RELEASE_DIRECTORY + '/') && relativePath !== RELEASE_DIRECTORY + '/README.md';
+    const target = path.posix.relative(release ? RELEASE_DIRECTORY : 'docs', relativePath);
+    requireText(release ? releaseIndex : index, `](${target})`, release ? RELEASE_DIRECTORY + '/README.md' : DOCS_INDEX_PATH, `navigation for ${target}`, errors);
   }
 }
 
 function checkDocumentLayout(docsFiles, contents, errors) {
   for (const relativePath of docsFiles) {
+    const planPrefix = PLAN_DIRECTORY + '/';
+    const isPlan = relativePath.startsWith(planPrefix)
+      && PLAN_FILE_PATTERN.test(relativePath.slice(planPrefix.length));
     if (!/^docs\/\d+-[^/]*[\u4e00-\u9fff][^/]*\.md$/.test(relativePath) &&
-        !/^docs\/releases\/(?:README|v\d+\.\d+\.\d+)\.md$/.test(relativePath)) {
-      errors.push(`[layout] ${relativePath} must be a numbered Chinese topic or a versioned release note`);
+        !/^docs\/releases\/(?:README|v\d+\.\d+\.\d+)\.md$/.test(relativePath) &&
+        !isPlan) {
+      errors.push(`[layout] ${relativePath} must be a numbered Chinese topic, a versioned release note, or a 待办 plan under ${PLAN_DIRECTORY}/`);
     }
-    if (/^docs\/\d+-发行说明/.test(relativePath)) errors.push(`[layout] ${relativePath} belongs in docs/releases/`);
+    if (/^docs\/\d+-发行说明/.test(relativePath)) errors.push(`[layout] ${relativePath} belongs in ${RELEASE_DIRECTORY}/`);
     const beginning = (contents.get(relativePath) || '').split(/\r?\n/).slice(0, 8).join('\n');
     for (const responsibility of ['负责：', '不负责：', '更新时机：']) requireText(beginning, responsibility, relativePath, 'document scope', errors);
   }
 }
 
-// 任务清单与路线图合并成一份，章节顺序即阅读优先级：总览在最前，「现在要做的」次之，
-// 「以后要做的」再次，分支归属与口径边界放最后——每次必看的在前，偶尔才查的在后。
-const TASK_LIST_HEADINGS = [
-  '# 任务清单与路线图',
-  '## 现在要做的',
-  '### 高：能被立刻解决、且不解决就一直硌着',
-  '### 中：影响真实部署质量，但可以排期',
-  '### 低 / 待外部条件',
-  '## 以后要做的',
-  '## 任务与分支对应',
-  '## 口径与边界'
-];
+// 待办是待办与方向的唯一入口：一份极简列表，章节顺序即阅读优先级。
+// 书写规则（一条一行、优先级即顺序、编号唯一稳定）与计划文档的增删绑定都固化在这里：
+// 待办完成或取消时，条目与它链接的计划文档必须一起删除，否则本检查会红。
+const TODO_HEADINGS = ['# 待办', '## 待办', '## 分支', '## 口径'];
+const TODO_PRIORITY_ORDER = ['高', '中', '低'];
+const TODO_LINE_LIMIT = 200;
+const TODO_ITEM_PATTERN = /^- \*\*(\d+) · ([^*]+?)\*\*（(高|中|低)[^）]*）——\S/;
+const TODO_PLAN_LINK_PATTERN = /]\(plans\/(\d+)-[^)]*\)/g;
+
+function hasMarkdownTable(lines) {
+  return lines.some((line) => /^\s*\|[\s:|-]+\|\s*$/.test(line));
+}
+
+/** `## 待办` 一节里的条目行，含它链接的计划文档编号。 */
+function collectTodoItems(lines) {
+  const start = lines.indexOf('## 待办');
+  const end = lines.indexOf('## 分支');
+  if (start < 0 || end <= start) return null;
+  const items = [];
+  for (const line of lines.slice(start + 1, end)) {
+    if (!line.startsWith('- ')) continue;
+    const match = line.match(TODO_ITEM_PATTERN);
+    items.push({
+      line,
+      order: match ? Number(match[1]) : NaN,
+      title: match ? match[2].trim() : '',
+      priority: match ? match[3] : '',
+      plans: [...line.matchAll(TODO_PLAN_LINK_PATTERN)].map((link) => Number(link[1]))
+    });
+  }
+  return items;
+}
 
 function checkTaskListContract(taskList, errors) {
-  const relativePath = 'docs/06-任务清单.md';
+  const relativePath = TODO_PATH;
   const lines = taskList.split(/\r?\n/);
-  // 只认 1-3 级标题，且跳过带编号的小节：`#### N. 事项` 与 `### N. 方向` 是明细，不参与章节顺序比对。
   const headings = lines
     .map((line) => line.match(/^#{1,3}\s+(?!\d+\.\s)(.+?)\s*#*$/))
     .filter(Boolean)
     .map((match) => match[0].trimEnd());
-  if (JSON.stringify(headings) !== JSON.stringify(TASK_LIST_HEADINGS)) {
-    errors.push(`[contract] ${relativePath} must keep the fixed chapters in order: ${TASK_LIST_HEADINGS.join(' / ')}; found: ${headings.join(' / ') || '(none)'}`);
+  if (JSON.stringify(headings) !== JSON.stringify(TODO_HEADINGS)) {
+    errors.push(`[contract] ${relativePath} must keep the fixed chapters in order: ${TODO_HEADINGS.join(' / ')}; found: ${headings.join(' / ') || '(none)'}`);
     return;
   }
   if (!lines.some((line) => /^>\s+\*\*当前状态/.test(line))) {
     errors.push(`[contract] ${relativePath} must open with a 当前状态 callout so the newest state reads first`);
   }
   if (hasMarkdownTable(lines)) {
-    errors.push(`[contract] ${relativePath} must use labelled bullets instead of tables`);
+    errors.push(`[contract] ${relativePath} must use one-line bullets instead of tables`);
   }
 
-  // 现在要做的：编号长期沿用，只要求唯一（历史记录要能对上，所以不要求连续）。
-  const currentItems = collectNumberedSections(sliceSection(lines, '## 现在要做的', '## 以后要做的'), 4);
+  const items = collectTodoItems(lines);
+  if (!items || items.length === 0) {
+    errors.push(`[contract] ${relativePath} has no numbered 待办 items under 待办`);
+    return;
+  }
   const seen = new Set();
-  for (const item of currentItems) {
+  let rank = -1;
+  for (const item of items) {
+    if (!TODO_ITEM_PATTERN.test(item.line)) {
+      errors.push(`[contract] ${relativePath} has a bullet that is not one item line (\`- **编号 · 标题**（优先级）——做什么\`): ${item.line}`);
+      continue;
+    }
     if (seen.has(item.order)) {
       errors.push(`[contract] ${relativePath} repeats item number ${item.order}: ${item.title}`);
     }
     seen.add(item.order);
-    checkLabelledBullets(relativePath, 'item', item, errors);
-  }
-
-  // 以后要做的：编号跟着内容自适应，从 1 连续，删掉一个方向其余自动前移。
-  const directions = collectNumberedSections(sliceSection(lines, '## 以后要做的', '## 任务与分支对应'), 3);
-  if (directions.length === 0) {
-    errors.push(`[contract] ${relativePath} has no numbered direction sections under 以后要做的`);
-  }
-  directions.forEach((item, index) => {
-    if (item.order !== index + 1) {
-      errors.push(`[contract] ${relativePath} direction numbers must restart at 1 and stay consecutive (expected ${index + 1}, found ${item.order}): ${item.title}`);
+    // 编号长期沿用、不重排，所以不要求连续；顺序只由优先级决定。
+    const current = TODO_PRIORITY_ORDER.indexOf(item.priority);
+    if (current < rank) {
+      errors.push(`[contract] ${relativePath} item ${item.order} is ${item.priority} but follows a lower priority; keep the list sorted ${TODO_PRIORITY_ORDER.join(' → ')}`);
     }
-  });
-  for (const item of directions) checkLabelledBullets(relativePath, 'direction', item, errors);
+    rank = Math.max(rank, current);
+    if ([...item.line].length > TODO_LINE_LIMIT) {
+      errors.push(`[contract] ${relativePath} item ${item.order} is longer than ${TODO_LINE_LIMIT} characters; move the detail into a ${PLAN_DIRECTORY}/ plan`);
+    }
+    if (item.plans.length > 1) {
+      errors.push(`[contract] ${relativePath} item ${item.order} links ${item.plans.length} plan documents; keep at most one`);
+    }
+    for (const plan of item.plans) {
+      if (plan !== item.order) {
+        errors.push(`[contract] ${relativePath} item ${item.order} links a plan numbered ${plan}; the plan must carry its own 待办 number`);
+      }
+    }
+  }
 }
 
-// 任务清单与路线图共用同一套排版契约：每个方向/事项一小节，要点用加粗小标签开头，
-// 长度与条数设上限，防止再写成大段文字；两者都不用宽表格（Markdown 里挤成一团、窄屏没法读）。
-const BULLET_LENGTH_LIMIT = 220;
-const BULLETS_PER_SECTION = 6;
+/**
+ * 待办的细节计划：`docs/plans/<待办编号>-<中文名称>.md`，只在待办条目上登记。
+ * 完成或取消待办时必须一起删除——条目没了或没链接，计划文档就报错；
+ * 计划文档缺失、编号对不上条目，同样报错。
+ */
+function checkPlanDocuments(root, taskList, index, errors) {
+  for (const link of ['(plans/', '(docs/plans/']) {
+    if (index.includes(link)) {
+      errors.push(`[plan] ${DOCS_INDEX_PATH} must not list plan documents; they are registered by their 待办 entry in ${TODO_PATH}`);
+    }
+  }
 
-function hasMarkdownTable(lines) {
-  return lines.some((line) => /^\s*\|[\s:|-]+\|\s*$/.test(line));
-}
-
-/** 收集 `##` / `###` / `####` 下形如 `N. 标题` 的小节及其要点。 */
-function collectNumberedSections(lines, level) {
-  const marker = '#'.repeat(level);
-  const items = [];
-  let current = null;
-  for (const line of lines) {
-    const heading = line.match(new RegExp(`^${marker} (\\d+)\\.\\s+(\\S.*?)\\s*$`));
-    if (heading) {
-      current = { order: Number(heading[1]), title: line.trim(), points: [] };
-      items.push(current);
+  const directory = path.join(root, PLAN_DIRECTORY);
+  if (!fs.existsSync(directory)) {
+    return;
+  }
+  const seen = new Set();
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const relativePath = `${PLAN_DIRECTORY}/${entry.name}`;
+    if (entry.isDirectory()) {
+      errors.push(`[plan] ${relativePath} must not contain subdirectories`);
       continue;
     }
-    if (line.startsWith(`${marker} `) || /^#{1,6}\s/.test(line)) { current = null; continue; }
-    if (current && line.trim().startsWith('- ')) current.points.push(line.trim());
-  }
-  return items;
-}
-
-function checkLabelledBullets(relativePath, label, item, errors) {
-  if (item.points.length === 0) {
-    errors.push(`[contract] ${relativePath} ${label} ${item.order} needs at least one bullet`);
-  }
-  if (item.points.length > BULLETS_PER_SECTION) {
-    errors.push(`[contract] ${relativePath} ${label} ${item.order} has ${item.points.length} bullets; keep at most ${BULLETS_PER_SECTION}`);
-  }
-  for (const point of item.points) {
-    if (!/^- \*\*.+?\*\*\s*[:：]/.test(point)) {
-      errors.push(`[contract] ${relativePath} ${label} ${item.order} has a bullet without a bold label: ${point}`);
+    if (!entry.name.endsWith('.md') || !PLAN_FILE_PATTERN.test(entry.name)) {
+      errors.push(`[plan] ${relativePath} must be named <待办编号>-<中文名称>.md`);
+      continue;
     }
-    if ([...point].length > BULLET_LENGTH_LIMIT) {
-      errors.push(`[contract] ${relativePath} ${label} ${item.order} has a bullet longer than ${BULLET_LENGTH_LIMIT} characters`);
+    const order = Number(entry.name.slice(0, entry.name.indexOf('-')));
+    if (seen.has(order)) {
+      errors.push(`[plan] ${relativePath} duplicates the plan number ${order}`);
+    }
+    seen.add(order);
+    if (!new RegExp(`^- \\*\\*${order} · `, 'm').test(taskList)) {
+      errors.push(`[plan] ${relativePath} is not bound to a live 待办 ${order}; delete it together with its entry`);
+    }
+    if (!taskList.includes(`](plans/${entry.name})`)) {
+      errors.push(`[plan] ${relativePath} must be linked from its entry in ${TODO_PATH}`);
     }
   }
-}
-
-/** 取两个标题之间的行，供分节校验用。 */
-function sliceSection(lines, startHeading, endHeading) {
-  const start = lines.indexOf(startHeading);
-  const end = lines.indexOf(endHeading);
-  if (start < 0 || end < 0 || end <= start) return [];
-  return lines.slice(start + 1, end);
 }
 
 function checkVerificationVersionClaims(version, verificationReport, errors) {
@@ -897,7 +931,9 @@ function auditRepository(root = DEFAULT_ROOT) {
   checkCancelledPlans(root, markdownFiles, contents, errors);
 
   checkDocumentLayout(docsFiles, contents, errors);
-  checkTaskListContract(contents.get('docs/06-任务清单.md') || '', errors);
+  const taskList = contents.get(TODO_PATH) || '';
+  checkTaskListContract(taskList, errors);
+  checkPlanDocuments(root, taskList, index, errors);
 
   return errors;
 }
@@ -931,6 +967,7 @@ module.exports = {
   checkEvidencePaths,
   checkIndexCoverage,
   checkLicenseTexts,
+  checkPlanDocuments,
   checkProductContract,
   checkCancelledPlans,
   checkReadmeVersion,

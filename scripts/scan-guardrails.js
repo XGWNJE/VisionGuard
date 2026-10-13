@@ -2,7 +2,7 @@
 /**
  * 护栏扫描（guardrail scan）
  *
- * 双向体检，结果供 owner / agent 复核后登记进 docs/06-任务清单.md：
+ * 双向体检，结果供 owner / agent 复核后登记进 docs/06-待办.md：
  *   1. 重复犯错：同一个文件或同一类主题被反复修复；
  *   2. 护栏缺口：AGENTS.md 里的硬规则还没有对应的自动化检查；
  *   3. 护栏体检：现有检查里失效、重复、恒真或长期不动的部分——只加不减，护栏迟早变成负担。
@@ -253,7 +253,7 @@ function buildReport() {
   lines.push('');
   lines.push(`生成时间：${new Date().toISOString()}；修复类提交 ${commits.length} 条、验证记录条目 ${records.length} 条。`);
   lines.push('');
-  lines.push('本报告只列候选，供复核后登记进 [docs/06-任务清单.md](docs/06-任务清单.md)；不自动改动文档。');
+  lines.push('本报告只列候选，供复核后登记进 [docs/06-待办.md](docs/06-待办.md)；不自动改动文档。');
   lines.push('');
   lines.push('能稳定判定的部分（工作流引用、`continue-on-error`、恒真断言、检查脚本的失效引用）不在这里等人复核——`node scripts/scan-guardrails.js --check` 在每次 CI 里当硬检查跑，红了就修；下面是需要判断的候选。');
   lines.push('');
@@ -364,7 +364,7 @@ function buildReport() {
   lines.push('');
   lines.push('## 五、下一步');
   lines.push('');
-  lines.push('复核时两侧一起看：缺口该补就补，体检出的失效、重复、恒真项该删就删。确认要做的写进 [docs/06-任务清单.md](docs/06-任务清单.md) 的「现在要做的」；本报告不自动追加条目，也不自动改动任何检查。');
+  lines.push('复核时两侧一起看：缺口该补就补，体检出的失效、重复、恒真项该删就删。确认要做的按 [docs/06-待办.md](docs/06-待办.md) 的条目格式写进「待办」；本报告不自动追加条目，也不自动改动任何检查。');
   lines.push('');
 
   return lines.join('\n');

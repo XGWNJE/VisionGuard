@@ -79,7 +79,7 @@ powershell -ExecutionPolicy Bypass -File .\.agents\skills\visionguard-build\scri
 > [!NOTE]
 > **接下来，值得期待**
 >
-> 后续方向与本次实施进度见[任务清单与路线图](./docs/06-任务清单.md)。
+> 后续方向与当前进度见[待办](./docs/06-待办.md)。
 
 ## 文档与许可
 

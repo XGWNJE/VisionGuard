@@ -10,6 +10,7 @@ const {
   checkDocumentLayout,
   checkEvidencePaths,
   checkLicenseTexts,
+  checkPlanDocuments,
   checkProductContract,
   checkCancelledPlans,
   checkComponentContract,
@@ -54,13 +55,19 @@ test('new topic needs only the canonical index and releases use their own entry'
   assert.equal(misplaced.length, 1);
 });
 
-test('release layout accepts version files and rejects numbered notes or arbitrary subfolders', () => {
-  const docs = ['docs/80-新模块.md', 'docs/releases/README.md', 'docs/releases/v0.7.0.md', 'docs/114-发行说明v0.7.0.md', 'docs/other/说明.md'];
+test('release and plan layout accept their own files and reject other subfolders', () => {
+  const docs = ['docs/80-新模块.md', 'docs/releases/README.md', 'docs/releases/v0.7.0.md', 'docs/114-发行说明v0.7.0.md', 'docs/other/说明.md', 'docs/plans/15-方案.md', 'docs/plans/方案.md'];
   const contents = new Map(docs.map(p => [p, '# 标题\n\n负责：本主题。不负责：其他主题。更新时机：变化时。']));
   const errors = [];
   checkDocumentLayout(docs, contents, errors);
-  assert.equal(errors.length, 2);
+  assert.equal(errors.length, 3);
   assert.ok(errors.every(e => e.includes('[layout]')));
+});
+
+test('plan documents are registered by their todo entry instead of the index', () => {
+  const errors = [];
+  checkIndexCoverage(['docs/00-文档索引.md', 'docs/plans/15-方案.md'], '# Index', '# Releases', errors);
+  assert.deepEqual(errors, []);
 });
 
 test('stale artifact paths in current evidence documents are rejected', () => {
@@ -232,9 +239,9 @@ test('retired display names are rejected in current modules while version facts 
   assert.ok(errors.some(message => message.includes('40-Android相机节点.md')));
 });
 
-test('the task list keeps its fixed chapters, a status callout and labelled bullets', () => {
+test('the todo list keeps its chapters, one-line items, priorities and plan links', () => {
   const read = p => fs.readFileSync(path.join(root, p), 'utf8');
-  const valid = read('docs/06-任务清单.md');
+  const valid = read('docs/06-待办.md');
   const audit = (content) => {
     const errors = [];
     checkTaskListContract(content, errors);
@@ -243,33 +250,77 @@ test('the task list keeps its fixed chapters, a status callout and labelled bull
   assert.deepEqual(audit(valid), []);
 
   // 章节名与顺序是固定契约：改名一次即报错，且报错时必须点名期望的章节。
-  const renamed = audit(valid.replace('### 高：能被立刻解决、且不解决就一直硌着', '### 高：本季度要做的'));
+  const renamed = audit(valid.replace('## 口径', '## 边界'));
   assert.equal(renamed.length, 1);
   assert.ok(renamed[0].includes('fixed chapters in order'));
-  assert.ok(renamed[0].includes('### 高：能被立刻解决、且不解决就一直硌着'));
+  assert.ok(renamed[0].includes('## 口径'));
 
   // 最新状态用开头的引用块给出，读的人第一眼就能拿到。
   const noCallout = audit(valid.replace(/^> \*\*当前状态.*$/m, '当前状态：随便一句话。'));
   assert.ok(noCallout.some((error) => error.includes('当前状态 callout')));
 
-  // 不用宽表格。
+  // 极简列表：不用宽表格。
   const withTable = audit(`${valid}\n| 分支 | 状态 |\n|---|---|\n| main | 已推送 |\n`);
   assert.ok(withTable.some((error) => error.includes('instead of tables')));
 
-  const itemBullet = '- **为什么**：静音锁屏回归有收件证据，但最初漏收的根因仍未确认。';
-  const unlabelled = audit(valid.replace(itemBullet, '- 静音锁屏回归有收件证据，但最初漏收的根因仍未确认。'));
-  assert.ok(unlabelled.some((error) => error.includes('without a bold label')));
+  const item = valid.split(/\r?\n/).find((line) => line.startsWith('- **15 · '));
+  assert.ok(item);
 
-  const tooLong = audit(valid.replace(itemBullet, `- **为什么**：${'锁'.repeat(230)}`));
-  assert.ok(tooLong.some((error) => error.includes('longer than 220 characters')));
+  // 条目必须是一条带优先级的完整行。
+  const untagged = audit(valid.replace(item, '- **15 · 来源抽屉与设置抽屉分区清点**——没有优先级标签。'));
+  assert.ok(untagged.some((error) => error.includes('not one item line')));
 
-  // 事项编号是长期沿用的稳定标识：重号报错，但不要求连续（历史编号要能对上）。
-  const repeated = audit(valid.replace('#### 7. Qualcomm 真机验证', '#### 6. Qualcomm 真机验证'));
-  assert.ok(repeated.some((error) => error.includes('repeats item number 6')));
+  // 编号长期沿用、全局唯一。
+  const repeated = audit(valid.replace('- **6 · 校准集换成相机实拍**', '- **15 · 校准集换成相机实拍**'));
+  assert.ok(repeated.some((error) => error.includes('repeats item number 15')));
 
-  // 方向编号相反：跟着内容自适应，必须从 1 连续。
-  const gap = audit(valid.replace('### 2. 除手机推流节点以外的硬件节点', '### 3. 除手机推流节点以外的硬件节点'));
-  assert.ok(gap.some((error) => error.includes('direction numbers must restart at 1 and stay consecutive (expected 2, found 3)')));
+  // 顺序即优先级：低排在高/中之后才合法。
+  const unordered = audit(valid.replace('- **15 · 来源抽屉与设置抽屉分区清点**（高', '- **15 · 来源抽屉与设置抽屉分区清点**（低'));
+  assert.ok(unordered.some((error) => error.includes('keep the list sorted')));
+
+  // 超过一行就写计划文档，不允许在待办里铺开。
+  const tooLong = audit(valid.replace(item, `- **15 · 来源抽屉与设置抽屉分区清点**（高）——${'锁'.repeat(210)}`));
+  assert.ok(tooLong.some((error) => error.includes('longer than 200 characters')));
+
+  // 计划文档编号必须与条目编号一致（否则就是挂错了条目）。
+  const mismatched = audit(valid.replace('](plans/15-来源抽屉与设置抽屉分区清点.md)', '](plans/6-来源抽屉与设置抽屉分区清点.md)'));
+  assert.ok(mismatched.some((error) => error.includes('links a plan numbered 6')));
+});
+
+test('plan documents stay bound to a live todo entry and are deleted with it', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'visionguard-plans-'));
+  try {
+    const plansDir = path.join(tempRoot, 'docs/plans');
+    fs.mkdirSync(path.join(plansDir, 'nested'), { recursive: true });
+    fs.writeFileSync(path.join(plansDir, '15-方案.md'), '# 方案\n');
+    fs.writeFileSync(path.join(plansDir, '7-孤儿.md'), '# 孤儿\n');
+    fs.writeFileSync(path.join(plansDir, '18-重复.md'), '# 重复\n');
+    fs.writeFileSync(path.join(plansDir, '18-再重复.md'), '# 再重复\n');
+    fs.writeFileSync(path.join(plansDir, '未编号.md'), '# 无编号\n');
+    fs.writeFileSync(path.join(plansDir, 'nested/16-子目录.md'), '# 子目录\n');
+
+    const taskList = [
+      '## 待办',
+      '',
+      '- **15 · 来源抽屉分区**（高）——做完了就删。计划：[方案](plans/15-方案.md)',
+      '- **18 · CI 变体**（中）——这条没有链接计划文档。',
+      '',
+      '## 分支'
+    ].join('\n');
+    const errors = [];
+    checkPlanDocuments(tempRoot, taskList, '# 文档索引\n\n- [注意](docs/plans/15-方案.md)', errors);
+    const joined = errors.join('\n');
+    // 待办删了、计划没删：孤儿文档必须红。
+    assert.match(joined, /docs\/plans\/7-孤儿\.md is not bound to a live 待办 7/);
+    assert.match(joined, /docs\/plans\/7-孤儿\.md must be linked from its entry/);
+    assert.match(joined, /duplicates the plan number 18/);
+    assert.match(joined, /docs\/plans\/未编号\.md must be named/);
+    assert.match(joined, /docs\/plans\/nested must not contain subdirectories/);
+    // 计划文档只在待办条目上登记，不许再铺进文档索引。
+    assert.match(joined, /00-文档索引\.md must not list plan documents/);
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test('MIT license and contribution policy cannot silently drift', () => {
