@@ -83,6 +83,7 @@ internal static class Program
             }
             WebSocketMessageProbe();
             RemoteFrameProbe();
+            MediaFrameContractProbe();
             AccountProbe();
             AccountThrottleProbe(false);
             AccountThrottleProbe(true);
@@ -212,9 +213,52 @@ internal static class Program
         Require(oldRejected, "Old media callback replaced a new connection frame");
         Require(notifications == 4, "Old connection callbacks advanced processing notifications");
     }
-    static void AccountProbe()
+    /// <summary>
+    /// 推流端的帧头契约：帧头宽高必须等于编码后 JPEG 的宽高，并落在中继上限内。
+    /// 采集源大于 1280x720（1080p 屏幕、最大化窗口）时会先缩放再编码；帧头若写原始尺寸，
+    /// 中继按「帧头与 JPEG 尺寸不一致」判非法帧并断开连接（4002），表现为推流端反复重连、一帧都不被确认。
+    /// </summary>
+    static void MediaFrameContractProbe()
     {
-        string directory = Path.Combine(Path.GetTempPath(), "VisionGuard-AccountMedia-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
+        var cases = new[] {
+            (width: 640, height: 480), (width: 1280, height: 720), (width: 1920, height: 1080),
+            (width: 2560, height: 1600), (width: 720, height: 1280)
+        };
+        foreach (var item in cases)
+        {
+            using var source = CreatePattern(item.width, item.height);
+            byte[]? packet = MediaPublishService.BuildPacket(new PublishedFrame(source), "probe-stream", "probe-session", 1, 1234567L);
+            Require(packet != null, $"Frame packet was rejected for a {item.width}x{item.height} source");
+            int headerLength = (packet![0] << 24) | (packet[1] << 16) | (packet[2] << 8) | packet[3];
+            Require(headerLength > 0 && 4 + headerLength < packet.Length, "Frame header length is out of range");
+            var header = JsonSerializer.Deserialize<JsonElement>(Encoding.UTF8.GetString(packet, 4, headerLength));
+            int headerWidth = header.GetProperty("width").GetInt32(), headerHeight = header.GetProperty("height").GetInt32();
+            using var payload = new MemoryStream(packet, 4 + headerLength, packet.Length - 4 - headerLength, writable: false);
+            using var jpeg = new Bitmap(payload);
+            Require(jpeg.Width == headerWidth && jpeg.Height == headerHeight,
+                $"Frame header {headerWidth}x{headerHeight} does not match the encoded JPEG {jpeg.Width}x{jpeg.Height} (source {item.width}x{item.height})");
+            Require(Math.Max(headerWidth, headerHeight) <= MediaPublishService.MaximumLongEdge && Math.Min(headerWidth, headerHeight) <= MediaPublishService.MaximumShortEdge,
+                $"Frame {headerWidth}x{headerHeight} exceeds the relay contract");
+            if (item.width <= MediaPublishService.MaximumLongEdge && item.height <= MediaPublishService.MaximumShortEdge)
+                Require(headerWidth == item.width && headerHeight == item.height, "A source inside the contract must not be resized");
+            else
+                Require(Math.Abs(headerWidth / (double)headerHeight - item.width / (double)item.height) < 0.02, "Scaling changed the aspect ratio");
+        }
+        Console.WriteLine("PASS frame header matches the encoded JPEG and the relay contract for over-sized capture sources");
+    }
+
+    static Bitmap CreatePattern(int width, int height)
+    {
+        var bitmap = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+        using var graphics = Graphics.FromImage(bitmap);
+        graphics.Clear(Color.FromArgb(24, 32, 44));
+        using var brush = new SolidBrush(Color.Orange);
+        graphics.FillEllipse(brush, width / 4f, height / 4f, width / 2f, height / 2f);
+        return bitmap;
+    }
+
+    static void AccountProbe()
+    {        string directory = Path.Combine(Path.GetTempPath(), "VisionGuard-AccountMedia-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(directory);
         Environment.SetEnvironmentVariable("VISIONGUARD_ACCOUNT_DIR", directory);
         var tcp = new TcpListener(IPAddress.Loopback, 0); tcp.Start(); int port = ((IPEndPoint)tcp.LocalEndpoint).Port; tcp.Stop();
         string url = "http://127.0.0.1:" + port; Environment.SetEnvironmentVariable("VISIONGUARD_SERVER_URL", url);

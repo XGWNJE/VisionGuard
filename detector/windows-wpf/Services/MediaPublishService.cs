@@ -251,27 +251,11 @@ namespace VisionGuard.Detector.Windows.Services
             try
             {
                 Utils.MediaDiagnostics.Write("[Publish] stage=encode");
-                byte[]? jpeg = EncodeJpeg(frame);
-                if (jpeg == null) { DroppedFrames++; SetStatus(PublishStatus.Faulted, "画面编码失败：无法生成符合契约的 JPEG。"); return false; }
                 long capturedAt = NextCapturedAt();
                 long sequence;
                 lock (_sync) { sequence = ++_sendSequence; }
-                byte[] header = Encoding.UTF8.GetBytes(SimpleJson.ToJson(new
-                {
-                    streamId = _streamId,
-                    sessionId = _sessionId,
-                    sequence,
-                    capturedAt,
-                    width = frame.Width,
-                    height = frame.Height,
-                    rotation = 0,
-                }));
-                if (header.Length > MaximumHeaderBytes) { DroppedFrames++; return false; }
-                var packet = new byte[4 + header.Length + jpeg.Length];
-                packet[0] = (byte)(header.Length >> 24); packet[1] = (byte)(header.Length >> 16);
-                packet[2] = (byte)(header.Length >> 8); packet[3] = (byte)header.Length;
-                Buffer.BlockCopy(header, 0, packet, 4, header.Length);
-                Buffer.BlockCopy(jpeg, 0, packet, 4 + header.Length, jpeg.Length);
+                byte[]? packet = BuildPacket(frame, _streamId, _sessionId, sequence, capturedAt);
+                if (packet == null) { DroppedFrames++; SetStatus(PublishStatus.Faulted, "画面编码失败：无法生成符合契约的 JPEG。"); return false; }
                 lock (_sync) { _inflight[sequence] = packet.Length; _inflightBytes += packet.Length; }
                 Utils.MediaDiagnostics.Write($"[Publish] stage=send seq={sequence}");
                 ws.SendAsync(new ArraySegment<byte>(packet), WebSocketMessageType.Binary, true, _stop.Token).GetAwaiter().GetResult();
@@ -284,6 +268,36 @@ namespace VisionGuard.Detector.Windows.Services
                 return true;
             }
             finally { frame.Bitmap.Dispose(); }
+        }
+
+        /// <summary>
+        /// 把一帧做成中继包（4 字节大端头长 + UTF-8 JSON 头 + JPEG）。
+        ///
+        /// 帧头里的宽高必须是**编码后**的尺寸：采集画面超过契约上限时先等比缩放再编码，JPEG 里记录的是
+        /// 缩放后的宽高，而服务端要求帧头与 JPEG 一致（`parseFrame`），不一致即判非法帧并断开（4002）。
+        /// 这里把「编码 + 写头」放在一处，测试可以直接覆盖大采集源这条路径。
+        /// </summary>
+        public static byte[]? BuildPacket(PublishedFrame frame, string streamId, string sessionId, long sequence, long capturedAt)
+        {
+            byte[]? jpeg = EncodeJpeg(frame, out int width, out int height);
+            if (jpeg == null) return null;
+            byte[] header = Encoding.UTF8.GetBytes(SimpleJson.ToJson(new
+            {
+                streamId,
+                sessionId,
+                sequence,
+                capturedAt,
+                width,
+                height,
+                rotation = 0,
+            }));
+            if (header.Length > MaximumHeaderBytes) return null;
+            var packet = new byte[4 + header.Length + jpeg.Length];
+            packet[0] = (byte)(header.Length >> 24); packet[1] = (byte)(header.Length >> 16);
+            packet[2] = (byte)(header.Length >> 8); packet[3] = (byte)header.Length;
+            Buffer.BlockCopy(header, 0, packet, 4, header.Length);
+            Buffer.BlockCopy(jpeg, 0, packet, 4 + header.Length, jpeg.Length);
+            return packet;
         }
 
         private long _sendSequence;
@@ -390,9 +404,10 @@ namespace VisionGuard.Detector.Windows.Services
             return scaled;
         }
 
-        /// <summary>编码为 JPEG（质量 55）并自检 EOI 与 SOF 尺寸，不合格的帧直接丢弃。</summary>
-        private static byte[]? EncodeJpeg(PublishedFrame frame)
+        /// <summary>编码为 JPEG（质量 55）并自检 EOI 与 SOF 尺寸，不合格的帧直接丢弃；宽高为编码后的尺寸。</summary>
+        private static byte[]? EncodeJpeg(PublishedFrame frame, out int width, out int height)
         {
+            width = 0; height = 0;
             using (var scaled = ScaleToContract(frame.Bitmap))
             using (var stream = new MemoryStream())
             {
@@ -404,7 +419,10 @@ namespace VisionGuard.Detector.Windows.Services
                 byte[] bytes = stream.ToArray();
                 if (bytes.Length < 4 || bytes[0] != 0xff || bytes[1] != 0xd8
                     || bytes[bytes.Length - 2] != 0xff || bytes[bytes.Length - 1] != 0xd9) return null;
-                return JpegDimensionsMatch(bytes, scaled.Width, scaled.Height) ? bytes : null;
+                if (!JpegDimensionsMatch(bytes, scaled.Width, scaled.Height)) return null;
+                // 帧头必须写这里返回的尺寸：JPEG 里记录的就是缩放后的宽高，写原始尺寸会被中继判为非法帧。
+                width = scaled.Width; height = scaled.Height;
+                return bytes;
             }
         }
 
