@@ -15,6 +15,8 @@ import { AppearanceSelector, useAppearance } from './appearance';
 import { Parameters, type ParameterDrafts } from './Parameters';
 import { RemoteSettings } from './RemoteSettings';
 import { WorkspaceTabs } from './WorkspaceTabs';
+import { NodeDirectoryResizer } from './NodeDirectoryResizer';
+import { NODE_DIRECTORY_DEFAULT_WIDTH, readNodeDirectoryWidth } from './nodeDirectory';
 import './style.css';
 
 function checkNamePaste(e: React.ClipboardEvent<HTMLInputElement>, onError: (message: string) => void) {
@@ -43,6 +45,8 @@ function App() {
   const [typeFilter, setTypeFilter] = useState('');
   const [onlineOnly,setOnlineOnly] = useState(false);
   const [nodeDetailOpen,setNodeDetailOpen] = useState(false);
+  const nodeDirectoryColumn = useRef<HTMLDivElement>(null);
+  const [nodeDirectoryWidth,setNodeDirectoryWidth] = useState<number|null>(() => readNodeDirectoryWidth(typeof window === 'undefined' ? null : window.localStorage));
   const [eventSearch,setEventSearch] = useState('');
   const [eventKind,setEventKind] = useState('');
   const [eventStart,setEventStart] = useState('');
@@ -111,13 +115,14 @@ function App() {
     <main className={page==='设置'?'settings-page':undefined}>
       <header className="page-header"><div><span className="eyebrow">控制台 / {page}</span><h1>{({节点:'节点工作区',事件:'事件记录',通知范围:'通知范围',设置:'设置',账号管理:'账号管理'} as Record<Page,string>)[page]}</h1></div><div className="toolbar"><span className="connection" role="status"><span className={'dot '+(relay.connected ? 'online' : '')}/>{relay.status}</span><button className="icon-button" aria-label="刷新" title="刷新节点与事件" onClick={relay.refresh} disabled={!relay.connected}><RefreshCw size={18}/></button></div></header>
       {sessionWarning && <p className="subtle" role="status">{sessionWarning}</p>}
-      {page === '节点' && <><div className="master-detail">
+      {page === '节点' && <><div className="master-detail resizable" ref={nodeDirectoryColumn} style={nodeDirectoryWidth===null?undefined:{'--node-list-width':`${nodeDirectoryWidth}px`} as React.CSSProperties}>
         <section className="panel node-list"><div className="overview-bar" aria-label="账号运行概览"><span><span>节点在线</span><strong>{nodes.filter(n=>n.online).length}<small> / {nodes.length}</small></strong></span><span><span>检测中</span><strong>{nodes.filter(n=>n.online&&!isCameraComponent(n.component)&&n.nodeType!=='notification'&&n.isMonitoring).length}</strong></span><span><span>推流中</span><strong>{relay.streams.filter(s=>s.isStreaming).length}</strong></span><button className="text-button" aria-label={`${relay.alerts.length} 条最近事件`} onClick={()=>setPage('事件')}><span>最近事件</span><strong>{relay.alerts.length}</strong><ChevronRight size={12}/></button></div><div className="section-title"><h2>节点目录</h2><span className="count-badge">{visibleNodes.length}</span></div><div className="directory-filters"><label className="search-field"><Search size={16}/><input aria-label="搜索节点名称" placeholder="搜索名称或设备 ID" value={search} onChange={e => setSearch(e.target.value)}/></label><div className="filter-row"><select aria-label="节点类型" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}><option value="">全部类型</option><option value="visual">视觉类型（推理 / 相机）</option><option value="sensor">传感器节点</option><option value="notification">通知节点</option></select><button type="button" className={'filter-toggle '+(onlineOnly?'active':'')} aria-pressed={onlineOnly} onClick={()=>setOnlineOnly(!onlineOnly)}>仅在线</button></div></div><div className="node-directory">
           {visibleNodes.length === 0 && <Empty text={nodes.length ? '没有匹配的节点' : '尚无已登记节点'} />}
           {visibleNodes.map(device => <button key={device.deviceId} aria-pressed={node?.deviceId === device.deviceId} className={'node-row '+(node?.deviceId === device.deviceId ? 'selected' : '')} onClick={() => { setSelected(device.deviceId); setNodeDetailOpen(true); }}>
             <span className="node-identity"><NodeIcon node={device}/><span><strong title={device.deviceName}>{device.deviceName}</strong><small>{typeLabel(device.nodeType,device.component)} · {device.platform}</small></span></span><span className="node-work"><span className={'dot '+(device.online ? 'online' : '')}/>{!device.online ? '离线' : isCameraComponent(device.component) ? (relay.streams.find(s=>s.publisherDeviceId===device.deviceId)?.isStreaming ? '正在推流' : '等待推流') : device.nodeType === 'notification' ? '通知服务已连接' : device.isMonitoring ? '检测中' : device.isReady ? '已就绪' : '未检测'}</span><ChevronRight className="node-chevron" size={16} aria-hidden="true"/>
           </button>)}
         </div></section>
+        <NodeDirectoryResizer width={nodeDirectoryWidth ?? NODE_DIRECTORY_DEFAULT_WIDTH} container={nodeDirectoryColumn} onChange={setNodeDirectoryWidth}/>
         <div className="detail-column">
           <button className="text-button node-back" onClick={()=>setNodeDetailOpen(false)}><ArrowLeft size={20}/>全部节点</button>
           {node ? <NodeDetail key={node.deviceId} node={node} drafts={parameterDrafts.current} acks={relay.acks} stream={relay.streams.find(s=>s.publisherDeviceId===node.deviceId)} timeZone={timeZone} connected={relay.connected} send={relay.send} events={<LatestNodeEvent node={node} alerts={relay.alerts} login={login} timeZone={timeZone} onOpen={setEvent}/>} management={<DeviceSettings key={`manage-${node.deviceId}`} node={node} nodes={nodes} streams={relay.streams} login={login} onChanged={relay.refresh}/>}><NodeContext node={node} nodes={nodes} stream={relay.streams.find(s=>s.publisherDeviceId===node.deviceId)} notifier={relay.notifiers.find(n=>n.deviceId===node.deviceId)} alerts={relay.alerts} login={login} timeZone={timeZone} onOpen={setEvent} onScope={()=>{setScopeSelected(node.deviceId);setPage('通知范围');}}/></NodeDetail> : <section className="panel"><Empty text="登录同一账号的节点将在这里显示"/></section>}

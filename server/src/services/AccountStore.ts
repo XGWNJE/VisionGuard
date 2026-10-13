@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { config } from '../config';
+import { PROTOCOL_VERSION } from './protocol';
 
 export type Component = 'web-console' | 'android-notifier' | 'android-camera' | 'web-camera' | 'windows-inference' | 'android-inference' | 'windows-resident';
 export interface Account { accountId: string; username: string; isAdmin?: boolean }
@@ -11,7 +12,8 @@ export interface AccountDevice {
 }
 export interface AccountSession { sessionId: string; account: Account; device: AccountDevice; expiresAt: string; parentId?: string }
 interface StoredAccount extends Account { salt: string; passwordHash: string; disabled?: boolean }
-interface StoredDevice extends AccountDevice { identityKey?: string }
+/** `version` 是端点最近一次声明的版本，只在服务端留存：节点目录与媒体视图据此判定可见性。 */
+interface StoredDevice extends AccountDevice { identityKey?: string; version?: string }
 interface StoredSession { sessionId: string; tokenHash: string; accountId: string; deviceId: string; component: Component; expiresAt: string; loginStartedAt?: number; parentId?: string }
 interface Data { accounts: StoredAccount[]; devices: StoredDevice[]; sessions: StoredSession[] }
 const SESSION_MS = 30 * 24 * 3600 * 1000;
@@ -30,7 +32,9 @@ function activeSession(session: StoredSession): boolean {
     || typeof session.loginStartedAt === 'number' && Number.isFinite(session.loginStartedAt) && expiry === session.loginStartedAt + WEB_SESSION_MS);
 }
 const DEVICE_NAMES = { 'web-console': '控制台', 'android-notifier': '通知节点', 'android-camera': '相机推流节点', 'web-camera': '相机推流节点', 'windows-inference': '视觉推理节点', 'android-inference': '视觉推理节点' };
-function publicDevice(device: StoredDevice): AccountDevice { const { identityKey: _private, ...value } = device; return value; }
+function publicDevice(device: StoredDevice): AccountDevice { const { identityKey: _private, version: _version, ...value } = device; return value; }
+/** 声明的版本归一为空串表示未声明；目录与旧版本端点一并隐藏。 */
+function declaredVersion(value: unknown): string { return typeof value === 'string' ? value.trim().slice(0, 24) : ''; }
 const tokenHash = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
 export class AccountError extends Error { constructor(readonly status: number, message: string) { super(message); } }
 export function validUsername(value: unknown): value is string { return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{2,63}$/.test(value); }
@@ -144,6 +148,8 @@ export class AccountStore {
       device = { accountId: account.accountId, deviceId: crypto.randomUUID(), identityKey,
         deviceName: `${DEVICE_NAMES[component]} · ${model.trim()}`, component, ...COMPONENTS[component] };
     }
+    // 登录即声明版本：未声明（空串）的端点不进节点目录，直到它按本版协议重新声明。
+    device = { ...device, version: declaredVersion(value.version) };
     const session = this.issue(nextAccount, device);
     const devices = this.data.devices.filter(item => !(item.deviceId === device!.deviceId && item.component === component));
     devices.push(device);
@@ -190,6 +196,25 @@ export class AccountStore {
       sessions: this.data.sessions.filter(item => item.accountId !== account.accountId) });
   }
   devices(accountId: string): AccountDevice[] { return this.data.devices.filter(item => item.accountId === accountId && item.role !== 'lifecycle').map(publicDevice); }
+  /** 节点目录与媒体视图只认已声明本版协议的设备：未声明或旧版本的端点不出现、也不占推流关联。
+   *  闸门只服务上线部署实例，本地/测试实例照常显示全部设备，跑链路与 UI 检查不受影响。 */
+  directoryDevices(accountId: string): AccountDevice[] {
+    return this.data.devices
+      .filter(item => item.accountId === accountId && item.role !== 'lifecycle' && (!config.protocolGate || item.version === PROTOCOL_VERSION))
+      .map(publicDevice);
+  }
+  /** 记录端点声明的版本；未声明记为空串。值没变时不落盘，避免心跳式重复写。 */
+  recordVersion(accountId: string, deviceId: string, component: Component, version: unknown): void {
+    const declared = declaredVersion(version);
+    const index = this.data.devices.findIndex(item => item.accountId === accountId && item.deviceId === deviceId && item.component === component);
+    if (index < 0 || this.data.devices[index].version === declared) return;
+    this.commit({ ...this.data, devices: this.data.devices.map((item, position) => position === index ? { ...item, version: declared } : item) });
+  }
+  /** 按会话令牌记录声明版本：闸门拒绝的端点也走这里，先落下方可将其从目录隐藏。 */
+  recordDeclaredVersion(token: unknown, version: unknown): void {
+    const session = this.authenticate(token);
+    if (session) this.recordVersion(session.account.accountId, session.device.deviceId, session.device.component, version);
+  }
   identities(accountId: string): AccountDevice[] { return this.data.devices.filter(item => item.accountId === accountId).map(publicDevice); }
   device(accountId: string, deviceId: string): AccountDevice | undefined { return this.devices(accountId).find(item => item.deviceId === deviceId); }
   rename(accountId: string, deviceId: string, deviceName: unknown): void {

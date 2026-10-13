@@ -134,7 +134,8 @@ export class MediaRelay {
       if (!Array.isArray(saved)) throw new Error('Invalid streams store');
       previous = saved.map(stream => ({ ...stream, isStreaming: false })); this.accounts.set(accountId, previous!);
     }
-    const devices = accountStore.devices(accountId);
+    // 推流视图只认按本版协议声明过版本的设备：未声明或旧版本的端点既不推流也不占绑定。
+    const devices = accountStore.directoryDevices(accountId);
     // 发布端按能力收集：相机组件，以及在推流态工作的 Windows 推理节点。
     const publishers = devices.filter(device => canPublishVideo(device.component));
     const inference = devices.filter(device => isInferenceComponent(device.component));
@@ -168,7 +169,9 @@ export class MediaRelay {
     if (previous.filter(stream => stream.targetDeviceId === targetDeviceId && stream.publisherDeviceId !== publisherDeviceId).length >= BINDING_LIMIT) throw new AccountError(409, 'Inference source limit reached');
     const next = previous.map(stream => stream.publisherDeviceId === publisherDeviceId ? { ...stream, targetDeviceId, sourceId: stream.sourceId || crypto.randomUUID() } : stream);
     this.save(accountId, next); this.clearChangedBindings(previous, next); this.changed(accountId);
-    const stream = next.find(item => item.publisherDeviceId === publisherDeviceId)!;
+    // 目录只认按本版协议声明过的端点，被隐藏的发布端没有推流记录，绑定报 404 而不是 500。
+    const stream = next.find(item => item.publisherDeviceId === publisherDeviceId);
+    if (!stream) throw new AccountError(404, 'Publisher is not serving this version');
     const live = this.publishers.get(publisherDeviceId);
     if (live) send(live.ws, { type: 'media-ready', sessionId: live.sessionId, streamId: stream.streamId, targetDeviceId, sourceId: stream.sourceId, targetSamplingRate: this.samplingRate(stream) });
     return { ...stream };
@@ -193,7 +196,11 @@ export class MediaRelay {
           if (binary) { ws.close(4001, 'media auth required'); return; }
           const message = JSON.parse(raw.toString());
           // 媒体通道与业务通道同一道版本闸门：旧版本端点连发布/订阅都进不来。
-          if (!wsVersionGate(message)) { ws.close(4001, 'protocol mismatch'); return; }
+          // 出局前记下声明的版本，节点目录与推流视图随即不再显示该端点。
+          if (!wsVersionGate(message)) {
+            if (message?.type === 'media-auth') accountStore.recordDeclaredVersion(message.token, message.version);
+            ws.close(4001, 'protocol mismatch'); return;
+          }
           const session = message?.type === 'media-auth' ? accountStore.authenticate(message.token) : undefined;
           // 发布按能力放行（相机组件与推流态的 Windows 推理节点），订阅按推理实现放行。
           if (!session || !((message.direction === 'publish' && canPublishVideo(session.device.component)) || (message.direction === 'subscribe' && canSubscribeVideo(session.device.component)))) { ws.close(4001, 'media permission required'); return; }
@@ -201,12 +208,15 @@ export class MediaRelay {
           // 客户端的两态开关保证正常路径不会同时来，这里是服务端侧的强制，防止绕过。
           const oppositeLive = message.direction === 'publish' ? this.subscribers.has(session.device.deviceId) : this.publishers.has(session.device.deviceId);
           if (oppositeLive) { ws.close(4001, 'media direction already in use'); return; }
+          // 媒体认证也是版本声明通道：先落版本，推流视图才会把该端点算进来。
+          accountStore.recordVersion(session.account.accountId, session.device.deviceId, session.device.component, message.version);
           clearTimeout(timer); this.ensureAccount(session.account.accountId);
           if (message.direction === 'publish') {
             this.publishers.get(session.device.deviceId)?.ws.close(4000, 'publisher replaced');
             publisher = { ws, session, token: message.token, sessionId: crypto.randomUUID(), sequence: -1, capturedAt: -1, lastFrame: 0, lastSeen: performance.now(), stopped: false };
             this.publishers.set(session.device.deviceId, publisher);
-            const stream = this.streams(session.account.accountId).find(item => item.publisherDeviceId === session.device.deviceId)!;
+            const stream = this.streams(session.account.accountId).find(item => item.publisherDeviceId === session.device.deviceId);
+            if (!stream) { this.publishers.delete(session.device.deviceId); publisher = undefined; ws.close(4001, 'media stream unavailable'); return; }
             send(ws, { type: 'media-ready', sessionId: publisher.sessionId, streamId: stream.streamId, targetDeviceId: stream.targetDeviceId, sourceId: stream.sourceId, targetSamplingRate: this.samplingRate(stream) });
           } else {
             const old = this.subscribers.get(session.device.deviceId);

@@ -1531,10 +1531,15 @@ export function handleConnection(ws: WebSocket, req?: IncomingMessage): void {
     let message: any; try { message = JSON.parse(raw.toString()); } catch { endReason = 'invalid-json'; log('auth-rejected', { reason: endReason }); ws.close(4001, 'invalid auth'); return; }
     if (!message || typeof message !== 'object' || Array.isArray(message)) { endReason = 'invalid-auth-message'; log('auth-rejected', { reason: endReason }); ws.close(4001, 'invalid auth'); return; }
     // 协议版本闸门：旧版本端点（含 API Key 时代的旧包）在此静默出局，不回包、不逐条记日志。
-    if (!wsVersionGate(message)) { endReason = 'protocol-version'; log('protocol-dropped', { reason: endReason }); ws.close(4001, 'protocol mismatch'); return; }
+    // 出局前先记下它声明的版本，节点目录随即不再显示该端点，直到它按本版协议重新声明。
+    if (!wsVersionGate(message)) {
+      if (message.type === 'auth') accountStore.recordDeclaredVersion(message.token, message.version);
+      endReason = 'protocol-version'; log('protocol-dropped', { reason: endReason }); ws.close(4001, 'protocol mismatch'); return;
+    }
     const session = !binary && message.type === 'auth' ? accountStore.authenticate(message.token) : undefined;
     if (!session) { endReason = binary ? 'binary-auth' : message.type !== 'auth' ? 'unexpected-message' : 'invalid-session'; log('auth-rejected', { reason: endReason }); ws.send(JSON.stringify({ type: 'auth-result', success: false, reason: 'invalid session' })); ws.close(4001, 'invalid session'); return; }
     socketTokens.set(ws, message.token);
+    accountStore.recordVersion(session.account.accountId, session.device.deviceId, session.device.component, message.version);
     forAccount(session.account.accountId).handleConnection(ws);
     ws.emit('message', raw, false);
     authenticated = true; log('auth-success', { component: session.device.component });
@@ -1548,7 +1553,7 @@ export function getConnectionCount(): number { return [...contexts.values()].red
 export function maintainRealtime(now = Date.now()): void { for (const context of contexts.values()) context.maintainRealtime(now); }
 export function accountDeviceList(session: AccountSession): object[] {
   const live = forAccount(session.account.accountId).buildDeviceList();
-  return accountStore.devices(session.account.accountId).map(device => ({ ...device, online: false, ...live.find(item => item.deviceId === device.deviceId) }));
+  return accountStore.directoryDevices(session.account.accountId).map(device => ({ ...device, online: false, ...live.find(item => item.deviceId === device.deviceId) }));
 }
 export function associateScreenshotPayload(payload: WsScreenshotDataPush, authenticatedDeviceId: string, alertRecord: AlertRecord | undefined): WsScreenshotDataPush | null {
   if (!alertRecord || alertRecord.deviceId !== authenticatedDeviceId || alertRecord.alertId !== payload.alertId) return null;

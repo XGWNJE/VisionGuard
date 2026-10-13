@@ -3,7 +3,8 @@ import { PROTOCOL_VERSION } from '../../src/services/protocol';
 import crypto from 'node:crypto';
 
 export function registration(seed: string = crypto.randomUUID()) {
-  return { deviceIdentity: crypto.createHash('sha256').update(seed).digest('hex'), deviceModel: 'Test Model' };
+  // 真实端点都声明本端版本；闸门开启时缺声明直接出局，测试夹具同样声明。
+  return { deviceIdentity: crypto.createHash('sha256').update(seed).digest('hex'), deviceModel: 'Test Model', version: PROTOCOL_VERSION };
 }
 
 /** Test names map to server-issued IDs; production peers always receive token-only auth. */

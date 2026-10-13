@@ -76,6 +76,12 @@ main { padding: 24px; flex: 1; min-width: 0; }
 .overview-bar > button > span { white-space: nowrap; }
 .master-detail, .scope-workspace { display: grid; grid-template-columns: 240px minmax(0,1fr); gap: 16px; align-items: start; }
 .master-detail { align-items: stretch; }
+/* 节点目录宽度可拖拽：宽度存本机浏览器，未拖过时用断点默认值。 */
+.master-detail.resizable { grid-template-columns: var(--node-list-width, var(--node-list-default, 240px)) 16px minmax(0,1fr); gap: 0; }
+.master-resizer { position: relative; align-self: stretch; cursor: col-resize; touch-action: none; }
+.master-resizer > span { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 4px; height: 32px; border-radius: 2px; background: var(--border); }
+.master-resizer:hover > span, .master-resizer:focus-visible > span { background: var(--accent); }
+.master-resizer:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
 .node-list { padding: 16px 0 0; overflow: hidden; position: sticky; top: 16px; }
 .node-list > .section-title, .directory-filters { padding: 0 12px; }
 .directory-filters { display: grid; gap: 8px; margin-bottom: 12px; }

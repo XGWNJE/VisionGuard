@@ -26,7 +26,11 @@ const loginLimiter = rateLimit({ windowMs: 60_000, max: 20, standardHeaders: tru
   keyGenerator: req => ipKeyGenerator(req.ip || req.socket.remoteAddress || 'unknown'),
   message: { ok: false, error: 'Too many login attempts' } });
 router.post('/api/account/login', loginLimiter, async (req, res) => {
-  try { res.json(sessionResponse(await accountStore.login(req.body))); } catch (error) { accountFailure(res, error); }
+  try {
+    // 登录同时声明版本：请求头是 HTTP 端的声明通道，缺声明或旧版本记为空/旧值，端点不进节点目录。
+    const declared = req.headers['x-visionguard-version'];
+    res.json(sessionResponse(await accountStore.login({ ...req.body, version: declared ?? req.body?.version })));
+  } catch (error) { accountFailure(res, error); }
 });
 // 本地预览的内置登录：只有隔离实例配了凭据、且请求来自回环地址才回应；其余一律当作不存在。
 // 控制台与 Web 相机据此跳过手填账号，生产实例不设该变量，行为与以前一致。

@@ -32,6 +32,7 @@ import { mediaRelay } from './services/MediaRelay';
 import { websocketLimits } from './services/WebSocketLimits';
 import { startCleanupTimer, cleanupScreenshots } from './services/ScreenshotCleanup';
 import { createHttpVersionGate } from './services/protocol';
+import { recordDroppedVersion } from './middleware/auth';
 import path from 'path';
 
 // ── Express app ────────────────────────────────────────────
@@ -45,7 +46,8 @@ app.use(express.json({ limit: '16kb' }));
 app.use('/api', createApiLimiter());
 // 协议版本闸门：非本版端点（含 API Key 时代的旧包）在鉴权前静默出局，只汇总量、不逐条响应。
 // 只在上线部署实例启用；本地/测试实例放行所有版本，跑链路与 UI 检查不需要对齐版本。
-app.use('/api', createHttpVersionGate(config.protocolGate));
+// 出局前把该端点声明的版本落到设备记录：目录随即不再显示它，直到它按本版协议重新声明。
+app.use('/api', createHttpVersionGate(config.protocolGate, recordDroppedVersion));
 
 // 健康检查 (无需鉴权，独立限速)
 const healthLimiter = rateLimit({

@@ -1,7 +1,8 @@
 // ┌─────────────────────────────────────────────────────────┐
 // │ auth.ts                                                 │
 // │ 角色：按账号会话校验 HTTP 读取与事件上传权限             │
-// │ 对外 API：httpAuth, detectorHttpAuth                     │
+// │ 对外 API：accountAuth, httpAuth, detectorHttpAuth,      │
+// │           recordDroppedVersion                          │
 // └─────────────────────────────────────────────────────────┘
 
 import { Request, Response, NextFunction } from 'express';
@@ -20,6 +21,8 @@ export function accountAuth(req: Request, res: Response, next: NextFunction): vo
   }
   res.locals.session = session;
   res.locals.identity = session.device;
+  // `/api` 请求头是 HTTP 端的版本声明通道：每次声明都刷新记录，值没变时不落盘。
+  accountStore.recordVersion(session.account.accountId, session.device.deviceId, session.device.component, req.headers['x-visionguard-version']);
   next();
 }
 export function httpAuth(req: Request, res: Response, next: NextFunction): void {
@@ -34,4 +37,11 @@ export function detectorHttpAuth(req: Request, res: Response, next: NextFunction
     if (identity.role !== 'detector' || isCameraComponent(identity.component)) { res.status(403).json({ ok: false, error: 'inference identity required' }); return; }
     next();
   });
+}
+/** 协议闸门出局回调：把端点声明的版本落到设备记录，节点目录随即不再显示它。 */
+export function recordDroppedVersion(req: Request): void {
+  const authorization = req.headers.authorization;
+  if (typeof authorization === 'string' && authorization.startsWith('Bearer ')) {
+    accountStore.recordDeclaredVersion(authorization.slice(7), req.headers['x-visionguard-version']);
+  }
 }

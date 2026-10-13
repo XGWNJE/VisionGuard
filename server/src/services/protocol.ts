@@ -24,13 +24,15 @@ let reporter: NodeJS.Timeout | null = null;
 /**
  * HTTP 闸门：非本版客户端不进入业务逻辑。
  * 判定只看声明版本；缺失（旧协议）同样出局。`gate` 由实例决定，本地/测试实例传 false 直接放行。
+ * `onDropped` 让实例记录出局端点声明的版本（目录据此隐藏它），闸门本身不依赖账号模块。
  */
-export function createHttpVersionGate(gate: boolean): (req: any, res: any, next: any) => void {
+export function createHttpVersionGate(gate: boolean, onDropped?: (req: any, declared: unknown) => void): (req: any, res: any, next: any) => void {
   return (req, res, next) => {
     if (!gate) { next(); return; }
     const declared = req.headers?.['x-visionguard-version'];
     if (!isCurrentVersion(declared)) {
       recordProtocolNoise('httpRequests', declared);
+      try { onDropped?.(req, declared); } catch { console.error('[Protocol] 出局端点版本记录失败'); }
       // 静默出局：不解释、不升级、不保留兼容分支。
       res.status(426).end();
       return;
