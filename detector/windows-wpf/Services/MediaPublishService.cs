@@ -33,7 +33,7 @@ namespace VisionGuard.Detector.Windows.Services
         private const int MaximumInflightFrames = 8;
         private const long MaximumInflightBytes = MaximumFrameBytes;
 
-        private readonly string _url, _token;
+        private readonly string _url, _token, _sourceId, _sourceName;
         private readonly Func<PublishedFrame?> _frameSource;
         private readonly object _sync = new();
         private readonly ManualResetEventSlim _wake = new(false);
@@ -46,10 +46,13 @@ namespace VisionGuard.Detector.Windows.Services
         private string _streamId = "", _sessionId = "";
         private bool _connectionReady, _disposed;
 
-        public MediaPublishService(string url, string token, Func<PublishedFrame?> frameSource, int targetFps)
+        public MediaPublishService(string url, string token, string sourceId, string sourceName, Func<PublishedFrame?> frameSource, int targetFps)
         {
             _url = url.TrimEnd('/').Replace("https://", "wss://").Replace("http://", "ws://") + "/media/ws";
             _token = token;
+            // 一台发布端每个来源一条连接一条流：服务端按（设备 + 来源）认领流，来源身份用本机来源 ID。
+            _sourceId = sourceId;
+            _sourceName = sourceName;
             _frameSource = frameSource;
             SetTargetFps(targetFps);
         }
@@ -122,7 +125,7 @@ namespace VisionGuard.Detector.Windows.Services
                         Utils.MediaDiagnostics.Write("[Publish] connecting " + _url);
                         ws.ConnectAsyncInternal(_stop.Token).GetAwaiter().GetResult();
                         _connectionReady = false; _ready.Reset(); _inflight.Clear(); _inflightBytes = 0;
-                        Send(ws, new { type = "media-auth", token = _token, direction = "publish", version = AppConfig.Version });
+                        Send(ws, new { type = "media-auth", token = _token, direction = "publish", version = AppConfig.Version, sourceId = _sourceId, sourceName = _sourceName });
                         StartReceiver(ws);
                         long lastHeartbeat = NowTicks();
                         long lastReport = NowTicks();

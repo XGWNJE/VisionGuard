@@ -92,11 +92,32 @@ namespace VisionGuard.Detector.Windows.Services
                 return string.Compare(left.DeviceName, right.DeviceName, StringComparison.CurrentCulture);
             });
 
+            // 绑定与流分开：bindings 里有本节点的绑定就用它；旧形状（只有 streams）按流上的目标兜底。
             BoundTargetId = "";
-            foreach (var stream in Rows(streams, "streams"))
-                if (SimpleJson.GetString(stream, "publisherDeviceId") == _deviceId)
-                    BoundTargetId = SimpleJson.GetString(stream, "targetDeviceId");
+            foreach (var binding in Rows(streams, "bindings"))
+                if (SimpleJson.GetString(binding, "publisherDeviceId") == _deviceId)
+                    BoundTargetId = SimpleJson.GetString(binding, "targetDeviceId");
+            if (BoundTargetId.Length == 0)
+                foreach (var stream in Rows(streams, "streams"))
+                    if (SimpleJson.GetString(stream, "publisherDeviceId") == _deviceId)
+                        BoundTargetId = SimpleJson.GetString(stream, "targetDeviceId");
             return "";
+        }
+
+        /// <summary>解除本节点当前的推流目标绑定（一次解掉本节点所有来源）。</summary>
+        public string Unbind() => UnbindPublisher(_deviceId);
+
+        /// <summary>
+        /// 解除某台发布端的推流绑定：本机是被动方时也用它把自己不想再收的来源解掉。
+        /// 绑定是发布端级的，解掉后该发布端的所有来源都会停止推给本机。
+        /// </summary>
+        public string UnbindPublisher(string publisherDeviceId)
+        {
+            if (string.IsNullOrEmpty(_deviceId) || string.IsNullOrEmpty(_token)) return "尚未登录账号，暂时无法解除推流绑定。";
+            if (string.IsNullOrEmpty(publisherDeviceId)) return "没有记录发布端身份，无法解除绑定。";
+            string error = Request("/api/streams/unbind", SimpleJson.ToJson(new { publisherDeviceId }), out _);
+            if (error.Length == 0 && publisherDeviceId == _deviceId) BoundTargetId = "";
+            return error;
         }
 
         /// <summary>把本节点关联到指定目标节点；返回可读错误文案，成功时为空串。</summary>

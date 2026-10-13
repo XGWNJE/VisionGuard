@@ -44,7 +44,7 @@ namespace VisionGuard.Detector.Windows.Services
             if (_disposed) return;
             if (_service != null) return;
             var service = new MediaPublishService(
-                Utils.AppConfig.ServerUrl, Utils.AppConfig.SessionToken, CaptureFrame, source.Config.TargetFps);
+                Utils.AppConfig.ServerUrl, Utils.AppConfig.SessionToken, source.SourceId, source.SourceName, CaptureFrame, source.Config.TargetFps);
             service.StatusChanged += (_, __) => StatusChanged?.Invoke(this, EventArgs.Empty);
             _service = service;
             Utils.MediaDiagnostics.Write($"[Publish] publisher service created source={source.SourceId} service={Utils.AppConfig.ServerUrl} fps={source.Config.TargetFps}");

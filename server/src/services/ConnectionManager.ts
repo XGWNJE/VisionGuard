@@ -647,7 +647,7 @@ function handleConnection(ws: WebSocket): void {
         if (role === 'console') handleSetConfig(ws, msg as WsSetConfig);
         break;
       case 'get-streams':
-        if (identity) sendJson(ws, { type: 'stream-list', streams: mediaRelay.streams(accountId) });
+        if (identity) sendJson(ws, { type: 'stream-list', streams: mediaRelay.streams(accountId), bindings: mediaRelay.bindings(accountId) });
         break;
       case 'get-devices':
         if (role === 'console') sendJson(ws, { type: 'device-list', devices: buildDeviceList() });
@@ -792,7 +792,7 @@ function handleAuth(
   onSuccess(identity.role, identity.deviceId, key);
   socketTokens.set(ws, msg.token);
   mediaRelay.ensureAccount(accountId);
-  sendJson(ws, { type: 'stream-list', streams: mediaRelay.streams(accountId) });
+  sendJson(ws, { type: 'stream-list', streams: mediaRelay.streams(accountId), bindings: mediaRelay.bindings(accountId) });
   if (identity.role === 'console') {
     sendJson(ws, { type: 'device-list', devices: buildDeviceList() });
     sendJson(ws, notificationScopeList());
@@ -1499,7 +1499,7 @@ function revokeAndRefresh(): void {
   scheduleBroadcast();
 }
 function sendStreams(): void {
-  const message = { type: 'stream-list', streams: mediaRelay.streams(accountId) };
+  const message = { type: 'stream-list', streams: mediaRelay.streams(accountId), bindings: mediaRelay.bindings(accountId) };
   broadcastToReceivers(message);
   for (const client of detectorClients.values()) sendJson(client.ws, message);
 }

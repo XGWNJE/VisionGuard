@@ -128,7 +128,7 @@ export class MediaRelay {
   onChange(listener: (accountId: string) => void): void { this.listeners.add(listener); }
   private changed(accountId: string): void {
     for (const listener of this.listeners) listener(accountId);
-    const message = { type: 'stream-list', streams: this.streams(accountId) };
+    const message = { type: 'stream-list', streams: this.streams(accountId), bindings: this.bindings(accountId) };
     for (const subscriber of this.subscribers.values()) if (subscriber.session.account.accountId === accountId) send(subscriber.ws, message);
   }
   private save(accountId: string, streams: Stream[]): void {
@@ -376,7 +376,7 @@ export class MediaRelay {
             subscriber = { ws, session, token: message.token, lastSeen: performance.now(), inflight: new Map(), latest: new Map() };
             this.subscribers.set(session.device.deviceId, subscriber);
             send(ws, { type: 'media-ready', sessionId: crypto.randomUUID() });
-            send(ws, { type: 'stream-list', streams: this.streams(session.account.accountId) });
+            send(ws, { type: 'stream-list', streams: this.streams(session.account.accountId), bindings: this.bindings(session.account.accountId) });
           }
           return;
         }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { createRequestId, mergeAlerts, parseTimeStandard, websocketURL, type Ack, type Alert, type Device, type Identity, type Notifier, type Stream, type TimeStandard } from './protocol';
+import { createRequestId, mergeAlerts, parseTimeStandard, websocketURL, type Ack, type Alert, type Binding, type Device, type Identity, type Notifier, type Stream, type TimeStandard } from './protocol';
 import type { Login } from './account';
 import { protocolVersion, versionHeaders } from './session.ts';
 import { recordConnectionEvent, type ConnectionPhase } from './connectionDiagnostics';
@@ -19,13 +19,14 @@ export function useRelay(login: Login | null) {
   const [acks, setAcks] = useState<Ack[]>([]);
   const [timeStandard, setTimeStandard] = useState<TimeStandard | null>(null);
   const [streams, setStreams] = useState<Stream[]>([]);
+  const [bindings, setBindings] = useState<Binding[]>([]);
   const [expiredToken, setExpiredToken] = useState('');
   const transport = useRef<WebSocket | null>(null);
   const pending = useRef(new Map<string,{key:string;deadline:number}>());
   const refresh = useRef<() => void>(() => {});
   const suspend = useRef<() => void>(() => {});
   useEffect(() => {
-    setDataScope(scope); setDevices([]); setRegistered([]); setNotifiers([]); setAlerts([]); setAcks([]); setReceipts({}); setTimeStandard(null); setStreams([]); setExpiredToken(''); setConnected(false);
+    setDataScope(scope); setDevices([]); setRegistered([]); setNotifiers([]); setAlerts([]); setAcks([]); setReceipts({}); setTimeStandard(null); setStreams([]); setBindings([]); setExpiredToken(''); setConnected(false);
     if (!login) { setStatus('未连接'); return; }
     let stopped = false, terminal = false, authenticated = false, ws: WebSocket | null = null;
     let lastResponse = performance.now(), opened = 0, retry = 1_000;
@@ -43,7 +44,7 @@ export function useRelay(login: Login | null) {
       pending.current.clear();
       if (!stopped) setAcks(old => old.map(ack => ['pending','forwarded'].includes(ack.phase ?? '') ? {...ack,phase:'uncertain',success:false,reason:'连接中断，执行结果待核实'} : ack));
       authenticated = false; setConnected(false); setStatus(text);
-      setDevices([]); setStreams([]); setNotifiers(items => items.map(notifier => ({...notifier,online:false})));
+      setDevices([]); setStreams([]); setBindings([]); setNotifiers(items => items.map(notifier => ({...notifier,online:false})));
       const old = ws; ws = null; transport.current = null;
       if (old) { old.onclose = null; old.onerror = null; old.onmessage = null; old.onopen = null; old.close(); }
       if (!stopped && !terminal) {
@@ -116,7 +117,7 @@ export function useRelay(login: Login | null) {
             case 'time-standard': { const value = parseTimeStandard(m); if (value) setTimeStandard(value); break; }
             case 'heartbeat-ack': if (typeof m.serverTime === 'string' && Number.isFinite(Date.parse(m.serverTime))) setTimeStandard(old => old ? {...old,serverTime:m.serverTime} : null); break;
             case 'device-list': if (Array.isArray(m.devices)) setDevices(m.devices); break;
-            case 'stream-list': if (Array.isArray(m.streams)) setStreams(m.streams); break;
+            case 'stream-list': if (Array.isArray(m.streams)) setStreams(m.streams); if (Array.isArray(m.bindings)) setBindings(m.bindings); break;
             case 'notification-scopes': if (Array.isArray(m.detectors) && Array.isArray(m.notifiers)) { setRegistered(m.detectors); setNotifiers(m.notifiers); } break;
             case 'alert': setAlerts(old => mergeAlerts(old, [m])); break;
             case 'command-ack': case 'notification-scope-result': case 'time-standard-result': if (m.phase==='completed'||m.success===false||m.type!=='command-ack') pending.current.delete(m.requestId); setAcks(old => retainAcks([{...m,phase:m.success===false?'completed':m.phase},...old.filter(a => a.requestId !== m.requestId)])); break;
@@ -156,5 +157,5 @@ export function useRelay(login: Login | null) {
     return requestId;
   }
   const current = dataScope === scope;
-  return { status: current ? status : '未连接', connected: current && connected, devices: current ? devices : [], registered: current ? registered : [], notifiers: current ? notifiers : [], alerts: current ? alerts : [], receipts: current ? receipts : {}, acks: current ? acks : [], timeStandard: current ? timeStandard : null, streams: current ? streams : [], authExpired: !!login && expiredToken === login.token, send, refresh: () => refresh.current(), suspend: () => suspend.current() };
+  return { status: current ? status : '未连接', connected: current && connected, devices: current ? devices : [], registered: current ? registered : [], notifiers: current ? notifiers : [], alerts: current ? alerts : [], receipts: current ? receipts : {}, acks: current ? acks : [], timeStandard: current ? timeStandard : null, streams: current ? streams : [], bindings: current ? bindings : [], authExpired: !!login && expiredToken === login.token, send, refresh: () => refresh.current(), suspend: () => suspend.current() };
 }
