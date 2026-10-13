@@ -29,14 +29,15 @@ async function fixture(t: any) {
   await new Promise<void>(resolve => server.once('listening', resolve));
   const sockets: WebSocket[] = [];
   t.after(() => { sockets.forEach(ws => ws.terminate()); server.close(); });
-  async function connect(token: string, direction: string) {
+  async function connect(token: string, direction: string, sourceId = 'default', sourceName = '来源') {
     const ws = new WebSocket(`ws://127.0.0.1:${(server.address() as any).port}/media/ws`); sockets.push(ws);
     const messages: any[] = []; ws.on('message', (raw, binary) => messages.push(binary ? { type: 'frame', frame: parseFrame(Buffer.from(raw as Buffer)) } : JSON.parse(raw.toString())));
     await new Promise<void>(resolve => ws.once('open', resolve));
     const closed = new Promise<number>(resolve => ws.once('close', code => resolve(code)));
     async function take(type: string) { const deadline = Date.now() + 2500; while (Date.now() < deadline) { const i = messages.findIndex(message => message.type === type); if (i >= 0) return messages.splice(i, 1)[0]; await new Promise(resolve => setTimeout(resolve, 5)); } throw new Error(`Missing ${type}`); }
     const send = (value: object) => ws.send(JSON.stringify(value));
-    send({ type: 'media-auth', token, direction });
+    // 推流态的推理节点必须声明来源：一台发布端每个来源一条连接、一条流；相机忽略来源字段。
+    send({ type: 'media-auth', token, direction, sourceId, sourceName });
     return { ws, closed, take, send, messages };
   }
   return { connect };
@@ -264,7 +265,9 @@ test('multiple inference nodes require selection, bindings stay stable, and cloc
   const third = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'android-camera', deviceName: 'third-camera' });
   assert.equal(mediaRelay.streams(owner.accountId).find(stream => stream.publisherDeviceId === third.device.deviceId)!.targetDeviceId, undefined);
   // 推理节点不会自动获得绑定：推流态的 Windows 节点必须由控制台显式绑定，避免多节点互相推流成环。
-  assert.equal(mediaRelay.streams(owner.accountId).find(stream => stream.publisherDeviceId === owner.id('inference'))!.targetDeviceId, undefined);
+  // 推理节点的流要等它声明来源才出现，声明前连流行都没有。
+  assert.equal(mediaRelay.streams(owner.accountId).some(stream => stream.publisherDeviceId === owner.id('inference')), false);
+  assert.equal(mediaRelay.bindings(owner.accountId).some(item => item.publisherDeviceId === owner.id('inference')), false);
   const session = accountStore.authenticate(owner.session('console').token)!;
   const binding = mediaRelay.bind(session, camera.device.deviceId, extra.device.deviceId);
   assert.equal(mediaRelay.bind(session, camera.device.deviceId, extra.device.deviceId).sourceId, binding.sourceId);
@@ -285,16 +288,17 @@ test('windows inference publishes after an explicit binding and cannot bind itse
   const publisher = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'windows-inference', deviceName: 'publisher-node' });
   const receiver = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'windows-inference', deviceName: 'receiver-node' });
   const session = accountStore.authenticate(owner.session('console').token)!;
-  const stream = mediaRelay.bind(session, publisher.device.deviceId, receiver.device.deviceId);
-  assert.equal(stream.targetDeviceId, receiver.device.deviceId); assert.ok(stream.sourceId);
+  mediaRelay.bind(session, publisher.device.deviceId, receiver.device.deviceId);
+  // 绑定存在与流无关：发布端还没声明来源时也能先绑定。
+  assert.equal(mediaRelay.bindings(owner.accountId).find(item => item.publisherDeviceId === publisher.device.deviceId)?.targetDeviceId, receiver.device.deviceId);
   // 不能绑定到自己（自环），也不能把不可订阅的相机当目标。
   assert.throws(() => mediaRelay.bind(session, publisher.device.deviceId, publisher.device.deviceId), /not found/);
   assert.throws(() => mediaRelay.bind(session, publisher.device.deviceId, owner.id('camera')), /not found/);
   // 节点本机的「推流目标」下拉走同一条绑定：发布端可以为自己绑定，别的设备不行。
-  assert.equal(mediaRelay.bind(accountStore.authenticate(publisher.token)!, publisher.device.deviceId, receiver.device.deviceId).targetDeviceId, receiver.device.deviceId);
+  assert.equal(mediaRelay.bindings(owner.accountId).find(item => item.publisherDeviceId === publisher.device.deviceId)?.targetDeviceId, receiver.device.deviceId);
   assert.throws(() => mediaRelay.bind(accountStore.authenticate(receiver.token)!, publisher.device.deviceId, receiver.device.deviceId), /permission/);
   const producer = await f.connect(publisher.token, 'publish'), ready = await producer.take('media-ready');
-  assert.equal(ready.streamId, stream.streamId); assert.equal(ready.targetDeviceId, receiver.device.deviceId);
+  assert.ok(ready.streamId); assert.equal(ready.sourceId, 'default'); assert.equal(ready.targetDeviceId, receiver.device.deviceId);
   const consumer = await f.connect(receiver.token, 'subscribe'); await consumer.take('media-ready');
   producer.ws.send(packet(ready, 1)); assert.equal((await producer.take('frame-ack')).sequence, 1);
   assert.equal((await consumer.take('frame')).frame.header.sequence, 1);
@@ -337,12 +341,60 @@ test('a media identity is publish or subscribe only', () => {
 test('windows inference cannot publish before an explicit binding and the relay reports the unbound drop', async t => {
   const f = await fixture(t);
   const publisher = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'windows-inference', deviceName: 'unbound-publisher' });
-  const stream = mediaRelay.streams(owner.accountId).find(item => item.publisherDeviceId === publisher.device.deviceId)!;
-  assert.ok(stream); assert.equal(stream.targetDeviceId, undefined);
+  // 声明来源前连流都不存在；声明来源只建流，不会顺带绑定目标。
+  assert.equal(mediaRelay.streams(owner.accountId).some(item => item.publisherDeviceId === publisher.device.deviceId), false);
   const producer = await f.connect(publisher.token, 'publish'), ready = await producer.take('media-ready');
+  const stream = mediaRelay.streams(owner.accountId).find(item => item.streamId === ready.streamId)!;
+  assert.ok(stream); assert.equal(stream.targetDeviceId, undefined); assert.equal(stream.sourceId, 'default');
   producer.ws.send(packet(ready, 1));
   const ack = await producer.take('frame-ack');
   assert.equal(ack.accepted, false); assert.equal(ack.dropReason, 'unbound');
+});
+
+test('one publisher pushes several sources to the same inference node and the passive side can unbind', async t => {
+  const f = await fixture(t);
+  const publisher = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'windows-inference', deviceName: 'multi-source-publisher' });
+  const receiver = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'windows-inference', deviceName: 'multi-source-receiver' });
+  const consoleSession = accountStore.authenticate(owner.session('console').token)!;
+  mediaRelay.bind(consoleSession, publisher.device.deviceId, receiver.device.deviceId);
+  const consumer = await f.connect(receiver.token, 'subscribe'); await consumer.take('media-ready');
+
+  // 同一发布端的两个来源：各自一条连接、一条流，并行推给同一个目标。
+  const first = await f.connect(publisher.token, 'publish', 'default', '画图');
+  const firstReady = await first.take('media-ready');
+  const second = await f.connect(publisher.token, 'publish', 'signal-2', '窗口 2');
+  const secondReady = await second.take('media-ready');
+  assert.notEqual(firstReady.streamId, secondReady.streamId);
+  assert.equal(firstReady.sourceId, 'default'); assert.equal(secondReady.sourceId, 'signal-2');
+  assert.equal(firstReady.targetDeviceId, receiver.device.deviceId);
+  assert.equal(secondReady.targetDeviceId, receiver.device.deviceId);
+
+  // 两条流互不干扰：序号各自从 1 开始，接收端按 streamId 分辨，两路都能送达。
+  first.ws.send(packet(firstReady, 1)); assert.equal((await first.take('frame-ack')).accepted, true);
+  second.ws.send(packet(secondReady, 1)); assert.equal((await second.take('frame-ack')).accepted, true);
+  const delivered = [await consumer.take('frame'), await consumer.take('frame')].map(message => message.frame.header.streamId).sort();
+  assert.deepEqual(delivered, [firstReady.streamId, secondReady.streamId].sort());
+  const streams = mediaRelay.streams(owner.accountId).filter(stream => stream.publisherDeviceId === publisher.device.deviceId);
+  assert.equal(streams.length, 2);
+  assert.deepEqual(streams.map(stream => [stream.sourceId, stream.sourceName, stream.targetDeviceId]).sort(),
+    [['default', '画图', receiver.device.deviceId], ['signal-2', '窗口 2', receiver.device.deviceId]].sort());
+
+  // 被动方本机解除绑定：绑定消失、它自己的来源列表清空、发布端收到未绑定回执。
+  mediaRelay.unbind(accountStore.authenticate(receiver.token)!, publisher.device.deviceId);
+  assert.equal(mediaRelay.bindings(owner.accountId).some(item => item.publisherDeviceId === publisher.device.deviceId), false);
+  assert.equal(mediaRelay.streams(owner.accountId).filter(stream => stream.targetDeviceId === receiver.device.deviceId).length, 0);
+  assert.equal((await first.take('media-ready')).targetDeviceId, undefined);
+  assert.equal((await second.take('media-ready')).targetDeviceId, undefined);
+  first.ws.send(packet(firstReady, 2));
+  assert.equal((await first.take('frame-ack')).dropReason, 'unbound');
+
+  // 只有控制台、发布端自己和被推的被动方能解绑；控制台重新绑定后自己再解一次。
+  const bystander = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'android-camera', deviceName: 'unbind-bystander' });
+  mediaRelay.bind(consoleSession, publisher.device.deviceId, receiver.device.deviceId);
+  assert.throws(() => mediaRelay.unbind(accountStore.authenticate(bystander.token)!, publisher.device.deviceId), /permission/);
+  mediaRelay.unbind(consoleSession, publisher.device.deviceId);
+  assert.equal(mediaRelay.bindings(owner.accountId).some(item => item.publisherDeviceId === publisher.device.deviceId), false);
+  assert.throws(() => mediaRelay.unbind(consoleSession, publisher.device.deviceId), /not found/);
 });
 
 test('windows inference declares publish and subscribe capabilities while android inference stays subscribe-only', () => {
