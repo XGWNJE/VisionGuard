@@ -29,8 +29,11 @@ jobs:
       - name: Audit component naming and canonical documentation
         run: node scripts/check-docs.js
 
+      - name: Audit protocol version declarations and the version gate
+        run: node scripts/check-protocol-declarations.js
+
       - name: Test documentation guardrails
-        run: node --test scripts/check-docs.test.js scripts/release-workflow.test.js scripts/release-notes.test.js scripts/version-sync.test.js scripts/project-guards.test.js scripts/online-release-contract.test.js
+        run: node --test scripts/check-docs.test.js scripts/release-workflow.test.js scripts/release-notes.test.js scripts/version-sync.test.js scripts/project-guards.test.js scripts/online-release-contract.test.js scripts/check-protocol-declarations.test.js
 
   online-release-contract:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

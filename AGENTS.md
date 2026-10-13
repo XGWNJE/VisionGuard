@@ -40,6 +40,6 @@
 - README 只留介绍、组件入口、常用命令和文档入口；模块专题维护当前事实，不复制任务与完整测试报告。新增专题只登记 `docs/00-文档索引.md`，发行说明只登记 `docs/releases/README.md`。
 - [验证记录](docs/90-验证记录.md)是证据与未覆盖项唯一来源，保留最近三个发行版本和当前专项，更早汇总并保留必要原始证据；[任务清单与路线图](docs/06-任务清单.md)一份文档两节：维护正在做/已排期的事项与分支归属，以及还没启动的方向，不列真实设备验收、观感反馈或上线观察待办。owner 发现真实使用问题后主动反馈，再登记处理任务；移除验收待办不表示已通过验证。提交前压缩重复、过时记录。
 - 中文 Markdown 为 UTF-8 无 BOM；含非 ASCII 的 PowerShell 为 UTF-8 with BOM，由编码测试校验。
-- 修改文档、入口、协议、版本 / 域名边界后运行 `node scripts/check-docs.js`、`node --test scripts/check-docs.test.js scripts/release-workflow.test.js scripts/release-notes.test.js scripts/check-powershell-encoding.test.js scripts/project-guards.test.js`，以及 `npm --prefix receiver/web test` 与 `npm --prefix detector/web test`。
+- 修改文档、入口、协议、版本 / 域名边界后运行 `node scripts/check-docs.js`、`node scripts/check-protocol-declarations.js`、`node --test scripts/check-docs.test.js scripts/release-workflow.test.js scripts/release-notes.test.js scripts/check-powershell-encoding.test.js scripts/project-guards.test.js scripts/check-protocol-declarations.test.js`，以及 `npm --prefix receiver/web test` 与 `npm --prefix detector/web test`。
 - 编译用 `visionguard-build`；运行 / 设备烟测用 `visionguard-e2e`；明确授权的发布用 `visionguard-release`。详细命令、ServerBuild / person / FPS 证据标准见[运维文档](docs/60-构建验证与发布.md)，执行前按任务读取对应 Skill。
 - Android 装包 / 重装统一走 `scripts/install-android-apk.ps1`：厂商的「USB 安装」倒计时确认必须在安装命令运行期间及时响应，错过一次就要重传整个包；判定成功看包版本、最后更新时间和已安装 APK 字节数，不看弹窗是否消失。错过弹窗用 `-RespondOnly` 补确认，不要重跑安装。
