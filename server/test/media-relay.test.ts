@@ -194,7 +194,7 @@ test('large packets hit the byte bound before the frame bound, and no receipt st
 test('sampling follows each bound source and idle sources drop to one FPS without resetting sessions', async t => {
   const f = await fixture(t);
   const camera = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'android-camera', deviceName: 'rate-camera' });
-  const stream = mediaRelay.bind(accountStore.authenticate(owner.session('console').token)!, camera.device.deviceId, owner.id('inference'));
+  const stream = mediaRelay.bind(accountStore.authenticate(owner.session('console').token)!, camera.device.deviceId, owner.id('inference'))!;
   const producer = await f.connect(camera.token, 'publish'), ready = await producer.take('media-ready');
   for (const rate of [3, 1, 5]) {
     mediaRelay.updateSamplingRates(owner.accountId, owner.id('inference'), [{ sourceId: stream.sourceId!, isMonitoring: rate !== 1, targetSamplingRate: rate }]);
@@ -228,7 +228,7 @@ test('web camera publishes and the web console can rebind it, while cameras cann
   producer.ws.send(packet(ready, 1)); assert.equal((await producer.take('frame-ack')).sequence, 1);
   assert.equal((await consumer.take('frame')).frame.header.sequence, 1);
   const session = accountStore.authenticate(webOwner.session('web-console').token)!;
-  const rebound = mediaRelay.bind(session, webOwner.id('web-camera'), webOwner.id('web-inference'));
+  const rebound = mediaRelay.bind(session, webOwner.id('web-camera'), webOwner.id('web-inference'))!;
   assert.equal(rebound.sourceId, stream.sourceId);
   assert.throws(() => mediaRelay.bind(session, owner.id('camera'), webOwner.id('web-inference')), /not found/);
   const subscribing = await f.connect(webOwner.session('web-camera').token, 'subscribe'); assert.equal(await subscribing.closed, 4001);
@@ -269,8 +269,8 @@ test('multiple inference nodes require selection, bindings stay stable, and cloc
   assert.equal(mediaRelay.streams(owner.accountId).some(stream => stream.publisherDeviceId === owner.id('inference')), false);
   assert.equal(mediaRelay.bindings(owner.accountId).some(item => item.publisherDeviceId === owner.id('inference')), false);
   const session = accountStore.authenticate(owner.session('console').token)!;
-  const binding = mediaRelay.bind(session, camera.device.deviceId, extra.device.deviceId);
-  assert.equal(mediaRelay.bind(session, camera.device.deviceId, extra.device.deviceId).sourceId, binding.sourceId);
+  const binding = mediaRelay.bind(session, camera.device.deviceId, extra.device.deviceId)!;
+  assert.equal(mediaRelay.bind(session, camera.device.deviceId, extra.device.deviceId)!.sourceId, binding.sourceId);
   const producer = await f.connect(camera.token, 'publish'), ready = await producer.take('media-ready');
   const consumer = await f.connect(extra.token, 'subscribe'); await consumer.take('media-ready');
   producer.ws.send(packet(ready, 1, { capturedAt: 100_000 })); await producer.take('frame-ack');
