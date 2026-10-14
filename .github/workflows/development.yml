@@ -65,7 +65,7 @@ jobs:
           java-version: 21
           cache: gradle
       - name: Unit tests, lint and debug application/test builds
-        run: bash gradlew testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest --no-daemon --console=plain
+        run: bash gradlew testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease lintRelease -PVISIONGUARD_ALLOW_UNSIGNED_RELEASE=true --no-daemon --console=plain
 
   windows:
     runs-on: windows-latest

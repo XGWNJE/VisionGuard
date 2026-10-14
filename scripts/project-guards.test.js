@@ -115,6 +115,21 @@ test('console keeps a browser-camera entry in settings', () => {
   assert.match(consoleEntry, /settings-camera/, '浏览器相机入口应挂在设置页');
 });
 
+test('development CI checks Android release variants with a compile-only signing override', () => {
+  const workflow = fs.readFileSync(path.join(root, '.github/workflows/development.yml'), 'utf8');
+  assert.match(workflow, /project: \[detector\/android, notifier\/android, detector\/android-inference\]/);
+  assert.match(workflow, /bash gradlew testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest assembleRelease lintRelease -PVISIONGUARD_ALLOW_UNSIGNED_RELEASE=true --no-daemon --console=plain/);
+  for (const relative of [
+    'detector/android/app/build.gradle.kts',
+    'notifier/android/app/build.gradle.kts',
+    'detector/android-inference/app/build.gradle.kts',
+  ]) {
+    const gradle = fs.readFileSync(path.join(root, relative), 'utf8');
+    assert.match(gradle, /providers\.gradleProperty\("VISIONGUARD_ALLOW_UNSIGNED_RELEASE"\)/, `${relative} 未将 unsigned 选项限制为 Gradle 属性`);
+    assert.doesNotMatch(gradle, /buildConfigField\([^\n]*VISIONGUARD_ALLOW_UNSIGNED_RELEASE/, `${relative} 不得把 unsigned 开关写进 APK 的 BuildConfig`);
+  }
+});
+
 test('preview builds carry the isolated sign-in while release packages stay clean', () => {
   const gradle = fs.readFileSync(path.join(root, 'scripts/ui-preview.init.gradle'), 'utf8');
   const previewKeys = ['preview_endpoint', 'preview_username', 'preview_password', 'preview_channel'];

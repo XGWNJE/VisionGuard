@@ -292,6 +292,17 @@ test('release workflow skips held-back platforms but still fails an all-mismatch
   assert.doesNotMatch(workflow, /wpf-legacy/, 'Windows must use one release platform');
 });
 
+test('SSH cleanup cannot replace the remote deployment exit result', () => {
+  const script = read('scripts/publish-release.ps1');
+  const start = script.indexOf('status = None');
+  const deploy = script.slice(start, script.indexOf("'@", start));
+
+  assert.match(deploy, /status = stdout\.channel\.recv_exit_status\(\)/);
+  assert.match(deploy, /except BaseException:[\s\S]*?client\.close\(\)[\s\S]*?raise/);
+  assert.match(deploy, /try:\s+client\.close\(\)\s+except Exception as exc:[\s\S]*?SSH cleanup warning/);
+  assert.match(deploy, /if status != 0:[\s\S]*?raise SystemExit\(status\)/);
+});
+
 test('publish-release.ps1 skips held-back platforms when collecting GitHub assets', () => {
   const script = read('scripts/publish-release.ps1');
   assert.match(script, /heldBack/, 'the heldBack marker is not honoured');
@@ -311,7 +322,9 @@ test('文档审核工作流定时核验线上发布契约', () => {
   const workflow = read('.github/workflows/docs-audit.yml');
 
   assert.match(workflow, /schedule:[\s\S]*?- cron: '17 3 \* \* 1'/, 'the weekly audit schedule is missing');
+  assert.match(workflow, /release:\s*\r?\n\s+types: \[published\]/, 'published releases must trigger the audit workflow');
   assert.match(workflow, /online-release-contract:/, 'the online contract job is missing');
+  assert.match(workflow, /github\.event_name == 'release'/, 'published releases must run the online contract job');
   assert.match(workflow, /node scripts\/check-online-release-contract\.js/, 'the online contract command is missing');
 });
 

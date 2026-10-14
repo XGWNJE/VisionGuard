@@ -8,6 +8,8 @@ on:
   schedule:
     # 每周一 03:17 UTC（北京时间 11:17）校验公开服务与仓库发布元数据是否仍一致。
     - cron: '17 3 * * 1'
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -39,7 +41,7 @@ jobs:
         run: node --test scripts/check-docs.test.js scripts/release-workflow.test.js scripts/release-notes.test.js scripts/version-sync.test.js scripts/project-guards.test.js scripts/online-release-contract.test.js scripts/check-protocol-declarations.test.js scripts/check-apk-protocol-version.test.js scripts/scan-guardrails.test.js
 
   online-release-contract:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'release'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

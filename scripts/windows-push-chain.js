@@ -30,17 +30,18 @@ const service = (options.get('service') ?? '').replace(/\/+$/, '');
 const username = options.get('username') ?? '';
 const passwordEnvironment = options.get('password-env') ?? '';
 const password = passwordEnvironment ? (process.env[passwordEnvironment] ?? '') : (options.get('password') ?? '');
+const receiverTokenEnvironment = options.get('receiver-token-env') ?? '';
+const receiverToken = receiverTokenEnvironment ? (process.env[receiverTokenEnvironment] ?? '') : '';
 const evidence = path.resolve(options.get('evidence') ?? path.join(repoRoot, 'artifacts/e2e/windows-push-chain'));
 const publisherDeviceIdOption = options.get('publisher-device-id') ?? '';
-const fixtureWindowTitle = options.get('fixture-window-title') ?? '';
 // 调用方（e2e-smoke.ps1）可能已经用控制台 API 绑定好发布端与接收端；此时驱动只验证结果。
 
 const timeoutMs = Number(options.get('timeout') ?? 180) * 1000;
 // 验证完成后保持推流 N 秒：调用方在这段时间里对两个真实 Windows 实例的窗口截图，做界面目检。
 const captureDelaySeconds = Number(options.get('capture-delay-seconds') ?? 0);
 const captureMarkerPath = options.get('capture-marker') ?? '';
-if (!service || !username || !password || !publisherDeviceIdOption) {
-  console.error('usage: node windows-push-chain.js --service <url> --username <user> (--password <secret> | --password-env <variable>) --evidence <dir> --publisher-device-id <id>');
+if (!service || !username || !password || !publisherDeviceIdOption || !receiverToken) {
+  console.error('usage: node windows-push-chain.js --service <url> --username <user> --password-env <variable> --receiver-token-env <variable> --evidence <dir> --publisher-device-id <id>');
   process.exit(2);
 }
 
@@ -210,14 +211,13 @@ async function main() {
   report.checks.receiverRegistered = true;
 
   // 2) Explicit binding is required for an inference publisher (no auto-binding to avoid loops).
-  const beforeBind = (await get('/api/streams', ownerToken)).streams ?? [];
-  const publisherStream = beforeBind.find(stream => stream.publisherDeviceId === publisher.deviceId);
-  report.checks.publisherUnboundByDefault = !!publisherStream && !publisherStream.targetDeviceId;
+  const beforeBind = await get('/api/streams', ownerToken);
+  const existingPublisherStreams = (beforeBind.streams ?? []).filter(stream => stream.publisherDeviceId === publisher.deviceId);
+  report.checks.publisherSourcesUnboundByDefault = existingPublisherStreams.every(stream => !stream.targetDeviceId)
+    && !(beforeBind.bindings ?? []).some(binding => binding.publisherDeviceId === publisher.deviceId);
   const bound = await request('/api/streams/bind', { publisherDeviceId: publisher.deviceId, targetDeviceId: receiver.deviceId }, ownerToken);
-  step('bind', { streamId: bound.stream.streamId, targetDeviceId: bound.stream.targetDeviceId });
-  report.checks.publisherStreamBound = bound.stream.targetDeviceId === receiver.deviceId;
+  step('bind', { targetDeviceId: bound.stream?.targetDeviceId ?? receiver.deviceId, streamCreated: !!bound.stream?.streamId });
   report.checks.selfBindRejected = await request('/api/streams/bind', { publisherDeviceId: publisher.deviceId, targetDeviceId: publisher.deviceId }, ownerToken).then(() => false, () => true);
-  if (!bound.stream || !bound.stream.streamId) throw new Error('the publisher stream was not bound before verification');
 
   // 3) Start the push branch through the same remote command the console uses.
   const session = await openConsole(ownerToken);
@@ -238,6 +238,15 @@ async function main() {
   step('push-state', { state: pushState });
   report.checks.pushStateReported = pushState === 'running';
 
+  const sourceStreams = await waitFor(async () => {
+    const streams = (await get('/api/streams', ownerToken)).streams ?? [];
+    const own = streams.filter(stream => stream.publisherDeviceId === publisher.deviceId && stream.sourceId);
+    return own.length >= 2 ? own : undefined;
+  }, 90000, 'two publisher sources declared');
+  report.checks.publisherSourceCount = sourceStreams.length === 2 && new Set(sourceStreams.map(stream => stream.sourceId)).size === 2;
+  report.checks.publisherStreamsBound = sourceStreams.length === 2 && sourceStreams.every(stream => stream.targetDeviceId === receiver.deviceId);
+  step('publisher-streams', sourceStreams.map(stream => ({ streamId: stream.streamId, sourceId: stream.sourceId, targetDeviceId: stream.targetDeviceId })));
+
   // 4) The receiver is a real Windows instance started by the caller. 先临时把同一路推流绑到一台帧探针设备，
   // 用它验证帧契约；之后再把目标切回真实接收端，让它持续消费并在界面上显示推流来源。
   const probe = await request('/api/account/login', { username, password, component: 'windows-inference', deviceIdentity: sha256('e2e-windows-push-chain-frame-probe'), deviceModel: 'Push Chain Frame Probe' });
@@ -251,37 +260,39 @@ async function main() {
   const receiverNode = await waitFor(async () => {
     const list = (await get('/api/devices', ownerToken)).devices ?? [];
     const node = list.find(device => device.deviceId === receiver.deviceId);
-    return node && node.online === true && (node.sources ?? []).some(source => source.sourceId === bound.stream.sourceId) ? node : undefined;
+    return node && node.online === true && sourceStreams.every(stream => (node.sources ?? []).some(source => source.sourceId === stream.sourceId)) ? node : undefined;
   }, 90000, 'receiver built the remote source').catch(() => undefined);
   step('receiver-source', { deviceId: receiver.deviceId, sources: (receiverNode?.sources ?? []).map(source => `${source.sourceId}:${source.sourceName}:${source.isMonitoring}:${source.actualFps}`) });
 
-  await waitFor(() => subscriber.state.frames.length >= 1, timeoutMs, 'first relayed frame');
-  const first = subscriber.state.frames[0].header, firstImage = subscriber.state.frames[0].image;
-  fs.writeFileSync(path.join(evidence, 'first-frame.jpg'), firstImage);
-  step('first-frame', { sequence: first.sequence, width: first.width, height: first.height, rotation: first.rotation, bytes: firstImage.length, jpegHead: firstImage.subarray(0, 2).toString('hex'), jpegTail: firstImage.subarray(-2).toString('hex') });
-  report.checks.frameStreamId = first.streamId === bound.stream.streamId;
-  report.checks.frameSessionId = !!first.sessionId && subscriber.state.sessionId !== first.sessionId;
-  report.checks.frameSizeWithinContract = Math.max(first.width, first.height) <= 1280 && Math.min(first.width, first.height) <= 720;
-  report.checks.frameRotationNormalized = first.rotation === 0;
-  report.checks.frameCapturedAtMonotonic = Number.isSafeInteger(first.capturedAt) && first.capturedAt > 0;
+  const expectedStreamIds = sourceStreams.map(stream => stream.streamId).sort();
+  await waitFor(() => expectedStreamIds.every(id => subscriber.state.frames.some(frame => frame.header.streamId === id)), timeoutMs, 'frames from both relayed sources');
+  const firstFrames = expectedStreamIds.map(id => subscriber.state.frames.find(frame => frame.header.streamId === id));
+  for (const [index, frame] of firstFrames.entries()) fs.writeFileSync(path.join(evidence, `first-frame-${index + 1}.jpg`), frame.image);
+  const first = firstFrames[0].header;
+  step('first-frames', firstFrames.map(({ header, image }) => ({ streamId: header.streamId, sequence: header.sequence, width: header.width, height: header.height, rotation: header.rotation, bytes: image.length })));
+  report.checks.frameStreamIds = firstFrames.length === 2 && firstFrames.every((frame, index) => frame.header.streamId === expectedStreamIds[index]);
+  report.checks.frameSessionIds = firstFrames.every(frame => !!frame.header.sessionId && subscriber.state.sessionId !== frame.header.sessionId);
+  report.checks.frameSizesWithinContract = firstFrames.every(({ header }) => Math.max(header.width, header.height) <= 1280 && Math.min(header.width, header.height) <= 720);
+  report.checks.frameRotationsNormalized = firstFrames.every(({ header }) => header.rotation === 0);
+  report.checks.frameCaptureTimesValid = firstFrames.every(({ header }) => Number.isSafeInteger(header.capturedAt) && header.capturedAt > 0);
 
-  await waitFor(() => subscriber.state.frames.length >= 8, timeoutMs, 'eight relayed frames');
-  let monotonic = true, valid = true;
-  for (let index = 1; index < subscriber.state.frames.length; index++) {
-    const previous = subscriber.state.frames[index - 1].header, current = subscriber.state.frames[index].header;
-    if (current.sequence <= previous.sequence) monotonic = false;
-    if (current.streamId !== first.streamId || current.sessionId !== first.sessionId) valid = false;
+  await waitFor(() => expectedStreamIds.every(id => subscriber.state.frames.filter(frame => frame.header.streamId === id).length >= 4), timeoutMs, 'four relayed frames per source');
+  const perStreamFrames = new Map(expectedStreamIds.map(id => [id, subscriber.state.frames.filter(frame => frame.header.streamId === id)]));
+  const monotonic = [...perStreamFrames.values()].every(frames => frames.every((frame, index) => index === 0 || frame.header.sequence > frames[index - 1].header.sequence));
+  const identityStable = [...perStreamFrames.entries()].every(([id, frames]) => frames.every(frame => frame.header.streamId === id && frame.header.sessionId === frames[0].header.sessionId));
+  for (const [index, id] of expectedStreamIds.entries()) {
+    const frames = perStreamFrames.get(id);
+    fs.writeFileSync(path.join(evidence, `latest-frame-${index + 1}.jpg`), frames[frames.length - 1].image);
   }
-  const last = subscriber.state.frames[subscriber.state.frames.length - 1].header;
-  fs.writeFileSync(path.join(evidence, 'latest-frame.jpg'), subscriber.state.frames[subscriber.state.frames.length - 1].image);
-  step('frames', { received: subscriber.state.frames.length, firstSequence: first.sequence, lastSequence: last.sequence });
+  step('frames', Object.fromEntries([...perStreamFrames.entries()].map(([id, frames]) => [id, { received: frames.length, firstSequence: frames[0].header.sequence, lastSequence: frames[frames.length - 1].header.sequence }])));
   report.checks.frameSequenceMonotonic = monotonic;
-  report.checks.frameIdentityStable = valid;
+  report.checks.frameIdentityStable = identityStable;
 
   // 把目标切回真实接收端：界面截图与它的推理状态都必须建立在这条绑定上。
   const rebound = await request('/api/streams/bind', { publisherDeviceId: publisher.deviceId, targetDeviceId: receiver.deviceId }, ownerToken);
-  report.checks.receiverStreamBound = rebound.stream.targetDeviceId === receiver.deviceId;
-  step('rebind-to-receiver', { targetDeviceId: rebound.stream.targetDeviceId, sourceId: rebound.stream.sourceId });
+  const reboundStreams = (await get('/api/streams', ownerToken)).streams.filter(stream => stream.publisherDeviceId === publisher.deviceId);
+  report.checks.receiverStreamsBound = reboundStreams.length === 2 && reboundStreams.every(stream => stream.targetDeviceId === receiver.deviceId);
+  step('rebind-to-receiver', { targetDeviceId: rebound.stream.targetDeviceId, streams: reboundStreams.map(stream => ({ streamId: stream.streamId, sourceId: stream.sourceId })) });
   try { subscriber.socket.close(); } catch { /* probe connection no longer needed */ }
   // 绑定重新落到接收端之后再让它开始推理（拿到真实媒体会话后 IsReady 才会为真）。
   // 重启命令可能在来源还没就绪时到达，因此这里重试到节点自己报告在推理为止。
@@ -291,17 +302,18 @@ async function main() {
   // 5) The service reports the relay as live and advancing.
   const live = await waitFor(async () => {
     const streams = (await get('/api/streams', ownerToken)).streams ?? [];
-    const stream = streams.find(item => item.streamId === bound.stream.streamId);
-    return stream && stream.isStreaming === true && (stream.stats?.forwarded ?? 0) > 0 ? stream : undefined;
-  }, timeoutMs, 'relay forwarding').catch(async () => (await get('/api/streams', ownerToken)).streams.find(item => item.streamId === bound.stream.streamId));
-  report.checks.relayStreaming = live.isStreaming === true;
-  report.checks.relayStatsForwarded = (live.stats?.forwarded ?? 0) > 0;
-  step('relay', { isStreaming: live.isStreaming, stats: live.stats });
+    const current = streams.filter(item => expectedStreamIds.includes(item.streamId));
+    return current.length === 2 && current.every(stream => stream.isStreaming === true && (stream.stats?.forwarded ?? 0) > 0 && (stream.stats?.confirmed ?? 0) > 0) ? current : undefined;
+  }, timeoutMs, 'both relays forwarding').catch(async () => (await get('/api/streams', ownerToken)).streams.filter(item => expectedStreamIds.includes(item.streamId)));
+  report.checks.relayStreamsStreaming = live.length === 2 && live.every(stream => stream.isStreaming === true);
+  // Accepted publish frames receive frame-ack in this same branch; the receiver then confirms each relayed frame.
+  report.checks.frameAcksForBothStreams = live.length === 2 && live.every(stream => (stream.stats?.forwarded ?? 0) > 0 && (stream.stats?.confirmed ?? 0) > 0);
+  step('relay', live.map(stream => ({ streamId: stream.streamId, isStreaming: stream.isStreaming, stats: stream.stats })));
 
   const receiverSourceStatus = async () => {
     const list = (await get('/api/devices', ownerToken)).devices ?? [];
     const node = list.find(device => device.deviceId === receiver.deviceId);
-    return (node?.sources ?? []).find(item => item.sourceId === rebound.stream.sourceId);
+    return (node?.sources ?? []).filter(item => reboundStreams.some(stream => stream.sourceId === item.sourceId));
   };
   let receiverRunning;
   const receiverDeadline = Date.now() + timeoutMs;
@@ -309,12 +321,12 @@ async function main() {
   while (Date.now() < receiverDeadline) {
     const list = (await get('/api/devices', ownerToken)).devices ?? [];
     const node = list.find(device => device.deviceId === receiver.deviceId);
-    const source = (node?.sources ?? []).find(item => item.sourceId === rebound.stream.sourceId);
-    if (source && source.isMonitoring === true && (source.actualFps ?? 0) > 0) { receiverRunning = source; break; }
+    const sources = (node?.sources ?? []).filter(item => reboundStreams.some(stream => stream.sourceId === item.sourceId));
+    if (sources.length === 2 && sources.every(source => source.isMonitoring === true && (source.actualFps ?? 0) > 0)) { receiverRunning = sources; break; }
     // 来源未就绪时启动会被拒；每 10 秒重试一次，并记录节点在线状态与最近一次回执原因。
     if (attempts === 0 || Date.now() - lastAttempt >= 10000) {
       lastAttempt = Date.now(); attempts++;
-      step(`receiver-state-${attempts}`, { online: node?.online === true, isMonitoring: source?.isMonitoring, isReady: source?.isReady });
+      step(`receiver-state-${attempts}`, { online: node?.online === true, sources: sources.map(source => ({ sourceId: source.sourceId, isMonitoring: source.isMonitoring, isReady: source.isReady })) });
       const ack = await consoleCommand(session, { type: 'command', targetDeviceId: receiver.deviceId, command: 'resume' }, `receiver start inference #${attempts}`)
         .catch(error => ({ success: false, reason: String(error.message) }));
       step(`receiver-start-${attempts}`, ack);
@@ -322,10 +334,10 @@ async function main() {
     await sleep(1500);
   }
   report.checks.receiverInferring = !!receiverRunning;
-  step('receiver-inference', { source: receiverRunning?.sourceName, isMonitoring: receiverRunning?.isMonitoring, actualFps: receiverRunning?.actualFps, error: receiverRunning?.error });
+  step('receiver-inference', (receiverRunning ?? []).map(source => ({ source: source.sourceName, isMonitoring: source.isMonitoring, actualFps: source.actualFps, error: source.error })));
   if (!receiverRunning) {
     const last = await receiverSourceStatus();
-    step('receiver-source-last', { isMonitoring: last?.isMonitoring, isReady: last?.isReady, error: last?.error });
+    step('receiver-source-last', (last ?? []).map(source => ({ isMonitoring: source.isMonitoring, isReady: source.isReady, error: source.error })));
   }
 
   // 7) The publisher must not produce local alerts while it only pushes.
@@ -335,16 +347,21 @@ async function main() {
 
   try { session.socket.close(); } catch { /* already closed */ }
   report.durationMs = Date.now() - started;
-  const failed = Object.entries(report.checks).filter(([, value]) => value !== true).map(([name]) => name);
-  report.ok = failed.length === 0;
-  if (!report.ok) fail('checks', failed.join(', '));
-  fs.writeFileSync(path.join(evidence, 'windows-push-chain-report.json'), JSON.stringify(report, null, 2));
   if (captureDelaySeconds > 0) {
     // 保持推流与订阅连接存活，让调用方截取界面证据；不改变任何断言结果。
     step('capture-window', { seconds: captureDelaySeconds });
     if (captureMarkerPath) { try { fs.writeFileSync(captureMarkerPath, new Date().toISOString()); } catch { /* marker is best effort */ } }
     await sleep(captureDelaySeconds * 1000);
   }
+  // The real receiver session performs the passive-side unbind after the active-chain screenshot.
+  await request('/api/streams/unbind', { publisherDeviceId: publisher.deviceId }, receiverToken);
+  const afterPassiveUnbind = (await get('/api/streams', ownerToken)).streams.filter(stream => stream.publisherDeviceId === publisher.deviceId);
+  report.checks.passiveUnbindClearsBothStreams = afterPassiveUnbind.length === 2 && afterPassiveUnbind.every(stream => !stream.targetDeviceId);
+  step('passive-unbind', { receiverDeviceId: receiver.deviceId, remainingTargets: afterPassiveUnbind.map(stream => stream.targetDeviceId ?? null) });
+  const failed = Object.entries(report.checks).filter(([, value]) => value !== true).map(([name]) => name);
+  report.ok = failed.length === 0;
+  if (!report.ok) fail('checks', failed.join(', '));
+  fs.writeFileSync(path.join(evidence, 'windows-push-chain-report.json'), JSON.stringify(report, null, 2));
   try { subscriber?.socket.close(); } catch { /* already closed */ }
   console.log(`${report.ok ? 'PASS' : 'FAIL'} Windows push chain: ${Object.keys(report.checks).length - failed.length}/${Object.keys(report.checks).length} checks, ${subscriber ? subscriber.state.frames.length + ' frames' : 'relay delivery verified'}`);
   process.exit(report.ok ? 0 : 1);

@@ -1184,6 +1184,7 @@ rm -rf {q(remote_stage)} {q(remote_archive)}
 client = paramiko.SSHClient()
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 client.connect(hostname=host, port=port, username=user, password=password or None, key_filename=key_filename or None, timeout=30)
+status = None
 try:
     with client.open_sftp() as sftp:
         sftp.put(archive, remote_archive)
@@ -1193,12 +1194,23 @@ try:
     err = stderr.read().decode("utf-8", "replace")
     if out:
         print(out, end="")
-    if status != 0:
-        if err:
-            print(err, file=sys.stderr, end="")
-        raise SystemExit(status)
-finally:
+except BaseException:
+    try:
+        client.close()
+    except Exception as exc:
+        print("SSH cleanup warning: " + str(exc), file=sys.stderr)
+    raise
+try:
     client.close()
+except Exception as exc:
+    # 关闭已完成的 SSH 会话失败不能覆盖远端部署命令的退出结果。
+    print("SSH cleanup warning: " + str(exc), file=sys.stderr)
+if status is None:
+    raise SystemExit("Remote deployment did not return an exit status")
+if status != 0:
+    if err:
+        print(err, file=sys.stderr, end="")
+    raise SystemExit(status)
 '@
 
         $python | python -

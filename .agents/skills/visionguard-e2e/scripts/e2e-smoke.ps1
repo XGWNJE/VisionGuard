@@ -37,7 +37,7 @@
     [ValidateRange(30,900)][int]$WebCameraChainPermissionTimeoutSeconds = 180,
     [ValidateRange(30,900)][int]$WebCameraChainAlertTimeoutSeconds = 180,
     [switch]$WebCameraChainKeepStreaming,
-    # WindowsPushChain：真实 Windows 节点推流态 → 隔离服务中继 → 另一个推理设备真实收到合法帧。
+    # WindowsPushChain：真实 Windows 两来源并行推流 → 隔离服务中继 → 另一个推理设备收到并推理，最后由被动方解绑。
     [ValidateRange(1024,65535)][int]$WindowsPushChainPort = 3125,
     [string]$WindowsPushChainChannel = 'windows-push-chain-e2e',
     [string]$WindowsPushChainFixtureImage = 'artifacts\v5\fixtures\vg-v5-person-zidane.jpg',
@@ -1086,7 +1086,7 @@ function Run-WindowsPushChain {
     $detectorProcess = $null
     $fixtures = $null
     $previousEnvironment = @{}
-    foreach ($name in @('VISIONGUARD_ACCOUNT_DIR', 'VISIONGUARD_SERVER_URL', 'VISIONGUARD_SETTINGS_PATH', 'VISIONGUARD_MODELS_DIR', 'VISIONGUARD_LOG_DIR', 'VISIONGUARD_LOGIN_PASSWORD', 'VISIONGUARD_CHAIN_PASSWORD', 'VISIONGUARD_MEDIA_DIAGNOSTICS')) {
+    foreach ($name in @('VISIONGUARD_ACCOUNT_DIR', 'VISIONGUARD_SERVER_URL', 'VISIONGUARD_SETTINGS_PATH', 'VISIONGUARD_MODELS_DIR', 'VISIONGUARD_LOG_DIR', 'VISIONGUARD_LOGIN_PASSWORD', 'VISIONGUARD_CHAIN_PASSWORD', 'VISIONGUARD_RECEIVER_TOKEN', 'VISIONGUARD_MEDIA_DIAGNOSTICS')) {
         $previousEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
     }
     # 服务数据是删掉重建的，但仍可能有上一轮留下的检测端进程带着旧账号目录在跑；按命令行里的隔离路径先清掉。
@@ -1123,8 +1123,8 @@ function Run-WindowsPushChain {
         $env:VISIONGUARD_MODELS_DIR = $environment.modelsDirectory
         $env:VISIONGUARD_LOG_DIR = $logDirectory
         $handleFile = Join-Path $evidence 'fixture-window-handles.txt'
-        $fixtures = Start-WpfFixtureWindows -ImagePaths @($fixtureImage) -HandleFile $handleFile
-        $fixtureWindow = $fixtures.Forms[0]
+        $fixtures = Start-WpfFixtureWindows -ImagePaths @($fixtureImage, $fixtureImage) -HandleFile $handleFile
+        $fixtureWindows = $fixtures.Forms
 
         # 真实登录一次拿到设备身份，设置按「服务 + 账号 + 设备」作用域写入（与 SettingsStore 同一算法）。
         $env:VISIONGUARD_LOGIN_PASSWORD = $testAccount.password
@@ -1147,18 +1147,29 @@ function Run-WindowsPushChain {
             # 把这份推流配置覆盖成默认屏幕来源（ui-preview.ps1 的 PrepareWindows 同样先标好这两个标记）。
             'Source.LegacyMigrationCompleted=True'
             'Source.KeyMigrationCompleted=True'
-            'Source.Indexes=1'
+            'Source.Indexes=1,2'
             'Source.1.Initialized=True'
             'Source.1.SourceId=default'
             'Source.1.Name=推流窗口'
             'Source.1.CaptureMode=WindowHandle'
-            "Source.1.TargetWindowTitle=$($fixtureWindow.Text)"
+            "Source.1.TargetWindowTitle=$($fixtureWindows[0].Text)"
             'Source.1.TargetWindowProcessName=powershell'
             'Source.1.Fps=5'
             'Source.1.Threshold=45'
             'Source.1.Cooldown=5'
             'Source.1.Targets=person'
             'Source.1.ModelKey=yolo26m_320'
+            'Source.2.Initialized=True'
+            'Source.2.SourceId=window-2'
+            'Source.2.Name=推流窗口 2'
+            'Source.2.CaptureMode=WindowHandle'
+            "Source.2.TargetWindowTitle=$($fixtureWindows[1].Text)"
+            'Source.2.TargetWindowProcessName=powershell'
+            'Source.2.Fps=5'
+            'Source.2.Threshold=45'
+            'Source.2.Cooldown=5'
+            'Source.2.Targets=person'
+            'Source.2.ModelKey=yolo26m_320'
         )
         # 应用启动时已有会话，实际读取的是 <父目录>/accounts/<scope>/settings.ini；两处写成同一组值，
         # 无论设置读取发生在登录前还是登录后都能拿到这份推流配置。
@@ -1204,11 +1215,24 @@ function Run-WindowsPushChain {
         finally { Remove-Item Env:VISIONGUARD_PREVIEW_SIGNIN -ErrorAction SilentlyContinue }
         Add-Result -Name 'Windows receiver launch' -Status 'PASS' -Note "pid=$($receiverProcess.Id)"
 
+        # 被动解绑使用真实接收端会话；令牌只经内存和子进程环境传递，不写日志或证据。
+        $receiverToken = $null
+        $sessionDeadline = (Get-Date).AddSeconds(90)
+        while (-not $receiverToken -and (Get-Date) -lt $sessionDeadline) {
+            try {
+                $sessionOutput = & $accountProbe '--session-token' $receiverEnvironmentPath 2>$null
+                if ($LASTEXITCODE -eq 0) { $receiverToken = ($sessionOutput | Out-String | ConvertFrom-Json).token }
+            } catch { }
+            if (-not $receiverToken) { Start-Sleep -Milliseconds 500 }
+        }
+        if (-not $receiverToken) { throw 'The receiver did not persist an isolated account session.' }
+        $env:VISIONGUARD_RECEIVER_TOKEN = $receiverToken
+
         $chainScript = Join-Path $repoRoot 'scripts\windows-push-chain.js'
         $env:VISIONGUARD_CHAIN_PASSWORD = $testAccount.password
         $captureMarker = Join-Path $evidence 'chain-capture-pending.txt'
         $chainArguments = @($chainScript, '--service', $env:VISIONGUARD_SERVER_URL, '--username', $testAccount.username, '--password-env', 'VISIONGUARD_CHAIN_PASSWORD',
-            '--evidence', $evidence, '--publisher-device-id', $identity.deviceId, '--fixture-window-title', $fixtureWindow.Text,
+            '--receiver-token-env', 'VISIONGUARD_RECEIVER_TOKEN', '--evidence', $evidence, '--publisher-device-id', $identity.deviceId,
             '--capture-delay-seconds', $WindowsPushChainCaptureDelaySeconds.ToString(), '--capture-marker', $captureMarker,
             '--timeout', $WindowsPushChainTimeoutSeconds.ToString())
         $chainLog = Join-Path $evidence 'windows-push-chain-console.txt'
@@ -1263,23 +1287,25 @@ function Run-WindowsPushChain {
         $checks = [ordered]@{
             receiverRegistered = 'a second inference device registered as the receiver'
             publisherCapabilities = 'publisher declares video-publish / stream-control and no camera-config'
-            publisherUnboundByDefault = 'inference publisher is not auto-bound (no self-loop)'
-            publisherStreamBound = 'console bound the publisher to the receiver'
+            publisherSourceCount = 'publisher declared two independent source streams'
+            publisherSourcesUnboundByDefault = 'neither stream is auto-bound (no self-loop)'
+            publisherStreamsBound = 'console bound both streams to the same receiver'
             selfBindRejected = 'binding a node to itself is rejected'
             pushStarted = 'remote start-stream command started the push branch'
             pushStateReported = 'the pushing node self-reports its push state to the console'
-            receiverStreamBound = 'the relay keeps the binding to the real receiver'
-            frameStreamId = 'relayed frame carries the bound streamId'
-            frameSessionId = 'relayed frame carries the publisher media session'
-            frameSizeWithinContract = 'frame size stays within 1280x720'
-            frameRotationNormalized = 'rotation is normalized to 0 (direction from width/height)'
-            frameCapturedAtMonotonic = 'capturedAt is a positive safe integer'
+            receiverStreamsBound = 'the relay keeps both bindings to the real receiver'
+            frameStreamIds = 'two distinct streamIds arrive at the subscriber'
+            frameSessionIds = 'both frames carry their publisher media session'
+            frameSizesWithinContract = 'both frame sizes stay within 1280x720'
+            frameRotationsNormalized = 'both rotations are normalized to 0'
+            frameCaptureTimesValid = 'both capturedAt values are positive safe integers'
             frameSequenceMonotonic = 'sequence numbers strictly increase'
             frameIdentityStable = 'streamId/sessionId stay stable across frames'
-            relayStreaming = 'the relay reports this binding as streaming'
-            relayStatsForwarded = 'relay forwarded frame statistics advance'
-            receiverInferring = 'the real receiver infers on the pushed stream'
+            relayStreamsStreaming = 'both relays report streaming'
+            frameAcksForBothStreams = 'both accepted streams advance relay counters and receive frame-ack'
+            receiverInferring = 'the real receiver infers on both pushed sources'
             noLocalAlertFromPublisher = 'the pushing node produced no local alert'
+            passiveUnbindClearsBothStreams = 'the receiver session unbinds both streams from the passive side'
         }
         foreach ($check in $checks.Keys) {
             $value = $chainReport.checks.$check
@@ -1294,6 +1320,7 @@ function Run-WindowsPushChain {
     }
     finally {
         Remove-Item Env:VISIONGUARD_CHAIN_PASSWORD -ErrorAction SilentlyContinue
+        Remove-Item Env:VISIONGUARD_RECEIVER_TOKEN -ErrorAction SilentlyContinue
         foreach ($process in @(Get-CimInstance Win32_Process -Filter "Name = 'VisionGuard.Detector.Windows.exe' OR Name = 'VisionGuard.Resident.Windows.exe'" -ErrorAction SilentlyContinue |
                 Where-Object { $_.CommandLine -and ($_.CommandLine.IndexOf($accountDirectory, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf($receiverAccountDirectory, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf($environmentPath, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or $_.CommandLine.IndexOf($receiverEnvironmentPath, [StringComparison]::OrdinalIgnoreCase) -ge 0) })) {
             Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
@@ -1440,6 +1467,7 @@ try {
 catch {
     $exitCode = 1
     Add-Result -Name 'Run' -Status 'FAIL' -Note $_.Exception.Message
+    if ($_.ScriptStackTrace) { Write-Host $_.ScriptStackTrace }
 }
 finally {
     if ($launchedEmulatorSerial) {

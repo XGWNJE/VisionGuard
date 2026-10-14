@@ -74,6 +74,13 @@ internal static class Program
                 Console.WriteLine(JsonSerializer.Serialize(new { ok = true, service = AccountSession.ServiceUrl, accountDir = AccountSession.Root, scope = AccountSession.ScopeKey, appId = AccountSession.ApplicationId, deviceId = AccountSession.Current?.device.deviceId }));
                 return 0;
             }
+            if (args.Length == 2 && args[0] == "--session-token")
+            {
+                AccountSession.ConfigureIsolatedEnvironment(args[1]); AccountSession.Load();
+                var session = AccountSession.Current ?? throw new Exception("The isolated account session is not ready.");
+                Console.WriteLine(JsonSerializer.Serialize(new { session.token, session.device.deviceId }));
+                return 0;
+            }
             if (args.Length >= 3 && args[0] == "--login")
             {
                 string password = Environment.GetEnvironmentVariable("VISIONGUARD_LOGIN_PASSWORD") ?? throw new Exception("VISIONGUARD_LOGIN_PASSWORD is required.");
