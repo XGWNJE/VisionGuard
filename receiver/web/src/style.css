@@ -142,12 +142,9 @@ button:disabled { opacity: 1; background: var(--surface); border-color: var(--bo
 .workspace-tabs button:focus-visible { outline-offset: -4px; }
 .workspace-body { padding: 16px; min-width: 0; flex: 1; }
 .workspace-body > .panel { border: 0; padding: 0; border-radius: 0; }
-/* Events remain inside the selected node, alongside every workspace tab. */
-.node-detail-layout { display: grid; grid-template-columns: minmax(0,1fr) 280px; align-items: stretch; flex: 1; }
+/* 节点工作区分为概览、来源、设置与诊断。 */
+.node-detail-layout { display: grid; grid-template-columns: minmax(0,1fr); align-items: stretch; flex: 1; }
 .node-primary { display: flex; flex-direction: column; min-width: 0; container-type: inline-size; }
-.node-events { display: flex; flex-direction: column; min-width: 0; border-left: 1px solid var(--border); align-self: stretch; background: var(--page); padding: 16px; }
-.node-events > .panel { padding: 0; border: 0; background: transparent; }
-.node-events > .node-receipts { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); flex: 1; }
 .node-receipts .section-title { margin-bottom: 4px; }
 .node-receipts > p { font-size: 12px; margin: 0 0 12px; }
 .node-receipt-list { max-height: 320px; overflow-y: auto; }
@@ -180,7 +177,6 @@ button:disabled { opacity: 1; background: var(--surface); border-color: var(--bo
 .runtime-grid .section-title { min-height: var(--control-height); }
 @container (max-width: 785px) {
   .node-detail-layout { grid-template-columns: minmax(0,1fr); }
-  .node-events { border-left: 0; border-top: 1px solid var(--border); }
 }
 .source-table-wrap { overflow-x: auto; max-height: max(280px,calc(100dvh - 420px)); }
 .source-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; }
@@ -444,7 +440,6 @@ dialog::backdrop { background: #00000066; }
 button:active:not(:disabled) { filter: brightness(.92); }
 @media (max-width:1399px) {
   .runtime-grid { grid-template-columns: 1fr; gap: 16px; }
-  .node-events .event-preview { max-width: 400px; }
   .latest-event > .button { width: auto; }
 }
 @media (max-width:1199px) {
@@ -560,3 +555,22 @@ button:active:not(:disabled) { filter: brightness(.92); }
   .nav-item.active { border: 1px solid Highlight; }
 }
 @media (prefers-reduced-motion:reduce) { * { scroll-behavior: auto !important; } }
+
+/* Settings/status reorganization: one clear editing location per object. */
+.sources-workspace { display: grid; grid-template-columns: minmax(220px,.8fr) minmax(0,1.6fr); align-items: start; gap: 20px; }
+.sources-workspace[hidden], .diagnostics-workspace[hidden] { display: none; }
+.source-inspector { min-width: 0; }
+.source-inspector > .section-title { padding: 0 12px; }
+.source-inspector .workspace-tabs { padding: 0; }
+.source-open { display: block; width: 100%; text-align: left; overflow-wrap: anywhere; }
+.sources-workspace > .source-panel { min-width: 0; }
+.source-table td { white-space: normal; }
+.source-table th:nth-child(3) { min-width: 65px; }
+.source-inspector dl, .diagnostics-workspace dl { display: grid; grid-template-columns: minmax(80px,auto) minmax(0,1fr); gap: 10px 16px; }
+.source-inspector dd, .diagnostics-workspace dd { margin: 0; overflow-wrap: anywhere; }
+.workspace-tabs { overflow-x: auto; flex-wrap: nowrap; }
+.workspace-tabs button { flex: 0 0 auto; white-space: nowrap; padding: 12px 16px; }
+.diagnostics-workspace { display: grid; gap: 20px; }
+.runtime-grid .latest-event .event-preview { max-width: 640px; }
+@container (max-width: 760px) { .sources-workspace { grid-template-columns: minmax(0,1fr); } }
+@media (max-width: 767px) { .master-detail.resizable { grid-template-columns: minmax(0,1fr); } .master-resizer { display: none; } .sources-workspace { grid-template-columns: minmax(0,1fr); } .workspace-tabs button { flex: 0 0 auto; padding: 12px; } }

@@ -94,6 +94,8 @@ namespace VisionGuard.Detector.Windows.Views
             if (restoreFocus) SourceNameText.Focus();
         }
 
+        private void OpenModels_OnClick(object sender, RoutedEventArgs e) => (Window.GetWindow(this) as MainWindow)?.OpenModelResources();
+
         private void AdjustParameters_OnClick(object sender, RoutedEventArgs e)
         {
             if ((sender as FrameworkElement)?.DataContext is not SourceViewModel source) return;

@@ -240,8 +240,12 @@ test('retired display names are rejected in current modules while version facts 
 });
 
 test('the todo list keeps its chapters, one-line items, priorities and plan links', () => {
-  const read = p => fs.readFileSync(path.join(root, p), 'utf8');
-  const valid = read('docs/06-待办.md');
+  const valid = [
+    '# 待办', '> **当前状态**：测试夹具。', '', '## 待办',
+    '- [ ] **15 · 来源抽屉与设置抽屉分区清点**（**高**）——整理布局。计划：[详情](plans/15-来源抽屉与设置抽屉分区清点.md)',
+    '- [ ] **6 · 校准集换成相机实拍**（**中**）——等待样本。',
+    '- [ ] **1 · 部署模式**（**低**）——尚未开始。', '', '## 分支', '', '## 口径'
+  ].join('\n');
   const audit = (content) => {
     const errors = [];
     checkTaskListContract(content, errors);
@@ -281,7 +285,7 @@ test('the todo list keeps its chapters, one-line items, priorities and plan link
   assert.ok(repeated.some((error) => error.includes('repeats item number 15')));
 
   // 顺序即优先级：低排在高/中之后才合法。
-  const unordered = audit(valid.replace('- [ ] **15 · 来源抽屉与设置抽屉分区清点**（**高**', '- [ ] **15 · 来源抽屉与设置抽屉分区清点**（**低**'));
+  const unordered = audit(valid.replace(item, item.replace('（**高**', '（**低**')));
   assert.ok(unordered.some((error) => error.includes('keep the list sorted')));
 
   // 超过一行就写计划文档，不允许在待办里铺开。
@@ -289,7 +293,7 @@ test('the todo list keeps its chapters, one-line items, priorities and plan link
   assert.ok(tooLong.some((error) => error.includes('longer than 200 characters')));
 
   // 计划文档编号必须与条目编号一致（否则就是挂错了条目）。
-  const mismatched = audit(valid.replace('](plans/15-来源抽屉与设置抽屉分区清点.md)', '](plans/6-来源抽屉与设置抽屉分区清点.md)'));
+  const mismatched = audit(valid.replace(item, item.replace(/plans\/15-/, 'plans/6-')));
   assert.ok(mismatched.some((error) => error.includes('links a plan numbered 6')));
 });
 

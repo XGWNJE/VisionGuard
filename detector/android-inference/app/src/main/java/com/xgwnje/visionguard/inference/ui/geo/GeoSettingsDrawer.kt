@@ -62,15 +62,16 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 private enum class SettingsSection(val title: String) {
-    ACCOUNT("账号"),
-    MODEL("模型"),
+    STATE("节点状态"),
+    ACCOUNT("账号与设备"),
+    MODEL("模型资源"),
     APPEARANCE("外观"),
-    BACKGROUND("后台"),
+    BACKGROUND("后台与权限"),
     MAINTENANCE("维护")
 }
 
 /**
- * 全局设置抽屉（宽 ≤760）：五个分区、独立滚动、应用级危险操作二次确认。
+ * 全局设置：节点状态与五类设置分开，窄屏目录进入详情、宽屏侧栏导航。
  *
  * 账号、设备与连接分开表达；模型删除、改密、退出登录、缓存清理都走确认闸门。
  */
@@ -84,9 +85,9 @@ fun GeoSettingsDrawer(
     runtime: InferenceRuntime,
     onClose: () -> Unit,
     onMessage: (String?) -> Unit,
-    onOpenParams: () -> Unit
+    initialSection: String? = null
 ) {
-    var section by remember { mutableStateOf(SettingsSection.ACCOUNT) }
+    var section by remember { mutableStateOf(SettingsSection.entries.firstOrNull { it.name == initialSection }) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= 840.dp
         GeoDrawer(
@@ -119,16 +120,16 @@ fun GeoSettingsDrawer(
                             .padding(20.dp),
                         verticalArrangement = Arrangement.spacedBy(Geo.GroupGap)
                     ) {
-                        SettingsBody(section, session, control, media, appearance, state, runtime, onMessage, onOpenParams)
+                        SettingsBody(section ?: SettingsSection.STATE, session, control, media, appearance, state, runtime, onMessage)
                     }
                 }
             } else {
-                GeoShifter(
-                    options = SettingsSection.entries.map { it.name to it.title },
-                    value = section.name,
-                    onSelect = { name -> SettingsSection.entries.firstOrNull { it.name == name }?.let { section = it } }
-                )
-                SettingsBody(section, session, control, media, appearance, state, runtime, onMessage, onOpenParams)
+                if (section == null) {
+                    SettingsSection.entries.forEach { entry -> SettingsRailItem(entry, false) { section = entry } }
+                } else {
+                    GeoKey(onClick = { section = null }, label = "返回设置目录", icon = LucideIcons.ArrowLeft)
+                    SettingsBody(section ?: SettingsSection.STATE, session, control, media, appearance, state, runtime, onMessage)
+                }
             }
         }
     }
@@ -172,12 +173,15 @@ private fun SettingsBody(
     appearance: AppearancePreference,
     state: RuntimeUiState,
     runtime: InferenceRuntime,
-    onMessage: (String?) -> Unit,
-    onOpenParams: () -> Unit
+    onMessage: (String?) -> Unit
 ) {
     when (section) {
+        SettingsSection.STATE -> ConnectionSection(control, media, state)
         SettingsSection.ACCOUNT -> AccountSection(session, control, media, runtime, onMessage)
-        SettingsSection.MODEL -> ModelSection(state, onOpenParams)
+        SettingsSection.MODEL -> GeoModelResources(
+            state.models, state.downloads, state.sources.filter { it.state.isRunning }.map { it.params.modelKey }.toSet(), state.gpuAvailable,
+            runtime::downloadModel, runtime::deleteModel, onMessage
+        )
         SettingsSection.APPEARANCE -> AppearanceSection(appearance)
         SettingsSection.BACKGROUND -> BackgroundSection(state, runtime)
         SettingsSection.MAINTENANCE -> MaintenanceSection(runtime, onMessage)
@@ -199,32 +203,11 @@ private fun AccountSection(
     var confirmLogout by remember { mutableStateOf(false) }
     var confirmPassword by remember { mutableStateOf(false) }
     var passwordError by remember { mutableStateOf<String?>(null) }
-    // 服务端下发 ISO-8601（UTC）：换成设备本地时间再显示，避免直接念一串 Z 时间。
-    val serverTimeText = remember(control.serverTimeIso) {
-        control.serverTimeIso?.let { iso ->
-            runCatching {
-                java.time.OffsetDateTime.parse(iso)
-                    .atZoneSameInstant(java.time.ZoneId.systemDefault())
-                    .format(java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm:ss"))
-            }.getOrNull() ?: iso
-        } ?: "未校时"
-    }
-
     GeoSectionLabel(null, "账号与设备", "本机保存")
-    GeoInfoRow("设备名称", session.deviceName)
     GeoInfoRow("账号名", session.username)
     GeoInfoRow("服务地址", session.endpoint)
     // 设备身份是最长的一串技术值，排在最后，日常查看时先看到人可读的三项。
     GeoInfoRow("设备身份", session.deviceId)
-
-    GeoDivider()
-    GeoSectionLabel(null, "连接状态", "控制 ≠ 媒体 ≠ 回执")
-    GeoInfoRow("控制通道", control.statusText + if (control.sourcesRegistered) "（来源已登记）" else "（来源未登记）")
-    GeoInfoRow("媒体通道", media.statusText)
-    GeoInfoRow("远程收帧", "已收 ${media.receivedFrames} · 丢弃 ${media.rejectedFrames}")
-    GeoInfoRow("来源上限", "${control.maxSources} 路")
-    GeoInfoRow("服务时间", serverTimeText)
-    GeoInfoRow("时区", control.timeZone ?: "未下发")
 
     GeoDivider()
     GeoSectionLabel(null, "设备名称", "${deviceName.length}/64")
@@ -321,49 +304,33 @@ private fun AccountSection(
 }
 
 @Composable
-private fun ModelSection(state: RuntimeUiState, onOpenParams: () -> Unit) {
-    val backend = state.sources.firstOrNull { it.state.isRunning }?.state?.backend
-        ?: state.sources.firstOrNull()?.state?.backend.orEmpty()
-    val totalMasks = state.sources.sumOf { it.masks.size }
-
-    GeoSectionLabel(null, "推理状态", "逐来源上报")
-    GeoInfoRow("推理后端", backend.ifBlank { "未开始推理" })
-    val latency = state.sources.firstOrNull { it.state.isRunning }?.state?.inferenceMs ?: 0L
-    GeoInfoRow("单帧耗时", if (latency > 0) "$latency ms" else "—")
-    GeoInfoRow("运行来源", "${state.runningSourceCount} / ${state.sources.size} 路")
-    GeoInfoRow("遮罩合计", "$totalMasks 个")
-    GeoInfoRow("报警发件箱", "${state.outboxSize} 条待回执")
-    GeoHint("CPU 档走 ONNX Runtime CPU，GPU 档走 LiteRT GPU；GPU 用不了时回落到同尺寸的 CPU 档，并在来源状态里说明原因。")
+private fun ConnectionSection(control: ControlState, media: MediaState, state: RuntimeUiState) {
+    // 服务端下发 ISO-8601（UTC）：换成设备本地时间再显示，避免直接念一串 Z 时间。
+    val serverTimeText = remember(control.serverTimeIso) {
+        control.serverTimeIso?.let { iso ->
+            runCatching {
+                java.time.OffsetDateTime.parse(iso)
+                    .atZoneSameInstant(java.time.ZoneId.systemDefault())
+                    .format(java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm:ss"))
+            }.getOrNull() ?: iso
+        } ?: "未校时"
+    }
 
     GeoDivider()
-    GeoSectionLabel(null, "模型概览", "在参数抽屉里管理")
-    GeoInfoRow("本机 GPU 加速", if (state.gpuAvailable) "可用" else "不可用 · GPU 档不出现")
-    GeoInfoRow("已下载档位", "${state.models.count { it.downloaded }} / ${state.models.size}")
-    state.models.forEach { model ->
-        // 一行一项：档位名可省略，状态右对齐，长名不会再折成两行。
-        Row(Modifier.fillMaxWidth().height(28.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                model.displayName,
-                color = MaterialTheme.colorScheme.onSurface,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                if (model.downloaded) model.target.label else "未下载",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-    }
-    GeoHint("模型的下载、删除与选择都在「来源 → 参数 → 模型插槽」：未下载的档位不可选中，使用中的档位不可删除。")
-    GeoKey(
-        onClick = onOpenParams,
-        label = "打开参数抽屉",
-        icon = LucideIcons.SlidersHorizontal,
-        enabled = state.sources.isNotEmpty()
-    )
+    GeoSectionLabel(null, "连接状态", "控制 ≠ 媒体 ≠ 回执")
+    GeoInfoRow("控制通道", control.statusText + if (control.sourcesRegistered) "（来源已登记）" else "（来源未登记）")
+    GeoInfoRow("媒体通道", media.statusText)
+    GeoInfoRow("远程收帧", "已收 ${media.receivedFrames} · 丢弃 ${media.rejectedFrames}")
+    GeoInfoRow("来源上限", "${control.maxSources} 路")
+    GeoInfoRow("服务时间", serverTimeText)
+    GeoInfoRow("时区", control.timeZone ?: "未下发")
+
+    GeoDivider()
+    GeoSectionLabel(null, "报警投递", "当前进程累计")
+    GeoInfoRow("累计报警", "${state.alertCount} 次")
+    GeoInfoRow("待服务回执", "${state.outboxSize} 条")
+    GeoInfoRow("最后报警", com.xgwnje.visionguard.inference.ui.formatWallMoment(state.lastAlertAtMs))
+    GeoHint("控制连接、媒体收帧与告警回执分别表示不同环节；服务回执不代表通知节点收件或声音播放。")
 }
 
 @Composable
@@ -381,7 +348,7 @@ private fun AppearanceSection(appearance: AppearancePreference) {
         ThemeSpecimen("浅色", listOf(0xFFF5F5F5, 0xFFFFFFFF, 0xFF202020, 0xFF087F83), Modifier.weight(1f))
         ThemeSpecimen("深色", listOf(0xFF121212, 0xFF1B1B1B, 0xFFF2F2F2, 0xFF4FBCC1), Modifier.weight(1f))
     }
-    GeoHint("项目色板与统一 UI 规范同源；只有「跟随系统」会响应系统浅深色变化。")
+    GeoHint("项目只有「跟随系统」会响应系统浅深色变化。")
 }
 
 @Composable
@@ -420,7 +387,6 @@ private fun BackgroundSection(state: RuntimeUiState, runtime: InferenceRuntime) 
         "有来源在运行时保持前台服务，界面退到后台或锁屏后推理继续；运行意图按来源保存，进程被系统回收后服务按意图恢复。"
     )
     GeoInfoRow("前台服务", if (state.runningSourceCount > 0) "运行中 · ${state.runningSourceCount} 路来源" else "未运行")
-    GeoInfoRow("运行来源", "${state.runningSourceCount} / ${state.sources.size} 路")
     GeoInfoRow(
         "通知权限",
         if (notificationGranted) "已授予" else "未授予 · Android 13 起前台服务通知需要授权",
@@ -440,7 +406,6 @@ private fun BackgroundSection(state: RuntimeUiState, runtime: InferenceRuntime) 
         },
         valueColor = if (cameraStatus.error != null) VisionGuardStatusColors.error else null
     )
-    GeoInfoRow("远程来源", "${state.sources.count { it.mode == SourceCaptureMode.RemoteStream }} 路")
 
     GeoDivider()
     GeoSectionLabel(null, "权限入口", "只给系统入口说明")
@@ -545,7 +510,7 @@ private fun MaintenanceSection(runtime: InferenceRuntime, onMessage: (String?) -
     GeoSectionLabel(null, "版本", "内测源码 0.x.y")
     GeoInfoRow("应用", AppConstants.APP_TITLE)
     GeoInfoRow("版本", AppConstants.VERSION)
-    GeoHint("android-inference 当前没有更新资产；升级入口只下载并安装官方稳定版，不改变本机配置。")
+    GeoHint("推理节点支持应用内更新；升级入口只下载并安装官方稳定版，不改变本机配置。")
     ClientUpdateButton(AppConstants.LOGIN_COMPONENT)
 
     GeoDivider()

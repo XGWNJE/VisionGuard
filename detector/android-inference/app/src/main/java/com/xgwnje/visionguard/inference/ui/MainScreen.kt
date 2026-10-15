@@ -85,7 +85,8 @@ fun MainScreen(
     var overlay by remember { mutableStateOf(Overlay.NONE) }
     // 来源、检测参数与遮罩合并成一个抽屉：记住为哪个来源打开、停在哪一页。
     var editorFor by remember { mutableStateOf<String?>(null) }
-    var editorPage by remember { mutableStateOf(EditorPage.SOURCE) }
+    var editorPage by remember { mutableStateOf(EditorPage.OVERVIEW) }
+    var settingsSection by remember { mutableStateOf<String?>(null) }
     var shutterHidden by remember { mutableStateOf(false) }
     var paramAnchor by remember { mutableStateOf<ParamAnchor?>(null) }
     var busySourceId by remember { mutableStateOf<String?>(null) }
@@ -162,7 +163,7 @@ fun MainScreen(
             .onPreviewKeyEvent { event ->
                 val modalOpen = overlay != Overlay.NONE || editorFor != null
                 // 有确认框开着时只让确认框自己处理 Escape，避免一次按键把抽屉也关掉。
-                if (modalOpen && GeoModal.confirmDepth == 0 && event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
+                if (modalOpen && editorFor == null && GeoModal.confirmDepth == 0 && event.type == KeyEventType.KeyDown && event.key == Key.Escape) {
                     editorFor = null
                     closeOverlay()
                     true
@@ -188,11 +189,11 @@ fun MainScreen(
                         stoppingAll = stoppingAll,
                         notices = notices,
                         onDismissNotice = { _ -> runtime.clearMessage() },
-                        onSelect = runtime::selectSource,
+                        onSelect = { id -> runtime.selectSource(id); if (!wide) { editorPage = EditorPage.OVERVIEW; paramAnchor = null; editorFor = id } },
                         onToggleShutter = { shutterHidden = !shutterHidden },
                         onSourceInspect = { id ->
                             runtime.selectSource(id)
-                            editorPage = EditorPage.SOURCE
+                            editorPage = EditorPage.OVERVIEW
                             paramAnchor = null
                             editorFor = id
                         },
@@ -217,10 +218,10 @@ fun MainScreen(
                         },
                         connectionText = connectionText,
                         connectionTone = connectionTone,
-                        onConnection = { callerFocus = settingsFocus; overlay = Overlay.SETTINGS },
+                        onConnection = { settingsSection = "STATE"; callerFocus = settingsFocus; overlay = Overlay.SETTINGS },
                         onHelp = { callerFocus = helpFocus; helpTopic = null; overlay = Overlay.HELP },
-                        onSettings = { callerFocus = settingsFocus; overlay = Overlay.SETTINGS },
-                        onAccount = { callerFocus = accountFocus; overlay = Overlay.SETTINGS },
+                        onSettings = { settingsSection = null; callerFocus = settingsFocus; overlay = Overlay.SETTINGS },
+                        onAccount = { settingsSection = "ACCOUNT"; callerFocus = accountFocus; overlay = Overlay.SETTINGS },
                         helpFocus = helpFocus,
                         settingsFocus = settingsFocus,
                         accountFocus = accountFocus,
@@ -244,14 +245,8 @@ fun MainScreen(
                 appearance = appearance,
                 runtime = runtime,
                 onClose = closeOverlay,
-                onMessage = onMessage,
-                onOpenParams = {
-                    overlay = Overlay.NONE
-                    callerFocus = null
-                    paramAnchor = null
-                    editorPage = EditorPage.DETECTION
-                    editorFor = state.selectedSourceId
-                }
+                initialSection = settingsSection,
+                onMessage = onMessage
             )
     
             Overlay.HELP -> GeoHelpDrawer(initialTopic = helpTopic, onClose = { helpTopic = null; closeOverlay() })
@@ -304,12 +299,10 @@ fun MainScreen(
                 onDeleteModel = { runtime.deleteModel(it) },
                 onSave = { params ->
                     val failure = runtime.updateParams(editing.sourceId, params)
-                    if (failure == null) editorFor = null
                     failure
                 },
                 onSaveMasks = { masks ->
                     val failure = runtime.updateMasks(editing.sourceId, masks)
-                    if (failure == null) editorFor = null
                     failure
                 },
                 onHelp = { topic ->
@@ -320,7 +313,27 @@ fun MainScreen(
                     callerFocus = helpFocus
                     overlay = Overlay.HELP
                 },
-                onMessage = onMessage
+                onMessage = onMessage,
+                sourceDirectory = { navigate ->
+                    androidx.compose.foundation.lazy.LazyColumn {
+                        items(state.sources.size) { index ->
+                            val item = state.sources[index]
+                            com.xgwnje.visionguard.inference.ui.geo.GeoKey(
+                                onClick = { navigate { runtime.selectSource(item.sourceId); editorFor = item.sourceId; paramAnchor = null; editorPage = EditorPage.OVERVIEW } },
+                                label = if (item.sourceId == editing.sourceId) "当前 · ${item.sourceName}" else item.sourceName,
+                                tone = if (item.sourceId == editing.sourceId) com.xgwnje.visionguard.inference.ui.geo.GeoTone.Primary else com.xgwnje.visionguard.inference.ui.geo.GeoTone.Secondary,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            androidx.compose.material3.Text(
+                                item.state.error ?: (item.state.statusText + if (item.state.isRunning) " · %.1f FPS".format(item.state.actualFps) else ""),
+                                modifier = Modifier.padding(bottom = 12.dp),
+                                style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                                maxLines = 2,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
             )
         }
     }

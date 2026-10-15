@@ -74,11 +74,12 @@
                             <Style TargetType="ListBoxItem">
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                                 <Setter Property="Padding" Value="0"/>
+                                <Setter Property="Background" Value="Transparent"/>
                                 <Setter Property="Margin" Value="0,0,0,8"/>
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="ListBoxItem">
-                                            <ContentPresenter/>
+                                            <Border x:Name="SelectionBorder" BorderThickness="3,0,0,0" BorderBrush="Transparent"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsSelected" Value="True"><Setter TargetName="SelectionBorder" Property="BorderBrush" Value="{DynamicResource Primary}"/></Trigger></ControlTemplate.Triggers>
                                         </ControlTemplate>
                                     </Setter.Value>
                                 </Setter>
@@ -86,7 +87,11 @@
                         </ListBox.ItemContainerStyle>
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <local:SourcePreviewCard/>
+                                <Border Padding="12" Background="{DynamicResource SurfaceDark}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"><StackPanel>
+<TextBlock Text="{Binding SourceName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding SourceName}"/>
+<TextBlock Text="{Binding StatusText}" Style="{StaticResource SourceStatusText}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+<TextBlock Text="{Binding FpsText}" Style="{StaticResource CaptionText}"/>
+</StackPanel></Border>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
@@ -140,7 +145,7 @@
                     <Button Content="返回预览" Style="{StaticResource PaneButton}" Click="CloseGlobalSettings_OnClick"/>
                     <TextBlock Grid.Column="1" Text="全局设置" Style="{StaticResource TitleText}" FontSize="16" VerticalAlignment="Center" Margin="24,0,0,0"/>
                 </Grid>
-                <local:GlobalSettingsPage Grid.Row="1" DataContext="{Binding GlobalSettingsVm}"/>
+                <local:GlobalSettingsPage x:Name="SettingsPage" Grid.Row="1" DataContext="{Binding GlobalSettingsVm}"/>
             </Grid>
         </Border>
     </Grid>

@@ -15,6 +15,8 @@ namespace VisionGuard.Detector.Windows.Views
     {
         private MaskEditorViewModel _vm;
         private bool _isDragging;
+        private string _baseline = "";
+        private string Snapshot() => string.Join(";", _vm.Masks.Select(m => $"{m.X:R},{m.Y:R},{m.Width:R},{m.Height:R}"));
         private Point _dragStart;
         private Rectangle? _dragRect;
         private List<Rectangle> _maskVisuals = new List<Rectangle>();
@@ -70,6 +72,16 @@ namespace VisionGuard.Detector.Windows.Views
             // 监听集合变化：撤销/清除后实时刷新画布
             _vm.Masks.CollectionChanged += (s, e) => RefreshMaskVisuals();
 
+            _baseline = Snapshot();
+            Closing += (_, e) => {
+                if (IsConfirmed || Snapshot() == _baseline) return;
+                var decision = ThemedMessageBox.Show("遮罩尚未保存。", "保留修改？", MessageBoxButton.YesNoCancel, MessageBoxImage.Question, confirmEnabled: BackgroundImage.Source != null);
+                if (decision == MessageBoxResult.Cancel) e.Cancel = true;
+                else if (decision == MessageBoxResult.Yes) {
+                    var image = (BitmapSource)BackgroundImage.Source;
+                    ResultMasks = _vm.ToRelativeMasks(image.PixelWidth, image.PixelHeight); IsConfirmed = true;
+                }
+            };
             Loaded += OnLoaded;
             SizeChanged += OnSizeChanged;
         }

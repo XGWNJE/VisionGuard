@@ -98,6 +98,7 @@ fun GeoDrawer(
     scrollable: Boolean = true,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    androidx.activity.compose.BackHandler(onBack = onClose)
     val reduced = rememberReducedMotion()
     val focusRequester = remember { FocusRequester() }
     val focusRing = remember { GeoFocusRing() }

@@ -894,7 +894,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         };
         private BitmapSource? _previewImage;
         private double _frameWidth, _frameHeight;
-        private string _lastFrameText = "尚无画面", _inferenceText = "— ms", _lastAlertText = "—", _backendText = "—";
+        private string _lastFrameText = "尚无画面", _inferenceText = "未报告", _lastAlertText = "未报告", _backendText = "未报告";
         private string _statusToolTip = "";
         private double _actualFps;
         private bool _isPerformanceInsufficient;
@@ -1089,7 +1089,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
         /// <summary>实测推理帧率（10 秒滚动窗口），由协调器的状态推送。</summary>
         public double ActualFps { get => _actualFps; private set { if (SetProperty(ref _actualFps, value)) OnPropertyChanged(nameof(FpsText)); } }
-        public string FpsText => IsPushMode ? $"{ActualFps:0.0} FPS" : IsMonitoring ? $"{ActualFps:0.0} FPS" : "0.0 FPS";
+        public string FpsText => IsMonitoring ? $"{ActualFps:0.0} FPS" : PreviewImage != null ? $"最后记录 {ActualFps:0.0} FPS" : "未报告";
 
         /// <summary>实测帧率已持续低于目标（看门狗确认）：卡片显示短提示，宿主据此弹窗。</summary>
         public bool IsPerformanceInsufficient
@@ -1507,7 +1507,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             // 只有“持续不足”达到看门狗的持续时间阈值后 PerformanceWarning 才有文案，
             // 因此直接用它作为“已确认性能不足”的标记，卡片与弹窗共用同一个判据。
             IsPerformanceInsufficient = !string.IsNullOrWhiteSpace(status.PerformanceWarning);
-            BackendText = status.ActiveBackend == "Unavailable" ? "—" : status.ActiveBackend;
+            BackendText = status.ActiveBackend == "Unavailable" ? "未报告" : status.ActiveBackend;
             PublishStatusText = status.PublishStatusText;
             PublishTargetFps = status.PublishTargetFps;
             PublishLastAcknowledgedSequence = status.PublishLastAcknowledgedSequence;
@@ -1542,7 +1542,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             PreviewImage = image; FrameWidth = image.PixelWidth; FrameHeight = image.PixelHeight; Detections.Clear();
             foreach (var d in detections) Detections.Add(new DetectionItem { Left = d.BoundingBox.Left, Top = d.BoundingBox.Top, Width = d.BoundingBox.Width, Height = d.BoundingBox.Height, Label = $"{d.Label} {(int)(d.Confidence * 100)}%" });
             LastFrameText = $"更新 {DateTime.Now:HH:mm:ss}";
-            InferenceText = inferenceMs < 0 ? "—" : $"{inferenceMs} ms";
+            InferenceText = inferenceMs < 0 ? "未报告" : $"{inferenceMs} ms";
         }
 
         /// <summary>

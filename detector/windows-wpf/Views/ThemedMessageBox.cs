@@ -8,15 +8,15 @@ namespace VisionGuard.Detector.Windows.Views
 {
     internal static class ThemedMessageBox
     {
-        internal static MessageBoxResult Show(string message, string title, MessageBoxButton buttons, MessageBoxImage image, string? confirmLabel = null, bool destructive = false)
+        internal static MessageBoxResult Show(string message, string title, MessageBoxButton buttons, MessageBoxImage image, string? confirmLabel = null, bool destructive = false, bool confirmEnabled = true)
         {
             var app = Application.Current;
             if (app == null || app.Dispatcher.HasShutdownStarted || app.Dispatcher.HasShutdownFinished)
-                return buttons == MessageBoxButton.YesNo ? MessageBoxResult.No : MessageBoxResult.OK;
+                return buttons == MessageBoxButton.YesNoCancel ? MessageBoxResult.Cancel : buttons == MessageBoxButton.YesNo ? MessageBoxResult.No : MessageBoxResult.OK;
             if (!app.Dispatcher.CheckAccess())
                 return app.Dispatcher.Invoke(() => Show(message, title, buttons, image, confirmLabel, destructive));
 
-            var result = buttons == MessageBoxButton.YesNo ? MessageBoxResult.No : MessageBoxResult.OK;
+            var result = buttons == MessageBoxButton.YesNoCancel ? MessageBoxResult.Cancel : buttons == MessageBoxButton.YesNo ? MessageBoxResult.No : MessageBoxResult.OK;
             var dialog = new Window
             {
                 Title = title, Width = Math.Min(520, SystemParameters.WorkArea.Width - 32),
@@ -50,7 +50,13 @@ namespace VisionGuard.Detector.Windows.Views
             var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 24, 0, 0) };
             Grid.SetRow(actions, 2);
             layout.Children.Add(actions);
-            if (buttons == MessageBoxButton.YesNo)
+            if (buttons == MessageBoxButton.YesNoCancel)
+            {
+                AddAction("继续编辑", MessageBoxResult.Cancel, false, true);
+                AddAction("放弃修改", MessageBoxResult.No, false, false);
+                AddAction(confirmLabel ?? "保存并离开", MessageBoxResult.Yes, true, false);
+            }
+            else if (buttons == MessageBoxButton.YesNo)
             {
                 AddAction("取消", MessageBoxResult.No, false, true);
                 AddAction(confirmLabel ?? "继续", MessageBoxResult.Yes, true, false);
@@ -63,8 +69,9 @@ namespace VisionGuard.Detector.Windows.Views
 
             void AddAction(string label, MessageBoxResult value, bool primary, bool cancel)
             {
-                bool defaultAction = buttons == MessageBoxButton.YesNo ? cancel : primary;
+                bool defaultAction = buttons == MessageBoxButton.YesNo || buttons == MessageBoxButton.YesNoCancel ? cancel : primary;
                 var button = new Button { Content = label, MinWidth = 88, Margin = new Thickness(8, 0, 0, 0), IsDefault = defaultAction, IsCancel = cancel };
+                if (value == MessageBoxResult.Yes) button.IsEnabled = confirmEnabled;
                 button.SetResourceReference(FrameworkElement.StyleProperty, primary ? destructive ? "DangerButton" : "PrimaryButton" : "DarkButton");
                 if (defaultAction) dialog.Loaded += (s, e) => button.Focus();
                 button.Click += (s, e) => { result = value; dialog.Close(); };

@@ -177,6 +177,8 @@ namespace VisionGuard.Detector.Windows.Views
             SetSidePaneWidth(sender, width);
             e.Handled = true;
         }
+        internal void OpenModelResources() { OpenGlobalSettings_OnClick(this, new RoutedEventArgs()); SettingsPage.OpenModels(); }
+
         private void OpenGlobalSettings_OnClick(object sender, RoutedEventArgs e) { _settingsReturnControl = sender as System.Windows.Controls.Control; InspectorDrawer.Visibility = Visibility.Collapsed; GlobalHost.Visibility = Visibility.Visible; MainLayout.Visibility = Visibility.Collapsed; }
         private void CloseGlobalSettings_OnClick(object sender, RoutedEventArgs e)
         {

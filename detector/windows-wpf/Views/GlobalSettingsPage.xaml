@@ -5,11 +5,13 @@
             <ColumnDefinition/>
         </Grid.ColumnDefinitions>
         <ListBox x:Name="CategoryList" SelectedIndex="0" BorderThickness="0" Background="Transparent" ItemContainerStyle="{StaticResource SettingsNavItem}" Margin="0,12,12,0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-            <ListBoxItem Content="账号与连接"/>
-            <ListBoxItem Content="推理与模型"/>
+            <ListBoxItem Content="账号与设备"/>
+            <ListBoxItem Content="模型资源"/>
             <ListBoxItem Content="外观"/>
             <ListBoxItem Content="后台运行"/>
             <ListBoxItem Content="版本与维护"/>
+            <ListBoxItem Content="运行方式"/>
+            <ListBoxItem Content="节点状态"/>
         </ListBox>
         <Border Grid.Column="1" Background="{DynamicResource SurfaceDark}" CornerRadius="8">
             <Grid>
@@ -25,7 +27,7 @@
                         </Style>
                     </ScrollViewer.Style>
                     <StackPanel MaxWidth="800" HorizontalAlignment="Stretch">
-                        <TextBlock Text="账号与连接" Style="{StaticResource TitleText}" FontSize="16" Margin="0,0,0,16"/>
+                        <TextBlock Text="账号与设备" Style="{StaticResource TitleText}" FontSize="16" Margin="0,0,0,16"/>
                         <StackPanel DataContext="{Binding Connection}">
                             <StackPanel Style="{StaticResource SettingsSection}" IsEnabled="{Binding CanEditAccount}">
                                 <Grid MinHeight="36" Margin="0,0,0,12">
@@ -99,37 +101,6 @@
                                     </Grid>
                                 </Grid>
                             </StackPanel>
-                            <StackPanel Style="{StaticResource SettingsSection}">
-                                <TextBlock Text="服务连接" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
-                                <Grid MinHeight="36" Margin="0,0,0,12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="96"/>
-                                        <ColumnDefinition/>
-                                        <ColumnDefinition Width="112"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="连接状态" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
-                                    <Grid Grid.Column="1" Margin="0,0,12,0">
-                                        <TextBlock Text="{Binding ConnectionState}" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                                    </Grid>
-                                    <Grid Grid.Column="2">
-                                        <Button Content="重新连接" Command="{Binding RetryCommand}" Style="{StaticResource PaneButton}"/>
-                                    </Grid>
-                                </Grid>
-                                <StackPanel Visibility="{Binding AllowsTestEndpoint, Converter={StaticResource BoolToVis}}">
-                                    <Grid MinHeight="36" Margin="0,0,0,12">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="96"/>
-                                            <ColumnDefinition/>
-                                            <ColumnDefinition Width="0"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="隔离地址" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
-                                        <Grid Grid.Column="1" Margin="0,0,0,0">
-                                            <TextBox Text="{Binding ServiceAddress, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource PaneTextBox}" AutomationProperties.Name="ServiceAddress" IsReadOnly="{Binding IsLoggedIn}"/>
-                                        </Grid>
-                                        <Grid Grid.Column="2"/>
-                                    </Grid>
-                                </StackPanel>
-                            </StackPanel>
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
@@ -145,7 +116,7 @@
                         </Style>
                     </ScrollViewer.Style>
                     <StackPanel MaxWidth="800" HorizontalAlignment="Stretch">
-                        <TextBlock Text="推理与模型" Style="{StaticResource TitleText}" FontSize="16" Margin="0,0,0,16"/>
+                        <TextBlock Text="模型资源" Style="{StaticResource TitleText}" FontSize="16" Margin="0,0,0,16"/>
                         <StackPanel DataContext="{Binding Environment}">
                             <StackPanel Style="{StaticResource SettingsSection}">
                                 <Grid MinHeight="36" Margin="0,0,0,12">
@@ -332,6 +303,144 @@
                                 </Grid>
                             </Border>
                         </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+                <ScrollViewer>
+                    <ScrollViewer.Style>
+                        <Style TargetType="ScrollViewer" BasedOn="{StaticResource PaneScrollViewer}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SelectedIndex, ElementName=CategoryList}" Value="5">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ScrollViewer.Style>
+                    <StackPanel MaxWidth="800">
+                        <TextBlock Text="运行方式 · 影响全部来源" Style="{StaticResource TitleText}" Margin="0,0,0,16"/>
+                        <StackPanel DataContext="{Binding Node}">
+                            <!-- 节点级状态：本机推理 / 推流到其他推理节点，二选一。当前态用选中底色标出，
+                 两个按钮都占满整行，避免长标签被窄栏截断。 -->
+                            <StackPanel>
+                                <TextBlock Text="本机状态" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+                                <Button Content="本机推理" Command="{Binding UseInferenceModeCommand}" ToolTip="在本机模型上跑检测并产生报警" Margin="0,0,0,8">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource PaneButton}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsInferenceMode}" Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource SelectedBrush}"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource SelectedTextBrush}"/>
+                                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <Button Content="推流到其他推理节点" Command="{Binding UsePushModeCommand}" ToolTip="把本机采集画面推给其他推理节点，本机不推理、不报警">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource PaneButton}">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsPushMode}" Value="True">
+                                                    <Setter Property="Background" Value="{DynamicResource SelectedBrush}"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource Primary}"/>
+                                                    <Setter Property="Foreground" Value="{DynamicResource SelectedTextBrush}"/>
+                                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                                <TextBlock Text="{Binding NodeModeHint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,12,0,24"/>
+                            </StackPanel>
+                            <!-- 推流目标属于节点级设置，必须和两态开关同层：放进下面按来源作用域的 StackPanel 里，
+                 绑定会落到来源槽位上（下拉、当前目标、提示全为空）。本机直接选同账号里的推理节点，
+                 选中即关联；控制台仍是同等入口，两边改的是同一份绑定。 -->
+                            <StackPanel Visibility="{Binding IsPushMode, Converter={StaticResource BoolToVis}}" Margin="0,0,0,24">
+                                <TextBlock Text="推流目标" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid Grid.Column="0">
+                                        <ComboBox Style="{StaticResource PaneComboBox}" ItemsSource="{Binding PushTargets}" SelectedItem="{Binding SelectedPushTarget, Mode=TwoWay}" DisplayMemberPath="DisplayName" IsEnabled="{Binding CanPickPushTarget}" ToolTip="同账号里的推理节点，离线与正在推流的节点也会列出并标注；也可以在控制台关联，两边是同一份绑定关系"/>
+                                        <!-- 未选中时给下拉一个占位文案：空下拉看着像坏了。 -->
+                                        <TextBlock Text="选择视觉推理节点" VerticalAlignment="Center" Margin="12,0,0,0" IsHitTestVisible="False" Foreground="{DynamicResource TextSecondary}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <MultiDataTrigger>
+                                                            <MultiDataTrigger.Conditions>
+                                                                <Condition Binding="{Binding SelectedPushTarget}" Value="{x:Null}"/>
+                                                                <Condition Binding="{Binding CanPickPushTarget}" Value="True"/>
+                                                            </MultiDataTrigger.Conditions>
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </MultiDataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Grid>
+                                    <Button Grid.Column="1" Content="刷新" Style="{StaticResource PaneButton}" Command="{Binding RefreshPushTargetsCommand}" ToolTip="重新读取同账号的推理节点" Margin="8,0,0,0"/>
+                                    <Button Grid.Column="2" Content="解除关联" Style="{StaticResource PaneButton}" Command="{Binding UnbindPushTargetCommand}" ToolTip="解除本节点的推流目标；本节点所有来源一起解绑，被动方与控制台也能解" Margin="8,0,0,0"/>
+                                </Grid>
+                                <TextBlock Text="{Binding PushTargetText, StringFormat=当前目标：{0}}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                <TextBlock Text="{Binding PushTargetHint}" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0" Visibility="{Binding HasPushTargetHint, Converter={StaticResource BoolToVis}}"/>
+                                <TextBlock Text="推流只发送采集画面本身：本机遮罩与检测规则在推流态不参与，切回本机推理后可调整。" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+                <ScrollViewer>
+                    <ScrollViewer.Style>
+                        <Style TargetType="ScrollViewer" BasedOn="{StaticResource PaneScrollViewer}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SelectedIndex, ElementName=CategoryList}" Value="6">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ScrollViewer.Style>
+                    <StackPanel MaxWidth="800">
+                        <TextBlock Text="节点状态" Style="{StaticResource TitleText}" Margin="0,0,0,16"/>
+                        <StackPanel DataContext="{Binding Connection}">
+                            <StackPanel Style="{StaticResource SettingsSection}">
+                                <TextBlock Text="服务连接" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+                                <Grid MinHeight="36" Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="96"/>
+                                        <ColumnDefinition/>
+                                        <ColumnDefinition Width="112"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="连接状态" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                                    <Grid Grid.Column="1" Margin="0,0,12,0">
+                                        <TextBlock Text="{Binding ConnectionState}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <Grid Grid.Column="2">
+                                        <Button Content="重新连接" Command="{Binding RetryCommand}" Style="{StaticResource PaneButton}"/>
+                                    </Grid>
+                                </Grid>
+                                <StackPanel Visibility="{Binding AllowsTestEndpoint, Converter={StaticResource BoolToVis}}">
+                                    <Grid MinHeight="36" Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96"/>
+                                            <ColumnDefinition/>
+                                            <ColumnDefinition Width="0"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="隔离地址" Style="{StaticResource CaptionText}" VerticalAlignment="Center"/>
+                                        <Grid Grid.Column="1" Margin="0,0,0,0">
+                                            <TextBox Text="{Binding ServiceAddress, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource PaneTextBox}" AutomationProperties.Name="ServiceAddress" IsReadOnly="{Binding IsLoggedIn}"/>
+                                        </Grid>
+                                        <Grid Grid.Column="2"/>
+                                    </Grid>
+                                </StackPanel>
+                            </StackPanel>
+                        </StackPanel>
+                        <TextBlock Text="连接仅代表控制通道；各来源媒体、推理和告警状态请查看来源概览。" Style="{StaticResource CaptionText}" TextWrapping="Wrap"/>
                     </StackPanel>
                 </ScrollViewer>
             </Grid>

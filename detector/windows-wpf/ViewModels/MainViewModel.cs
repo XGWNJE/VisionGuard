@@ -34,7 +34,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             // 推流态不建立媒体订阅连接：同一节点在服务端只允许一个方向。
             _serverPushService.IsPushMode = () => MultiSourceVm.IsPushMode;
             _serverVm = new ServerViewModel(_serverPushService);
-            GlobalSettingsVm = new GlobalSettingsViewModel(_settingsVm, _serverVm);
+            GlobalSettingsVm = new GlobalSettingsViewModel(_settingsVm, _serverVm, MultiSourceVm);
             _serverVm.AccountChanging += (_, _) => MultiSourceVm.PrepareAccountChange();
             _serverVm.AccountChanged += (_, _) =>
             {

@@ -18,13 +18,15 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public string AppearanceStatus { get; private set; } = "系统外观不可用时使用浅色；高对比度优先使用系统颜色。";
         /// <summary>推理设备与模型资源。</summary>
         public SettingsViewModel Environment { get; }
+        public MultiSourceViewModel Node { get; }
 
         /// <summary>服务器、设备身份、驻留与客户端更新。</summary>
         public ServerViewModel Connection { get; }
 
-        public GlobalSettingsViewModel(SettingsViewModel environment, ServerViewModel connection)
+        public GlobalSettingsViewModel(SettingsViewModel environment, ServerViewModel connection, MultiSourceViewModel node)
         {
             Environment = environment;
+            Node = node;
             Connection = connection;
         }
     }

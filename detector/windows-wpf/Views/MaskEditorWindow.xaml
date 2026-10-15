@@ -1,41 +1,44 @@
-<Window x:Class="VisionGuard.Detector.Windows.Views.MaskEditorWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="clr-namespace:VisionGuard.Detector.Windows.ViewModels"
-        Title="遮罩区域编辑"
-        WindowStyle="None"
-        Background="{DynamicResource CanvasBrush}"
-        WindowStartupLocation="CenterScreen"
-        ResizeMode="NoResize"
-        MinWidth="520"
-        MinHeight="360"
-        KeyDown="Window_KeyDown">
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:vm="clr-namespace:VisionGuard.Detector.Windows.ViewModels" x:Class="VisionGuard.Detector.Windows.Views.MaskEditorWindow" Title="遮罩区域编辑" WindowStyle="None" Background="{DynamicResource CanvasBrush}" WindowStartupLocation="CenterScreen" ResizeMode="NoResize" MinWidth="520" MinHeight="360" KeyDown="Window_KeyDown">
     <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition/>
+            <ColumnDefinition Width="180"/>
+        </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-
         <!-- 图像 + 遮罩 Canvas -->
         <Grid Grid.Row="0">
-            <Image x:Name="BackgroundImage" Stretch="Uniform"
-                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            <Canvas x:Name="MaskCanvas" Background="Transparent"
-                    MouseLeftButtonDown="MaskCanvas_MouseLeftButtonDown"
-                    MouseMove="MaskCanvas_MouseMove"
-                    MouseLeftButtonUp="MaskCanvas_MouseLeftButtonUp"/>
+            <Image x:Name="BackgroundImage" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <Canvas x:Name="MaskCanvas" Background="Transparent" MouseLeftButtonDown="MaskCanvas_MouseLeftButtonDown" MouseMove="MaskCanvas_MouseMove" MouseLeftButtonUp="MaskCanvas_MouseLeftButtonUp"/>
             <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="16" Padding="12,8" Background="{DynamicResource OverlaySurfaceBrush}" CornerRadius="12" BorderBrush="{DynamicResource OverlayAccentBrush}" BorderThickness="1" MaxWidth="480">
                 <TextBlock Text="拖拽绘制遮罩 · 遮罩区域不会参与检测" Foreground="{DynamicResource OverlayTextBrush}" FontSize="14" TextWrapping="Wrap"/>
             </Border>
         </Grid>
-
+        <Border Grid.Column="1" Grid.Row="0" Background="{DynamicResource SurfaceDark}" Padding="12">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="遮罩列表" Style="{StaticResource SectionLabel}" Margin="0,0,0,12"/>
+                <ListBox Grid.Row="1" ItemsSource="{Binding Masks}" SelectedItem="{Binding SelectedMask}" Background="Transparent" BorderThickness="0" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Width, StringFormat=遮罩 · 宽 {0:0} px}" TextWrapping="Wrap"/>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <Button Grid.Row="2" Content="删除选中" Command="{Binding DeleteSelectedCommand}" Style="{StaticResource PaneDangerButton}" Margin="0,12,0,0"/>
+            </Grid>
+        </Border>
         <!-- 底部工具栏 -->
-        <Border Grid.Row="1" Background="{DynamicResource SurfaceDark}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
+        <Border Grid.Row="1" Grid.ColumnSpan="2" Background="{DynamicResource SurfaceDark}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
             <WrapPanel HorizontalAlignment="Center" Margin="12">
-                <Button Content="撤销" Style="{StaticResource GhostButton}" Margin="4,0"
-                        Command="{Binding UndoCommand}"/>
-                <Button Content="清空遮罩" Style="{StaticResource DangerButton}" Margin="4,0"
-                        Command="{Binding ClearCommand}"/>
+                <Button Content="撤销" Style="{StaticResource GhostButton}" Margin="4,0" Command="{Binding UndoCommand}"/>
+                <Button Content="清空遮罩" Style="{StaticResource DangerButton}" Margin="4,0" Command="{Binding ClearCommand}"/>
                 <Separator Margin="8,0" Style="{x:Null}" Width="1" Background="{DynamicResource BorderBrush}"/>
                 <Button Content="取消" Style="{StaticResource DarkButton}" Margin="4,0" Click="Cancel_Click"/>
                 <Button Content="保存遮罩" Style="{StaticResource PrimaryButton}" Margin="4,0" Click="Confirm_Click"/>

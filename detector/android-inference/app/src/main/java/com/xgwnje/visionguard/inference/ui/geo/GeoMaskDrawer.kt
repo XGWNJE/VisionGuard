@@ -125,6 +125,8 @@ internal fun MaskPage(draft: MaskDraft, frame: ArgbImage?, running: Boolean) {
         HelpTopicKey("隐私遮罩")
     }
 
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val canvas: @Composable () -> Unit = {
     MaskPlane(
         frame = frame,
         masks = draft.masks,
@@ -150,6 +152,8 @@ internal fun MaskPage(draft: MaskDraft, frame: ArgbImage?, running: Boolean) {
         )
     }
 
+        }
+        val tools: @Composable () -> Unit = {
     GeoSectionLabel(null, "遮罩列表", "允许零遮罩")
     MaskRack(
         masks = draft.masks,
@@ -179,6 +183,17 @@ internal fun MaskPage(draft: MaskDraft, frame: ArgbImage?, running: Boolean) {
     }
     draft.error?.let {
         Text(it, color = VisionGuardStatusColors.error, style = MaterialTheme.typography.bodySmall)
+    }
+
+        }
+        if (maxWidth >= 660.dp) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(Modifier.weight(1.6f)) { canvas() }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) { tools() }
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { canvas(); tools() }
+        }
     }
 
     if (draft.clearing) {
@@ -543,7 +558,7 @@ private fun resize(region: MaskRegion, corner: MaskCorner, dx: Float, dy: Float)
 }
 
 /** 遮罩是否在画面内且不小于最小边长。 */
-private fun validRegion(region: MaskRegion): Boolean =
+internal fun validRegion(region: MaskRegion): Boolean =
     region.x >= 0f && region.y >= 0f &&
         region.width >= Geo.MASK_MIN_EDGE && region.height >= Geo.MASK_MIN_EDGE &&
         region.x + region.width <= 1.0001f && region.y + region.height <= 1.0001f

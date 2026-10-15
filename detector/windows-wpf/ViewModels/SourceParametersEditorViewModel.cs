@@ -27,6 +27,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public bool ModelAvailable => ModelManager.IsSupported(ModelKey) && ModelManager.IsDownloaded(ModelKey);
         public bool SourceChanged => _baseline != SourceSnapshot();
         public string EditHint => !CanEdit ? "当前来源运行中，请先停止后调整。" : SourceChanged ? "来源配置已变化，请还原为当前值后重新调整。" : !ModelAvailable ? "当前模型不可用，请在全局设置下载或选择可用模型。" : "保存后应用到当前来源；取消保留原配置。";
+        public bool HasChanges => DraftSnapshot() != _baseline;
         public bool CanSave => CanEdit && !SourceChanged && ModelAvailable && ModelOptions.Any(x => x.Key == ModelKey) && Targets.Any(x => x.IsSelected) && DraftSnapshot() != _baseline;
         public bool IsCustomCooldown => !new[] { 5, 10, 30, 60 }.Contains(Cooldown);
         public IReadOnlyList<ModelParameterOption> ModelOptions => _source.ModelOptions.Select(key => new ModelParameterOption(key, ModelLabel(key))).ToArray();

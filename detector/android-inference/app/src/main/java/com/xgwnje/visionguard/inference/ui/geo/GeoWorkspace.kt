@@ -241,7 +241,7 @@ private fun SourceStop(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            GeoLamp(source.state.error ?: source.state.statusText, lamp)
+            GeoLamp(source.state.error ?: (source.state.statusText + if (running) " · %.1f FPS".format(source.state.actualFps) else ""), lamp)
         }
         // 逐来源启停：只影响这一路，整体启停已从主界面移除。
         GeoIconKey(

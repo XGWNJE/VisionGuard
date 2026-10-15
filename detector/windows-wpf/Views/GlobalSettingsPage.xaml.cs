@@ -13,6 +13,7 @@ namespace VisionGuard.Detector.Windows.Views
         {
             InitializeComponent();
         }
+        internal void OpenModels() => CategoryList.SelectedIndex = 1;
         private void Appearance_OnClick(object sender, System.Windows.RoutedEventArgs e)
         {
             if (sender is Button button && DataContext is ViewModels.GlobalSettingsViewModel vm && int.TryParse(button.Tag?.ToString(), out var mode)) vm.AppearanceIndex = mode;
