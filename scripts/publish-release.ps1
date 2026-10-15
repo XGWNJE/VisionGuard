@@ -37,6 +37,7 @@ if (-not $PreflightOnly -and -not $DryRun -and $env:VISIONGUARD_OWNER_RELEASE -c
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$env:VG_RELEASE_SCRIPTS = Join-Path $repoRoot 'scripts'
 # Server-infra lives next to this repository; derive it when -ServerEnvPath is not passed.
 $serverInfraRoot = Join-Path (Split-Path -Parent $repoRoot) 'Server-infra'
 if ([string]::IsNullOrWhiteSpace($ServerEnvPath)) {
@@ -365,6 +366,10 @@ function Invoke-ReleasePreflight {
 
     if ($UploadVps -or $ServerDeployPlanned) {
         Test-PythonParamiko
+        Invoke-Native -FilePath 'python' -Arguments @(
+            (Join-Path $repoRoot 'scripts/check_release_target.py'),
+            '--server-env', $ServerEnvPath, '--base-url', $BaseUrl
+        )
     }
 
     if (Test-TargetEnabled @('Android', 'AndroidDetector', 'AndroidNotifier', 'AndroidInference')) {
@@ -933,13 +938,19 @@ uploads = json.loads(os.environ["VG_RELEASE_UPLOADS_JSON"])
 if not host:
     raise SystemExit("VPS host was not found in server.local.env")
 
+import sys
+from functools import partial
+sys.path.insert(0, os.environ["VG_RELEASE_SCRIPTS"])
+from release_ssh import run_remote, open_sftp
 client = paramiko.SSHClient()
+remote_exec = partial(run_remote, client, use_sudo=values.get("SSH_SUDO") == "1")
+remote_sftp = partial(open_sftp, client, use_sudo=values.get("SSH_SUDO") == "1")
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 client.connect(hostname=host, port=port, username=user, password=password or None, key_filename=key_filename or None, timeout=30)
 
 try:
-    sftp = client.open_sftp()
-    stdin, stdout, stderr = client.exec_command("mkdir -p " + shlex.quote(posixpath.join(remote_root, "data", "releases")) + " " + shlex.quote(posixpath.join(remote_root, "data", "models")))
+    sftp = remote_sftp()
+    stdin, stdout, stderr = remote_exec("mkdir -p " + shlex.quote(posixpath.join(remote_root, "data", "releases")) + " " + shlex.quote(posixpath.join(remote_root, "data", "models")))
     status = stdout.channel.recv_exit_status()
     if status != 0:
         error = stderr.read().decode("utf-8", "replace").strip()
@@ -948,7 +959,7 @@ try:
         local = item["local"]
         remote = item["remote"]
         expected = sha256_file(local)
-        stdin, stdout, stderr = client.exec_command("sha256sum " + shlex.quote(remote))
+        stdin, stdout, stderr = remote_exec("sha256sum " + shlex.quote(remote))
         status = stdout.channel.recv_exit_status()
         actual = stdout.read().decode("utf-8", "replace").strip().split()
         if status == 0 and actual and actual[0].lower() == expected:
@@ -976,14 +987,14 @@ try:
                 client.close()
                 time.sleep(min(30, 5 * attempt))
                 client.connect(hostname=host, port=port, username=user, password=password or None, key_filename=key_filename or None, timeout=30)
-                sftp = client.open_sftp()
+                sftp = remote_sftp()
         if last_error is not None:
             raise SystemExit("upload failed after retries: " + str(last_error))
         command = "mv -f {tmp} {remote} && sha256sum {remote}".format(
             tmp=shlex.quote(temp_remote),
             remote=shlex.quote(remote),
         )
-        stdin, stdout, stderr = client.exec_command(command)
+        stdin, stdout, stderr = remote_exec(command)
         status = stdout.channel.recv_exit_status()
         output = stdout.read().decode("utf-8", "replace").strip()
         error = stderr.read().decode("utf-8", "replace").strip()
@@ -1033,13 +1044,19 @@ with open(os.environ["VG_SERVER_ENV_PATH"], encoding="utf8") as stream:
             values[key.strip()] = value.strip().strip('"').strip("'")
 def pick(*keys, default=None):
     return next((values[key] for key in keys if values.get(key)), default)
+import sys
+from functools import partial
+sys.path.insert(0, os.environ["VG_RELEASE_SCRIPTS"])
+from release_ssh import run_remote, open_sftp
 client = paramiko.SSHClient()
+remote_exec = partial(run_remote, client, use_sudo=values.get("SSH_SUDO") == "1")
+remote_sftp = partial(open_sftp, client, use_sudo=values.get("SSH_SUDO") == "1")
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 client.connect(hostname=pick("VPS_IP", "SSH_HOST", "VPS_HOST"), port=int(pick("SSH_PORT", "VPS_PORT", default="22")), username=pick("SSH_USER", "VPS_USER", default="root"), password=pick("SSH_PASSWORD", "VPS_PASSWORD"), key_filename=pick("SSH_KEY", "SSH_KEY_PATH"), timeout=30)
 remote = "/tmp/visionguard-backup-helper-" + uuid.uuid4().hex + ".py"
 q = shlex.quote
 try:
-    with client.open_sftp() as sftp:
+    with remote_sftp() as sftp:
         sftp.put(os.environ["VG_BACKUP_HELPER"], remote)
         sftp.chmod(remote, 0o700)
     args = "python3 " + q(remote) + " " + q(os.environ["VG_BACKUP_ACTION"]) + " " + q(os.environ["VG_REMOTE_ROOT"])
@@ -1050,7 +1067,7 @@ try:
         if os.environ["VG_BACKUP_ACTION"] == "verify-deployed":
             args += " --version " + q(os.environ["VG_VERIFY_VERSION"]) + " --dist-sha256 " + q(os.environ["VG_VERIFY_DIST_SHA256"]) + " --metadata-sha256 " + q(os.environ["VG_VERIFY_METADATA_SHA256"])
         command = "set -e; systemctl is-active --quiet visionguard; " + args
-    stdin, stdout, stderr = client.exec_command(command, timeout=300)
+    stdin, stdout, stderr = remote_exec(command, timeout=300)
     out = stdout.read().decode("utf8", "replace")
     err = stderr.read().decode("utf8", "replace")
     status = stdout.channel.recv_exit_status()
@@ -1058,7 +1075,7 @@ try:
         raise SystemExit("Rollback backup failed; previous and pending snapshots preserved: " + err)
     print("rollback " + os.environ["VG_BACKUP_ACTION"] + " " + out.strip())
 finally:
-    client.exec_command("rm -f " + q(remote))[1].channel.recv_exit_status()
+    remote_exec("rm -f " + q(remote))[1].channel.recv_exit_status()
     client.close()
 '@
     try {
@@ -1178,14 +1195,20 @@ echo "server runtime Node.js $({q(node_binary)} --version)"
 rm -rf {q(remote_stage)} {q(remote_archive)}
 """
 
+import sys
+from functools import partial
+sys.path.insert(0, os.environ["VG_RELEASE_SCRIPTS"])
+from release_ssh import run_remote, open_sftp
 client = paramiko.SSHClient()
+remote_exec = partial(run_remote, client, use_sudo=values.get("SSH_SUDO") == "1")
+remote_sftp = partial(open_sftp, client, use_sudo=values.get("SSH_SUDO") == "1")
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 client.connect(hostname=host, port=port, username=user, password=password or None, key_filename=key_filename or None, timeout=30)
 status = None
 try:
-    with client.open_sftp() as sftp:
+    with remote_sftp() as sftp:
         sftp.put(archive, remote_archive)
-    stdin, stdout, stderr = client.exec_command(remote_command, timeout=300)
+    stdin, stdout, stderr = remote_exec(remote_command, timeout=300)
     status = stdout.channel.recv_exit_status()
     out = stdout.read().decode("utf-8", "replace")
     err = stderr.read().decode("utf-8", "replace")
