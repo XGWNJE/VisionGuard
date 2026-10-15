@@ -47,6 +47,7 @@ $modelsDir = Join-Path $repoRoot 'server\data\models'
 $releasesJsonPath = Join-Path $repoRoot 'server\data\releases.json'
 $buildScript = Join-Path $repoRoot '.agents\skills\visionguard-build\scripts\build-all.ps1'
 $androidNnapiModelScript = Join-Path $repoRoot 'scripts\prepare-android-nnapi-model.py'
+$requiredWindowsModelKeys = @('yolo26m_320', 'yolo26m_640', 'yolov5su_320', 'yolov5mu_320')
 $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 function Write-Step {
@@ -581,12 +582,7 @@ function Test-RequiredModels {
     # 该目录受 .gitignore 排除，干净检出的构建机上必然是空的——缺模型不会让构建失败，
     # 只会让下发出去的机器下载不到模型、legacy 档（Win7）直接无法推理。
     # 因此这里按两个档位的模型键逐项校验，缺任何一个都中止发布，而不是少带一个包。
-    $expectedModels = @(
-        # modern 档（Win10/11）：YOLO26，固定 320 / 640
-        'yolo26m_320', 'yolo26m_640',
-        # legacy 档（Win7 SP1）：YOLOv5，低端机只用 320 的 su / mu
-        'yolov5su_320', 'yolov5mu_320'
-    )
+    $expectedModels = $requiredWindowsModelKeys
     $assetsDir = Join-Path $repoRoot 'detector\windows-wpf\Assets'
     $missing = New-Object System.Collections.Generic.List[string]
     foreach ($key in $expectedModels) {
@@ -623,6 +619,7 @@ function Copy-Models {
         }
 
         Get-ChildItem -LiteralPath $source -Filter '*.onnx' -File |
+            Where-Object { $requiredWindowsModelKeys -contains $_.BaseName } |
             ForEach-Object {
                 $destination = Join-Path $modelsDir $_.Name
                 Copy-Item -LiteralPath $_.FullName -Destination $destination -Force
@@ -1611,7 +1608,7 @@ if ($UploadVps -and $artifacts.Count -gt 0) {
         }) | Out-Null
     }
     if (Test-TargetEnabled @('Windows', 'WPF')) {
-        foreach ($model in (Get-ChildItem -LiteralPath $modelsDir -Filter '*.onnx' -File)) {
+        foreach ($model in (Get-ChildItem -LiteralPath $modelsDir -Filter '*.onnx' -File | Where-Object { $requiredWindowsModelKeys -contains $_.BaseName })) {
             $uploads.Add([pscustomobject]@{
                 local = $model.FullName
                 remote = "$RemoteRoot/data/models/$($model.Name)"
