@@ -12,6 +12,7 @@
             <ListBoxItem Content="版本与维护"/>
             <ListBoxItem Content="运行方式"/>
             <ListBoxItem Content="节点状态"/>
+            <ListBoxItem Content="性能检测与分析"/>
         </ListBox>
         <Border Grid.Column="1" Background="{DynamicResource SurfaceDark}" CornerRadius="8">
             <Grid>
@@ -441,6 +442,30 @@
                             </StackPanel>
                         </StackPanel>
                         <TextBlock Text="连接仅代表控制通道；各来源媒体、推理和告警状态请查看来源概览。" Style="{StaticResource CaptionText}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </ScrollViewer>
+                <ScrollViewer>
+                    <ScrollViewer.Style>
+                        <Style TargetType="ScrollViewer" BasedOn="{StaticResource PaneScrollViewer}">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers><DataTrigger Binding="{Binding SelectedIndex, ElementName=CategoryList}" Value="7"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers>
+                        </Style>
+                    </ScrollViewer.Style>
+                    <StackPanel DataContext="{Binding Node.Performance}" MaxWidth="900">
+                        <TextBlock Text="性能检测与分析" Style="{StaticResource TitleText}" Margin="0,0,0,16"/>
+                        <TextBlock Text="先启动需要检测的来源，再采样 10 秒。显示采集、遮罩、预处理、推理、解析与告警的实际耗时；推流来源显示采集、编码与发送耗时。" Style="{StaticResource CaptionText}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                        <Button Content="开始性能检测" Command="{Binding StartCommand}" Style="{StaticResource PanePrimaryButton}" HorizontalAlignment="Left"/>
+                        <TextBlock Text="{Binding Status}" TextWrapping="Wrap" Margin="0,12"/>
+                        <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" Style="{StaticResource CaptionText}" Margin="0,0,0,16"/>
+                        <ItemsControl ItemsSource="{Binding Results}">
+                            <ItemsControl.ItemTemplate><DataTemplate>
+                                <StackPanel Style="{StaticResource SettingsSection}">
+                                    <TextBlock Text="{Binding Source}" Style="{StaticResource SectionLabel}"/>
+                                    <TextBlock Text="{Binding Detail}" TextWrapping="Wrap" Margin="0,8"/>
+                                    <TextBlock Text="{Binding Stages}" FontFamily="Consolas" TextWrapping="Wrap" Style="{StaticResource CaptionText}"/>
+                                </StackPanel>
+                            </DataTemplate></ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </StackPanel>
                 </ScrollViewer>
             </Grid>

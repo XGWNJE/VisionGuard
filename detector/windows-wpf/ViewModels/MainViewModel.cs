@@ -45,6 +45,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                     _accountScope = AccountSession.ScopeKey;
                 }
                 _serverVm.Load();
+                RefreshHeartbeat(_serverPushService, sendNow: false);
                 _serverPushService.Configure(AppConfig.ServerUrl, AppConfig.SessionToken, AppConfig.DeviceId, _serverVm.DeviceName);
                 System.Threading.Tasks.Task.Run(() => Runtime.ResidentLauncher.EnsureStarted());
             };
@@ -111,6 +112,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             _serverVm.PropertyChanged += (s, e) => QueueSave();
 
             // 初始配置服务器连接
+            RefreshHeartbeat(_serverPushService, sendNow: false);
             _serverPushService.Configure(
                 AppConfig.ServerUrl,
                 AppConfig.SessionToken,
@@ -144,12 +146,12 @@ namespace VisionGuard.Detector.Windows.ViewModels
         }
 
         /// <summary>远控命令/配置变更后刷新心跳参数并立即推送。</summary>
-        private void RefreshHeartbeat(ServerPushService sps)
+        private void RefreshHeartbeat(ServerPushService sps, bool sendNow = true)
         {
             var sourceStatuses = MultiSourceVm.Statuses;
-            // 推流态只采只推：不报检测来源，节点状态用 components.publish 表达，避免服务端误报检测中断。
+            // 两种状态都上报完整来源目录；推流不报告检测预期，避免误报检测中断。
             var pushMode = MultiSourceVm.IsPushMode;
-            object[] heartbeatSources = pushMode ? Array.Empty<object>() : sourceStatuses.Where(x =>
+            object[] heartbeatSources = sourceStatuses.Where(x =>
                 MultiSourceVm.Sources.First(s => s.SourceId == x.SourceId).IsTargetBound).Select(x =>
                 {
                     var slot = MultiSourceVm.Sources.First(s => s.SourceId == x.SourceId);
@@ -157,7 +159,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                     {
                         ["sourceId"] = x.SourceId, ["sourceName"] = x.SourceName,
                         ["isMonitoring"] = x.IsMonitoring, ["isReady"] = x.IsReady,
-                        ["monitoringExpected"] = x.MonitoringExpected,
+                        ["monitoringExpected"] = !pushMode && x.MonitoringExpected,
                         ["lastProgressAt"] = x.LastProgressAt?.ToString("o") ?? "",
                         ["modelKey"] = x.ModelKey, ["actualFps"] = x.ActualFps,
                         ["error"] = x.Error, ["cooldown"] = slot.Cooldown,
@@ -177,7 +179,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 canSwitchModelWhileMonitoring: false,
                 sources: heartbeatSources,
                 publishState: MultiSourceVm.NodePublishState);
-            sps.SendHeartbeatNow();
+            if (sendNow) sps.SendHeartbeatNow();
             MultiSourceVm.RefreshSummary();
         }
     }

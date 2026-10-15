@@ -26,6 +26,10 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.Executors
 import java.util.UUID
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -52,6 +56,11 @@ class SourceRuntime(
     private val gate = AlertGate()
     private val frameTimes = ArrayDeque<Long>()
     private var engine: InferenceEngine? = null
+    private val lifecycle = Mutex()
+    private val engineDispatcher = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "VG-Inference-${config.sourceId}").apply { isDaemon = true }
+    }.asCoroutineDispatcher()
+    @Volatile private var closed = false
     /** 保护会话的使用与关闭：推理是不可中断的原生调用，关闭必须等它返回，否则会撞上已释放的会话。 */
     private val engineLock = ReentrantLock()
     private var scope: CoroutineScope? = null
@@ -82,7 +91,8 @@ class SourceRuntime(
     }
 
     /** 启动本路推理；返回 null 表示成功，否则返回可读失败原因。 */
-    suspend fun start(): String? {
+    suspend fun start(): String? = lifecycle.withLock {
+        if (closed) return "来源已关闭"
         if (job != null) return null
         val reason = validateForStart()
         if (reason != null) {
@@ -91,9 +101,9 @@ class SourceRuntime(
         }
 
         val key = config.params.modelKey
-        // 档位即后端：GPU 档只加载截断图，CPU 引擎用同尺寸 CPU 档的量化本体（回落目标也是它）。
+        // 同一档位自动优先 GPU，回落时使用配套的同尺寸 INT8。
         val gpuFile = models.gpuFile(key)
-        val created = withContext(Dispatchers.IO) {
+        val created = withContext(engineDispatcher) {
             runCatching {
                 InferenceEngineFactory.create(
                     cpuOnnxFile = models.cpuFile(key),
@@ -107,13 +117,17 @@ class SourceRuntime(
             update { it.copy(isRunning = false, isReady = false, error = message, statusText = "未就绪") }
             return message
         }
+        if (closed) {
+            withContext(engineDispatcher) { selection.engine.close() }
+            return "来源已关闭"
+        }
         engine = selection.engine
         gate.reset()
         lastRemoteSequence = -1L
         lastLocalFrame = null
         belowTargetSinceMs = 0L
 
-        val ownScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val ownScope = CoroutineScope(SupervisorJob() + engineDispatcher)
         scope = ownScope
         job = ownScope.launch { loop() }
         update {
@@ -132,13 +146,13 @@ class SourceRuntime(
     }
 
     /** 停止本路推理；主动停止会清除运行意图。 */
-    suspend fun stop() {
+    suspend fun stop() = lifecycle.withLock {
         // 先等推理协程真正退出：`run` 是不可中断的原生调用，发出取消信号后它可能仍在执行。
         job?.cancelAndJoin()
         job = null
         scope?.cancel()
         scope = null
-        withContext(Dispatchers.IO) {
+        withContext(engineDispatcher) {
             engineLock.withLock {
                 runCatching { engine?.close() }
                 engine = null
@@ -160,15 +174,19 @@ class SourceRuntime(
     }
 
     fun close() {
+        if (closed) return
+        closed = true
         job?.cancel()
         scope?.cancel()
-        // 锁内关闭：即使协程还在收尾，也不会与 `run` 并发访问同一个会话。
-        engineLock.withLock {
-            runCatching { engine?.close() }
-            engine = null
+        // 原生推理结束后在同一工作线程释放，目录增删不会阻塞界面线程。
+        CoroutineScope(engineDispatcher).launch {
+            lifecycle.withLock {
+                runCatching { engine?.close() }
+                engine = null
+                lastLocalFrame = null
+            }
+            engineDispatcher.close()
         }
-        job = null
-        scope = null
     }
 
     /** 心跳与界面使用的当前快照。 */
@@ -200,13 +218,6 @@ class SourceRuntime(
         SourceConfig.validateName(config.sourceName)?.let { return it }
         if (!models.isDownloaded(config.params.modelKey)) {
             return "模型 ${ModelKeys.displayName(config.params.modelKey)} 未下载，请在来源参数抽屉的「模型插槽」里下载后重试。"
-        }
-        // GPU 档要有一条 CPU 回落路：GPU 编译失败时靠同尺寸 INT8 顶上，它不在就没有退路。
-        if (ModelKeys.supportsGpu(config.params.modelKey)) {
-            val cpuKey = ModelKeys.cpuTierOf(config.params.modelKey)
-            if (cpuKey != null && !models.isDownloaded(cpuKey)) {
-                return "GPU 档需要同尺寸的 ${ModelKeys.displayName(cpuKey)} 作为回落，请先在模型插槽里下载"
-            }
         }
         com.xgwnje.visionguard.inference.detect.DetectionParams.validateConfidence(config.params.confidencePercent)?.let { return it }
         com.xgwnje.visionguard.inference.detect.DetectionParams.validateTargetFps(config.params.targetFps)?.let { return it }
@@ -302,9 +313,10 @@ class SourceRuntime(
             val finishedAt = clockMs()
             recordSuccess(finishedAt, detections, working, inferMs, active.backend)
 
-            if (gate.shouldAlert(detections, NtpSync.utcNowMs(), config.params.cooldownSeconds)) {
-                lastAlertAtMs = finishedAt
-                update { it.copy(lastAlertAtMs = finishedAt) }
+            val eventAtMs = NtpSync.utcNowMs()
+            if (gate.shouldAlert(detections, eventAtMs, config.params.cooldownSeconds)) {
+                lastAlertAtMs = eventAtMs
+                update { it.copy(lastAlertAtMs = eventAtMs) }
                 val event = AlertEvent(
                     alertId = UUID.randomUUID().toString(),
                     sourceId = config.sourceId,
@@ -317,7 +329,7 @@ class SourceRuntime(
                         "parseMs" to parseMs,
                         "processMs" to (finishedAt - loopStartedAtMs)
                     ),
-                    timestampMs = NtpSync.utcNowMs()
+                    timestampMs = eventAtMs
                 )
                 onAlert(event, working)
             }

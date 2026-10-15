@@ -61,7 +61,7 @@ class QuantizedModelContractTest {
         assertTrue(ModelKeys.isQuantized(key))
         assertTrue(ModelKeys.supportsGpu(base))
         assertEquals(base, ModelKeys.baseOf(key))
-        assertTrue(ModelKeys.displayName(key).endsWith("CPU"))
+        assertEquals("M320", ModelKeys.displayName(base))
         assertEquals(key, ModelKeys.cpuTierOf(base))
     }
 

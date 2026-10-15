@@ -29,9 +29,10 @@ class AlertPayloadTest {
     @Test
     fun `负载包含服务端要求的全部字段`() {
         val json = JsonParser.parseString(
-            AlertPayload.build(gson, event(), deviceId = "dev-1", deviceName = "视觉推理节点 · Pixel", capturedAtIso = "2026-10-09T00:00:00Z")
+            AlertPayload.build(gson, event(), deviceId = "dev-1", deviceName = "视觉推理节点 · Pixel")
         ).asJsonObject
 
+        assertEquals(setOf("type", "alertId", "deviceId", "deviceName", "sourceId", "sourceName", "timestamp", "eventKind", "summary", "expiresAt", "detections", "timings", "capturedAt"), json.keySet())
         assertEquals("alert", json["type"].asString)
         assertEquals("11111111-2222-3333-4444-555555555555", json["alertId"].asString)
         assertEquals("dev-1", json["deviceId"].asString)
@@ -40,13 +41,13 @@ class AlertPayloadTest {
         assertEquals("本机相机", json["sourceName"].asString)
         assertEquals("visual-detection", json["eventKind"].asString)
         assertEquals("视觉检测告警", json["summary"].asString)
-        assertEquals("2026-10-09T00:00:00Z", json["capturedAt"].asString)
+        assertEquals(event().timestampIso, json["capturedAt"].asString)
         assertEquals(5, json["timings"].asJsonObject.size())
     }
 
     @Test
     fun `实时期限固定为事件后三十秒`() {
-        val json = JsonParser.parseString(AlertPayload.build(gson, event(), "dev-1", "节点", "2026-10-09T00:00:00Z")).asJsonObject
+        val json = JsonParser.parseString(AlertPayload.build(gson, event(), "dev-1", "节点")).asJsonObject
         val timestamp = Instant.parse(json["timestamp"].asString)
         val expiresAt = Instant.parse(json["expiresAt"].asString)
         assertEquals(30L, expiresAt.epochSecond - timestamp.epochSecond)
@@ -55,7 +56,7 @@ class AlertPayloadTest {
 
     @Test
     fun `检测项使用 label confidence 与 bbox 四字段`() {
-        val json = JsonParser.parseString(AlertPayload.build(gson, event(), "dev-1", "节点", "2026-10-09T00:00:00Z")).asJsonObject
+        val json = JsonParser.parseString(AlertPayload.build(gson, event(), "dev-1", "节点")).asJsonObject
         val detections = json["detections"].asJsonArray
         assertEquals(2, detections.size())
 

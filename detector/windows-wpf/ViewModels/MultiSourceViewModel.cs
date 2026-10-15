@@ -24,7 +24,6 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private readonly SettingsViewModel _settings;
         private SourceViewModel? _selectedSource;
         private string _sourceLimitWarning = "";
-        private DateTime _lastPerformanceAlertUtc = DateTime.MinValue;
         private int _sourceLimit = MultiSourceMonitorCoordinator.MaximumSourceLimit;
         private int _viewGeneration;
         private bool _pushTargetsLoading, _applyingPushTargets;
@@ -62,6 +61,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         public string SourceLimitText => $"最多 {_sourceLimit} 路来源";
         public string SourceNotice => _sourceLimitWarning;
         public bool HasSourceNotice => !string.IsNullOrEmpty(SourceNotice);
+        public PerformanceAnalysisViewModel Performance { get; } = new();
         public RelayCommand AddSourceCommand { get; private set; } = null!;
 
         /// <summary>节点级状态开关：本机推理 / 推流到其他推理节点，二选一。</summary>
@@ -105,6 +105,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
             _server = server;
             _settings = settings;
             _coordinator = new MultiSourceMonitorCoordinator();
+            _coordinator.PerformanceMeasured += (_, sample) => Performance.Record(sample);
             AddSourceCommand = new RelayCommand(AddSource, () => CanAddSource);
             UseInferenceModeCommand = new RelayCommand(() => SwitchMode(SourcePublishMode.Inference), () => !IsInferenceMode);
             UsePushModeCommand = new RelayCommand(() => SwitchMode(SourcePublishMode.Push), () => !IsPushMode);
@@ -115,9 +116,11 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 if (IsPushMode && PushTargets.Count == 0) RefreshPushTargets();
                 else _pushTargetTimer.Stop();
             };
-            EnsureLegacyBackupAndMigration();
-            EnsureSourceKeyMigration();
-            LoadConfiguredSources();
+            if (_server == null || AccountSession.Current != null) {
+                EnsureLegacyBackupAndMigration();
+                EnsureSourceKeyMigration();
+                LoadConfiguredSources();
+            }
             // 开机就是推流态时也要能选目标：没有候选节点就按定时器重试，登录完成或目标上线后自动补齐。
             if (IsPushMode) _pushTargetTimer.Start();
             // 独立配置探针允许不连接服务。
@@ -127,7 +130,8 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 _server.StreamsReceived += (_, streams) =>
                 {
                     int generation = _viewGeneration;
-                    Dispatch(() => { if (generation == _viewGeneration) ApplyStreams(streams); });
+                    string boundTarget = _server.BoundPushTargetId;
+                    Dispatch(() => { if (generation == _viewGeneration) { ApplyPushBinding(boundTarget, ""); ApplyStreams(streams); } });
                 };
             }
 
@@ -149,7 +153,6 @@ namespace VisionGuard.Detector.Windows.ViewModels
                 if (slot == null) return;
                 slot.ApplyStatus(status);
                 RefreshSummary();
-                RaisePerformanceAlertIfNeeded();
                 });
             };
             _coordinator.FrameProcessed += (_, e) =>
@@ -204,6 +207,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
         }
         private void LoadConfiguredSources()
         {
+            if (_server != null && AccountSession.Current == null) return;
             foreach (int index in ResolveInitialSourceIndexes())
             {
                 var slot = new SourceViewModel(index, this);
@@ -217,8 +221,6 @@ namespace VisionGuard.Detector.Windows.ViewModels
         private void ApplyStreams(IReadOnlyList<RemoteStreamInfo> streams)
         {
             // 服务端下发的绑定关系同时表达两件事：别人推给我的（建远程来源卡片）和我推给谁的（推流目标）。
-            var own = streams.FirstOrDefault(stream => stream.publisherDeviceId == AppConfig.DeviceId);
-            ApplyPushBinding(own?.targetDeviceId ?? "", "");
             if (IsPushMode && PushTargets.Count == 0 && !_pushTargetsLoading) RefreshPushTargets();
             var bound = streams.Where(s => s.targetDeviceId == AppConfig.DeviceId && !string.IsNullOrWhiteSpace(s.sourceId)).ToArray();
             foreach (var removed in Sources.Where(s => s.IsRemoteStream && !bound.Any(b => b.sourceId == s.SourceId)).ToArray())
@@ -250,9 +252,10 @@ namespace VisionGuard.Detector.Windows.ViewModels
             RefreshSummary();
         }
 
-        internal bool CanAddSource => Sources.Count < _sourceLimit;
+        public bool CanConfigureSources => AccountSession.Current != null;
+        internal bool CanAddSource => CanConfigureSources && Sources.Count < _sourceLimit;
         internal bool CanRemoveSource(SourceViewModel slot)
-            => Sources.Contains(slot) && !IsRunning(slot)
+            => CanConfigureSources && Sources.Contains(slot) && !IsRunning(slot)
                && (!slot.IsRemoteStream || slot.RemotePublisherDeviceId.Length > 0);
 
         internal void AddSource()
@@ -287,6 +290,11 @@ namespace VisionGuard.Detector.Windows.ViewModels
             if (slot.IsRemoteStream) { UnbindRemoteSource(slot); return; }
             if (ThemedMessageBox.Show($"删除来源“{slot.SourceName}”？", "删除来源",
                     MessageBoxButton.YesNo, MessageBoxImage.Warning, "删除来源", destructive: true) != MessageBoxResult.Yes) return;
+            DeleteLocalSource(slot);
+        }
+
+        private void DeleteLocalSource(SourceViewModel slot)
+        {
             slot.DiscardEditing(); _coordinator.Remove(slot.SourceId); Sources.Remove(slot);
             if (ReferenceEquals(SelectedSource, slot)) SelectedSource = Sources.FirstOrDefault();
             PersistSourceIndexes(); RefreshSummary();
@@ -596,6 +604,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
         internal void Start(SourceViewModel slot)
         {
+            if (!CanConfigureSources) throw new InvalidOperationException("请先登录账号，再配置或启动来源。");
             if (IsRunning(slot)) return;
             var push = PublishMode == SourcePublishMode.Push;
             // 先做不会改变运行时状态的前置检查。若模型不存在，不能先重建来源：
@@ -644,6 +653,20 @@ namespace VisionGuard.Detector.Windows.ViewModels
             {
                 if (command == "resume") Start(slot);
                 else if (command == "pause") Stop(slot);
+                else if (command == "remove-source")
+                {
+                    if (IsRunning(slot)) throw new InvalidOperationException("请先停止该来源再删除。");
+                    if (slot.IsRemoteStream)
+                    {
+                        var service = new StreamTargetService(AppConfig.ServerUrl, AppConfig.SessionToken, AppConfig.DeviceId);
+                        System.Threading.Tasks.Task.Run(() => {
+                            var error = service.UnbindPublisher(slot.RemotePublisherDeviceId);
+                            _server.SendCommandAck(command, error.Length == 0, error, requestId, ackSourceId);
+                        });
+                        return true;
+                    }
+                    DeleteLocalSource(slot);
+                }
                 else { _server.SendCommandAck(command, false, "来源不支持该命令", requestId, ackSourceId); return false; }
                 _server.SendCommandAck(command, true, requestId: requestId, targetSourceId: ackSourceId);
                 return true;
@@ -681,6 +704,7 @@ namespace VisionGuard.Detector.Windows.ViewModels
 
         public void RefreshSummary()
         {
+            OnPropertyChanged(nameof(CanConfigureSources));
             AddSourceCommand.RaiseCanExecuteChanged();
             OnPropertyChanged(nameof(SourceLimitText));
             OnPropertyChanged(nameof(HasSources)); OnPropertyChanged(nameof(SourceCountText));
@@ -690,40 +714,6 @@ namespace VisionGuard.Detector.Windows.ViewModels
             OnPropertyChanged(nameof(NodeModeHint));
             RaisePushTargetState();
             foreach (var source in Sources) source.RaiseSourceActionStates();
-        }
-
-        /// <summary>
-        /// 实测帧率持续低于目标时弹一次提醒（owner 口径：任一路不足即提醒，弹窗冷却 10 分钟）。
-        ///
-        /// 卡片上的文字提示由 <see cref="PerformanceWarning"/> 持续表达，弹窗只负责“打断一次”，
-        /// 所以这里用冷却时间而不是状态去重：持续不足时每 10 分钟再提醒一次，避免被忽略。
-        /// 无界面宿主（验证探针）不弹窗，只保留状态字段供断言。
-        /// </summary>
-        private void RaisePerformanceAlertIfNeeded()
-        {
-            var insufficient = Sources.Where(source => source.IsPerformanceInsufficient).ToArray();
-            if (insufficient.Length == 0) return;
-
-            var now = DateTime.UtcNow;
-            if (now - _lastPerformanceAlertUtc < TimeSpan.FromMinutes(PerformanceWatchdog.AlertCooldownMinutes)) return;
-            // 先记时间再排队：状态事件每帧都会到，不先记会排队弹出多个对话框。
-            _lastPerformanceAlertUtc = now;
-
-            string detail = string.Join(Environment.NewLine, insufficient.Select(source =>
-                $"{source.DisplayIndex}：目标 {source.TargetFps:0.0} FPS，实际 {source.ActualFps:0.0} FPS"));
-            var dispatcher = Application.Current?.Dispatcher;
-            if (dispatcher == null) return;
-            dispatcher.BeginInvoke(new Action(() =>
-            {
-                // 应用已在关闭过程中时不能弹窗（MessageBox 自己也是窗口，会抛“窗口正在关闭”）。
-                if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished) return;
-                VisionGuard.Detector.Windows.Views.ThemedMessageBox.Show(
-                    "当前设备的推理性能已达不到设定的检测频率：" + Environment.NewLine + Environment.NewLine +
-                    detail + Environment.NewLine + Environment.NewLine +
-                    "采集、推理与报警仍在继续，不会自动减路或降帧。" + Environment.NewLine +
-                    "建议降低检测频率、减少同时运行的来源，或改用更小的模型。",
-                    "视觉推理节点 · 推理性能不足", MessageBoxButton.OK, MessageBoxImage.Warning);
-            }));
         }
 
         private void ApplySourceLimit(int limit)
@@ -1032,9 +1022,9 @@ namespace VisionGuard.Detector.Windows.ViewModels
             : $"已保存：{string.Join("、", _pendingApply)} · 重新启动此来源后生效";
         public bool HasPendingApply => _pendingApply.Count > 0;
 
-        public bool CanEdit => !IsMonitoring;
+        public bool CanEdit => _owner.CanConfigureSources && !IsMonitoring;
         /// <summary>推流态不需要本机模型；本机推理态仍要求所选模型已下载。</summary>
-        public bool CanStart => !IsMonitoring && IsReady && ModelManager.IsSupported(ModelKey) && (IsPushMode || ModelManager.IsDownloaded(ModelKey));
+        public bool CanStart => _owner.CanConfigureSources && !IsMonitoring && IsReady && ModelManager.IsSupported(ModelKey) && (IsPushMode || ModelManager.IsDownloaded(ModelKey));
         /// <summary>本节点当前状态是否为推流（节点级，两个状态互斥）。</summary>
         public bool IsPushMode => _owner.IsPushMode;
 

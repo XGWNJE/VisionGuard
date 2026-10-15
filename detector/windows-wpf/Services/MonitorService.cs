@@ -189,9 +189,11 @@ namespace VisionGuard.Detector.Windows.Services
                 }
                 long captureMs = sw.ElapsedMilliseconds;
 
+                sw.Restart();
                 // 1.5 应用遮罩区域（in-place，同时影响推理 / 报警截图 / UI 预览）
                 if (cfg.MaskRegions != null && cfg.MaskRegions.Count > 0)
                     MaskApplier.ApplyMasks(frame, cfg.MaskRegions);
+                long maskMs = sw.ElapsedMilliseconds;
 
                 // 2. 预处理（等比缩放 + 居中黑边填充 + 转张量）。变换必须和张量一起传给解析器，
                     failureKind = MonitorFailureKind.Processing;
@@ -224,6 +226,7 @@ namespace VisionGuard.Detector.Windows.Services
                 var timings = new Dictionary<string, long>
                 {
                     ["captureMs"]     = captureMs,
+                    ["maskMs"]        = maskMs,
                     ["preprocessMs"]  = preprocessMs,
                     ["inferMs"]       = inferMs,
                     ["parseMs"]       = parseMs,
@@ -238,11 +241,13 @@ namespace VisionGuard.Detector.Windows.Services
                 _alertService.Evaluate(detections, cfg, timings, frame);
                 long alertMs = totalSw.ElapsedMilliseconds - alertStarted;
 
+                timings["alertMs"] = alertMs;
+                timings["processMs"] = totalSw.ElapsedMilliseconds;
                 // 6. 通知 UI
                 if (remoteHeader != null && MediaDiagnostics.Enabled)
                     MediaDiagnostics.Write($"[MediaPerf] event=inference sequence={remoteHeader.sequence} captureMs={captureMs} preprocessMs={preprocessMs} inferMs={inferMs} parseMs={parseMs} alertMs={alertMs} cachedAgeMs={remoteAgeMs} totalMs={totalSw.ElapsedMilliseconds}");
                 FrameProcessed?.Invoke(this, new FrameResultEventArgs(
-                    detections, (Bitmap)frame.Clone(), inferMs, totalSw.ElapsedMilliseconds));
+                    detections, (Bitmap)frame.Clone(), inferMs, totalSw.ElapsedMilliseconds, timings));
             }
             catch (ObjectDisposedException)
             {
@@ -315,12 +320,14 @@ namespace VisionGuard.Detector.Windows.Services
         public bool            HasError    => Error != null;
         public MonitorFailureKind FailureKind { get; }
 
-        public FrameResultEventArgs(List<Detection> dets, Bitmap frame, long inferMs, long processingMs = 0)
+        public IReadOnlyDictionary<string, long> StageTimings { get; } = new Dictionary<string, long>();
+        public FrameResultEventArgs(List<Detection> dets, Bitmap frame, long inferMs, long processingMs = 0, IReadOnlyDictionary<string, long>? timings = null)
         {
             Detections  = dets;
             Frame       = frame;
             InferenceMs = inferMs;
             ProcessingMs = processingMs;
+            StageTimings = timings ?? new Dictionary<string, long>();
         }
 
         public FrameResultEventArgs(Exception error, MonitorFailureKind failureKind = MonitorFailureKind.Processing)

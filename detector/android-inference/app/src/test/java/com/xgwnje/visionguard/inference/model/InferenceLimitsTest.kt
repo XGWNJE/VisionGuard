@@ -22,8 +22,8 @@ class InferenceLimitsTest {
     @Test
     fun `INT8 两档按多路实测收紧`() {
         // 4 路 159.5 ms（6.3 帧/秒）达标、8 路 322.1 ms 掉线；640 的 2 路 151.4 ms 达标、4 路 548.0 ms 掉线。
-        assertEquals(4, InferenceLimits.perConfiguration("yolo26m_320_int8", gpu = false))
-        assertEquals(2, InferenceLimits.perConfiguration("yolo26m_640_int8", gpu = false))
+        assertEquals(4, InferenceLimits.perConfiguration("yolo26m_320", gpu = false))
+        assertEquals(2, InferenceLimits.perConfiguration("yolo26m_640", gpu = false))
     }
 
     @Test
@@ -31,7 +31,7 @@ class InferenceLimitsTest {
         assertEquals(InferenceLimits.CONSERVATIVE_LIMIT, InferenceLimits.perConfiguration("unknown_640", gpu = false))
         assertEquals(2, InferenceLimits.perConfiguration("unknown_640", gpu = true))
         // GPU 与 CPU 是两套上限，取值不能互相顶替
-        assertEquals(InferenceLimits.CONSERVATIVE_LIMIT, InferenceLimits.perConfiguration("yolo26m_640", gpu = false))
+        assertEquals(2, InferenceLimits.perConfiguration("yolo26m_640", gpu = false))
         assertEquals(32, InferenceLimits.perConfiguration("yolo26m_640", gpu = true))
     }
 

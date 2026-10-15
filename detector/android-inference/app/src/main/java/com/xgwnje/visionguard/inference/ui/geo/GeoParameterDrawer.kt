@@ -116,16 +116,12 @@ fun GeoSourceDrawer(
     var confidence by remember(source.sourceId, initial) { mutableStateOf(initial.confidencePercent) }
     var targetFps by remember(source.sourceId, initial) { mutableStateOf(initial.targetFps) }
     var cooldown by remember(source.sourceId, initial) { mutableStateOf(initial.cooldownSeconds) }
-    // 本机没有 GPU 加速器时 GPU 档不可选：草稿直接落到同尺寸的 CPU 档，并要求用户复核一次。
-    val autoAdjustedFrom = initial.modelKey.takeIf { ModelKeys.supportsGpu(it) && !gpuAvailable }
-    var modelKey by remember(source.sourceId, initial, gpuAvailable) {
-        mutableStateOf(
-            if (autoAdjustedFrom != null) ModelKeys.cpuTierOf(autoAdjustedFrom) ?: ModelKeys.defaultKey
-            else initial.modelKey
-        )
+    val autoAdjustedFrom: String? = null
+    var modelKey by remember(source.sourceId, initial, models) {
+        mutableStateOf(initial.modelKey.takeIf { key -> models.any { it.key == key && it.downloaded } } ?: "")
     }
     var watched by remember(source.sourceId, initial) { mutableStateOf(initial.watchedClasses) }
-    var reviewed by remember(source.sourceId, initial, gpuAvailable) { mutableStateOf(autoAdjustedFrom == null) }
+    var reviewed by remember(source.sourceId, initial, gpuAvailable) { mutableStateOf(true) }
     var showModels by remember { mutableStateOf(false) }
     var confirmLeave by remember { mutableStateOf(false) }
     var afterLeave by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -682,19 +678,11 @@ private fun ModelSlotBlock(
             onClick = { onSelect(model.key) },
             label = model.displayName + if (!model.downloaded) " · 未下载" else "",
             tone = if (selected == model.key) GeoTone.Primary else GeoTone.Secondary,
-            enabled = enabled && model.downloaded && (!ModelKeys.supportsGpu(model.key) || gpuAvailable),
+            enabled = enabled && model.downloaded,
             modifier = Modifier.fillMaxWidth()
         )
     }
     GeoKey(onClick = onOpenModels, label = "管理模型资源", icon = LucideIcons.Download)
-    autoAdjustedFrom?.let {
-        Spacer(Modifier.height(Geo.Gap))
-        Text(
-            "本机不支持 GPU，已把 ${ModelKeys.displayName(it)} 换成同尺寸的 CPU 档。",
-            color = VisionGuardStatusColors.warning,
-            style = MaterialTheme.typography.bodySmall
-        )
-    }
     ModelFootnotes(reviewed = reviewed, modelDownloaded = modelDownloaded, locked = locked, onReview = onReview)
 }
 

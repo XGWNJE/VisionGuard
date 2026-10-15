@@ -33,6 +33,8 @@ if (args.Length >= 2 && args[1].Equals("--display-name-boundaries", StringCompar
 // 不做这一步时 DllImport 会按默认搜索顺序找根目录的 onnxruntime.dll，而它按设计已被移走，
 // legacy 档会以无诊断信息的进程终止失败。
 NativeLibrarySelector.Initialize();
+if (args.Length == 4 && args[1] == "--stream-compression")
+    return StreamCompressionProbe.Run(modelPath, args[2], args[3]);
 
 if (args.Length >= 2 && args[1].Equals("--monitor-stop-contract", StringComparison.OrdinalIgnoreCase))
 {
@@ -424,12 +426,11 @@ if (args.Length >= 2 && args[1].Equals("--performance-watchdog", StringCompariso
         new { sustained });
     CheckWatchdog("达标时即使持续很久也不提示", PerformanceWatchdog.GetWarning(3, 3, 600, true).Length == 0);
 
-    // 3) 口径常量固定：80% 阈值、30 秒持续、10 分钟弹窗冷却。
-    CheckWatchdog("阈值/持续/冷却常量",
+    // 3) 卡片提示阈值：80% 与持续 30 秒。
+    CheckWatchdog("阈值/持续常量",
         Math.Abs(PerformanceWatchdog.TargetRatio - 0.8) < 0.0001
-        && Math.Abs(PerformanceWatchdog.SustainedSeconds - 30) < 0.0001
-        && Math.Abs(PerformanceWatchdog.AlertCooldownMinutes - 10) < 0.0001,
-        new { PerformanceWatchdog.TargetRatio, PerformanceWatchdog.SustainedSeconds, PerformanceWatchdog.AlertCooldownMinutes });
+        && Math.Abs(PerformanceWatchdog.SustainedSeconds - 30) < 0.0001,
+        new { PerformanceWatchdog.TargetRatio, PerformanceWatchdog.SustainedSeconds });
 
     var watchdogReport = new { passed = watchdogPassed, probe = "performance-watchdog", checks = watchdogChecks };
     var watchdogJson = JsonSerializer.Serialize(watchdogReport, new JsonSerializerOptions { WriteIndented = true });

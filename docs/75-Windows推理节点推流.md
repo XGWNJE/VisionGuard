@@ -17,7 +17,7 @@ Windows 视觉推理节点有两种互斥状态：**本地推理**（采集本�
 ## 推流支路
 
 - 采集直接复用 `Capture/WindowCapturer.cs`、`Capture/ScreenCapturer.cs` 的位图，跳过遮罩、预处理与推理；采集目标的最小尺寸沿用现有语义（宽高都须严格大于 100 像素）。
-- 发布前等比缩放到最长边不超过 1280、短边不超过 720，超过才缩放、不做放大；JPEG 质量 55，与两个相机实现一致。
+- 发布前等比缩放到最长边不超过 960、短边不超过 720，超过才缩放、不放大。本机推理沿用直接 letterbox，不重复缩放。固定镜头用 16×16 RGB 采样判断画面变化：连续两帧稳定后 JPEG 质量 40，有变化立即恢复 55；不跳帧，仍遵循目标采样率。质量与带宽对比见[验证记录](90-验证记录.md)。
 - **每个来源一套发布支路**：`Services/MediaPublishService.cs` 由 `SourcePublisher` 按来源创建，`media-auth` 带上本机 `sourceId/sourceName`（与心跳同一个 `sourceId`），每个来源一条 `/media/ws` 连接、一条流、一套序号与在途窗口，互不顶掉。启用几个来源就能并行推几路给同一个目标，接收端按 `streamId` 分别建来源。
 - 帧为 4 字节大端 JSON 头长度、UTF-8 头加 JPEG，头含 `streamId/sessionId/sequence/capturedAt/width/height/rotation`；采集时间取本机单调时钟并取整，旋转固定为 0、方向由宽高表达。
 - 等待 `media-ready` 取本路 `streamId`、`sessionId` 与 `targetSamplingRate` 后按频率发送；最多 8 帧在途、合计 2 MiB 加帧头，`frame-ack` 累计释放已确认帧。目标来源的运行状态决定每路的频率，同会话调整走 `media-rate`，范围 1–5 FPS。
@@ -47,6 +47,8 @@ Windows 视觉推理节点有两种互斥状态：**本地推理**（采集本�
 - 节点本机改态以本机意图为准，服务回报实际结果；推流期间改动采集目标或遮罩先停止再改。
 
 维护入口：`receiver/web/src/main.tsx`、`receiver/web/src/protocol.ts`、`receiver/web/src/RemoteSettings.tsx`。
+
+服务端以有效心跳中的完整来源目录同步发布端名称与删除；两种节点状态都上报目录，推流态不报告检测预期。控制台可删除已停止来源、解除接收端的发布端绑定；本机从 `bindings` 获取目标，尚无流时也能完成首次关联。
 
 ## 边界与失败模式
 

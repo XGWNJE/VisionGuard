@@ -53,8 +53,8 @@ class ModelInferenceTargetTest {
     }
 
     @Test
-    fun `四档清单里每项都能算出后端`() {
-        assertEquals(4, ModelKeys.keys.size)
+    fun `两档清单里每项都能算出后端`() {
+        assertEquals(2, ModelKeys.keys.size)
         ModelKeys.keys.forEach { key ->
             val target = ModelInferenceTarget.resolve(key, gpuReady = false, gpuAvailable = false)
             assertTrue("标签不能为空：$key", target.label.isNotBlank())

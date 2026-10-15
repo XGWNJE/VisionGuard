@@ -53,12 +53,11 @@ internal fun GeoModelResources(
         Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(model.displayName, style = MaterialTheme.typography.titleMedium)
             val progress = downloads[model.key]
-            val gpuBlocked = com.xgwnje.visionguard.inference.model.ModelKeys.supportsGpu(model.key) && !gpuAvailable
-            Text(if (gpuBlocked) "本机不支持 GPU" else if (model.key in used) "使用中，不能删除" else if (model.downloaded) "已下载" else "未下载", style = MaterialTheme.typography.bodySmall)
+            Text(if (model.key in used) "使用中，不能删除" else if (model.downloaded) "已下载" else "未下载", style = MaterialTheme.typography.bodySmall)
             // 进度对象的现有文案在下载状态变化时直接展示，下载逻辑仍由运行时负责。
             if (progress != null) Text(if (progress.total > 0) "下载 ${progress.percent}%" else "下载中…", style = MaterialTheme.typography.bodySmall)
             if (model.downloaded) GeoKey(onClick = { deleting = model.key }, label = "删除模型", tone = GeoTone.Danger, enabled = model.key !in used)
-            else GeoKey(onClick = { scope.launch { onDownload(model.key)?.let(onMessage) } }, label = if (progress != null) "下载中…" else "下载模型", enabled = progress == null && !gpuBlocked)
+            else GeoKey(onClick = { scope.launch { onDownload(model.key)?.let(onMessage) } }, label = if (progress != null) "下载中…" else "下载模型", enabled = progress == null)
         }
         GeoDivider()
     }

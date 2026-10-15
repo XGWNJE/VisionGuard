@@ -4,19 +4,7 @@ import com.google.ai.edge.litert.Accelerator
 import com.google.ai.edge.litert.Environment
 import java.io.File
 
-/**
- * 正式链路的引擎选择：档位定后端，用不了就回落到**同尺寸的 CPU 档**并说明原因。
- *
- * 为什么必须显式回落而不是直接选 CPU：设备可能没有可用的 GPU 加速器，截断图也可能还没下载完；
- * 两者都要给出可读原因，否则界面只能显示「CPU」，看不出是「没下 GPU 档」还是「设备不支持」。
- *
- * 为什么回落目标是同尺寸 INT8 而不是 FP32：CPU 上 INT8 快 1.5–2.0 倍、体积小 3–4 倍，
- * FP32 本体已经不再下发（见 [ModelKeys]）。
- *
- * 为什么 GPU 只走「加速器 API GPU + FP32」这一档：真机同轮实测 int8 边界在 GPU 上比 FP32 慢
- * 1.58 倍且类别分数被压成 0（混量程张量），纹理权重与关外部张量两档也没有更快，
- * 结论见 `docs/32-推理框架与模型优化.md`。
- */
+/** 正式链路自动优先 LiteRT GPU；不可用时回落配套的同尺寸 INT8 CPU 并报告原因。 */
 object InferenceEngineFactory {
 
     /** GPU 档固定用这一档：质量零损失、同轮最快。 */
@@ -36,7 +24,7 @@ object InferenceEngineFactory {
      * 后端选择判定（纯函数，便于单测覆盖整张判定表）。
      *
      * 这是正式链路上「到底用没用 GPU」的唯一判据，三个输入都可能是「没有」：
-     * GPU 档的截断图没下载、设备不支持 GPU 加速器、来源配置选的是 CPU 档。
+     * 截断图未就绪、设备不支持 GPU，或内部测量未请求 GPU。
      * 每种都要给出可读原因，否则界面只能显示 CPU，看不出是哪一种。
      */
     fun decide(
@@ -64,7 +52,7 @@ object InferenceEngineFactory {
      *
      * @param cpuOnnxFile 回落与 CPU 档使用的量化本体；GPU 档时调用方传同尺寸 CPU 档的文件
      * @param tfliteFile GPU 档的截断图；CPU 档为 null
-     * @param wantGpu 是否优先使用 GPU（来源配置选的是 GPU 档时为 true）
+     * @param wantGpu 是否优先使用 GPU（正式档位为 true，内部测量可指定 CPU）
      */
     fun create(cpuOnnxFile: File?, tfliteFile: File?, wantGpu: Boolean): Selection {
         val available = if (wantGpu) availableAccelerators() else emptySet()

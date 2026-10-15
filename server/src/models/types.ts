@@ -205,7 +205,7 @@ export interface WsCommand {
   requestId?: string;
   targetDeviceId: string;
   targetSourceId?: string;
-  command: 'pause' | 'resume' | 'stop-alarm' | 'open-detector' | 'close-detector' | 'start-stream' | 'stop-stream' | 'cache-inspect' | 'cache-clean';
+  command: 'pause' | 'resume' | 'stop-alarm' | 'open-detector' | 'close-detector' | 'start-stream' | 'stop-stream' | 'cache-inspect' | 'cache-clean' | 'remove-source';
 }
 
 /** 接收端 → 服务器：参数调整 */
@@ -222,7 +222,7 @@ export interface WsSetConfig {
 export interface WsCommandRelay {
   type: 'command';
   requestId?: string;
-  command: 'pause' | 'resume' | 'stop-alarm' | 'open-detector' | 'close-detector' | 'start-stream' | 'stop-stream' | 'cache-inspect' | 'cache-clean';
+  command: 'pause' | 'resume' | 'stop-alarm' | 'open-detector' | 'close-detector' | 'start-stream' | 'stop-stream' | 'cache-inspect' | 'cache-clean' | 'remove-source';
   targetDeviceId: string;
   targetSourceId?: string;
 }

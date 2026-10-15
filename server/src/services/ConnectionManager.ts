@@ -133,7 +133,7 @@ const MAX_MODEL_OPTIONS = 16;
 const MAX_COMPONENTS = 8;
 /** 检测端自报的推理能力条目上限（模型键数量级，留足余量）。 */
 const MAX_INFERENCE_ENTRIES = 32;
-const DETECTOR_COMMANDS = new Set(['pause', 'resume', 'stop-alarm']);
+const DETECTOR_COMMANDS = new Set(['pause', 'resume', 'stop-alarm', 'remove-source']);
 // Windows 只剩一个检测端，生命周期命令统一为 detector。
 const RESIDENT_COMMANDS = new Set(['open-detector', 'close-detector']);
 
@@ -876,6 +876,7 @@ function handleHeartbeat(msg: WsHeartbeat): void {
   if (sanitizedSources !== undefined) {
     client.sources = sanitizedSources;
     mediaRelay.updateSamplingRates(accountId, client.deviceId, client.sources);
+    mediaRelay.syncPublisherSources(accountId, client.deviceId, client.sources);
   }
   if (msg.sources !== undefined) client.sourceLimitExceeded = sourceOverLimit;
   if (inferenceBackends !== undefined) client.inferenceBackends = inferenceBackends;
@@ -1000,6 +1001,12 @@ function handleCommand(senderWs: WebSocket, msg: WsCommand): void {
     sendJson(senderWs, ack); return;
   }
 
+  if (msg.command === 'remove-source' && !msg.targetSourceId) {
+    ack.reason = '删除必须指定来源'; sendJson(senderWs, ack); return;
+  }
+  if (msg.command === 'remove-source' && (target as DetectorClient).sources.some(source => source.sourceId === msg.targetSourceId && source.isMonitoring)) {
+    ack.reason = '请先停止该来源再删除'; sendJson(senderWs, ack); return;
+  }
   if (msg.targetSourceId !== undefined && !/^[A-Za-z0-9_-]{1,64}$/.test(msg.targetSourceId)) {
     ack.phase = 'completed'; ack.reason = '无效的 targetSourceId';
     sendJson(senderWs, ack, 'command-ack->sender'); return;

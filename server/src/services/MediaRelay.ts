@@ -180,7 +180,7 @@ export class MediaRelay {
     const bindings = this.bindingsOf(accountId);
     // 发布端消失（解绑设备、版本出局）或目标不再可订阅时，绑定与流一起作废，不留悬空关联。
     for (const [publisherDeviceId, targetDeviceId] of [...bindings]) {
-      if (!publishers.some(device => device.deviceId === publisherDeviceId) || !inference.some(device => device.deviceId === targetDeviceId)) bindings.delete(publisherDeviceId);
+      if (!publishers.some(device => device.deviceId === publisherDeviceId) || (targetDeviceId && !inference.some(device => device.deviceId === targetDeviceId))) bindings.delete(publisherDeviceId);
     }
     const next = previous.filter(stream => publishers.some(device => device.deviceId === stream.publisherDeviceId)).map(stream => ({ ...stream }));
     for (const device of publishers) {
@@ -191,7 +191,7 @@ export class MediaRelay {
         let stream = next.find(item => item.publisherDeviceId === device.deviceId);
         if (!stream) {
           stream = { streamId: crypto.randomUUID(), publisherDeviceId: device.deviceId, publisherName: device.deviceName, sourceName: device.deviceName, isStreaming: false };
-          if (inference.length === 1) bindings.set(device.deviceId, inference[0].deviceId);
+          if (inference.length === 1 && !bindings.has(device.deviceId)) bindings.set(device.deviceId, inference[0].deviceId);
           next.push(stream);
         }
         stream.publisherName = device.deviceName; stream.sourceName = device.deviceName;
@@ -216,11 +216,29 @@ export class MediaRelay {
       if (camera) delete stream.sourceId;
     }
   }
+  /** 有效心跳中的完整来源目录是发布端配置的权威；停止推流仍保留，删除才移除。 */
+  syncPublisherSources(accountId: string, publisherDeviceId: string, sources: readonly { sourceId: string; sourceName: string }[]): void {
+    if (accountStore.device(accountId, publisherDeviceId)?.component !== 'windows-inference') return;
+    const previous = this.streams(accountId);
+    const ids = new Set(sources.map(source => source.sourceId));
+    const removed = previous.filter(stream => stream.publisherDeviceId === publisherDeviceId && !ids.has(stream.sourceId ?? ''));
+    const next = previous.filter(stream => !removed.includes(stream)).map(stream => {
+      const source = stream.publisherDeviceId === publisherDeviceId ? sources.find(source => source.sourceId === stream.sourceId) : undefined;
+      return source ? { ...stream, sourceName: source.sourceName } : stream;
+    });
+    if (JSON.stringify(previous) === JSON.stringify(next)) return;
+    this.save(accountId, next);
+    this.clearChangedBindings(previous, next);
+    for (const publisher of this.publishers.values()) {
+      if (removed.some(stream => stream.streamId === publisher.streamId)) publisher.ws.close(4000, 'source removed');
+    }
+    this.changed(accountId);
+  }
   streams(accountId: string): Stream[] { this.ensureAccount(accountId); return this.accounts.get(accountId)!.map(stream => ({ ...stream })); }
   /** 绑定视图：发布端 → 目标推理节点；没有来源的发布端也能先绑定，等来源上线再推。 */
   bindings(accountId: string): { publisherDeviceId: string; targetDeviceId: string }[] {
     this.ensureAccount(accountId);
-    return [...this.bindingsOf(accountId).entries()].map(([publisherDeviceId, targetDeviceId]) => ({ publisherDeviceId, targetDeviceId }));
+    return [...this.bindingsOf(accountId).entries()].filter(([, targetDeviceId]) => !!targetDeviceId).map(([publisherDeviceId, targetDeviceId]) => ({ publisherDeviceId, targetDeviceId }));
   }
   bind(session: AccountSession, publisherDeviceId: unknown, targetDeviceId: unknown): Stream | undefined {
     const accountId = session.account.accountId;
@@ -267,7 +285,8 @@ export class MediaRelay {
       || (session.device.deviceId === publisherDeviceId && canPublishVideo(session.device.component))
       || session.device.deviceId === targetDeviceId;
     if (!allowed) throw new AccountError(403, 'Binding permission required');
-    bindings.delete(publisherDeviceId);
+    // 空目标记录显式解绑意图，避免唯一推理节点自动关联在下一次查询时重新绑定。
+    bindings.set(publisherDeviceId, '');
     const previous = this.streams(accountId);
     const next = previous.map(stream => {
       if (stream.publisherDeviceId !== publisherDeviceId) return stream;

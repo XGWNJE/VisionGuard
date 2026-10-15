@@ -25,7 +25,7 @@ namespace VisionGuard.Detector.Windows.Services
     /// </summary>
     public sealed class MediaPublishService : IDisposable
     {
-        public const int MaximumLongEdge = 1280;
+        public const int MaximumLongEdge = 960;
         public const int MaximumShortEdge = 720;
         public const long JpegQuality = 55L;
         private const int MaximumHeaderBytes = 4096;
@@ -35,6 +35,7 @@ namespace VisionGuard.Detector.Windows.Services
 
         private readonly string _url, _token, _sourceId, _sourceName;
         private readonly Func<PublishedFrame?> _frameSource;
+        private readonly FrameCompressionPolicy _compression = new();
         private readonly object _sync = new();
         private readonly ManualResetEventSlim _wake = new(false);
         private readonly ManualResetEventSlim _ready = new(false);
@@ -59,6 +60,7 @@ namespace VisionGuard.Detector.Windows.Services
 
         /// <summary>推流状态变化；回调在后台线程触发，界面线程由调用方负责切换。</summary>
         public event EventHandler? StatusChanged;
+        public event Action<IReadOnlyDictionary<string, long>>? PerformanceMeasured;
 
         public PublishStatus Status { get; private set; } = PublishStatus.Idle;
         /// <summary>状态说明：连接 / 停止等自身状态优先，其次是服务端拒收原因（未绑定目标等）。</summary>
@@ -241,6 +243,7 @@ namespace VisionGuard.Detector.Windows.Services
 
         private bool PublishFrame(MinimalWebSocketClient ws, ref long previousSequence, ref long previousSentAt)
         {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
             PublishedFrame frame;
             // 帧源在发布线程上串行取帧并编码：采集、编码、发送共用同一条节拍，不需要额外队列。
             Utils.MediaDiagnostics.Write("[Publish] stage=capture");
@@ -253,16 +256,24 @@ namespace VisionGuard.Detector.Windows.Services
             catch (Exception ex) { Utils.MediaDiagnostics.Write("[Publish] frame failed: " + ex.Message); SetStatus(PublishStatus.Faulted, Describe(ex)); return false; }
             try
             {
+                long captureMs = clock.ElapsedMilliseconds;
+                clock.Restart();
                 Utils.MediaDiagnostics.Write("[Publish] stage=encode");
                 long capturedAt = NextCapturedAt();
                 long sequence;
                 lock (_sync) { sequence = ++_sendSequence; }
-                byte[]? packet = BuildPacket(frame, _streamId, _sessionId, sequence, capturedAt);
+                byte[]? packet = BuildPacket(frame, _streamId, _sessionId, sequence, capturedAt, _compression.SelectQuality(frame.Bitmap));
                 if (packet == null) { DroppedFrames++; SetStatus(PublishStatus.Faulted, "画面编码失败：无法生成符合契约的 JPEG。"); return false; }
+                long encodeMs = clock.ElapsedMilliseconds;
+                clock.Restart();
                 lock (_sync) { _inflight[sequence] = packet.Length; _inflightBytes += packet.Length; }
                 Utils.MediaDiagnostics.Write($"[Publish] stage=send seq={sequence}");
                 ws.SendAsync(new ArraySegment<byte>(packet), WebSocketMessageType.Binary, true, _stop.Token).GetAwaiter().GetResult();
                 Utils.MediaDiagnostics.Write($"[Publish] stage=sent seq={sequence}");
+                PerformanceMeasured?.Invoke(new Dictionary<string, long> {
+                    ["captureMs"] = captureMs, ["encodeMs"] = encodeMs, ["sendMs"] = clock.ElapsedMilliseconds,
+                    ["processMs"] = captureMs + encodeMs + clock.ElapsedMilliseconds,
+                });
                 SentFrames++;
                 long now = NowTicks();
                 if (previousSentAt != 0 && now > previousSentAt)
@@ -280,9 +291,9 @@ namespace VisionGuard.Detector.Windows.Services
         /// 缩放后的宽高，而服务端要求帧头与 JPEG 一致（`parseFrame`），不一致即判非法帧并断开（4002）。
         /// 这里把「编码 + 写头」放在一处，测试可以直接覆盖大采集源这条路径。
         /// </summary>
-        public static byte[]? BuildPacket(PublishedFrame frame, string streamId, string sessionId, long sequence, long capturedAt)
+        public static byte[]? BuildPacket(PublishedFrame frame, string streamId, string sessionId, long sequence, long capturedAt, long jpegQuality = JpegQuality, int maximumLongEdge = MaximumLongEdge)
         {
-            byte[]? jpeg = EncodeJpeg(frame, out int width, out int height);
+            byte[]? jpeg = EncodeJpeg(frame, out int width, out int height, jpegQuality, maximumLongEdge);
             if (jpeg == null) return null;
             byte[] header = Encoding.UTF8.GetBytes(SimpleJson.ToJson(new
             {
@@ -393,14 +404,14 @@ namespace VisionGuard.Detector.Windows.Services
         /// 等比缩放到契约上限；超出才缩放，不做放大。返回的位图由调用方 Dispose。
         /// 全程在 GDI+ 闸门内：界面线程正在把采集副本转成 BitmapSource 时，这里不与它抢同一族 GDI+ 资源。
         /// </summary>
-        public static Bitmap ScaleToContract(Bitmap source)
+        public static Bitmap ScaleToContract(Bitmap source, int maximumLongEdge = MaximumLongEdge)
         {
             return GdiGate.Run(() =>
             {
                 int width = source.Width, height = source.Height;
                 int longEdge = Math.Max(width, height), shortEdge = Math.Min(width, height);
-                if (longEdge <= MaximumLongEdge && shortEdge <= MaximumShortEdge) return new Bitmap(source);
-                double scale = Math.Min(MaximumLongEdge / (double)longEdge, MaximumShortEdge / (double)shortEdge);
+                if (longEdge <= maximumLongEdge && shortEdge <= MaximumShortEdge) return new Bitmap(source);
+                double scale = Math.Min(maximumLongEdge / (double)longEdge, MaximumShortEdge / (double)shortEdge);
                 int targetW = Math.Max(1, (int)Math.Round(width * scale)), targetH = Math.Max(1, (int)Math.Round(height * scale));
                 var scaled = new Bitmap(targetW, targetH, PixelFormat.Format24bppRgb);
                 using (var graphics = Graphics.FromImage(scaled))
@@ -414,19 +425,19 @@ namespace VisionGuard.Detector.Windows.Services
         }
 
         /// <summary>编码为 JPEG（质量 55）并自检 EOI 与 SOF 尺寸，不合格的帧直接丢弃；宽高为编码后的尺寸。</summary>
-        private static byte[]? EncodeJpeg(PublishedFrame frame, out int width, out int height)
+        private static byte[]? EncodeJpeg(PublishedFrame frame, out int width, out int height, long jpegQuality, int maximumLongEdge)
         {
             int encodedWidth = 0, encodedHeight = 0;
             // 缩放与 JPEG 编码都是 GDI+ 操作，与界面线程的位图转换走同一道闸门（lock 可重入，嵌套 ScaleToContract 安全）。
             byte[]? encoded = GdiGate.Run<byte[]?>(() =>
             {
-                using (var scaled = ScaleToContract(frame.Bitmap))
+                using (var scaled = ScaleToContract(frame.Bitmap, maximumLongEdge))
                 using (var stream = new MemoryStream())
                 {
                     var codec = FindJpegCodec();
                     if (codec == null) return null;
-                    var parameters = new EncoderParameters(1);
-                    parameters.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, JpegQuality);
+                    using var parameters = new EncoderParameters(1);
+                    parameters.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, jpegQuality);
                     scaled.Save(stream, codec, parameters);
                     byte[] bytes = stream.ToArray();
                     if (bytes.Length < 4 || bytes[0] != 0xff || bytes[1] != 0xd8

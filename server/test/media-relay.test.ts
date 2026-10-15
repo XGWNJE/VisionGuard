@@ -397,6 +397,27 @@ test('one publisher pushes several sources to the same inference node and the pa
   assert.throws(() => mediaRelay.unbind(consoleSession, publisher.device.deviceId), /not found/);
 });
 
+test('publisher source deletion removes only that stream and broadcasts the remaining directory', async t => {
+  const f = await fixture(t);
+  const publisher = await accountStore.login({ ...registration(), username: 'media-owner', password: 'private-fixture-password', component: 'windows-inference', deviceName: 'source-delete-publisher' });
+  mediaRelay.bind(accountStore.authenticate(owner.session('console').token)!, publisher.device.deviceId, owner.id('inference'));
+  const consumer = await f.connect(owner.session('inference').token, 'subscribe'); await consumer.take('media-ready');
+  const first = await f.connect(publisher.token, 'publish', 'delete-one', '删除一路'); await first.take('media-ready');
+  const second = await f.connect(publisher.token, 'publish', 'keep-two', '保留一路'); const ready = await second.take('media-ready');
+  mediaRelay.syncPublisherSources(owner.accountId, publisher.device.deviceId, [{ sourceId: 'delete-one', sourceName: '删除一路' }, { sourceId: 'keep-two', sourceName: '保留一路' }]);
+  assert.equal(mediaRelay.streams(owner.accountId).filter(stream => stream.publisherDeviceId === publisher.device.deviceId).length, 2);
+  mediaRelay.syncPublisherSources(owner.accountId, publisher.device.deviceId, [{ sourceId: 'keep-two', sourceName: '改名后' }]);
+  assert.equal(await first.closed, 4000);
+  const remaining = mediaRelay.streams(owner.accountId).filter(stream => stream.publisherDeviceId === publisher.device.deviceId);
+  assert.deepEqual(remaining.map(stream => [stream.sourceId, stream.sourceName]), [['keep-two', '改名后']]);
+  second.ws.send(packet(ready, 1)); assert.equal((await second.take('frame-ack')).accepted, true);
+  assert.equal((await consumer.take('frame')).frame.header.streamId, ready.streamId);
+  mediaRelay.syncPublisherSources(owner.accountId, publisher.device.deviceId, []);
+  assert.equal(await second.closed, 4000);
+  assert.equal(mediaRelay.streams(owner.accountId).some(stream => stream.publisherDeviceId === publisher.device.deviceId), false);
+  assert.ok(mediaRelay.bindings(owner.accountId).some(binding => binding.publisherDeviceId === publisher.device.deviceId));
+});
+
 test('windows inference declares publish and subscribe capabilities while android inference stays subscribe-only', () => {
   const windows = allowedCapabilities({ deviceId: 'win-node', deviceName: 'win', role: 'detector', nodeType: 'visual', platform: 'windows', component: 'windows-inference' } as any,
     ['monitor-control', 'stream-control', 'video-publish', 'video-subscribe', 'visual-inference', 'camera-config']);
@@ -406,4 +427,20 @@ test('windows inference declares publish and subscribe capabilities while androi
     ['video-publish', 'stream-control', 'video-subscribe', 'visual-inference']);
   assert.equal(android.includes('video-publish'), false); assert.equal(android.includes('stream-control'), false);
   assert.ok(android.includes('video-subscribe'));
+});
+
+test('explicit camera unbind survives directory refresh and permits a later manual bind', async t => {
+  await fixture(t);
+  const account = new AccountFixture([{ name: 'camera', component: 'android-camera' }, { name: 'inference', component: 'android-inference' }, { name: 'console', component: 'web-console' }], 'media-explicit-unbind');
+  await account.ready;
+  const session = accountStore.authenticate(account.session('console').token)!;
+  const publisher = account.id('camera'), receiver = account.id('inference');
+  assert.equal(mediaRelay.streams(account.accountId)[0].targetDeviceId, receiver);
+  mediaRelay.unbind(session, publisher);
+  for (let i = 0; i < 3; i++) {
+    assert.equal(mediaRelay.streams(account.accountId)[0].targetDeviceId, undefined);
+    assert.deepEqual(mediaRelay.bindings(account.accountId), []);
+  }
+  mediaRelay.bind(session, publisher, receiver);
+  assert.equal(mediaRelay.streams(account.accountId)[0].targetDeviceId, receiver);
 });

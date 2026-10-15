@@ -62,6 +62,8 @@ class LocalCameraSource {
     private var provider: ProcessCameraProvider? = null
     private var analysis: ImageAnalysis? = null
     private var generation = 0
+    @Volatile var targetFps = 3
+    private var nextFrameNanos = 0L
 
     @Volatile
     private var latest: ArgbImage? = null
@@ -73,6 +75,7 @@ class LocalCameraSource {
         if (analysis != null) return null
         val appContext = context.applicationContext
         val own = ++generation
+        nextFrameNanos = 0L
         val worker = Executors.newSingleThreadExecutor()
         executor = worker
         val cameraOwner = CameraLifecycleOwner()
@@ -142,6 +145,9 @@ class LocalCameraSource {
 
     private fun handleImage(image: ImageProxy) {
         try {
+            val timestamp = image.imageInfo.timestamp
+            if (timestamp < nextFrameNanos) return
+            nextFrameNanos = timestamp + 1_000_000_000L / targetFps.coerceIn(1, 5)
             val plane = image.planes.firstOrNull() ?: return
             val buffer = plane.buffer
             val pixelStride = plane.pixelStride

@@ -25,10 +25,11 @@ object AlertSnapshotRenderer {
     /** 渲染并编码；返回 JPEG 字节与最终宽高。 */
     fun renderAndEncode(frame: ArgbImage, detections: List<Detection>): RenderedSnapshot? {
         val bitmap = runCatching {
-            Bitmap.createBitmap(frame.pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888)
+            Bitmap.createBitmap(frame.width, frame.height, Bitmap.Config.ARGB_8888)
         }.getOrNull() ?: return null
 
         try {
+            bitmap.setPixels(frame.pixels, 0, frame.width, 0, 0, frame.width, frame.height)
             drawDetections(bitmap, detections)
             val scaled = scaleDown(bitmap)
             try {

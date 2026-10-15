@@ -83,34 +83,41 @@ class OnnxEngine private constructor(
             require(modelFile.isFile) { "模型文件不存在：${modelFile.name}" }
             val environment = OrtEnvironment.getEnvironment()
             val options = OrtSession.SessionOptions()
-            val threads = provider.cpuThreads
-            if (threads != null) {
-                options.setIntraOpNumThreads(threads)
-            }
-            options.setInterOpNumThreads(1)
-            options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-            if (provider.usesNnapi) options.addNnapi(nnapiFlags(provider))
-            val session = environment.createSession(modelFile.absolutePath, options)
+            try {
+                val threads = provider.cpuThreads
+                if (threads != null) {
+                    options.setIntraOpNumThreads(threads)
+                }
+                options.setInterOpNumThreads(1)
+                options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+                if (provider.usesNnapi) options.addNnapi(nnapiFlags(provider))
+                val session = environment.createSession(modelFile.absolutePath, options)
+                try {
 
-            val inputName = session.inputNames.firstOrNull()
-                ?: throw IllegalStateException("模型没有输入张量。")
-            val outputName = session.outputNames.firstOrNull()
-                ?: throw IllegalStateException("模型没有输出张量。")
+                    val inputName = session.inputNames.firstOrNull()
+                        ?: throw IllegalStateException("模型没有输入张量。")
+                    val outputName = session.outputNames.firstOrNull()
+                        ?: throw IllegalStateException("模型没有输出张量。")
 
-            val modelSize = runCatching {
-                val info = session.inputInfo[inputName]?.info as? TensorInfo
-                val shape = info?.shape
-                if (shape != null && shape.size >= 4 && shape[2] > 0) shape[2].toInt() else DEFAULT_MODEL_SIZE
-            }.getOrDefault(DEFAULT_MODEL_SIZE)
+                    val modelSize = runCatching {
+                        val info = session.inputInfo[inputName]?.info as? TensorInfo
+                        val shape = info?.shape
+                        if (shape != null && shape.size >= 4 && shape[2] > 0) shape[2].toInt() else DEFAULT_MODEL_SIZE
+                    }.getOrDefault(DEFAULT_MODEL_SIZE)
 
-            return OnnxEngine(
-                environment = environment,
-                session = session,
-                inputName = inputName,
-                outputName = outputName,
-                modelSize = modelSize,
-                provider = provider
-            )
+                    return OnnxEngine(
+                        environment = environment,
+                        session = session,
+                        inputName = inputName,
+                        outputName = outputName,
+                        modelSize = modelSize,
+                        provider = provider
+                    )
+                } catch (error: Throwable) {
+                    session.close()
+                    throw error
+                }
+            } finally { options.close() }
         }
 
         /** NNAPI 档位到标志位的映射；默认档不附加任何标志。 */

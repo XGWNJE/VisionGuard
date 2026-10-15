@@ -37,6 +37,7 @@ namespace VisionGuard.Detector.Windows.Services
         public event EventHandler<RemoteSetConfigEventArgs> SetConfigReceived;
         public event EventHandler<int> SourceLimitReceived;
         public event EventHandler<IReadOnlyList<Capture.RemoteStreamInfo>> StreamsReceived;
+        public string BoundPushTargetId { get; private set; } = "";
         public event EventHandler<AccountDevice> DeviceUpdated;
 
         // ── 常量 ─────────────────────────────────────────────────────
@@ -207,20 +208,26 @@ namespace VisionGuard.Detector.Windows.Services
         public void PushAlert(AlertEvent alert)
         {
             if (alert == null || string.IsNullOrEmpty(_apiKey) || AccountSession.Current == null || AccountSession.ScopeKey != _outboxScope) return;
-            var msg = new Dictionary<string, object>
+            var msg = BuildVisualAlertPayload(alert, _deviceId, _deviceName);
+            _alertOutbox.Enqueue(alert.AlertId, SimpleJson.ToJson(msg));
+            LogManager.StaticInfo($"[Server] 报警已进入持久发件箱: alertId={alert.AlertId}, pending={_alertOutbox.Snapshot().Count}");
+            Post(FlushAlertOutbox);
+        }
+
+        /// <summary>双推理端共用的视觉告警契约；截图按 alertId 对应此事件的推理帧。</summary>
+        public static Dictionary<string, object> BuildVisualAlertPayload(AlertEvent alert, string deviceId, string deviceName)
+        {
+            return new Dictionary<string, object>
             {
                 ["type"] = "alert", ["alertId"] = alert.AlertId,
-                ["deviceId"] = _deviceId, ["deviceName"] = _deviceName,
+                ["deviceId"] = deviceId, ["deviceName"] = deviceName,
                 ["sourceId"] = alert.SourceId, ["sourceName"] = alert.SourceName,
                 ["timestamp"] = alert.Timestamp.ToString("o"),
                 ["eventKind"] = "visual-detection", ["summary"] = "视觉检测告警",
                 ["expiresAt"] = alert.Timestamp.AddSeconds(30).ToString("o"),
                 ["detections"] = BuildDetectionsPayload(alert.Detections),
-                ["timings"] = alert.Timings, ["capturedAt"] = NtpSync.UtcNow.ToString("o"),
+                ["timings"] = alert.Timings, ["capturedAt"] = alert.Timestamp.ToString("o"),
             };
-            _alertOutbox.Enqueue(alert.AlertId, SimpleJson.ToJson(msg));
-            LogManager.StaticInfo($"[Server] 报警已进入持久发件箱: alertId={alert.AlertId}, pending={_alertOutbox.Snapshot().Count}");
-            Post(FlushAlertOutbox);
         }
 
         private void FlushAlertOutbox()
@@ -794,8 +801,14 @@ namespace VisionGuard.Detector.Windows.Services
                             var streams = d.TryGetValue("streams", out var streamValues)
                                 ? SimpleJson.Deserialize<List<Capture.RemoteStreamInfo>>(SimpleJson.ToJson(streamValues)) ?? new List<Capture.RemoteStreamInfo>()
                                 : new List<Capture.RemoteStreamInfo>();
+                            var bindings = d.TryGetValue("bindings", out var bindingValues)
+                                ? SimpleJson.Deserialize<List<Dictionary<string, string>>>(SimpleJson.ToJson(bindingValues)) ?? new List<Dictionary<string, string>>()
+                                : new List<Dictionary<string, string>>();
+                            var ownBinding = bindings.FirstOrDefault(binding => binding.TryGetValue("publisherDeviceId", out var id) && id == AppConfig.DeviceId);
+                            string boundTarget = ownBinding != null && ownBinding.TryGetValue("targetDeviceId", out var targetId) ? targetId : "";
                             _parent.Post(() => {
                                 if (_parent._session != this) return;
+                                _parent.BoundPushTargetId = boundTarget;
                                 _parent.StreamsReceived?.Invoke(_parent, streams);
                             });
                             break;

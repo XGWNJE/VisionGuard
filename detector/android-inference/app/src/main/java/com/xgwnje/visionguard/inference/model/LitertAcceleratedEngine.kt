@@ -72,11 +72,14 @@ class LitertAcceleratedEngine private constructor(
         } else {
             inputs.first().writeFloat(nhwc)
         }
-        val produced = model.run(inputs).firstOrNull() ?: outputs.first()
+        model.run(inputs, outputs)
+        val produced = outputs.first()
         return if (outputQuantized) dequantize(produced.readInt8()) else produced.readFloat()
     }
 
     override fun close() {
+        outputs.forEach { runCatching { it.close() } }
+        inputs.forEach { runCatching { it.close() } }
         runCatching { model.close() }
         runCatching { environment.close() }
     }
@@ -108,8 +111,10 @@ class LitertAcceleratedEngine private constructor(
         }
     }
 
+    private val nhwcScratch = FloatArray(3 * modelSize * modelSize)
+
     private fun toNhwc(tensor: FloatArray): FloatArray {
-        val result = FloatArray(3 * modelSize * modelSize)
+        val result = nhwcScratch
         val plane = modelSize * modelSize
         for (y in 0 until modelSize) {
             val row = y * modelSize
@@ -143,82 +148,93 @@ class LitertAcceleratedEngine private constructor(
                 ?: error("档位 ${provider.title} 没有指定 LiteRT 加速器")
 
             val environment = Environment.create()
-            // 先问本机支持什么：不支持就不要假装测过，直接把可用列表写进失败原因。
-            val available = runCatching { environment.getAvailableAccelerators() }.getOrDefault(emptySet())
-            val availableText = available.joinToString(",") { it.name }
-            check(available.contains(accelerator)) {
-                "本机不支持 LiteRT 加速器 ${accelerator.name}（可用：${availableText.ifEmpty { "无" }}）"
-            }
-
-            val options = CompiledModel.Options(accelerator)
-            when (provider) {
-                InferenceProvider.LITERT_GPU_FP16 ->
-                    options.gpuOptions = CompiledModel.GpuOptions(
-                        precision = CompiledModel.GpuOptions.Precision.FP16
-                    )
-
-                InferenceProvider.LITERT_GPU_TEXTURE ->
-                    options.gpuOptions = CompiledModel.GpuOptions(
-                        preferTextureWeights = true,
-                        externalTensorsMode = false
-                    )
-
-                InferenceProvider.LITERT_GPU_NO_EXT ->
-                    options.gpuOptions = CompiledModel.GpuOptions(externalTensorsMode = false)
-
-                else -> Unit
-            }
-
-            // CPU 加速器：官方 CPU 路径是 XNNPACK，这里显式给 flags 或显式关掉，
-            // 不靠库默认值——否则「XNNPACK 到底有没有生效」只能猜。
-            val cpuNote = if (accelerator == Accelerator.CPU) {
-                when {
-                    provider.disablesXnnpack -> {
-                        options.cpuOptions = CompiledModel.CpuOptions(
-                            numThreads = DEFAULT_CPU_THREADS,
-                            xnnPackFlags = XNNPACK_DISABLED_FLAGS
-                        )
-                        "XNNPACK 关闭，线程 $DEFAULT_CPU_THREADS"
-                    }
-
-                    provider.usesXnnpack -> {
-                        options.cpuOptions = CompiledModel.CpuOptions(
-                            numThreads = provider.cpuThreads ?: DEFAULT_CPU_THREADS,
-                            xnnPackFlags = XNNPACK_DEFAULT_FLAGS
-                        )
-                        "XNNPACK flags=$XNNPACK_DEFAULT_FLAGS，线程 ${provider.cpuThreads ?: DEFAULT_CPU_THREADS}"
-                    }
-
-                    else -> ""
+            var allocatedModel: CompiledModel? = null
+            var allocatedInputs: List<TensorBuffer> = emptyList()
+            var allocatedOutputs: List<TensorBuffer> = emptyList()
+            try {
+                // 先问本机支持什么：不支持就不要假装测过，直接把可用列表写进失败原因。
+                val available = runCatching { environment.getAvailableAccelerators() }.getOrDefault(emptySet())
+                val availableText = available.joinToString(",") { it.name }
+                check(available.contains(accelerator)) {
+                    "本机不支持 LiteRT 加速器 ${accelerator.name}（可用：${availableText.ifEmpty { "无" }}）"
                 }
-            } else {
-                ""
+
+                val options = CompiledModel.Options(accelerator)
+                when (provider) {
+                    InferenceProvider.LITERT_GPU_FP16 ->
+                        options.gpuOptions = CompiledModel.GpuOptions(
+                            precision = CompiledModel.GpuOptions.Precision.FP16
+                        )
+
+                    InferenceProvider.LITERT_GPU_TEXTURE ->
+                        options.gpuOptions = CompiledModel.GpuOptions(
+                            preferTextureWeights = true,
+                            externalTensorsMode = false
+                        )
+
+                    InferenceProvider.LITERT_GPU_NO_EXT ->
+                        options.gpuOptions = CompiledModel.GpuOptions(externalTensorsMode = false)
+
+                    else -> Unit
+                }
+
+                // CPU 加速器：官方 CPU 路径是 XNNPACK，这里显式给 flags 或显式关掉，
+                // 不靠库默认值——否则「XNNPACK 到底有没有生效」只能猜。
+                val cpuNote = if (accelerator == Accelerator.CPU) {
+                    when {
+                        provider.disablesXnnpack -> {
+                            options.cpuOptions = CompiledModel.CpuOptions(
+                                numThreads = DEFAULT_CPU_THREADS,
+                                xnnPackFlags = XNNPACK_DISABLED_FLAGS
+                            )
+                            "XNNPACK 关闭，线程 $DEFAULT_CPU_THREADS"
+                        }
+
+                        provider.usesXnnpack -> {
+                            options.cpuOptions = CompiledModel.CpuOptions(
+                                numThreads = provider.cpuThreads ?: DEFAULT_CPU_THREADS,
+                                xnnPackFlags = XNNPACK_DEFAULT_FLAGS
+                            )
+                            "XNNPACK flags=$XNNPACK_DEFAULT_FLAGS，线程 ${provider.cpuThreads ?: DEFAULT_CPU_THREADS}"
+                        }
+
+                        else -> ""
+                    }
+                } else {
+                    ""
+                }
+
+                val model = CompiledModel.create(modelFile.absolutePath, options, environment).also { allocatedModel = it }
+                // 用带签名与张量名的重载：无参重载在不同构建里对默认名的解析不一致，
+                // 实测无参重载会报 `Input tensor not found`。
+                val inputType = model.getInputTensorType(inputName, signature)
+                val dimensions = inputType.layout?.dimensions.orEmpty()
+                val size = dimensions.getOrNull(1) ?: DEFAULT_MODEL_SIZE
+
+                // 量化参数只能从模型文件读：`TensorType` 只有 elementType 与 layout。
+                val quantization = TfliteQuantization.read(modelFile)
+
+                return LitertAcceleratedEngine(
+                    environment = environment,
+                    model = model,
+                    inputs = model.createInputBuffers(signature).also { allocatedInputs = it },
+                    outputs = model.createOutputBuffers(signature).also { allocatedOutputs = it },
+                    modelSize = size,
+                    provider = provider,
+                    availableAccelerators = availableText,
+                    cpuNote = cpuNote,
+                    // 量化参数从模型文件里读：CompiledModel 的 TensorType 不暴露 scale / zero point，
+                    // 而统一量化模型必须按 scale 把 float 换算成整数才能写进缓冲。
+                    inputInfo = quantization?.first,
+                    outputInfo = quantization?.second
+                )
+            } catch (error: Throwable) {
+                allocatedOutputs.forEach { runCatching { it.close() } }
+                allocatedInputs.forEach { runCatching { it.close() } }
+                runCatching { allocatedModel?.close() }
+                runCatching { environment.close() }
+                throw error
             }
-
-            val model = CompiledModel.create(modelFile.absolutePath, options, environment)
-            // 用带签名与张量名的重载：无参重载在不同构建里对默认名的解析不一致，
-            // 实测无参重载会报 `Input tensor not found`。
-            val inputType = model.getInputTensorType(inputName, signature)
-            val dimensions = inputType.layout?.dimensions.orEmpty()
-            val size = dimensions.getOrNull(1) ?: DEFAULT_MODEL_SIZE
-
-            // 量化参数只能从模型文件读：`TensorType` 只有 elementType 与 layout。
-            val quantization = TfliteQuantization.read(modelFile)
-
-            return LitertAcceleratedEngine(
-                environment = environment,
-                model = model,
-                inputs = model.createInputBuffers(signature),
-                outputs = model.createOutputBuffers(signature),
-                modelSize = size,
-                provider = provider,
-                availableAccelerators = availableText,
-                cpuNote = cpuNote,
-                // 量化参数从模型文件里读：CompiledModel 的 TensorType 不暴露 scale / zero point，
-                // 而统一量化模型必须按 scale 把 float 换算成整数才能写进缓冲。
-                inputInfo = quantization?.first,
-                outputInfo = quantization?.second
-            )
         }
 
         /** XNNPACK 默认配置：交给库按位掩码决定（全位置位）。 */

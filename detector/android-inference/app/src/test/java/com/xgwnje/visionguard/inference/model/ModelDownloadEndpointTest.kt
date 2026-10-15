@@ -27,12 +27,12 @@ class ModelDownloadEndpointTest {
         val store = ModelStore(dir, { endpoint }, { requested += it })
 
         // 端口 1 必然连不上：这里要的是“用哪个地址”，失败是预期结果。
-        assertNotNull(store.download("yolo26m_320_int8"))
+        assertNotNull(store.download("yolo26m_320"))
         assertTrue(requested.single(), requested.single().endsWith("← http://127.0.0.1:1"))
 
         requested.clear()
         endpoint = "http://192.168.31.58:4399/"
-        assertNotNull(store.download("yolo26m_320_int8"))
+        assertNotNull(store.download("yolo26m_320"))
         // 结尾斜杠不能留在基准地址里，换会话后必须立刻改用新地址。
         assertTrue(requested.single(), requested.single().endsWith("← http://192.168.31.58:4399"))
     }

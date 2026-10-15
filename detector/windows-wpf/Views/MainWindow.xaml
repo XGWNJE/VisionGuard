@@ -109,7 +109,7 @@
                         <RowDefinition/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <local:MonitorPage DataContext="{Binding MultiSourceVm}"/>
+                    <local:MonitorPage DataContext="{Binding MultiSourceVm}" IsEnabled="{Binding MultiSourceVm.CanConfigureSources}"/>
                     <Border Grid.Row="1" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource BorderBrush}" Padding="16,12">
                         <Button Content="全局设置" Style="{StaticResource PaneButton}" Click="OpenGlobalSettings_OnClick"/>
                     </Border>
@@ -127,9 +127,17 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <Button Content="返回预览" Style="{StaticResource PaneButton}" Click="CloseInspector_OnClick" Margin="16,12"/>
-                <local:MonitorPage Grid.Row="1" DataContext="{Binding MultiSourceVm}"/>
+                <local:MonitorPage Grid.Row="1" DataContext="{Binding MultiSourceVm}" IsEnabled="{Binding MultiSourceVm.CanConfigureSources}"/>
                 <Button Grid.Row="2" Content="全局设置" Style="{StaticResource PaneButton}" Click="OpenGlobalSettings_OnClick" Margin="16,12"/>
             </Grid>
+        </Border>
+        <Border Background="{DynamicResource BackgroundDark}">
+            <Border.Style><Style TargetType="Border"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding MultiSourceVm.CanConfigureSources}" Value="True"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></Border.Style>
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="360">
+                <TextBlock Text="先登录，再配置来源" Style="{StaticResource TitleText}" TextAlignment="Center"/>
+                <TextBlock Text="来源配置按账号保存；登录后可继续使用该账号已有的配置。" Style="{StaticResource CaptionText}" TextWrapping="Wrap" TextAlignment="Center" Margin="0,12"/>
+                <Button Content="登录账号" Style="{StaticResource PanePrimaryButton}" Click="OpenGlobalSettings_OnClick"/>
+            </StackPanel>
         </Border>
         <Border x:Name="GlobalHost" Background="{DynamicResource BackgroundDark}" Visibility="Collapsed">
             <Grid>

@@ -38,7 +38,7 @@ data class HeartbeatSource(
  * 本端另外上报两件服务端无法自行推断的事实：
  * - `inferenceBackends` / `inferenceLimits`：本机各模型配置的加速后端与并发上限，控制台据此
  *   解释并校验「为什么这个设备加不了更多来源」，不必把设备型号硬编码进服务端；
- * - `overConcurrencyLimit`：已配置来源数是否超过当前配置的能力上限。
+ * - `overConcurrencyLimit`：运行来源数是否超过实际后端的能力上限。
  */
 object HeartbeatPayload {
 
@@ -67,7 +67,7 @@ object HeartbeatPayload {
         inferenceBackends: Map<String, String> = emptyMap(),
         /** `模型键@后端` 到并发上限。 */
         inferenceLimits: Map<String, Int> = emptyMap(),
-        /** 已配置来源数是否超过当前配置的能力上限。 */
+        /** 运行来源数是否超过实际后端的能力上限。 */
         overConcurrencyLimit: Boolean = false
     ): JsonObject {
         val array = JsonArray()

@@ -6,6 +6,7 @@
 // └─────────────────────────────────────────────────────────────┘
 using System;
 using System.Drawing;
+using System.Collections.Generic;
 using VisionGuard.Detector.Windows.Capture;
 using VisionGuard.Detector.Windows.Models;
 
@@ -25,6 +26,7 @@ namespace VisionGuard.Detector.Windows.Services
 
         /// <summary>推流状态或帧进度变化；发布服务在后台线程触发，界面线程由调用方切换。</summary>
         public event EventHandler? StatusChanged;
+        public event Action<IReadOnlyDictionary<string, long>>? PerformanceMeasured;
 
         /// <summary>采集到的本机画面副本，供界面预览；订阅方负责 Dispose。</summary>
         public event EventHandler<PublishedFrame>? PreviewFrame;
@@ -45,6 +47,7 @@ namespace VisionGuard.Detector.Windows.Services
             if (_service != null) return;
             var service = new MediaPublishService(
                 Utils.AppConfig.ServerUrl, Utils.AppConfig.SessionToken, source.SourceId, source.SourceName, CaptureFrame, source.Config.TargetFps);
+            service.PerformanceMeasured += sample => PerformanceMeasured?.Invoke(sample);
             service.StatusChanged += (_, __) => StatusChanged?.Invoke(this, EventArgs.Empty);
             _service = service;
             Utils.MediaDiagnostics.Write($"[Publish] publisher service created source={source.SourceId} service={Utils.AppConfig.ServerUrl} fps={source.Config.TargetFps}");

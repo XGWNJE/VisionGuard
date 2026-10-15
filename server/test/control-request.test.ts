@@ -703,3 +703,18 @@ test('keeps the detector custom name after only the Windows resident remains onl
   assert.equal(listed.deviceName, '门口检测端');
   assert.deepEqual(listed.capabilities, ['app-lifecycle-control']);
 });
+
+test('source removal enforces ownership, stopped state and correlated completion',async t=>{
+ const owner=new AccountFixture([{name:'node',component:'windows-inference'},{name:'console',component:'web-console'}],'source-delete-owner');await owner.ready;
+ const wss=new WebSocketServer({host:'127.0.0.1',port:0});wss.on('connection',handleConnection);await new Promise<void>(r=>wss.once('listening',r));
+ const peers:WebSocket[]=[];t.after(()=>{peers.forEach(ws=>ws.terminate());wss.close()});
+ async function peer(name:string){const ws=await connect((wss.address() as {port:number}).port);peers.push(ws);const ready=waitForMessage(ws,m=>m.type==='auth-result');ws.send(JSON.stringify(owner.auth(name)));await ready;return ws}
+ const node=await peer('node'),web=await peer('console');
+ async function heartbeat(running:boolean,caps=['monitor-control','source-control','request-correlation']){const ready=waitForMessage(node,m=>m.type==='heartbeat-ack');node.send(JSON.stringify({type:'heartbeat',isMonitoring:running,isReady:true,capabilities:caps,sources:[{sourceId:'front',sourceName:'Front',isMonitoring:running,isReady:true,modelKey:''}]}));await ready}
+ async function denied(source?:string,target=owner.id('node')){const requestId=crypto.randomUUID(),reply=waitForMessage(web,m=>m.type==='command-ack'&&m.requestId===requestId);web.send(JSON.stringify({type:'command',requestId,targetDeviceId:target,targetSourceId:source,command:'remove-source'}));assert.equal((await reply).success,false)}
+ await heartbeat(true);await denied('front');await denied();await denied('front',fixtures.id('detector-control-test'));
+ await heartbeat(false,['monitor-control','request-correlation']);await denied('front');await heartbeat(false);await denied('missing');
+ const requestId=crypto.randomUUID(),routed=waitForMessage(node,m=>m.type==='command'&&m.requestId===requestId),forwarded=waitForMessage(web,m=>m.type==='command-ack'&&m.requestId===requestId&&m.phase==='forwarded');
+ web.send(JSON.stringify({type:'command',requestId,targetDeviceId:owner.id('node'),targetSourceId:'front',command:'remove-source'}));assert.equal((await routed).targetSourceId,'front');await forwarded;
+ const completed=waitForMessage(web,m=>m.type==='command-ack'&&m.requestId===requestId&&m.phase==='completed');node.send(JSON.stringify({type:'command-ack',requestId,targetDeviceId:owner.id('node'),targetSourceId:'front',command:'remove-source',phase:'completed',success:true}));assert.equal((await completed).success,true)
+});

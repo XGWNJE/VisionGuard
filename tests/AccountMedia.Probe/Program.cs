@@ -100,11 +100,75 @@ internal static class Program
             AlertTimingsProbe();
             CrossProcessSessionProbe();
             IsolatedEnvironmentProbe();
+            SourceLoginGateProbe();
+            PerformanceAnalysisProbe();
+            CompressionPolicyProbe();
             Console.WriteLine("PASS: complete binary/fragmented text, ping, bounded payload, cancellation, newest frame, sequence, expiry, expected stop, encrypted session, renewal, logout and account outbox isolation.");
             return 0;
         }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }
+    static void SourceLoginGateProbe()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "vg-source-login-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        Environment.SetEnvironmentVariable("VISIONGUARD_ACCOUNT_DIR", Path.Combine(directory, "identity"));
+        string settingsPath = Path.Combine(directory, "settings.ini");
+        Environment.SetEnvironmentVariable("VISIONGUARD_SETTINGS_PATH", settingsPath);
+        File.WriteAllText(settingsPath, "Source.Indexes=1\nSource.1.Name=unsigned-owner-draft\n");
+        AccountSession.Load();
+        var settings = typeof(ServerPushService).Assembly.GetType("VisionGuard.Detector.Windows.Utils.SettingsStore", true)!;
+        void Call(string method) => settings.GetMethod(method)!.Invoke(null, null);
+        void Set(string key, string value) => settings.GetMethod("Set", new[] { typeof(string), typeof(string) })!.Invoke(null, new object[] { key, value });
+        Call("SwitchAccount");
+        using var service = new ServerPushService();
+        using var node = new VisionGuard.Detector.Windows.ViewModels.MultiSourceViewModel(service, new VisionGuard.Detector.Windows.ViewModels.SettingsViewModel(null, null, () => { }));
+        Require(!node.CanConfigureSources && !node.AddSourceCommand.CanExecute(null) && node.Sources.Count == 0, "Signed-out UI permits source configuration");
+        Require(File.ReadAllText(settingsPath).Contains("unsigned-owner-draft"), "Signed-out draft was overwritten");
+        var tcp = new TcpListener(IPAddress.Loopback, 0); tcp.Start(); int port = ((IPEndPoint)tcp.LocalEndpoint).Port; tcp.Stop();
+        string url = "http://127.0.0.1:" + port;
+        using var listener = new HttpListener(); listener.Prefixes.Add(url + "/"); listener.Start();
+        var fixture = Task.Run(() => {
+            for (int index = 0; index < 3; index++) {
+                var request = listener.GetContext();
+                var response = new AccountSnapshot { ok = true, token = "source-gate-fixture", expiresAt = DateTimeOffset.UtcNow.AddHours(1).ToString("o"),
+                    account = new AccountIdentity { accountId = "gate-owner", username = "gate-owner" },
+                    resident = new ResidentAccount { token = "synthetic-resident", expiresAt = DateTimeOffset.UtcNow.AddHours(1).ToString("o"), device = new AccountDevice { deviceId = "gate-device" } },
+                    device = new AccountDevice { deviceId = "gate-device", deviceName = "Gate node", component = "windows-inference" } };
+                byte[] bytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(response)); request.Response.OutputStream.Write(bytes, 0, bytes.Length); request.Response.Close();
+            }
+        });
+        node.PrepareAccountChange(); AccountSession.Login(url, "gate-owner", "synthetic-source-password"); Call("SwitchAccount");
+        foreach (var pair in new[] { ("Source.LegacyMigrationCompleted", "true"), ("Source.KeyMigrationCompleted", "true"), ("Source.Indexes", "1"), ("Source.1.Name", "Scoped camera"), ("Source.1.CaptureMode", "ScreenRegion"), ("Source.1.ScreenRegion", "0,0,640,480"), ("Source.1.Threshold", "71") }) Set(pair.Item1, pair.Item2);
+        Call("Save"); node.ReloadAccount();
+        Require(node.CanConfigureSources && node.AddSourceCommand.CanExecute(null) && node.Sources.Single().ThresholdPercent == 71, "Login did not load the account source configuration");
+        node.PrepareAccountChange(); AccountSession.Logout(); Call("SwitchAccount"); node.ReloadAccount();
+        Require(!node.CanConfigureSources && node.Sources.Count == 0, "Logout retained editable account sources");
+        AccountSession.Login(url, "gate-owner", "synthetic-source-password"); Call("SwitchAccount"); node.ReloadAccount();
+        Require(node.Sources.Single().SourceName == "Scoped camera" && node.Sources.Single().ThresholdPercent == 71, "Relogin lost the account source configuration");
+        fixture.GetAwaiter().GetResult();
+        Console.WriteLine("PASS login gates source configuration and preserves same-account source settings across logout/relogin");
+    }
+
+    static void PerformanceAnalysisProbe()
+    {
+        var samples = Enumerable.Range(0, 20).Select(index => new SourcePerformanceSample("source", "Source", "CPU", 3,
+            new Dictionary<string, long> { ["captureMs"] = 2, ["inferMs"] = index == 19 ? 90 : 20, ["processMs"] = index == 19 ? 92 : 22 })).ToArray();
+        var report = PerformanceMeasurement.Analyze(samples);
+        Require(report.Bottleneck == "模型推理" && report.Stages.Contains("23.5 / 20 / 90"), "Stage bottleneck or P95 is wrong");
+        Require(PerformanceMeasurement.Analyze(Array.Empty<SourcePerformanceSample>()).Detail.Contains("没有有效样本"), "Empty measurement was reported as performance success");
+        Console.WriteLine("PASS performance analysis reports real stage samples, bottleneck, P95 and empty-state limits");
+    }
+
+    static void CompressionPolicyProbe()
+    {
+        var policy = new FrameCompressionPolicy(); using var bitmap = new Bitmap(320, 240);
+        Require(policy.SelectQuality(bitmap) == 55 && policy.SelectQuality(bitmap) == 55 && policy.SelectQuality(bitmap) == 40, "Quiet camera does not enter compact JPEG mode");
+        using (var graphics = Graphics.FromImage(bitmap)) graphics.Clear(Color.White);
+        Require(policy.SelectQuality(bitmap) == 55, "Motion did not immediately restore JPEG quality");
+        Console.WriteLine("PASS static compression reduces JPEG quality and motion restores it on the first changed frame");
+    }
+
     static void SendFrame(Stream stream, byte opcode, byte[] data, bool fin = true)
     {
         var header = new List<byte> { (byte)((fin ? 0x80 : 0) | opcode) };
@@ -228,7 +292,7 @@ internal static class Program
     static void MediaFrameContractProbe()
     {
         var cases = new[] {
-            (width: 640, height: 480), (width: 1280, height: 720), (width: 1920, height: 1080),
+            (width: 640, height: 480), (width: 960, height: 540), (width: 961, height: 541), (width: 1280, height: 720), (width: 1920, height: 1080),
             (width: 2560, height: 1600), (width: 720, height: 1280)
         };
         foreach (var item in cases)
@@ -423,6 +487,11 @@ internal static class Program
         alerts.Evaluate(new List<VisionGuard.Detector.Windows.Models.Detection> { new VisionGuard.Detector.Windows.Models.Detection { Label = "person", Confidence = .95f, BoundingBox = new RectangleF(10, 10, 30, 30) } }, new VisionGuard.Detector.Windows.Models.MonitorConfig { SaveAlertSnapshot = false }, input, frame);
         Require(emitted != null && emitted.Timings["remoteCachedAgeMs"] == 42 && emitted.Timings["publisherCapturedAt"] == 12345 && emitted.Timings["relayReceivedAt"] == 23456, "Alert evaluation dropped media diagnostics");
         Require(emitted!.Timings["captureMs"] == 1 && emitted.Timings["preprocessMs"] == 2 && emitted.Timings["inferMs"] == 3 && emitted.Timings["parseMs"] == 4 && emitted.Timings["processMs"] >= 10 && input["processMs"] == -1, "Process timing is wrong or the caller's dictionary was mutated");
+        var payload = ServerPushService.BuildVisualAlertPayload(emitted, "contract-device", "contract-node");
+        Require(string.Join(",", payload.Keys.OrderBy(key => key)) == string.Join(",", new[] { "type", "alertId", "deviceId", "deviceName", "sourceId", "sourceName", "timestamp", "eventKind", "summary", "expiresAt", "detections", "timings", "capturedAt" }.OrderBy(key => key)), "Visual alert fields differ from Android contract");
+        Require((string)payload["eventKind"] == "visual-detection" && (string)payload["summary"] == "视觉检测告警", "Wrong visual alert kind");
+        Require((string)payload["capturedAt"] == (string)payload["timestamp"], "Screenshot timestamp drifted to send time");
+        Require(emitted.Snapshot != null && emitted.Snapshot.Width == frame.Width && !ReferenceEquals(emitted.Snapshot, frame), "Alert snapshot is not its own inference-frame copy");
         emitted.Snapshot?.Dispose();
     }
     static void AccountThrottleProbe(bool refresh)

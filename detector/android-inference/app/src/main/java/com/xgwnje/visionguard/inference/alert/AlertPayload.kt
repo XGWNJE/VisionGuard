@@ -14,7 +14,7 @@ import com.xgwnje.visionguard.inference.detect.Detection
  */
 object AlertPayload {
 
-    fun build(gson: Gson, event: AlertEvent, deviceId: String, deviceName: String, capturedAtIso: String): String {
+    fun build(gson: Gson, event: AlertEvent, deviceId: String, deviceName: String): String {
         val detections = JsonArray()
         for (detection in event.detections) {
             detections.add(detectionJson(detection))
@@ -36,7 +36,7 @@ object AlertPayload {
             addProperty("expiresAt", event.expiresAtIso)
             add("detections", detections)
             add("timings", timings)
-            addProperty("capturedAt", capturedAtIso)
+            addProperty("capturedAt", event.timestampIso)
         }
         return gson.toJson(message)
     }

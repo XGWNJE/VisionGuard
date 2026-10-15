@@ -26,6 +26,7 @@ namespace VisionGuard.Detector.Windows.Services
         public event EventHandler<AlertEvent>? AlertTriggered;
         public event EventHandler<MonitorSourceStatus>? StatusChanged;
         public event EventHandler<SourceFrameEventArgs>? FrameProcessed;
+        public event EventHandler<SourcePerformanceSample>? PerformanceMeasured;
 
         public IReadOnlyList<MonitorSourceStatus> Statuses
         {
@@ -43,6 +44,8 @@ namespace VisionGuard.Detector.Windows.Services
                 var runtime = new Runtime(source, alerts, monitor, publisher);
                 alerts.AlertTriggered += (_, alert) => AlertTriggered?.Invoke(this, alert);
                 monitor.FrameProcessed += (_, frame) => OnFrame(runtime, frame);
+                publisher.PerformanceMeasured += stages => PerformanceMeasured?.Invoke(this,
+                    new SourcePerformanceSample(source.SourceId, source.SourceName, "JPEG 推流", publisher.TargetFps, stages));
                 publisher.StatusChanged += (_, __) => OnPublished(runtime);
                 publisher.PreviewFrame += (_, frame) => OnPublishedPreview(runtime, frame);
                 _runtimes.Add(source.SourceId, runtime);
@@ -150,6 +153,8 @@ namespace VisionGuard.Detector.Windows.Services
                 while (runtime.FrameTimes.Count > 0 && (now - runtime.FrameTimes.Peek()).TotalSeconds > 10) runtime.FrameTimes.Dequeue();
                 runtime.Error = frame.HasError ? frame.Error?.Message ?? "捕获或推理失败" : "";
             }
+            if (!frame.HasError) PerformanceMeasured?.Invoke(this,
+                new SourcePerformanceSample(runtime.Source.SourceId, runtime.Source.SourceName, runtime.Monitor.ActiveBackend, runtime.Source.Config.TargetFps, frame.StageTimings));
             FrameProcessed?.Invoke(this, new SourceFrameEventArgs(runtime.Source.SourceId, frame));
             RaiseStatus(runtime);
 
