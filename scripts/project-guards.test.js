@@ -108,11 +108,12 @@ test('publish script checks authorization before mutation while retaining read-o
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 });
 
-test('console keeps a browser-camera entry in settings', () => {
+test('console keeps a browser-camera entry reachable from the node overview', () => {
   const consoleEntry = fs.readFileSync(path.join(root, 'receiver/web/src/main.tsx'), 'utf8');
+  const overview = fs.readFileSync(path.join(root, 'receiver/web/src/FleetPage.tsx'), 'utf8');
   // 浏览器相机没有安装包，用户只能从控制台进去；入口丢了就等于这个节点类型“消失”。
-  assert.match(consoleEntry, /href="\/camera\/"/, '控制台缺少浏览器相机入口');
-  assert.match(consoleEntry, /settings-camera/, '浏览器相机入口应挂在设置页');
+  assert.match(consoleEntry, /<NodeDirectory\b/, '节点总览未接入控制台');
+  assert.match(overview, /href="\/camera\/"/, '控制台缺少浏览器相机入口');
 });
 
 test('development CI checks Android release variants with a compile-only signing override', () => {

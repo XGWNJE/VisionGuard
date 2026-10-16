@@ -29,7 +29,8 @@ for (const line of read('docs/70-UI设计规范.md').split('\n')) {
   const colors = cells.slice(2, 4).map(cell => [...cell.matchAll(/#([0-9A-F]{6})\b/gi)].map(m => m[1].toUpperCase()));
   if (colors.every(list => list.length)) spec.set(cells[1], colors);
 }
-const css = read('receiver/web/src/style.css');
+// Other clients retain their released theme during this console-only update.
+const css = read('detector/web/src/style.css');
 const web = [...css.matchAll(/:root(?:\[data-theme="dark"\])?\s*\{([^}]+)\}/g)].map(match =>
   Object.fromEntries([...match[1].matchAll(/--([\w-]+):\s*#([0-9A-F]{6})\s*;/gi)].map(m => [m[1], m[2].toUpperCase()])));
 const compose = read('android-shared/src/main/java/com/xgwnje/visionguard/account/VisionGuardTheme.kt');
@@ -103,7 +104,7 @@ for (const file of ['detector/android/app/src/main/java/com/xgwnje/visionguard/d
 }
 checks++;
 if (/window\.(?:confirm|alert)\(/.test(read('receiver/web/src/main.tsx'))) errors.push('Web app dialog bypasses theme');
-// Web 相机推流节点与 Web 控制台共用同一套主题变量，关键面板不得退回浏览器默认样式。
+// Web 相机保留当前发行主题；控制台的官方主题在下方单独核对。
 const webCameraCss = read('detector/web/src/style.css');
 checks++;
 if (/window\.(?:confirm|alert)\(/.test(read('detector/web/src/main.tsx'))) errors.push('Web camera dialog bypasses theme');
@@ -111,12 +112,52 @@ for (const token of ['--panel', '--accent', '--on-accent', '--error', '--on-erro
   checks++;
   if ((webCameraCss.match(new RegExp(`${token}:\\s*#[0-9A-F]{6}`, 'gi')) ?? []).length < 2) errors.push(`Web camera style.css: missing light/dark ${token}`);
 }
-for (const [selector, token] of [['.button', 'on-accent'], ['.button.danger', 'on-error'], ['.nav-item.active', 'on-selected'], ['.status-tag.good', 'on-selected'], ['.event-kind', 'error']]) {
-  checks++;
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const rule = css.match(new RegExp(`${escaped}\\s*\\{([^}]+)\\}`))?.[1] ?? '';
-  if (!rule.includes(`color: var(--${token})`)) errors.push(`Web ${selector}: does not use its contrasting text token`);
+function tokens(css, selector) {
+  const block = css.match(new RegExp(`${selector}\\s*\\{([^}]+)\\}`))?.[1] ?? '';
+  return Object.fromEntries([...block.matchAll(/--([\w-]+):\s*([^;]+);/g)].map(m => [m[1], m[2].trim()]));
 }
+// Convert the authoritative official OKLCH tokens into the sRGB used by native controls.
+function rgb(value) {
+  const parts = value?.match(/^oklch\(([\d.]+) ([\d.]+) ([\d.]+)\)$/);
+  if (!parts) return undefined;
+  const [, L, C, H] = parts.map(Number), a = C * Math.cos(H * Math.PI / 180), b = C * Math.sin(H * Math.PI / 180);
+  const l = (L + .3963377774 * a + .2158037573 * b) ** 3;
+  const m = (L - .1055613458 * a - .0638541728 * b) ** 3;
+  const s = (L - .0894841775 * a - 1.291485548 * b) ** 3;
+  return [4.0767416621*l-3.3077115913*m+.2309699292*s, -1.2684380046*l+2.6097574011*m-.3413193965*s, -.0041960863*l-.7034186147*m+1.707614701*s]
+    .map(c => Math.round(Math.max(0, Math.min(1, c <= .0031308 ? 12.92*c : 1.055*c**(1/2.4)-.055))*255).toString(16).padStart(2,'0')).join('').toUpperCase();
+}
+
+const consoleCss = read('receiver/web/src/style.css');
+const config = JSON.parse(read('receiver/web/components.json'));
+const dependencies = JSON.parse(read('receiver/web/package.json')).dependencies;
+checks++;
+if (config.style !== 'radix-nova' || config.tailwind.baseColor !== 'neutral' || !config.tailwind.cssVariables) errors.push('Console must use official Neutral/Radix Nova CSS-variable components');
+for (const dependency of ['radix-ui','shadcn','tailwindcss','class-variance-authority']) {
+  checks++;
+  if (!dependencies[dependency]) errors.push('Console missing official dependency '+dependency);
+}
+const consoleTokens = [tokens(consoleCss, ':root'),tokens(consoleCss, '\\.dark')];
+for (const [index, theme] of ['light','dark'].entries()) {
+  const palette = Object.fromEntries(Object.entries(consoleTokens[index]).map(([name,value])=>[name,rgb(value)]));
+  for (const [role,expected] of [['background',index?'0A0A0A':'FFFFFF'],['foreground',index?'FAFAFA':'0A0A0A'],['muted-foreground',index?'A1A1A1':'737373']]) {
+    checks++;
+    if (palette[role] !== expected) errors.push('Console '+theme+' '+role+' differs from official Neutral theme');
+  }
+  for (const surface of ['background','card']) for (const foreground of ['foreground','muted-foreground','destructive']) checkContrast('Console '+theme+' '+foreground+'/'+surface,palette[foreground],palette[surface]);
+  checkContrast('Console '+theme+' foreground/muted',palette.foreground,palette.muted);
+  for (const [foreground,background] of [['primary-foreground','primary'],['secondary-foreground','secondary']]) checkContrast('Console '+theme+' '+foreground+'/'+background,palette[foreground],palette[background]);
+}
+const provider = read('receiver/web/src/components/theme-provider.tsx');
+checks++;
+if (!provider.includes('root.classList.add(') || !provider.includes("'dark'") || !provider.includes('localStorage')) errors.push('Console must use the official class-based Vite theme provider');
+for (const [file,marker] of [['button','buttonVariants'],['dialog','DialogPrimitive'],['field','FieldGroup']]) {
+  checks++;
+  if (!read('receiver/web/src/components/ui/'+file+'.tsx').includes(marker)) errors.push('Console missing official '+file+' implementation');
+}
+checks++;
+if (/@media[^{}]*(?:max-width|orientation\s*:\s*portrait)/.test(consoleCss) || !read('receiver/web/src/main.tsx').includes('collapsible="none"')) errors.push('Console must retain its landscape layout and expanded navigation');
+
 // New windows and editor tools must not refer to removed or misspelled theme keys.
 function xamlFiles(directory) {
   return fs.readdirSync(path.join(root, directory), { withFileTypes: true }).flatMap(entry => {

@@ -5,7 +5,7 @@
 
 相机、Android 视觉推理和通知三个 Android 组件的账号界面、Material 颜色、字号、形状和语义状态共用 [`android-shared/`](../android-shared) 主题。颜色与控件参数以[统一 UI 设计规范](./70-UI设计规范.md)为唯一来源，不另建页面主题。三者都提供跟随系统、浅色、深色并保存选择；窗口亮度降低独立于主题。Android 控制台已淘汰。
 
-手机 / 平板布局、登录表单宽度和终端组件结构以[多平台 UI 组件设计](72-多平台UI组件设计.md)为准；相机由 `CameraHome`、通知由 `NotificationHome` 保持双区组合与可达的主要操作，Android 视觉推理节点的主界面与设置见[Android 视觉推理节点](31-Android视觉推理节点.md#界面)。
+手机 / 平板布局、登录表单宽度和终端组件结构以[现有原生界面布局](70-UI设计规范.md#原生界面布局)为准；相机由 `CameraHome`、通知由 `NotificationHome` 保持双区组合与可达的主要操作，Android 视觉推理节点的主界面与设置见[Android 视觉推理节点](31-Android视觉推理节点.md#界面)。
 
 ## 共同要求
 
