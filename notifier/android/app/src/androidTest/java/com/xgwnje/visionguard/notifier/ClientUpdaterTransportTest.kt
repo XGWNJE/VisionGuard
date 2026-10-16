@@ -43,7 +43,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlin.concurrent.thread
 
 /**
- * Optional device regression: install an older, isolated Debug app and supply a newer APK
+ * Optional device regression: install an older local-service UI preview and supply a newer APK
  * with the same package/signature as the test-only current-client.apk asset. Normal test APKs
  * omit that asset and skip these cases. Only transport is intercepted; the production release
  * policy, HTTP download, cache, PackageManager checks and FileProvider all run on the device.
@@ -67,7 +67,7 @@ class ClientUpdaterTransportTest {
         assumeTrue("Optional signed update fixture is not bundled", "current-client.apk" in instrumentation.context.assets.list("").orEmpty())
         val realContext = instrumentation.targetContext
         // Never run cache cleanup against a user's installed client.
-        assumeTrue("Use an isolated acceptance package", realContext.packageName.endsWith(".acceptance"))
+        assumeTrue("Use the isolated local-service package", realContext.packageName.endsWith(".uipreview"))
         context = HandoffContext(realContext)
         apk = instrumentation.context.assets.open("current-client.apk").use { it.readBytes() }
         val archive = File(realContext.cacheDir, "update-fixture-identity.apk")
@@ -364,7 +364,7 @@ class ClientUpdaterTransportTest {
                 .put("size", apk.size).put("digest", "sha256:${hash(apk)}").put("state", "uploaded"))))
         val transport = OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
-            if (request.url.host == "api.github.com") {
+            if (request.url.host == "api.github.com" || request.url.encodedPath == "/api/local/releases") {
                 Response.Builder().request(request).protocol(okhttp3.Protocol.HTTP_1_1).code(200).message("Fixture")
                     .body(release.toString().toResponseBody("application/json".toMediaType())).build()
             } else {

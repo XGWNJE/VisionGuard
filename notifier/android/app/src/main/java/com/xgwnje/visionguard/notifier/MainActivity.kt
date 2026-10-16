@@ -16,7 +16,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.core.app.ActivityCompat
 import androidx.core.view.WindowCompat
-import androidx.lifecycle.lifecycleScope
 import com.xgwnje.visionguard.account.*
 import com.xgwnje.visionguard.notifier.node.NotificationNodeService
 import com.xgwnje.visionguard.notifier.node.NotificationNodeSettings
@@ -42,13 +41,17 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), PermissionUtils.REQUEST_CODE_POST_NOTIFICATIONS)
         val account = AccountStore.get(this)
         PreviewSignIn.configure(this, getString(R.string.preview_endpoint), getString(R.string.preview_username), getString(R.string.preview_password), getString(R.string.preview_channel))
-        lifecycleScope.launch { PreviewSignIn.signIn(account, "android-notifier")?.let { android.widget.Toast.makeText(this@MainActivity, it, android.widget.Toast.LENGTH_LONG).show() } }
         setContent {
             val session by account.session.collectAsState()
             val appearance = rememberAppearance()
             val dark = appearance.dark()
             val updater = remember { ClientUpdater(this@MainActivity, "android-notifier") }
-            LaunchedEffect(updater) { updater.check() }
+            LaunchedEffect(updater) {
+                PreviewSignIn.signIn(account, "android-notifier")?.let {
+                    android.widget.Toast.makeText(this@MainActivity, it, android.widget.Toast.LENGTH_LONG).show()
+                }
+                updater.check()
+            }
             DisposableEffect(updater) { onDispose { updater.close() } }
             SideEffect { WindowCompat.getInsetsController(window, window.decorView).apply {
                 isAppearanceLightStatusBars = !dark

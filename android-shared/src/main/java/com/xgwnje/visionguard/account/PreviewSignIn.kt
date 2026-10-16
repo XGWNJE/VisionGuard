@@ -10,7 +10,7 @@ import android.util.Log
  * 预览包（`.uipreview`）是给 owner 做界面与链路验收用的，每次都手填服务地址与账号密码纯属浪费：
  * 构建时把本地服务的通道、地址与预览账号注入资源（`preview_channel` / `preview_endpoint` /
  * `preview_username` / `preview_password`），启动先按通道在局域网里找服务、找到就用它，
- * 找不到才回落到内置地址，随后静默登录，直接进主界面。
+ * 找不到时复用仍可访问的本机会话或回落内置地址，随后静默登录，直接进主界面。
  *
  * 四条边界：
  * - 凭据只存在于预览构建：正式包的四个资源是空串，[available] 为 false，行为与以前完全一致；
@@ -82,11 +82,15 @@ object PreviewSignIn {
         val target = discovered ?: baked
         val current = store.session.value
         if (current != null) {
-            if (discovered == null || current.endpoint == discovered) {
+            if (current.endpoint == target) {
                 localUpdateBase = current.endpoint
                 return null
             }
-            Log.i(TAG, "本地服务地址已变化（${current.endpoint} -> $discovered），清除本机会话后重新登录")
+            if (discovered == null && runCatching { store.refreshIdentity() }.isSuccess && store.session.value?.endpoint == current.endpoint) {
+                localUpdateBase = current.endpoint
+                return null
+            }
+            Log.i(TAG, "本地服务地址已变化（${current.endpoint} -> $target），清除本机会话后重新登录")
             store.clear()
         }
         val failure = attempt(store, target, account, secret, component)

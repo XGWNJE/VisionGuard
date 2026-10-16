@@ -145,7 +145,7 @@ function Get-InstallDialogNodes {
     if (-not (Get-UiXml -LocalXml $LocalXml)) { return @() }
     try { [xml]$ui = Get-Content -LiteralPath $LocalXml -Raw -Encoding UTF8 } catch { $script:dumpIssues += 'xml parse failed'; return @() }
 
-    $confirmText = @('继续安装', '仍要安装', '安装', '确定', '允许', '同意', '继续', 'install', 'continue', 'ok', 'allow', 'agree', 'accept')
+    $confirmText = @('继续安装', '仍要安装', '安装', '更新', '确定', '允许', '同意', '继续', 'install', 'update', 'continue', 'ok', 'allow', 'agree', 'accept')
     $cancelText = @('取消', '放弃', '暂不', '稍后', '拒绝', '退出', 'cancel', 'deny', 'not now', 'later', 'exit')
     $statusText = @('扫描', '请稍候', '正在', '检测中', 'loading', 'scanning', 'please wait', 'installing')
     $confirmId = @('install_confirm', 'button_ok', 'btn_ok', 'ok_button', 'install_button', 'confirm', 'install_')
@@ -175,6 +175,8 @@ function Get-InstallDialogNodes {
         $label = $labelRaw.ToLowerInvariant()
         $id = $resourceId.ToLowerInvariant()
         if (-not $label -and -not $id) { continue }
+        # Android's update question is a clickable TextView, not the Update button.
+        if ($id -match '(?:^|[/_])question(?:_|$)') { continue }
         if (-not ($bounds -match '^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$')) { continue }
         $left = [int]$Matches[1]; $top = [int]$Matches[2]; $right = [int]$Matches[3]; $bottom = [int]$Matches[4]
         if ($right -le $left -or $bottom -le $top) { continue }
@@ -363,7 +365,7 @@ try {
 
     if ($RespondOnly) {
         # 补救路径：弹窗（例如厂商的备案/倒计时确认）被错过时只补确认，不重新上传安装包。
-        Approve-DialogsUntil -Deadline $deadline -LocalXml $uiXmlPath -Stage 'respond-only' -RequireDialog
+        Approve-DialogsUntil -Deadline $deadline -LocalXml $uiXmlPath -Stage 'respond-only' -RequireDialog -PackageName $PackageName -FreshSince $startedAt
         $report.method = 'respond-only'
         $report.verification = [ordered]@{ method = 'respond-only'; approvals = $approvals; package = (Get-PackageState -Name $PackageName) }
         if ($approvals -eq 0) { throw "在 $TimeoutSeconds 秒内没有出现可确认的厂商安装弹窗。" }

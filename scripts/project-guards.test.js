@@ -212,3 +212,25 @@ test('Android installer preserves explicit serial and normalizes device timestam
   const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', env: cleanEnv });
   assert.equal(result.status, 0, result.stderr || result.stdout);
 });
+
+test('Android installer selects Update instead of the clickable update question', { skip: process.platform !== 'win32' }, () => {
+  const source = fs.readFileSync(path.join(root, 'scripts/install-android-apk.ps1'), 'utf8');
+  const parse = source.match(/^function Get-InstallDialogNodes \{[\s\S]*?^\}/m)?.[0];
+  assert.ok(parse, 'installer UI parser must be present');
+  const xml = '<hierarchy><node text="Do you want to update this app?" resource-id="com.android.packageinstaller:id/install_confirm_question_update" clickable="true" bounds="[589,478][1341,549]"/><node text="Cancel" resource-id="android:id/button2" clickable="true" bounds="[1538,623][1750,749]"/><node text="Update" resource-id="android:id/button1" clickable="true" bounds="[1750,623][1969,749]"/></hierarchy>';
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    `$script:fixtureXml = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${Buffer.from(xml).toString('base64')}'))`,
+    "function Get-UiXml { param($LocalXml) [IO.File]::WriteAllText($LocalXml, $script:fixtureXml); return $true }",
+    '$script:dumpIssues = @()',
+    parse,
+    '$taskXml = [IO.Path]::GetTempFileName()',
+    'try {',
+    '  $nodes = @(Get-InstallDialogNodes -LocalXml $taskXml)',
+    "  if ($nodes.Count -ne 1 -or $nodes[0].Label -ne 'Update') { throw 'Update button was not selected' }",
+    "  if ($nodes[0].X -ne 1860 -or $nodes[0].Y -ne 686) { throw 'Button bounds were not used' }",
+    '} finally { Remove-Item -LiteralPath $taskXml -ErrorAction SilentlyContinue }',
+  ].join('\n');
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', env: cleanEnv });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
