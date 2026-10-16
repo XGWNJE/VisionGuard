@@ -55,13 +55,7 @@ import androidx.compose.ui.unit.sp
 import com.xgwnje.visionguard.account.VisionGuardStatusColors
 import com.xgwnje.visionguard.icons.LucideIcons
 
-/**
- * 几何空间界面的尺寸与动效令牌。
- *
- * 规范按 8.8 英寸 16:10、密度 2.0 计：预览 CSS 像素与 Android dp 一一对应，
- * 因此规范里的 px 数值在这里直接写成 dp / sp，不做二次换算。
- * 视觉底线见 `docs/73-几何空间界面规范.md`（布局与信息架构不受该文约束）。
- */
+/** 几何界面的尺寸与动效资源。 */
 object Geo {
     /** 通用触点下限。 */
     val Touch = 48.dp

@@ -1,4 +1,4 @@
-// Checks the actual platform palettes against the shared design spec and calculates
+// Checks existing client palette regressions and the official console theme with
 // text contrast. This is a source contract; rendered/device acceptance is separate.
 const fs = require('node:fs');
 const path = require('node:path');
@@ -22,13 +22,21 @@ const roles = [
   ['警告文字 / 表面', 'warning', 'tertiary', 'WarningBrush'],
   ['错误文字 / 表面', 'error', 'error', 'DangerBrush'],
 ];
-const spec = new Map();
-for (const line of read('docs/70-UI设计规范.md').split('\n')) {
-  const cells = line.split('|').map(cell => cell.trim());
-  if (cells.length < 5) continue;
-  const colors = cells.slice(2, 4).map(cell => [...cell.matchAll(/#([0-9A-F]{6})\b/gi)].map(m => m[1].toUpperCase()));
-  if (colors.every(list => list.length)) spec.set(cells[1], colors);
-}
+// Existing-client regression fixture; independent of design documentation.
+const baseline = new Map([
+  ["页面",[["F5F5F5"],["121212"]]],
+  ["面板",[["FFFFFF"],["1B1B1B"]]],
+  ["次级表面",[["EEEEEE"],["282828"]]],
+  ["正文",[["202020"],["F2F2F2"]]],
+  ["辅助文字",[["626262"],["B3B3B3"]]],
+  ["边框",[["DDDDDD"],["3D3D3D"]]],
+  ["主色、成功",[["087F83"],["4FBCC1"]]],
+  ["主色上的文字",[["FFFFFF"],["062E30"]]],
+  ["选中背景",[["EDEDED"],["303030"]]],
+  ["选中背景上的文字",[["07666A"],["75D2D6"]]],
+  ["警告文字 / 表面",[["805500","FFF1D6"],["F4CC79","3B3020"]]],
+  ["错误文字 / 表面",[["B83434","FCEBEC"],["FF9696","442326"]]],
+]);
 // Other clients retain their released theme during this console-only update.
 const css = read('detector/web/src/style.css');
 const web = [...css.matchAll(/:root(?:\[data-theme="dark"\])?\s*\{([^}]+)\}/g)].map(match =>
@@ -50,11 +58,11 @@ const neutralRoles = new Set(['页面', '面板', '次级表面', '正文', '辅
 for (const [index, theme] of ['light', 'dark'].entries()) {
   if (!web[index]) errors.push(`Web ${theme} root palette missing`);
   for (const [label, cssKey, kotlinKey, wpfKey] of roles) {
-    const expected = spec.get(label)?.[index]?.[0];
-    if (!expected) { errors.push(`Design specification missing ${label}/${theme}`); continue; }
+    const expected = baseline.get(label)?.[index]?.[0];
+    if (!expected) { errors.push(`Palette regression fixture missing ${label}/${theme}`); continue; }
     if (neutralRoles.has(label)) {
       checks++;
-      if (new Set(expected.match(/../g)).size !== 1) errors.push(`Design ${theme} ${label}: neutral gray requires equal RGB channels`);
+      if (new Set(expected.match(/../g)).size !== 1) errors.push(`Palette ${theme} ${label}: neutral gray requires equal RGB channels`);
     }
     const actual = [['Web', web[index]?.[cssKey]], ['Android', android[index][kotlinKey ?? cssKey]], ['Windows', windows[index][wpfKey]]];
     for (const [platform, value] of actual) {
@@ -63,10 +71,10 @@ for (const [index, theme] of ['light', 'dark'].entries()) {
     }
   }
   for (const [label, cssKey, kotlinKey] of [['警告文字 / 表面', 'warning-surface', 'tertiaryContainer'], ['错误文字 / 表面', 'error-surface', 'errorContainer']]) {
-    const expected = spec.get(label)?.[index]?.[1];
+    const expected = baseline.get(label)?.[index]?.[1];
     for (const [platform, value] of [['Web', web[index]?.[cssKey]], ['Android', android[index][kotlinKey]]]) {
       checks++;
-      if (value !== expected) errors.push(`${platform} ${theme} ${label} surface differs from specification`);
+      if (value !== expected) errors.push(`${platform} ${theme} ${label} surface differs from regression fixture`);
     }
   }
 }
@@ -116,7 +124,7 @@ function tokens(css, selector) {
   const block = css.match(new RegExp(`${selector}\\s*\\{([^}]+)\\}`))?.[1] ?? '';
   return Object.fromEntries([...block.matchAll(/--([\w-]+):\s*([^;]+);/g)].map(m => [m[1], m[2].trim()]));
 }
-// Convert the authoritative official OKLCH tokens into the sRGB used by native controls.
+// Convert console OKLCH tokens to sRGB for contrast checks.
 function rgb(value) {
   const parts = value?.match(/^oklch\(([\d.]+) ([\d.]+) ([\d.]+)\)$/);
   if (!parts) return undefined;

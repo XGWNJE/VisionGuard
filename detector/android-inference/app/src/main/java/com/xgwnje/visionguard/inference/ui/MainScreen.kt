@@ -65,7 +65,7 @@ private enum class Overlay { NONE, SETTINGS, HELP }
  * 主界面：几何空间布局。
  *
  * 宽屏（≥840dp，或横屏短边 ≥600dp 且字号 ≤1.3）预览与来源滑架并排，操作台与信息带通栏；
- * 窄屏改为上下堆叠，全部内容仍可到达。视觉底线见 `docs/73-几何空间界面规范.md`。
+ * 窄屏改为上下堆叠，全部内容仍可到达。
  */
 @Composable
 fun MainScreen(

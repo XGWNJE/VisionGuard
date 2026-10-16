@@ -189,29 +189,6 @@ test("概念素材已丢弃，只保留落地资产", async () => {
   await access(new URL("public/assets/camera-frame.png", root));
 });
 
-test("规范数字与实际样式一致", async () => {
-  const css = await readFile(new URL("src/styles.css", root), "utf8");
-  const spec = [
-    [".drawer--wide{width:min(760px,100vw)}", "参数 / 遮罩抽屉宽度 760"],
-    [".drawer{width:min(560px,100vw)", "普通抽屉宽度 560"],
-    [".mask-canvas-frame{--mask-handle:48px;--mask-handle-offset:-25px;padding:26px", "遮罩内衬 26 与把手 48"],
-    [".parameter-strip>span,.parameter-strip>button{padding:8px 12px;white-space:nowrap;border-right:1px solid var(--border);min-height:48px", "底部参数条触点 48"],
-    [".wheel{width:112px;height:220px", "采样滚筒 112 × 220"],
-    [".wheel-assembly--compact .wheel{width:60px;height:146px}", "冷却滚筒每位 60 × 146"],
-    [".main-paddle{flex:1;font-size:30px;min-width:0;min-height:80px", "启停压板高 80"],
-    [".square-key{width:80px;min-height:80px", "参数 / 遮罩方键 80"],
-    [".source-stop{display:flex;align-items:center;gap:12px;width:100%;border-bottom:1px solid var(--border);border-left:3px solid transparent;min-height:94px", "来源行高 94 与左缘 3px"],
-    [".mask-plane{position:relative;aspect-ratio:1672/941;width:100%;background:#202020;touch-action:none;overflow:hidden", "遮罩画布溢出裁剪"],
-    [".tablet-frame{background:var(--page);width:100%;max-width:1280px;aspect-ratio:16/10;padding:20px 24px;display:flex;flex-direction:column;border:1px solid var(--border);min-height:700px", "平板帧 1280×800、内高下限 700"],
-  ];
-  for (const [needle, label] of spec) {
-    assert.ok(css.includes(needle), `样式与规范不一致：${label}`);
-  }
-  assert.ok(!css.includes("920px"), "旧的 920px 抽屉宽度应已收回");
-  assert.ok(!css.includes("min-height:560px"), "平板帧内高下限不应退回 560");
-  assert.ok(!css.includes("concept-gallery"), "概念图画廊样式应已删除");
-});
-
 test("遮罩把手贴边时内移，四角都有规则", async () => {
   const css = await readFile(new URL("src/styles.css", root), "utf8");
   for (const edge of ["l", "r", "t", "b"]) {

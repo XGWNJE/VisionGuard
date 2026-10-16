@@ -62,9 +62,6 @@ internal enum class MaskTool { Draw, Move }
 
 /**
  * 遮罩草稿：与参数草稿并列地挂在来源抽屉上，切页不会丢。
- *
- * 视觉底线见 [几何空间视觉语言参考](../../../../../../../docs/73-几何空间界面规范.md)：
- * 直角画布、48dp 把手触点且贴边内移、最小边长 2%。
  */
 internal class MaskDraft(val initial: List<MaskRegion>) {
     var masks by mutableStateOf(initial)
