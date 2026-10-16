@@ -1,81 +1,29 @@
 package com.xgwnje.visionguard.notifier.ui.dialogs
 
-import android.os.Build
-import android.view.WindowManager
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
-import com.xgwnje.visionguard.notifier.node.alarmTimeStandardLabel
-import com.xgwnje.visionguard.notifier.node.formatAlarmTime
-import com.xgwnje.visionguard.notifier.DetectedObject
-import com.xgwnje.visionguard.notifier.ui.NotifierDialog
-import com.xgwnje.visionguard.notifier.ui.rememberAlarmTimeZone
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
+import com.xgwnje.visionguard.notifier.AlertQueueItem
 
-/** 强提醒保持不可从外部或返回键关闭；停止动作仍由调用方确认并保存。 */
+/** An activity-sized overlay keeps cutouts, system bars and touch bounds in the same coordinate space. */
 @Composable
-fun AlarmDialog(
-    onDismissRequest: () -> Unit,
-    onConfirm: () -> Unit,
-    matchedKeyword: String?,
-    sourceApp: String? = null,
-    snippet: String? = null,
-    eventTimeMillis: Long? = null,
-    confirmationError: String? = null,
-    detectedObject: DetectedObject? = null
-) {
-    var detailsOpen by remember(matchedKeyword, eventTimeMillis) { mutableStateOf(false) }
-    Dialog(
-        onDismissRequest = onDismissRequest,
-        properties = DialogProperties(
-            dismissOnClickOutside = false,
-            dismissOnBackPress = false,
-            // Honor the actual window bounds; full width is set on the window below.
-            usePlatformDefaultWidth = true,
-            decorFitsSystemWindows = false
-        )
-    ) {
-        val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
-        LaunchedEffect(dialogWindow) {
-            dialogWindow?.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && dialogWindow != null) {
-                val lp = dialogWindow.attributes
-                lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-                dialogWindow.attributes = lp
-            }
-        }
-        AlarmSurface(onConfirm, { detailsOpen = true }, matchedKeyword, detectedObject, confirmationError)
-        if (detailsOpen) AlarmDetails(matchedKeyword, detectedObject, sourceApp, snippet, eventTimeMillis) { detailsOpen = false }
-    }
-}
-
-@Composable
-internal fun AlarmDetails(matchedKeyword: String?, detectedObject: DetectedObject?, sourceApp: String?,
-                         snippet: String?, eventTimeMillis: Long?, onClose: () -> Unit) {
-    val timeZone = rememberAlarmTimeZone()
-    NotifierDialog("告警详情", onClose,
-        confirmButton = { TextButton(onClose, Modifier.heightIn(min = 48.dp)) { Text("关闭") } }) {
-        AlertMeta("事件", matchedKeyword ?: "未知报警")
-        detectedObject?.let {
-            AlertMeta("目标", it.displayName)
-            AlertMeta("置信度", "${kotlin.math.round(it.confidence * 1000) / 10}%")
-        }
-        AlertMeta("来源", sourceApp?.takeIf { it.isNotBlank() } ?: "未知来源")
-        AlertMeta("内容", snippet?.takeIf { it.isNotBlank() } ?: "无附加内容")
-        AlertMeta("时间", formatAlarmTime(eventTimeMillis ?: System.currentTimeMillis(), "yyyy-MM-dd HH:mm:ss", timeZone))
-        AlertMeta("时间标准", alarmTimeStandardLabel(timeZone))
-    }
-}
-
-@Composable
-private fun AlertMeta(label: String, value: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodyLarge)
+fun AlarmDialog(item: AlertQueueItem, queuedCount: Int, confirming: Boolean, confirmationError: String?, onConfirm: (String) -> Unit) {
+    val focus = LocalFocusManager.current
+    LaunchedEffect(item.id) { focus.clearFocus(force = true) }
+    BackHandler { }
+    Box(Modifier.fillMaxSize().semantics { paneTitle = "当前报警" }.pointerInput(Unit) {
+        // Become the top hit-test layer, without consuming the child confirmation button's gestures.
+        awaitEachGesture { awaitFirstDown(requireUnconsumed = false) }
+    }) {
+        AlarmSurface(item, queuedCount, confirming, confirmationError, onConfirm)
     }
 }

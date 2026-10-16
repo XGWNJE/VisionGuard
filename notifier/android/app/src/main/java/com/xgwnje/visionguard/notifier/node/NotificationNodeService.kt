@@ -268,7 +268,8 @@ class NotificationNodeService : Service() {
             lastResponse = SystemClock.elapsedRealtime()
             recovery.responded(lastResponse); probeId = null
             if (alarms.markServiceRecovered()) { outageId = null; outageAccepted = false }
-            mutableState.value = mutableState.value.copy(status = "已连接", connected = true, lastResponse = lastResponse)
+            // Timeout recovery keeps monotonic time; the UI needs an actual event timestamp.
+            mutableState.value = mutableState.value.copy(status = "已连接", connected = true, lastResponse = System.currentTimeMillis())
         }
         if (type == "notification-scope") message.optJSONObject("scope")?.let { updateScope(it) }
         if (type == "time-standard") updateTimeStandard(message)

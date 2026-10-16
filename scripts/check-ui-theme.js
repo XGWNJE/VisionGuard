@@ -155,7 +155,17 @@ for (const [index, theme] of ['light','dark'].entries()) {
   for (const surface of ['background','card']) for (const foreground of ['foreground','muted-foreground','destructive']) checkContrast('Console '+theme+' '+foreground+'/'+surface,palette[foreground],palette[surface]);
   checkContrast('Console '+theme+' foreground/muted',palette.foreground,palette.muted);
   for (const [foreground,background] of [['primary-foreground','primary'],['secondary-foreground','secondary']]) checkContrast('Console '+theme+' '+foreground+'/'+background,palette[foreground],palette[background]);
+  const nativeBlock = compose.match(new RegExp(`private val Console${index ? 'Dark' : 'Light'} = [\\s\\S]*?(?=\\nprivate val |$)`))?.[0] ?? '';
+  const native = Object.fromEntries([...nativeBlock.matchAll(/\b(\w+)\s*=\s*Color(?:\(0xFF([0-9A-F]{6})\)|\.(White|Black))/gi)].map(m => [m[1], (m[2] || (m[3] === 'White' ? 'FFFFFF' : '000000')).toUpperCase()]));
+  for (const [nativeRole, webRole] of [['background','background'],['onBackground','foreground'],['surface','card'],['onSurface','card-foreground'],['primary','primary'],['onPrimary','primary-foreground'],['surfaceVariant','muted'],['onSurfaceVariant','muted-foreground']]) {
+    checks++;
+    if (native[nativeRole] !== palette[webRole]) errors.push('Notifier '+theme+' '+nativeRole+' differs from console Neutral theme');
+  }
+  for (const surface of ['background','surface','surfaceVariant']) checkContrast('Notifier '+theme+' onSurface/'+surface,native.onSurface,native[surface]);
+  for (const surface of ['background','surface']) checkContrast('Notifier '+theme+' onSurfaceVariant/'+surface,native.onSurfaceVariant,native[surface]);
 }
+checks++;
+if (!read('notifier/android/app/src/main/java/com/xgwnje/visionguard/notifier/ui/theme/Theme.kt').includes('VisionGuardThemeStyle.CONSOLE')) errors.push('Notifier must explicitly select the shared console theme');
 const provider = read('receiver/web/src/components/theme-provider.tsx');
 checks++;
 if (!provider.includes('root.classList.add(') || !provider.includes("'dark'") || !provider.includes('localStorage')) errors.push('Console must use the official class-based Vite theme provider');

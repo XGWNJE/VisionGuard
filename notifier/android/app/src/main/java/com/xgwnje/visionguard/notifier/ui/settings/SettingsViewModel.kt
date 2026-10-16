@@ -25,6 +25,7 @@ import com.xgwnje.visionguard.notifier.AlertRecord
 import com.xgwnje.visionguard.notifier.NotificationLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withContext
 
 
@@ -58,8 +59,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         loadRingtoneLibrary()
     }
     fun disposeAccount() {
+        viewModelScope.cancel()
         sharedPreferencesHelper.prefs.unregisterOnSharedPreferenceChangeListener(historyListener)
         RingtoneLibrary.stopPreview()
+        RingtoneLibrary.cancelRecording()
         if (RingtoneLibrary.onPreviewStateChanged === previewListener) RingtoneLibrary.onPreviewStateChanged = null
     }
     override fun onCleared() { disposeAccount(); super.onCleared() }
@@ -70,8 +73,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             SharedPreferencesHelper.MIN_LOOP_COUNT,
             SharedPreferencesHelper.MAX_LOOP_COUNT
         )
-        _defaultLoopCount.value = normalized
         sharedPreferencesHelper.saveDefaultLoopCount(normalized)
+        _defaultLoopCount.value = normalized
         Log.i(TAG, "Default loop count saved: $normalized")
     }
 
@@ -134,6 +137,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             return true
         }
         return false
+    }
+
+    fun cancelRecording() {
+        RingtoneLibrary.cancelRecording()
+        _recordingVersion.value++
     }
 
     // --- 试听 ---

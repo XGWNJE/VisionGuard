@@ -286,7 +286,7 @@ class AccountStore private constructor(private val prefs: android.content.Shared
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("DEPRECATION")
 @Composable
-fun AccountLogin(store: AccountStore, title: String, component: String, beforeLogin: suspend () -> Unit = {}) {
+fun AccountLogin(store: AccountStore, title: String, component: String, compact: Boolean = false, beforeLogin: suspend () -> Unit = {}) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var endpoint by remember { mutableStateOf(store.savedEndpoint) }
@@ -302,11 +302,12 @@ fun AccountLogin(store: AccountStore, title: String, component: String, beforeLo
         username = saved?.username ?: ""; password = saved?.password ?: ""; rememberCredentials = saved != null
         restoring = false
     }
-    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(16.dp).wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 480.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Spacer(Modifier.height(16.dp))
+    Column((if (compact) Modifier.fillMaxWidth() else Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding())
+        .imePadding().verticalScroll(rememberScrollState()).padding(16.dp).wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = 480.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 16.dp)) {
+        if (!compact) Spacer(Modifier.height(16.dp))
         Text(title, style = MaterialTheme.typography.titleLarge)
-        Text("登录同一账号，自动关联这套系统中的设备。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (!compact) Text("登录同一账号，自动关联这套系统中的设备。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedTextField(username, { if (it.length <= 64) username = it else message = "账号最多 64 个字符" }, label = { Text("账号") }, singleLine = true, modifier = Modifier.fillMaxWidth().accountAutofill(AutofillType.Username) { if (!busy && !restoring && it.length <= 64) username = it }, enabled = !busy && !restoring, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next))
         OutlinedTextField(password, { if (it.length <= 256) password = it else message = "密码最多 256 个字符" }, label = { Text("密码") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth().accountAutofill(AutofillType.Password) { if (!busy && !restoring && it.length <= 256) password = it }, enabled = !busy && !restoring, shape = MaterialTheme.shapes.small, colors = VisionGuardControlColors.outlinedField(focusedLabelColor = VisionGuardStatusColors.onSuccessContainer), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next))
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(rememberCredentials, enabled = !busy && !restoring, role = Role.Checkbox) { checked ->

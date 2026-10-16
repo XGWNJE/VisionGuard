@@ -2,151 +2,136 @@ package com.xgwnje.visionguard.notifier.ui.main
 
 import android.app.Activity
 import android.content.Intent
-import android.media.RingtoneManager
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.xgwnje.visionguard.notifier.*
-import com.xgwnje.visionguard.notifier.node.*
-import com.xgwnje.visionguard.notifier.ui.NotifierDialog
-import com.xgwnje.visionguard.notifier.ui.rememberAlarmTimeZone
-import com.xgwnje.visionguard.notifier.ui.settings.SettingsViewModel
-import kotlinx.coroutines.launch
+import com.xgwnje.visionguard.account.*
+import com.xgwnje.visionguard.icons.LucideIcons
+import com.xgwnje.visionguard.notifier.PermissionUtils
+import com.xgwnje.visionguard.notifier.node.NotificationNodeService
+import com.xgwnje.visionguard.notifier.node.NotificationNodeSettings
+import com.xgwnje.visionguard.notifier.ui.*
+import com.xgwnje.visionguard.notifier.ui.history.AlertHistoryScreen
+import com.xgwnje.visionguard.notifier.ui.settings.*
 
-@Composable
-fun NotificationDashboard(viewModel: SettingsViewModel, onHistory: () -> Unit, onLibrary: () -> Unit) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var canPostNotifications by remember(context) { mutableStateOf(PermissionUtils.canPostNotifications(context)) }
-    DisposableEffect(lifecycleOwner, context) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) canPostNotifications = PermissionUtils.canPostNotifications(context)
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-    val snackbar = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
-    val reportError: (String) -> Unit = { message -> scope.launch { snackbar.showSnackbar(message) } }
-    val settings = remember { NotificationNodeSettings(context) }
-    val alarms = remember { SharedPreferencesHelper(context) }
-    val node by NotificationNodeService.state.collectAsState()
-    val timeZone = rememberAlarmTimeZone()
-    var enabled by remember { mutableStateOf(settings.enabled) }
-    val connection = remember { settings.read() }
-    var loopDialog by remember { mutableStateOf(false) }
-    var ringtoneDialog by remember { mutableStateOf(false) }
-    var detailsOpen by remember { mutableStateOf(false) }
-    var ringtoneError by remember { mutableStateOf<String?>(null) }
-    val loops by viewModel.defaultLoopCount
-    val ringtone by viewModel.selectedRingtoneName
-    val historyVersion by viewModel.alertHistoryVersion
-    val records = remember(historyVersion) { alarms.getAlertHistory() }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            @Suppress("DEPRECATION")
-            val uri = result.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
-            viewModel.onRingtoneValueSelected(uri?.toString() ?: RingtoneLibrary.SILENT_VALUE)
-        }
-    }
-    Box(Modifier.fillMaxSize()) {
-        NotificationHome(node, enabled, canPostNotifications, ringtone, loops, records, timeZone,
-            onEnabled = { value ->
-                if (value && !NotificationNodeSettings.valid(connection)) reportError("请重新登录")
-                else runCatching {
-                    settings.enabled = value
-                    if (value) NotificationNodeService.start(context) else context.stopService(Intent(context, NotificationNodeService::class.java))
-                    enabled = value
-                }.onFailure {
-                    runCatching { settings.enabled = false }
-                    enabled = false
-                    reportError("连接启动失败，请检查通知权限")
-                }
-            },
-            onReconnect = {
-                runCatching { context.stopService(Intent(context, NotificationNodeService::class.java)); NotificationNodeService.start(context) }
-                    .onFailure { reportError("重新连接失败，请重试") }
-            },
-            onPermission = { (context as? Activity)?.let(PermissionUtils::openAppDetailsSettings) },
-            onRingtone = { viewModel.loadRingtoneLibrary(); ringtoneError = null; ringtoneDialog = true },
-            onLoops = { loopDialog = true }, onLibrary = onLibrary, onHistory = onHistory,
-            onDetails = { detailsOpen = true })
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(16.dp)) { data ->
-            Snackbar(data, shape = MaterialTheme.shapes.small, containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer)
-        }
-    }
-    NotificationHelp(detailsOpen) { detailsOpen = false }
-    if (loopDialog) NotifierDialog(
-        title = "循环次数",
-        onDismiss = { loopDialog = false },
-        confirmButton = { TextButton({ loopDialog = false }, Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("关闭") } }
-    ) {
-        Text("达到设定次数后自动停止报警。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        (1..10).forEach { count ->
-            SelectionOption("$count 次", loops == count) { viewModel.onDefaultLoopCountSelected(count); loopDialog = false }
-        }
-    }
-    if (ringtoneDialog) NotifierDialog(
-        title = "默认铃声",
-        onDismiss = { ringtoneDialog = false },
-        confirmButton = { TextButton({ ringtoneDialog = false }, Modifier.heightIn(min = 48.dp), shape = MaterialTheme.shapes.small) { Text("关闭") } }
-    ) {
-        val selected = viewModel.getDefaultRingtoneValue()
-        ringtoneError?.let { Text(it, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error) }
-        SelectionOption("静音", selected == RingtoneLibrary.SILENT_VALUE) { viewModel.onRingtoneValueSelected(RingtoneLibrary.SILENT_VALUE); ringtoneDialog = false }
-        SelectionOption("系统默认闹钟铃声", selected == null) { viewModel.onRingtoneValueSelected(null); ringtoneDialog = false }
-        OutlinedButton(
-            onClick = {
-                runCatching {
-                    picker.launch(Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-                        putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
-                        putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "选择报警铃声")
-                        putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
-                        putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
-                        putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, selected?.takeIf { it.startsWith("content://") }?.let(Uri::parse))
-                    })
-                    ringtoneDialog = false
-                }.onFailure { ringtoneError = "系统铃声选择不可用，请使用铃声库" }
-            },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-            shape = MaterialTheme.shapes.small
-        ) { Text("选择系统铃声") }
-        Text("内置铃声", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        RingtoneLibrary.PRESETS.forEach { preset ->
-            val value = RingtoneLibrary.presetValue(context, preset)
-            SelectionOption(preset.displayName, selected == value) { viewModel.onRingtoneValueSelected(value); ringtoneDialog = false }
-        }
-        if (viewModel.ringtoneLibrary.isNotEmpty()) Text("铃声库", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        viewModel.ringtoneLibrary.forEach { (fileName, label) ->
-            val value = java.io.File(RingtoneLibrary.libraryDir(context), fileName).absolutePath
-            SelectionOption(label, selected == value) { viewModel.onRingtoneValueSelected(value); ringtoneDialog = false }
-        }
-    }
+private enum class NotifierPage(val title: String, val icon: ImageVector) {
+    HOME("接警工作台", LucideIcons.Bell), HISTORY("报警记录", LucideIcons.Activity),
+    AUDIO("声音与音频", LucideIcons.Radio), SETTINGS("设置", LucideIcons.Settings)
 }
 
 @Composable
-private fun SelectionOption(label: String, selected: Boolean, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).background(if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, MaterialTheme.shapes.small)
-            .selectable(selected, onClick = onClick, role = Role.RadioButton).heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        RadioButton(selected, onClick = null)
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
+fun NotificationDashboard(account: AccountStore, session: AccountSession, appearance: AppearancePreference,
+    updater: ClientUpdater, viewModel: SettingsViewModel, beforeLogout: () -> Unit) {
+    val context = LocalContext.current
+    val owner = LocalLifecycleOwner.current
+    val settings = remember { NotificationNodeSettings(context) }
+    var enabled by remember { mutableStateOf(settings.enabled) }
+    var canNotify by remember { mutableStateOf(PermissionUtils.canPostNotifications(context)) }
+    DisposableEffect(owner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                canNotify = PermissionUtils.canPostNotifications(context)
+                enabled = settings.enabled
+            }
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+    val node by NotificationNodeService.state.collectAsState()
+    val historyVersion by viewModel.alertHistoryVersion
+    val records = remember(historyVersion) { viewModel.getAlertHistory() }
+    val timeZone = rememberAlarmTimeZone()
+    var currentPage by rememberSaveable { mutableStateOf(NotifierPage.HOME.name) }
+    val page = NotifierPage.valueOf(currentPage)
+    val holder = rememberSaveableStateHolder()
+    val draft = remember { NotifierSettingsDraft(session.deviceName) }
+    val scope = rememberCoroutineScope()
+    var error by remember { mutableStateOf<String?>(null) }
+    val onEnabled: () -> Unit = {
+        val next = !enabled
+        runCatching {
+            check(!next || NotificationNodeSettings.valid(settings.read())) { "请重新登录" }
+            settings.enabled = next
+            if (next) NotificationNodeService.start(context) else context.stopService(Intent(context, NotificationNodeService::class.java))
+            enabled = next
+        }.onFailure {
+            runCatching { settings.enabled = false }
+            enabled = false; error = it.message ?: "接警服务启动失败"
+        }
+    }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val tablet = maxWidth >= 1100.dp
+        val compact = maxHeight < 520.dp
+        Row(Modifier.fillMaxSize()) {
+            Column(Modifier.width(if (tablet) 208.dp else 176.dp).fillMaxHeight().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .45f)).padding(12.dp)) {
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("VisionGuard", Modifier.padding(top = 8.dp, start = 8.dp), style = MaterialTheme.typography.titleMedium)
+                    if (!compact) Text("通知节点", Modifier.padding(start = 8.dp, bottom = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    if (!compact) Text("工作区", Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    NotifierPage.entries.forEach { item ->
+                        if (item == NotifierPage.SETTINGS) {
+                            HorizontalDivider(Modifier.padding(vertical = if (compact) 2.dp else 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                            if (!compact) Text("管理", Modifier.padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                        }
+                        TextButton({
+                            if (page != item) { viewModel.stopPreview(); viewModel.cancelRecording(); currentPage = item.name }
+                        }, Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small,
+                            colors = ButtonDefaults.textButtonColors(containerColor = if (page == item) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent,
+                                contentColor = MaterialTheme.colorScheme.onSurface)) {
+                            Icon(item.icon, null, Modifier.size(18.dp))
+                            Text(item.title, Modifier.weight(1f).padding(start = 12.dp), style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                if (!compact) Text(session.deviceName, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall)
+                Text(session.username, Modifier.padding(top = if (compact) 8.dp else 0.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Column(Modifier.weight(1f)) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(page.title, Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium)
+                    if (page == NotifierPage.HOME) {
+                        if (enabled) OutlinedButton(onEnabled, shape = MaterialTheme.shapes.small,
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("停止接警") }
+                        else Button(onEnabled, shape = MaterialTheme.shapes.small) { Text("开启接警") }
+                    }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                error?.let { message ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(message, Modifier.weight(1f), color = MaterialTheme.colorScheme.error)
+                        TextButton({ error = null }) { Text("关闭") }
+                    }
+                }
+                Box(Modifier.weight(1f)) {
+                    holder.SaveableStateProvider(currentPage) {
+                        when (page) {
+                            NotifierPage.HOME -> NotificationHome(node, enabled, canNotify, records, timeZone,
+                                onReconnect = { runCatching { context.stopService(Intent(context, NotificationNodeService::class.java)); NotificationNodeService.start(context) }.onFailure { error = "重新连接失败，请重试" } },
+                                onPermission = { (context as? Activity)?.let(PermissionUtils::openAppDetailsSettings) },
+                                onHistory = { currentPage = NotifierPage.HISTORY.name })
+                            NotifierPage.HISTORY -> AlertHistoryScreen(viewModel)
+                            NotifierPage.AUDIO -> RingtoneLibraryScreen(viewModel)
+                            NotifierPage.SETTINGS -> NotificationSettingsScreen(account, session, appearance, updater, draft, scope, node, canNotify, beforeLogout)
+                        }
+                    }
+                }
+            }
+        }
     }
 }

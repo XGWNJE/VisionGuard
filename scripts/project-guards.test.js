@@ -189,3 +189,26 @@ test('preview builds carry the isolated sign-in while release packages stay clea
   assert.match(lanBeacon, /visionguard-local/, '服务端信标没有写约定的 service 标识');
   assert.match(fs.readFileSync(path.join(root, 'server/src/config.ts'), 'utf8'), /VISIONGUARD_LAN_BEACON/, '服务端配置没有读取信标开关');
 });
+
+test('Android installer preserves explicit serial and normalizes device timestamps', { skip: process.platform !== 'win32' }, () => {
+  const source = fs.readFileSync(path.join(root, 'scripts/install-android-apk.ps1'), 'utf8');
+  const serial = source.match(/^\$script:serial = .*$/m)?.[0];
+  const convert = source.match(/function Convert-PackageUpdateTime \{[\s\S]*?\r?\n\}/)?.[0];
+  assert.ok(serial && convert, 'installer initialization and timestamp parser must be present');
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    "$Serial = 'emulator-5556'",
+    serial,
+    "if ($script:serial -ne 'emulator-5556') { throw 'Selected serial was lost' }",
+    convert,
+    "$script:deviceUtcOffset = '+0000'",
+    "$utc = Convert-PackageUpdateTime '2026-10-16 18:11:13'",
+    "$script:deviceUtcOffset = '+0800'",
+    "$beijing = Convert-PackageUpdateTime '2026-10-17 02:11:13'",
+    "if (!$utc -or !$beijing -or $utc.ToUnixTimeSeconds() -ne $beijing.ToUnixTimeSeconds()) { throw 'Device timezone was ignored' }",
+    "if ($utc.UtcDateTime -ne [datetime]::Parse('2026-10-16T18:11:13Z').ToUniversalTime()) { throw 'UTC timestamp changed' }",
+    "if ($null -ne (Convert-PackageUpdateTime 'not-a-date')) { throw 'Invalid timestamp was accepted' }",
+  ].join('\n');
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { encoding: 'utf8', env: cleanEnv });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});

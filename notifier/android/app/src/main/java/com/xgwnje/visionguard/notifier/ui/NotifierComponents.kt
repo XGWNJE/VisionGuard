@@ -1,7 +1,5 @@
 package com.xgwnje.visionguard.notifier.ui
 
-import com.xgwnje.visionguard.icons.LucideIcons
-
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -11,7 +9,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.focus.FocusRequester
@@ -27,18 +24,7 @@ internal fun NotifierPanel(modifier: Modifier = Modifier, content: @Composable C
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         tonalElevation = 0.dp
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
-    }
-}
-
-@Composable
-internal fun NotifierPageHeader(title: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-            Icon(LucideIcons.ArrowLeft, contentDescription = "返回")
-        }
-        Text(title, modifier = Modifier.weight(1f).padding(horizontal = 8.dp), style = MaterialTheme.typography.headlineMedium)
-        actions()
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
     }
 }
 
@@ -46,14 +32,6 @@ internal fun NotifierPageHeader(title: String, onBack: () -> Unit, actions: @Com
 internal fun NotifierStatus(label: String, container: Color, content: Color) {
     Surface(color = container, contentColor = content, shape = MaterialTheme.shapes.small) {
         Text(label, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-@Composable
-internal fun NotifierEmptyState(title: String, description: String, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

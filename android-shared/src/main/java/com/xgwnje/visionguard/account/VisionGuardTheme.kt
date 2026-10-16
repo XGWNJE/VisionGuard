@@ -71,12 +71,49 @@ private val AppShapes = Shapes(extraSmall = RoundedCornerShape(4.dp), small = Ro
     large = RoundedCornerShape(16.dp), extraLarge = RoundedCornerShape(24.dp))
 
 private val LocalDarkTheme = staticCompositionLocalOf { false }
+private val LocalConsoleTheme = staticCompositionLocalOf { false }
+
+enum class VisionGuardThemeStyle { DEFAULT, CONSOLE }
+
+private val ConsoleLight = Light.copy(
+    primary = Color(0xFF171717), onPrimary = Color(0xFFFAFAFA),
+    primaryContainer = Color(0xFFF5F5F5), onPrimaryContainer = Color(0xFF171717),
+    secondary = Color(0xFFF5F5F5), onSecondary = Color(0xFF171717),
+    secondaryContainer = Color(0xFFF5F5F5), onSecondaryContainer = Color(0xFF171717),
+    background = Color.White, onBackground = Color(0xFF0A0A0A),
+    surface = Color.White, onSurface = Color(0xFF0A0A0A),
+    surfaceVariant = Color(0xFFF5F5F5), onSurfaceVariant = Color(0xFF737373),
+    outline = Color(0xFF737373), outlineVariant = Color(0xFFE5E5E5),
+    inversePrimary = Color(0xFFE5E5E5),
+    surfaceDim = Color(0xFFF5F5F5), surfaceContainerHigh = Color(0xFFF5F5F5), surfaceContainerHighest = Color(0xFFF5F5F5)
+)
+private val ConsoleDark = Dark.copy(
+    primary = Color(0xFFE5E5E5), onPrimary = Color(0xFF171717),
+    primaryContainer = Color(0xFF262626), onPrimaryContainer = Color(0xFFFAFAFA),
+    secondary = Color(0xFF262626), onSecondary = Color(0xFFFAFAFA),
+    secondaryContainer = Color(0xFF262626), onSecondaryContainer = Color(0xFFFAFAFA),
+    background = Color(0xFF0A0A0A), onBackground = Color(0xFFFAFAFA),
+    surface = Color(0xFF171717), onSurface = Color(0xFFFAFAFA),
+    surfaceVariant = Color(0xFF262626), onSurfaceVariant = Color(0xFFA1A1A1),
+    outline = Color(0xFFA1A1A1), outlineVariant = Color(0xFF363636),
+    inversePrimary = Color(0xFF171717),
+    surfaceBright = Color(0xFF262626), surfaceDim = Color(0xFF0A0A0A),
+    surfaceContainerLowest = Color(0xFF0A0A0A), surfaceContainerLow = Color(0xFF171717),
+    surfaceContainer = Color(0xFF171717), surfaceContainerHigh = Color(0xFF262626), surfaceContainerHighest = Color(0xFF262626)
+)
+private val ConsoleTypography = AppTypography.copy(
+    titleLarge = AppTypography.titleLarge.copy(fontSize = 24.sp, lineHeight = 32.sp),
+    headlineLarge = AppTypography.headlineLarge.copy(fontSize = 32.sp, lineHeight = 40.sp),
+    headlineMedium = AppTypography.headlineMedium.copy(fontSize = 24.sp, lineHeight = 32.sp),
+    bodyLarge = AppTypography.bodyLarge.copy(fontSize = 14.sp, lineHeight = 20.sp)
+)
+private val ConsoleShapes = AppShapes.copy(medium = RoundedCornerShape(10.dp), large = RoundedCornerShape(10.dp))
 
 /** Semantic status pairs follow the selected appearance. */
 object VisionGuardStatusColors {
     val success: Color @Composable get() = MaterialTheme.colorScheme.primary
     val successContainer: Color @Composable get() = MaterialTheme.colorScheme.primaryContainer
-    val onSuccessContainer: Color @Composable get() = if (LocalDarkTheme.current) Color(0xFF75D2D6) else Color(0xFF07666A)
+    val onSuccessContainer: Color @Composable get() = if (LocalConsoleTheme.current) MaterialTheme.colorScheme.onPrimaryContainer else if (LocalDarkTheme.current) Color(0xFF75D2D6) else Color(0xFF07666A)
     val warning: Color @Composable get() = MaterialTheme.colorScheme.tertiary
     val warningContainer: Color @Composable get() = MaterialTheme.colorScheme.tertiaryContainer
     val onWarningContainer: Color @Composable get() = MaterialTheme.colorScheme.onTertiaryContainer
@@ -118,8 +155,15 @@ object VisionGuardControlColors {
 
 @Composable
 fun VisionGuardTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalDarkTheme provides darkTheme) {
-        MaterialTheme(colorScheme = if (darkTheme) Dark else Light, typography = AppTypography, shapes = AppShapes) {
+    VisionGuardTheme(darkTheme, VisionGuardThemeStyle.DEFAULT, content)
+}
+
+@Composable
+fun VisionGuardTheme(darkTheme: Boolean, style: VisionGuardThemeStyle, content: @Composable () -> Unit) {
+    val console = style == VisionGuardThemeStyle.CONSOLE
+    CompositionLocalProvider(LocalDarkTheme provides darkTheme, LocalConsoleTheme provides console) {
+        MaterialTheme(colorScheme = if (console) { if (darkTheme) ConsoleDark else ConsoleLight } else { if (darkTheme) Dark else Light },
+            typography = if (console) ConsoleTypography else AppTypography, shapes = if (console) ConsoleShapes else AppShapes) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background, content = content)
         }
     }

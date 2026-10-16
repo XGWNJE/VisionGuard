@@ -39,7 +39,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $startedAt = Get-Date
 $script:adbPath = ''
-$script:serial = ''
+$script:serial = $Serial
 $script:lastAdbExit = 0
 $approvals = 0
 $seenDialogs = @()
@@ -218,8 +218,8 @@ function Approve-DialogsUntil {
             $state = Get-PackageState -Name $PackageName
             if ($state -and $state.LastUpdateTime) {
                 $updated = $null
-                try { $updated = [datetime]::Parse($state.LastUpdateTime) } catch { }
-                if ($updated -and $updated -ge $FreshSince) { return }
+                $updated = Convert-PackageUpdateTime $state.LastUpdateTime
+                if ($updated -and $updated.UtcDateTime -ge ([datetime]$FreshSince).ToUniversalTime()) { return }
             }
         }
         $focus = Get-FocusWindow
@@ -266,6 +266,12 @@ function Approve-DialogsUntil {
             Start-Sleep -Milliseconds 350
         }
     }
+}
+
+function Convert-PackageUpdateTime {
+    param([string]$Value)
+    try { return [datetimeoffset]::Parse("$Value $script:deviceUtcOffset", [Globalization.CultureInfo]::InvariantCulture) }
+    catch { return $null }
 }
 
 function Get-PackageState {
@@ -315,6 +321,8 @@ if (-not $Serial) {
     $Serial = $ready[0].Serial
 }
 $script:serial = $Serial
+$script:deviceUtcOffset = (Invoke-Adb -Arguments @('shell', 'date', '+%z')).Trim()
+if ($script:deviceUtcOffset -notmatch '^[+-]\d{4}$') { throw 'Cannot read the selected Android device timezone.' }
 
 $evidence = if ($EvidenceDirectory) { $EvidenceDirectory } else { Join-Path $repoRoot ('.local\apk-install\' + (Get-Date -Format 'yyyyMMdd-HHmmss')) }
 New-Item -ItemType Directory -Force -Path $evidence | Out-Null
@@ -448,11 +456,11 @@ try {
         }
         $report.verification.sizesMatch = ($state.InstalledBytes -eq $apkItem.Length)
         $updated = $null
-        try { $updated = [datetime]::Parse($state.LastUpdateTime) } catch { }
+        $updated = Convert-PackageUpdateTime $state.LastUpdateTime
         if ($updated) {
             $report.verification.lastUpdateTime = $updated.ToString('o')
             # 容差只留 60 秒：真正装上的一刻会刷新这个时间，放太宽会把「上一轮的安装」当成本轮成功。
-            if ($updated -lt $startedAt.AddSeconds(-60)) { throw "包的最后更新时间（$($state.LastUpdateTime)）明显早于本次安装，判为没有真正替换。" }
+            if ($updated.UtcDateTime -lt $startedAt.ToUniversalTime().AddSeconds(-60)) { throw "包的最后更新时间（$($state.LastUpdateTime)）明显早于本次安装，判为没有真正替换。" }
         }
         else {
             $report.verification.lastUpdateTimeUnparsed = $state.LastUpdateTime
