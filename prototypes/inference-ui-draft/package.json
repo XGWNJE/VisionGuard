@@ -1,0 +1,11 @@
+{
+  "name": "visionguard-inference-ui-draft",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build && node scripts/standalone.mjs",
+    "prepare-runtime": "node scripts/prepare-runtime.mjs"
+  },
+  "dependencies": {}
+}
