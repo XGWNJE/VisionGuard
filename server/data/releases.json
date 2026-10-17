@@ -1,15 +1,15 @@
 {
     "wpf":  {
-                "version":  "0.7.7",
-                "url":  "/releases/VisionGuard-WPF-v0.7.7.zip",
-                "size":  18090508,
-                "sha256":  "D9EBE3D35C30AEF7907A4529A94D99D2353EF6D83D32FB8A5F5914B9165051B3"
+                "version":  "0.7.8",
+                "url":  "/releases/VisionGuard-WPF-v0.7.8.zip",
+                "size":  18090487,
+                "sha256":  "0387DCA0D091ACDD7A630CF420CAE58637F5460FCAD4FE1B2CD4209F51DC89F4"
             },
     "android-detector":  {
-                             "version":  "0.7.7",
-                             "url":  "/releases/VisionGuard-Detector-v0.7.7.apk",
-                             "size":  12005371,
-                             "sha256":  "90631C38E731741AE1F99BDA96F7B89FA1F108E9A14A6DBB05DC2B7FA597708F"
+                             "version":  "0.7.8",
+                             "url":  "/releases/VisionGuard-Detector-v0.7.8.apk",
+                             "size":  23300720,
+                             "sha256":  "9ACE9CB1A96EFF0604A07DD8AC98C6017FE9B912311D336375D7663FB621DD61"
                          },
     "android-receiver":  {
                              "version":  "0.6.0",
@@ -19,15 +19,15 @@
                              "heldBack":  true
                          },
     "android-notifier":  {
-                             "version":  "0.7.7",
-                             "url":  "/releases/VisionGuard-Notifier-v0.7.7.apk",
-                             "size":  2913519,
-                             "sha256":  "F9A6A3F854548CEEF46C1F2252EF4335AD3A706EA4D5213ED43213D317C4F93F"
+                             "version":  "0.7.8",
+                             "url":  "/releases/VisionGuard-Notifier-v0.7.8.apk",
+                             "size":  2913671,
+                             "sha256":  "704ECB316751AC296A9158756B933A851EBBBD6A1E38B2ACFE81C9B16A98522E"
                          },
     "android-inference":  {
-                              "version":  "0.7.7",
-                              "url":  "/releases/VisionGuard-Inference-v0.7.7.apk",
-                              "size":  167880418,
-                              "sha256":  "F330B3A4B2E4301E1FD17E0E6C1BEAC0EF541567EFAB3C29B6C75F34E1076391"
+                              "version":  "0.7.8",
+                              "url":  "/releases/VisionGuard-Inference-v0.7.8.apk",
+                              "size":  167880422,
+                              "sha256":  "45D795960C0A50E29DB6BF8CE6570E377EC72E7C345250205E1D2E11D3D192D6"
                           }
 }
