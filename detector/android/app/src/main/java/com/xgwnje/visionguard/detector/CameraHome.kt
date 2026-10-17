@@ -29,6 +29,7 @@ import com.xgwnje.visionguard.account.AccountStore
 import com.xgwnje.visionguard.account.AccountLogin
 import com.xgwnje.visionguard.account.ApplicationOptions
 import com.xgwnje.visionguard.account.AppearancePreference
+import com.xgwnje.visionguard.account.ImmersiveDialogWindow
 import com.xgwnje.visionguard.detector.stream.PublisherState
 import com.xgwnje.visionguard.icons.LucideIcons
 
@@ -254,6 +255,7 @@ internal fun CameraHelpButton(state: PublisherState, captureSize: Pair<Int, Int>
     }
     if (open) Dialog(onDismissRequest = { open = false },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        ImmersiveDialogWindow()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 16.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

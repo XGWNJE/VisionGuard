@@ -12,6 +12,7 @@ import { MediaPublisher, type MediaPorts, type MediaSocket } from './media';
 import { CameraSource, listCameras, type CameraDevice } from './cameraSource';
 import { setProtocolVersion, versionHeaders } from './session';
 import { bootstrapProtocolVersion, debugLoginScreen, previewCredentials } from './previewSignIn';
+import { installDefaultFullscreen, toggleFullscreen } from './fullscreen';
 
 const SESSION_KEY = 'visionguard.camera.session';
 const REMEMBER_KEY = 'visionguard.camera.remember';
@@ -76,6 +77,8 @@ export function App() {
   const [notice, setNotice] = useState('');
   const [starting, setStarting] = useState(false);
   const [streaming, setStreaming] = useState(false);
+  const [fullscreen, setFullscreen] = useState(Boolean(document.fullscreenElement));
+  const [fullscreenError, setFullscreenError] = useState('');
   const [, setRevision] = useState(0);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -87,6 +90,12 @@ export function App() {
   const stopStreamingRef = useRef<(reason: 'user' | 'background' | 'locked') => void>(() => {});
   const settingsStore = useMemo(() => new CameraSettingsStore(localStorageStore()), []);
   const bump = () => setRevision(revision => revision + 1);
+
+  useEffect(() => installDefaultFullscreen(document, () => setFullscreen(Boolean(document.fullscreenElement))), []);
+  async function changeFullscreen() {
+    try { await toggleFullscreen(document); setFullscreenError(''); }
+    catch (error) { setFullscreenError(error instanceof Error ? error.message : '浏览器未允许全屏，请重试'); }
+  }
 
   useEffect(() => {
     let active = true;
@@ -199,6 +208,7 @@ export function App() {
 
   if (contextIssue) return <CameraContextError message={contextIssue} />;
   if (!session) return <CameraLogin username={username} password={password} remember={remember} busy={busy} error={loginError}
+    fullscreen={fullscreen} fullscreenError={fullscreenError} onFullscreen={() => void changeFullscreen()}
     onUsername={setUsername} onPassword={setPassword} onRemember={setRemember} onSubmit={event => void submitLogin(event)} />;
 
   function saveSetting(key: keyof CameraSettings, value: string) {
@@ -206,6 +216,7 @@ export function App() {
     setNotice(failure || ''); bump();
   }
   return <CameraScreen session={session} control={controlRef.current?.state} media={mediaRef.current?.current}
+    fullscreen={fullscreen} fullscreenError={fullscreenError} onFullscreen={() => void changeFullscreen()}
     settings={settingsStore.current} streaming={streaming} starting={starting} notice={notice}
     devices={devices} deviceId={deviceId} videoRef={videoRef} onCamera={setDeviceId}
     onStart={() => { setNotice(''); setStarting(true); void startStreaming().then(reason => { if (reason) setNotice(reason); }).finally(() => setStarting(false)); }}

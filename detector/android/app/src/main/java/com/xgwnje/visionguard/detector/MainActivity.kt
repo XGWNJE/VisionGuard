@@ -77,6 +77,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        enterImmersiveMode(window)
         priorBrightness = window.attributes.screenBrightness
         val account = AccountStore.get(this)
         // 预览构建内置本地服务通道、地址与预览账号：启动先在局域网找服务，启动即静默登录；正式包四个资源为空串，行为不变。
@@ -138,7 +139,7 @@ class MainActivity : ComponentActivity() {
                             header = {
                                 AccountHeader(account, session!!, actions = {
                                     Row { CameraHelpButton(state, captureSize, sentSize, highResolution); ApplicationOptions(appearance, "android-camera", Modifier, compact = true) }
-                                }, compact = true, title = "相机推流节点", beforeLogout = {
+                                }, compact = true, title = "相机推流节点", immersive = true, beforeLogout = {
                                     stopCamera("user"); connection.close(); prefs.edit().clear().commit()
                                 })
                             })
@@ -148,6 +149,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) enterImmersiveMode(window)
     }
     override fun onStart() {
         super.onStart()

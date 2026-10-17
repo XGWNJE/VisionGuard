@@ -15,7 +15,7 @@ object AppConstants {
      * Java 常量派生（会被 Kotlin 编译期内联，增量构建复用旧 class 时冻结在旧值，
      * 2026-10-14 通知节点两次实测）。
      */
-    const val VERSION = "0.7.7"
+    const val VERSION = "0.7.8"
 
     /** 发行内置正式服务地址。 */
     val SERVER_URL: String = BuildConfig.SERVER_URL

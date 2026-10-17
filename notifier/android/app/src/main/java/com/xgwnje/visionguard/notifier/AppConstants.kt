@@ -10,5 +10,5 @@ package com.xgwnje.visionguard.notifier
  */
 object AppConstants {
     /** 运行版本，只有根 `VERSION` 一处权威来源。 */
-    const val VERSION = "0.7.7"
+    const val VERSION = "0.7.8"
 }

@@ -1,6 +1,6 @@
 import { useRef, useState, type FormEvent, type RefObject } from 'react';
 import { Camera, CameraOff, Check, ChevronDown, CircleAlert, CircleHelp, EyeOff, LogOut,
-  Monitor, Moon, MoreHorizontal, Play, RefreshCw, Square, Sun, SunMoon, UserRound, Video, WifiOff } from 'lucide-react';
+  Maximize, Minimize, Monitor, Moon, MoreHorizontal, Play, RefreshCw, Square, Sun, SunMoon, UserRound, Video, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,13 +25,15 @@ export function CameraContextError({ message }: { message: string }) {
   </Alert></main>;
 }
 
-type LoginProps = { username: string; password: string; remember: boolean; busy: boolean; error: string;
+type FullscreenProps = { fullscreen: boolean; fullscreenError: string; onFullscreen(): void };
+type LoginProps = FullscreenProps & { username: string; password: string; remember: boolean; busy: boolean; error: string;
   onUsername(value: string): void; onPassword(value: string): void; onRemember(value: boolean): void;
   onSubmit(event: FormEvent): void };
 
 export function CameraLogin(props: LoginProps) {
   return <main className="cam-login"><Card className="cam-login-card">
-    <CardHeader><div className="cam-login-heading"><div className="cam-brand-icon"><Camera /></div><h1>相机推流节点</h1></div>
+    <CardHeader><div className="cam-login-heading"><div className="cam-brand-icon"><Camera /></div><h1 className="flex-1">相机推流节点</h1>
+      <Button data-camera-fullscreen size="icon-lg" className="shrink-0 min-w-12" variant="ghost" aria-label={props.fullscreen ? '退出全屏' : '进入全屏'} onClick={props.onFullscreen}>{props.fullscreen ? <Minimize /> : <Maximize />}</Button></div>
       <CardDescription>Web · 使用同一账号关联视觉推理节点</CardDescription></CardHeader>
     <form onSubmit={props.onSubmit}>
       <CardContent><FieldGroup>
@@ -43,6 +45,7 @@ export function CameraLogin(props: LoginProps) {
           disabled={props.busy} onCheckedChange={checked => props.onRemember(checked === true)} />
           <FieldContent><FieldLabel htmlFor="remember">记住账号（仅本机浏览器）</FieldLabel></FieldContent></Field>
         {props.error && <Alert><CircleAlert /><AlertTitle>登录失败</AlertTitle><AlertDescription>{props.error}</AlertDescription></Alert>}
+        {props.fullscreenError && <Alert><CircleAlert /><AlertTitle>全屏状态</AlertTitle><AlertDescription>{props.fullscreenError}</AlertDescription></Alert>}
       </FieldGroup></CardContent>
       <CardFooter className="cam-login-footer"><Button type="submit" disabled={props.busy}>{props.busy ? '正在登录…' : '登录'}<Play data-icon="inline-end" /></Button>
         <span className="cam-version">需要 HTTPS 或本机 localhost，并在本机允许摄像头权限</span></CardFooter>
@@ -50,7 +53,7 @@ export function CameraLogin(props: LoginProps) {
   </Card></main>;
 }
 
-type ScreenProps = { session: LoginResult; control?: ControlState; media?: MediaState; settings: CameraSettings;
+type ScreenProps = FullscreenProps & { session: LoginResult; control?: ControlState; media?: MediaState; settings: CameraSettings;
   streaming: boolean; starting: boolean; notice: string; devices: CameraDevice[]; deviceId: string;
   videoRef: RefObject<HTMLVideoElement | null>; onStart(): void; onStop(): void; onLogout(): void;
   onBind(id: string): Promise<string | undefined>; onRefresh(): void; onCamera(id: string): void;
@@ -58,7 +61,8 @@ type ScreenProps = { session: LoginResult; control?: ControlState; media?: Media
 type Panel = 'menu' | 'targets' | 'help' | 'account' | 'appearance';
 
 export function CameraScreen(props: ScreenProps) {
-  const { session, control, media, settings, streaming, starting, notice, videoRef } = props;
+  const { session, control, media, settings, streaming, starting, videoRef } = props;
+  const notice = props.notice || props.fullscreenError;
   const [panel, setPanel] = useState<Panel | null>(null);
   const [candidate, setCandidate] = useState('');
   const [binding, setBinding] = useState(false);
@@ -87,6 +91,7 @@ export function CameraScreen(props: ScreenProps) {
         <h1>相机推流节点</h1><span className="cam-identity" title={session.device.deviceName}>{session.device.deviceName} · {online ? '已连接' : '连接中'}</span>
       </div></div>
       <div className="cam-top-actions">
+        <Button data-camera-fullscreen size="icon-lg" variant="ghost" aria-label={props.fullscreen ? '退出全屏' : '进入全屏'} onClick={props.onFullscreen}>{props.fullscreen ? <Minimize /> : <Maximize />}</Button>
         <Button size="icon-lg" variant="ghost" aria-label="相机帮助" onClick={() => setPanel('help')}><CircleHelp /></Button>
         <Button size="icon-lg" variant="ghost" aria-label="外观与设置" onClick={() => setPanel('appearance')}><SunMoon /></Button>
         <Button size="icon-lg" variant="ghost" aria-label="账号与本机" onClick={() => setPanel('account')}><UserRound /></Button>
@@ -154,6 +159,7 @@ export function CameraScreen(props: ScreenProps) {
         <DialogHeader><DialogTitle>{panel ? panelTitle[panel] : ''}</DialogTitle>
           <DialogDescription className="cam-dialog-description">{panel === 'targets' ? '同账号内可关联的视觉推理节点' : panel === 'help' ? '推流、画面与收帧状态' : panel === 'appearance' ? '仅作用于本机界面' : '相机推流节点 · Web'}</DialogDescription></DialogHeader>
         {panel === 'menu' && <div className="cam-dialog-options">
+          <Button data-camera-fullscreen variant="outline" onClick={() => { setPanel(null); props.onFullscreen(); }}>{props.fullscreen ? <Minimize data-icon="inline-start" /> : <Maximize data-icon="inline-start" />}{props.fullscreen ? '退出全屏' : '进入全屏'}</Button>
           <Button variant="outline" onClick={() => setPanel('help')}><CircleHelp data-icon="inline-start" />相机帮助</Button>
           <Button variant="outline" onClick={() => setPanel('appearance')}><SunMoon data-icon="inline-start" />外观与设置</Button>
           <Button variant="outline" onClick={() => setPanel('account')}><UserRound data-icon="inline-start" />账号与本机</Button>
@@ -169,7 +175,7 @@ export function CameraScreen(props: ScreenProps) {
         {panel === 'help' && <div className="cam-dialog-copy">
           <section><h3>开始与停止</h3><p>关联同账号的视觉推理节点后开始推流。推流期间不能更换目标、规格或镜头。</p></section>
           <section><h3>收帧统计</h3><p>本机入队表示发送队列已接纳；服务收帧表示中继已收到，不代表完成推理。本机丢弃与服务丢弃分别统计。</p></section>
-          <section><h3>前台与画面</h3><p>横竖屏切换保留推流。切换标签页、进入后台或锁屏会停止推流，返回后手动开始。关闭本机预览不停止推流。</p></section>
+          <section><h3>前台与画面</h3><p>首次点击或按键请求全屏，可从顶部切换；浏览器不支持时保留普通页面。横竖屏切换保留推流。切换标签页、进入后台或锁屏会停止推流，返回后手动开始。关闭本机预览不停止推流。</p></section>
           <section><h3>规格与权限</h3><p>640×480 / 720P 是发送上限，最高 5 帧/秒，实际尺寸取决于摄像头能力。需要 HTTPS 或本机 localhost，并在本机允许摄像头权限；亮度由系统控制。</p></section>
           <Separator /><div className="cam-data-list">
             <DataRow label="关联目标" value={target?.deviceName || (control?.stream?.targetDeviceId ? '已关联节点' : '未关联')} />

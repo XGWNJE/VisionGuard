@@ -355,7 +355,7 @@ private fun kotlinx.coroutines.CoroutineScope.launchAccount(block: suspend () ->
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("DEPRECATION")
 @Composable
-fun AccountHeader(store: AccountStore, session: AccountSession, actions: @Composable () -> Unit = {}, compact: Boolean = false, title: String? = null, beforeLogout: suspend () -> Unit = {}) {
+fun AccountHeader(store: AccountStore, session: AccountSession, actions: @Composable () -> Unit = {}, compact: Boolean = false, title: String? = null, immersive: Boolean = false, beforeLogout: suspend () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf(false) }
     var oldPassword by remember { mutableStateOf("") }
@@ -418,6 +418,7 @@ fun AccountHeader(store: AccountStore, session: AccountSession, actions: @Compos
         onDismissRequest = { if (!busy) editing = false },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
+        if (immersive) ImmersiveDialogWindow()
         Box(
             Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(16.dp),
             contentAlignment = Alignment.Center
