@@ -53,5 +53,5 @@ Web 控制台采用官方 [shadcn/ui](https://ui.shadcn.com/docs) Neutral／Radi
 
 ## 实现与核验
 
-- 控制台：receiver/web/src/components/ui/、components/theme-provider.tsx、ConsoleLayout.tsx 与各工作页，应用 CSS 只组织业务布局。
+- 控制台：receiver/web/src/components/ui/、components/theme-provider.tsx、ConsoleLayout.tsx 与各工作页；theme.css 提供与 Web 相机共用的官方主题，style.css 维护控制台字体与业务布局。控制台仍使用 Geist，相机字体见[相机专题](40-相机推流节点.md#界面与字体)。
 - node scripts/check-ui-theme.js 在 CI 核对控制台官方主题、文字对比和组件引用。静态检查不替代实际窗口或设备目检；控制台布局验证仅限本轮实际检查的 16:10，不推断其他比例。

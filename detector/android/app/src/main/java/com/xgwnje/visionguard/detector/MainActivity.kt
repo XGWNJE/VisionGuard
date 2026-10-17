@@ -53,6 +53,7 @@ class MainActivity : ComponentActivity() {
     private var publisher: CameraPublisher? = null
     @Volatile private var cameraGeneration = 0
     private var streaming by mutableStateOf(false)
+    private var cameraMessage by mutableStateOf("")
     private var preview by mutableStateOf<Bitmap?>(null)
     private var captureSize by mutableStateOf<Pair<Int, Int>?>(null)
     private var sentSize by mutableStateOf<Pair<Int, Int>?>(null)
@@ -65,9 +66,11 @@ class MainActivity : ComponentActivity() {
     private var diagnosticAt = 0L
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
+            cameraMessage = ""
             if (policy.permissionStartPending && policy.foreground) startCamera()
         } else {
             policy.cancelPermissionRequest()
+            cameraMessage = "相机权限未开启，请在本机授权后重试。"
             Toast.makeText(this, "需要允许摄像头后才能推流", Toast.LENGTH_LONG).show()
         }
     }
@@ -90,10 +93,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
             VisionguardTheme(darkTheme = darkTheme) {
-                Column(Modifier.fillMaxSize().statusBarsPadding()) {
-                if (session == null) ApplicationOptions(appearance, "android-camera")
+                Column(Modifier.fillMaxSize().safeDrawingPadding()) {
                 Box(Modifier.weight(1f)) {
-                if (session == null) AccountLogin(account, "相机推流节点", "android-camera")
+                if (session == null) CameraLoginScreen(account, appearance)
                 else key(session!!.scope) {
                     val prefs = remember { getSharedPreferences("camera-options-" + AccountStore.cacheKey(this@MainActivity), MODE_PRIVATE) }
                     fun saveCameraOption(key: String, raw: String): String {
@@ -123,7 +125,7 @@ class MainActivity : ComponentActivity() {
                         onDispose { stopCamera("user"); connection.close(); publisher = null }
                     }
                     val state by connection.state.collectAsState()
-                    Column(Modifier.fillMaxSize().navigationBarsPadding()) {
+                    Column(Modifier.fillMaxSize()) {
                         CameraHome(state, preview, streaming, highResolution, dimScreen, hidePreview, captureSize, sentSize,
                             onStart = {
                                 if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startCamera()
@@ -132,10 +134,11 @@ class MainActivity : ComponentActivity() {
                             onResolution = { saveCameraOption("cameraResolution", if (it) "720p" else "480p") },
                             onDim = { saveCameraOption("cameraDimScreen", it.toString()) },
                             onHidePreview = { saveCameraOption("cameraHidePreview", it.toString()) },
+                            message = cameraMessage,
                             header = {
                                 AccountHeader(account, session!!, actions = {
                                     Row { CameraHelpButton(state, captureSize, sentSize, highResolution); ApplicationOptions(appearance, "android-camera", Modifier, compact = true) }
-                                }, compact = true, beforeLogout = {
+                                }, compact = true, title = "相机推流节点", beforeLogout = {
                                     stopCamera("user"); connection.close(); prefs.edit().clear().commit()
                                 })
                             })
@@ -179,7 +182,7 @@ class MainActivity : ComponentActivity() {
         if (state?.connected != true || state.stream?.targetDeviceId == null) { policy.cancelPermissionRequest(); completed?.invoke(false, "请先关联视觉推理节点并连接服务"); return }
         if (streaming) { completed?.invoke(true, "已在推流"); return }
         if (!policy.start()) { completed?.invoke(false, "当前状态不允许启动推流"); return }
-        streaming = true; captureSize = null; sentSize = null; applyScreen(); publisher?.start()
+        streaming = true; cameraMessage = ""; captureSize = null; sentSize = null; applyScreen(); publisher?.start()
         val own = ++cameraGeneration
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
@@ -226,7 +229,7 @@ class MainActivity : ComponentActivity() {
                 imageAnalysis = analysis
                 updateCameraRotation()
                 completed?.invoke(true, "摄像头已启动，等待画面通道；收帧状态请查看推流统计")
-            }.onFailure { stopCamera("user"); completed?.invoke(false, "无法启动摄像头"); Toast.makeText(this, "无法启动摄像头", Toast.LENGTH_LONG).show() }
+            }.onFailure { stopCamera("user"); cameraMessage = "无法启动摄像头，请检查相机占用与系统权限。"; completed?.invoke(false, "无法启动摄像头"); Toast.makeText(this, "无法启动摄像头", Toast.LENGTH_LONG).show() }
         }, ContextCompat.getMainExecutor(this))
     }
     private fun stopCamera(reason: String) {

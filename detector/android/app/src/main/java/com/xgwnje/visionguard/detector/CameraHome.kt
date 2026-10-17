@@ -19,15 +19,16 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.xgwnje.visionguard.account.VisionGuardControlColors
-import com.xgwnje.visionguard.account.VisionGuardStatusColors
+import com.xgwnje.visionguard.account.AccountStore
+import com.xgwnje.visionguard.account.AccountLogin
+import com.xgwnje.visionguard.account.ApplicationOptions
+import com.xgwnje.visionguard.account.AppearancePreference
 import com.xgwnje.visionguard.detector.stream.PublisherState
 import com.xgwnje.visionguard.icons.LucideIcons
 
@@ -35,67 +36,97 @@ import com.xgwnje.visionguard.icons.LucideIcons
 internal fun CameraHome(state: PublisherState, preview: Bitmap?, streaming: Boolean, highResolution: Boolean,
     dim: Boolean, hidden: Boolean, captureSize: Pair<Int, Int>?, sentSize: Pair<Int, Int>?, onStart: () -> Unit,
     onStop: () -> Unit, onBind: (String) -> Unit, onRefresh: () -> Unit, onResolution: (Boolean) -> Unit,
-    onDim: (Boolean) -> Unit, onHidePreview: (Boolean) -> Unit, header: @Composable () -> Unit) {
+    onDim: (Boolean) -> Unit, onHidePreview: (Boolean) -> Unit, message: String = "", header: @Composable () -> Unit) {
     val configuration = LocalConfiguration.current
     val landscape = configuration.screenWidthDp > configuration.screenHeightDp
-    val tablet = minOf(configuration.screenWidthDp, configuration.screenHeightDp) >= 600
-    val previewWeight = if (tablet && LocalDensity.current.fontScale <= 1.3f) 2f else 1f
     val controls: @Composable (Modifier) -> Unit = { modifier ->
-        CameraControlPanel(modifier, header, state, streaming, highResolution, dim, hidden, captureSize, sentSize,
-            onStart, onStop, onBind, onRefresh, onResolution, onDim, onHidePreview)
+        CameraControlPanel(modifier, state, streaming, highResolution, dim, captureSize, sentSize, message,
+            onStart, onStop, onBind, onRefresh, onResolution, onDim)
     }
     // Both regions keep their geometry when preview visibility, connection or stream state changes.
-    Box(Modifier.fillMaxSize().padding(12.dp)) {
-        if (landscape) Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            controls(Modifier.weight(1f).fillMaxHeight())
-            CameraPreview(preview, streaming, hidden, Modifier.weight(previewWeight).fillMaxHeight())
-        } else Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            CameraPreview(preview, streaming, hidden, Modifier.weight(previewWeight).fillMaxWidth())
-            controls(Modifier.weight(1f).fillMaxWidth())
+    Column(Modifier.fillMaxSize()) {
+        header()
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Box(Modifier.weight(1f).fillMaxWidth().padding(12.dp)) {
+            if (landscape) Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                controls(Modifier.weight(3f).fillMaxHeight())
+                CameraPreview(preview, streaming, hidden, sentSize, onHidePreview, Modifier.weight(2f).fillMaxHeight())
+            } else Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                controls(Modifier.weight(1.7f).fillMaxWidth())
+                CameraPreview(preview, streaming, hidden, sentSize, onHidePreview, Modifier.weight(1f).fillMaxWidth())
+            }
         }
     }
 }
 
 @Composable
-private fun CameraControlPanel(modifier: Modifier, header: @Composable () -> Unit, state: PublisherState,
-    streaming: Boolean, highResolution: Boolean, dim: Boolean, hidden: Boolean,
-    captureSize: Pair<Int, Int>?, sentSize: Pair<Int, Int>?, onStart: () -> Unit, onStop: () -> Unit,
+private fun CameraControlPanel(modifier: Modifier, state: PublisherState,
+    streaming: Boolean, highResolution: Boolean, dim: Boolean,
+    captureSize: Pair<Int, Int>?, sentSize: Pair<Int, Int>?, message: String, onStart: () -> Unit, onStop: () -> Unit,
     onBind: (String) -> Unit, onRefresh: () -> Unit, onResolution: (Boolean) -> Unit,
-    onDim: (Boolean) -> Unit, onHidePreview: (Boolean) -> Unit) {
+    onDim: (Boolean) -> Unit) {
     val colors = MaterialTheme.colorScheme
     OutlinedCard(modifier.semantics { contentDescription = "控制和状态区" }, colors = CardDefaults.outlinedCardColors(containerColor = colors.surface),
         border = BorderStroke(1.dp, colors.outlineVariant), shape = MaterialTheme.shapes.medium) {
-        header()
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("推流控制", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            Surface(shape = MaterialTheme.shapes.small, color = if (streaming) colors.primary else colors.surfaceVariant,
+                contentColor = if (streaming) colors.onPrimary else colors.onSurface) {
+                Text(if (!state.connected) "连接中" else if (streaming) "推流中" else "未推流", Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
+            }
+        }
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-        val rowGap = if (maxHeight >= 300.dp) 12.dp else 4.dp
+        val compact = maxHeight < 260.dp
+        val rowGap = if (maxHeight >= 300.dp) 12.dp else 8.dp
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).heightIn(min = maxHeight).padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(rowGap, Alignment.CenterVertically)) {
-            CameraStatistics(state, sentSize, highResolution && captureSize != null && (maxOf(captureSize.first, captureSize.second) < 1280 || minOf(captureSize.first, captureSize.second) < 720))
+            verticalArrangement = Arrangement.spacedBy(rowGap)) {
+            CameraStatistics(state, compact)
+            if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall, color = colors.error)
+            if (!state.connected || state.status.contains("失败") || state.status.contains("无法") || state.status.contains("超时")) {
+                Text(state.status, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            }
             CameraTarget(state, streaming, onBind, onRefresh)
-            CameraSettings(streaming, highResolution, dim, hidden, rowGap, onResolution, onDim, onHidePreview)
+            CameraSettings(streaming, highResolution, dim, rowGap, onResolution, onDim)
+            if (highResolution && captureSize != null && sentSize != null && (maxOf(captureSize.first, captureSize.second) < 1280 || minOf(captureSize.first, captureSize.second) < 720)) {
+                Text("当前摄像头已回退至 ${sentSize.first}×${sentSize.second}", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            }
         }
         }
         if (streaming) Button(onStop, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).heightIn(min = 48.dp),
-            colors = VisionGuardControlColors.button(containerColor = colors.error, contentColor = colors.onError),
-            shape = MaterialTheme.shapes.small) { Text("停止推流") }
+            colors = VisionGuardControlColors.button(),
+            shape = MaterialTheme.shapes.small) { Icon(LucideIcons.Square, null, Modifier.size(16.dp)); Spacer(Modifier.width(8.dp)); Text("停止推流") }
         else Button(onStart, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).heightIn(min = 48.dp),
             enabled = state.connected && state.stream?.targetDeviceId != null,
-            colors = VisionGuardControlColors.button(), shape = MaterialTheme.shapes.small) { Text("开始推流") }
+            colors = VisionGuardControlColors.button(), shape = MaterialTheme.shapes.small) { Icon(LucideIcons.Play, null, Modifier.size(16.dp)); Spacer(Modifier.width(8.dp)); Text("开始推流") }
     }
 }
 
 @Composable
-private fun CameraPreview(preview: Bitmap?, streaming: Boolean, hidden: Boolean, modifier: Modifier) {
+private fun CameraPreview(preview: Bitmap?, streaming: Boolean, hidden: Boolean, sentSize: Pair<Int, Int>?, onHidePreview: (Boolean) -> Unit, modifier: Modifier) {
     val colors = MaterialTheme.colorScheme
-    OutlinedCard(modifier.semantics { contentDescription = "预览区域" }, colors = CardDefaults.outlinedCardColors(containerColor = colors.surfaceVariant),
+    OutlinedCard(modifier.semantics { contentDescription = "预览区域" }, colors = CardDefaults.outlinedCardColors(containerColor = colors.surface),
         border = BorderStroke(1.dp, colors.outlineVariant), shape = MaterialTheme.shapes.medium) {
-        if (!hidden && preview != null) Image(preview.asImageBitmap(), "实时摄像头画面",
-            Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-        else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            if (hidden || streaming) Text(if (hidden) "预览已关闭" else "等待画面",
-                Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-            else Icon(LucideIcons.ImageOff, "暂无相机预览", Modifier.size(32.dp), tint = colors.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(LucideIcons.Camera, null, Modifier.size(16.dp), tint = colors.onSurfaceVariant)
+            Text("本机预览", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+            Switch(!hidden, { onHidePreview(!it) }, modifier = Modifier.semantics { contentDescription = "本机预览开关" })
         }
+        HorizontalDivider(color = colors.outlineVariant)
+        Surface(Modifier.weight(1f).fillMaxWidth(), color = colors.surfaceVariant) {
+            if (!hidden && preview != null) Image(preview.asImageBitmap(), "实时摄像头画面",
+                Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+            else Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(if (hidden) LucideIcons.EyeOff else LucideIcons.Camera, null, Modifier.size(24.dp), tint = colors.onSurfaceVariant)
+                Spacer(Modifier.height(8.dp))
+                Text(if (hidden) "预览已关闭" else if (streaming) "等待画面" else "暂无画面", style = MaterialTheme.typography.bodyMedium)
+                if (hidden && streaming) Text("推流仍在继续", style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            }
+        }
+        HorizontalDivider(color = colors.outlineVariant)
+        Text(if (streaming && sentSize != null) "发送 ${sentSize.first}×${sentSize.second}" else "等比预览",
+            Modifier.padding(horizontal = 12.dp, vertical = 4.dp), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
     }
 }
 
@@ -103,12 +134,13 @@ private fun CameraPreview(preview: Bitmap?, streaming: Boolean, hidden: Boolean,
 private fun CameraTarget(state: PublisherState, streaming: Boolean, onBind: (String) -> Unit, onRefresh: () -> Unit) {
     val colors = MaterialTheme.colorScheme
     var choosing by remember { mutableStateOf(false) }
+    var candidate by remember { mutableStateOf("") }
     val selected = state.targets.find { it.deviceId == state.stream?.targetDeviceId }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             CameraFieldLabel("目标")
             Box(Modifier.weight(1f)) {
-                OutlinedButton({ choosing = true }, enabled = !streaming && state.connected && state.targets.isNotEmpty(),
+                OutlinedButton({ candidate = state.stream?.targetDeviceId.orEmpty(); choosing = true }, enabled = !streaming && state.connected && state.targets.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small,
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                     colors = VisionGuardControlColors.outlinedButton(contentColor = colors.onSurface), border = BorderStroke(1.dp, colors.outlineVariant)) {
@@ -123,13 +155,6 @@ private fun CameraTarget(state: PublisherState, streaming: Boolean, onBind: (Str
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Icon(LucideIcons.ChevronRight, null, Modifier.padding(start = 4.dp).size(16.dp).rotate(90f))
                 }
-                DropdownMenu(expanded = choosing && !streaming && state.connected,
-                    onDismissRequest = { choosing = false }, modifier = Modifier.heightIn(max = 280.dp).widthIn(max = 400.dp)) {
-                    state.targets.forEach { target ->
-                        DropdownMenuItem(text = { Text((if (target.deviceId == state.stream?.targetDeviceId) "已关联 · " else "") + target.deviceName) },
-                            onClick = { onBind(target.deviceId); choosing = false }, modifier = Modifier.heightIn(min = 48.dp))
-                    }
-                }
             }
             OutlinedIconButton(onRefresh, enabled = state.connected && !state.targetsLoading,
                 modifier = Modifier.size(48.dp), shape = MaterialTheme.shapes.small,
@@ -138,34 +163,43 @@ private fun CameraTarget(state: PublisherState, streaming: Boolean, onBind: (Str
             }
         }
     }
+    if (choosing) AlertDialog(onDismissRequest = { choosing = false },
+        title = { Text("选择视觉推理节点") },
+        text = { Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            state.targets.forEach { target ->
+                OutlinedButton({ candidate = target.deviceId }, enabled = !streaming && state.connected,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = MaterialTheme.shapes.small,
+                    border = BorderStroke(1.dp, if (candidate == target.deviceId) colors.primary else colors.outlineVariant),
+                    colors = VisionGuardControlColors.outlinedButton(contentColor = colors.onSurface)) {
+                    Column(Modifier.weight(1f)) {
+                        Text(target.deviceName, style = MaterialTheme.typography.bodyMedium)
+                        Text((if (target.online) "可关联" else "离线") + if (target.platform.isNotBlank()) " · ${target.platform}" else "",
+                            style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                    }
+                    if (candidate == target.deviceId) Icon(LucideIcons.Check, null, Modifier.padding(start = 8.dp).size(16.dp))
+                }
+            }
+        } },
+        confirmButton = { TextButton({ onBind(candidate); choosing = false }, enabled = candidate.isNotBlank() && !streaming && state.connected) { Text("关联此节点") } },
+        dismissButton = { TextButton({ choosing = false }) { Text("返回") } })
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CameraSettings(streaming: Boolean, highResolution: Boolean, dim: Boolean, hidden: Boolean,
-    rowGap: Dp, onResolution: (Boolean) -> Unit, onDim: (Boolean) -> Unit, onHidePreview: (Boolean) -> Unit) {
+private fun CameraSettings(streaming: Boolean, highResolution: Boolean, dim: Boolean,
+    rowGap: Dp, onResolution: (Boolean) -> Unit, onDim: (Boolean) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(rowGap)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             CameraFieldLabel("规格")
-            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(false to "640×480", true to "720P").forEach { (resolution, title) ->
-                    val selected = highResolution == resolution
-                    val colors = MaterialTheme.colorScheme
-                    OutlinedButton(onClick = { onResolution(resolution) }, enabled = !streaming,
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp).semantics { this.selected = selected },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp), shape = MaterialTheme.shapes.small,
-                        border = BorderStroke(1.dp, if (selected) colors.primary else colors.outlineVariant),
-                        colors = VisionGuardControlColors.outlinedButton(
-                            containerColor = if (selected) colors.primaryContainer else colors.surface,
-                            contentColor = if (selected) VisionGuardStatusColors.onSuccessContainer else colors.onSurfaceVariant)) {
-                        Text(title, style = MaterialTheme.typography.bodyMedium)
-                    }
+            SingleChoiceSegmentedButtonRow(Modifier.weight(1f).heightIn(min = 48.dp)) {
+                listOf(false to "640×480", true to "720P").forEachIndexed { index, (resolution, title) ->
+                    SegmentedButton(selected = highResolution == resolution, onClick = { onResolution(resolution) }, enabled = !streaming,
+                        shape = SegmentedButtonDefaults.itemShape(index, 2, MaterialTheme.shapes.small), icon = {},
+                        label = { Text(title, style = MaterialTheme.typography.bodyMedium) })
                 }
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CameraSetting("降低亮度", dim, onDim, Modifier.weight(1f))
-            CameraSetting("预览", !hidden, { onHidePreview(!it) }, Modifier.weight(1f))
-        }
+        CameraSetting("降低亮度", dim, onDim)
     }
 }
 
@@ -190,30 +224,24 @@ private fun CameraFieldLabel(label: String) {
 }
 
 @Composable
-private fun CameraStatistics(state: PublisherState, sentSize: Pair<Int, Int>?, fallback: Boolean) {
+private fun CameraStatistics(state: PublisherState, compact: Boolean) {
     val colors = MaterialTheme.colorScheme
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val statusColor = when {
-                state.status.contains("失败") || state.status.contains("无法") || state.status.contains("超时") -> colors.error
-                !state.connected || state.status.contains("等待") || state.status.contains("重连") -> VisionGuardStatusColors.warning
-                state.stream?.isStreaming == true -> VisionGuardStatusColors.onSuccessContainer
-                else -> colors.onSurface
-            }
-            Text(state.status, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = statusColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            sentSize?.let { Text("发送 ${it.first}×${it.second}" + if (fallback) " · 回退" else "",
-                style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant) }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("入队" to "${state.sentFrames}", "收帧" to "${state.acknowledgedFrames}",
-                "丢弃" to "${state.droppedFrames}/${state.relayDroppedFrames}").forEachIndexed { index, (label, value) ->
-                if (index > 0) VerticalDivider(Modifier.height(16.dp), color = colors.outlineVariant)
-                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            listOf("本机入队" to state.sentFrames, "服务收帧" to state.acknowledgedFrames).forEachIndexed { index, (label, value) ->
+                if (index > 0) VerticalDivider(Modifier.height(if (compact) 24.dp else 60.dp), color = colors.outlineVariant)
+                if (compact) Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(label, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-                    Text(value, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("$value", style = MaterialTheme.typography.titleMedium)
+                } else Column(Modifier.weight(1f)) {
+                    Text(label, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                    Text("$value", style = MaterialTheme.typography.headlineLarge)
                 }
             }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("本机丢弃 ${state.droppedFrames}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+            Text("服务丢弃 ${state.relayDroppedFrames}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
         }
     }
 }
@@ -242,8 +270,9 @@ internal fun CameraHelpButton(state: PublisherState, captureSize: Pair<Int, Int>
                         Text("采集 ${captureSize.first}×${captureSize.second} · 发送 ${sentSize.first}×${sentSize.second}" + if (fallback) " · 回退" else "", style = MaterialTheme.typography.bodySmall)
                     }
                     CameraHelpSection("亮度与预览", "降低亮度仅在推流时调整当前窗口；停止后恢复。关闭预览只隐藏本机画面，推流继续，区域尺寸和位置不变。外观在设置中独立选择。")
-                    CameraHelpSection("统计", "入队表示本机发送队列接纳；收帧只表示服务中继收件，不代表视觉推理节点已接收或完成推理。丢弃的两个数值依次为本机 / 服务；主动限帧未采样不算丢弃。")
-                    Text("入队 ${state.sentFrames} · 收帧 ${state.acknowledgedFrames} · 丢弃 ${state.droppedFrames}/${state.relayDroppedFrames}", style = MaterialTheme.typography.bodySmall)
+                    CameraHelpSection("统计", "本机入队表示发送队列已接纳；服务收帧表示中继已收到，不代表完成推理。本机丢弃与服务丢弃分别统计，主动限帧未采样不算丢弃。")
+                    Text("本机入队 ${state.sentFrames} · 服务收帧 ${state.acknowledgedFrames}", style = MaterialTheme.typography.bodySmall)
+                    Text("本机丢弃 ${state.droppedFrames} · 服务丢弃 ${state.relayDroppedFrames}", style = MaterialTheme.typography.bodySmall)
                     Text("当前主动未采样 ${state.sampledOutFrames} 帧", style = MaterialTheme.typography.bodySmall)
                     state.stream?.sourceName?.takeIf { it.isNotBlank() }?.let {
                         Text("当前推理来源：$it", style = MaterialTheme.typography.bodySmall)
@@ -260,5 +289,22 @@ private fun CameraHelpSection(title: String, description: String) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+internal fun CameraLoginScreen(account: AccountStore, appearance: AppearancePreference) {
+    BoxWithConstraints(Modifier.fillMaxSize().imePadding().padding(16.dp), contentAlignment = Alignment.Center) {
+        OutlinedCard(Modifier.widthIn(max = 440.dp).fillMaxWidth().heightIn(max = maxHeight),
+            colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = MaterialTheme.shapes.medium) {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(LucideIcons.Camera, null, Modifier.size(24.dp))
+                Text("相机推流节点", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                ApplicationOptions(appearance, "android-camera", Modifier, compact = true)
+            }
+            Box(Modifier.weight(1f, fill = false)) { AccountLogin(account, "登录", "android-camera", compact = true) }
+        }
     }
 }

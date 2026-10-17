@@ -37,10 +37,7 @@ const baseline = new Map([
   ["警告文字 / 表面",[["805500","FFF1D6"],["F4CC79","3B3020"]]],
   ["错误文字 / 表面",[["B83434","FCEBEC"],["FF9696","442326"]]],
 ]);
-// Other clients retain their released theme during this console-only update.
-const css = read('detector/web/src/style.css');
-const web = [...css.matchAll(/:root(?:\[data-theme="dark"\])?\s*\{([^}]+)\}/g)].map(match =>
-  Object.fromEntries([...match[1].matchAll(/--([\w-]+):\s*#([0-9A-F]{6})\s*;/gi)].map(m => [m[1], m[2].toUpperCase()])));
+// The inference client and Windows retain their released palette.
 const compose = read('android-shared/src/main/java/com/xgwnje/visionguard/account/VisionGuardTheme.kt');
 const android = ['Light', 'Dark'].map(name => {
   const block = compose.match(new RegExp(`private val ${name} = [\\s\\S]*?(?=\\nprivate val |$)`))?.[0] ?? '';
@@ -56,7 +53,6 @@ const windows = [dictionaries[1] ?? {}, dictionaries[0] ?? {}];
 let checks = 0;
 const neutralRoles = new Set(['页面', '面板', '次级表面', '正文', '辅助文字', '边框', '选中背景']);
 for (const [index, theme] of ['light', 'dark'].entries()) {
-  if (!web[index]) errors.push(`Web ${theme} root palette missing`);
   for (const [label, cssKey, kotlinKey, wpfKey] of roles) {
     const expected = baseline.get(label)?.[index]?.[0];
     if (!expected) { errors.push(`Palette regression fixture missing ${label}/${theme}`); continue; }
@@ -64,15 +60,15 @@ for (const [index, theme] of ['light', 'dark'].entries()) {
       checks++;
       if (new Set(expected.match(/../g)).size !== 1) errors.push(`Palette ${theme} ${label}: neutral gray requires equal RGB channels`);
     }
-    const actual = [['Web', web[index]?.[cssKey]], ['Android', android[index][kotlinKey ?? cssKey]], ['Windows', windows[index][wpfKey]]];
+    const actual = [['Android', android[index][kotlinKey ?? cssKey]], ['Windows', windows[index][wpfKey]]];
     for (const [platform, value] of actual) {
       checks++;
       if (value !== expected) errors.push(`${platform} ${theme} ${label}: #${value ?? 'missing'} != #${expected}`);
     }
   }
-  for (const [label, cssKey, kotlinKey] of [['警告文字 / 表面', 'warning-surface', 'tertiaryContainer'], ['错误文字 / 表面', 'error-surface', 'errorContainer']]) {
+  for (const [label, kotlinKey] of [['警告文字 / 表面', 'tertiaryContainer'], ['错误文字 / 表面', 'errorContainer']]) {
     const expected = baseline.get(label)?.[index]?.[1];
-    for (const [platform, value] of [['Web', web[index]?.[cssKey]], ['Android', android[index][kotlinKey]]]) {
+    for (const [platform, value] of [['Android', android[index][kotlinKey]]]) {
       checks++;
       if (value !== expected) errors.push(`${platform} ${theme} ${label} surface differs from regression fixture`);
     }
@@ -91,13 +87,6 @@ function checkContrast(label, foreground, background) {
   if (!(ratio >= 4.5)) errors.push(`${label}: text contrast ${ratio.toFixed(2)}:1 < 4.5:1`);
 }
 for (const [i, theme] of ['light', 'dark'].entries()) {
-  const palette = web[i] ?? {};
-  for (const surface of ['page', 'panel', 'surface']) {
-    for (const foreground of ['text', 'muted', 'on-selected', 'error']) checkContrast(`Web ${theme} ${foreground}/${surface}`, palette[foreground], palette[surface]);
-  }
-  for (const [foreground, background] of [['on-accent', 'accent'], ['on-error', 'error'], ['on-selected', 'selected'], ['error', 'error-surface'], ['warning', 'warning-surface']]) {
-    checkContrast(`Web ${theme} ${foreground}/${background}`, palette[foreground], palette[background]);
-  }
   const material = android[i];
   for (const role of ['primary', 'primaryContainer', 'secondary', 'secondaryContainer', 'tertiary', 'tertiaryContainer', 'error', 'errorContainer', 'background', 'surface', 'surfaceVariant', 'inverseSurface']) {
     const onRole = `on${role[0].toUpperCase()}${role.slice(1)}`;
@@ -112,13 +101,21 @@ for (const file of ['detector/android/app/src/main/java/com/xgwnje/visionguard/d
 }
 checks++;
 if (/window\.(?:confirm|alert)\(/.test(read('receiver/web/src/main.tsx'))) errors.push('Web app dialog bypasses theme');
-// Web 相机保留当前发行主题；控制台的官方主题在下方单独核对。
+// Both Web entries use the same official theme; the camera alone bundles Noto Sans SC.
 const webCameraCss = read('detector/web/src/style.css');
 checks++;
 if (/window\.(?:confirm|alert)\(/.test(read('detector/web/src/main.tsx'))) errors.push('Web camera dialog bypasses theme');
-for (const token of ['--panel', '--accent', '--on-accent', '--error', '--on-error', '--selected', '--on-selected']) {
+checks++;
+if (!webCameraCss.includes('@import "../../../receiver/web/src/theme.css"') || !webCameraCss.includes('@fontsource-variable/noto-sans-sc')) errors.push('Camera must reuse the console theme and locally bundle Noto Sans SC');
+const cameraTheme = read('detector/android/app/src/main/java/com/xgwnje/visionguard/detector/ui/theme/Theme.kt');
+checks++;
+if (!cameraTheme.includes('VisionGuardThemeStyle.CONSOLE') || !cameraTheme.includes('R.font.noto_sans_sc')) errors.push('Android camera must use the shared console theme and bundled font');
+checks++;
+const fontHash = require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(root, 'detector/android/app/src/main/res/font/noto_sans_sc.ttf'))).digest('hex');
+if (fontHash !== 'a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da') errors.push('Android camera Noto Sans SC font differs from the pinned Google Fonts source');
+for (const file of ['detector/android/app/src/main/assets/third-party/noto-sans-sc-license.txt','detector/web/public/third-party/noto-sans-sc-license.txt']) {
   checks++;
-  if ((webCameraCss.match(new RegExp(`${token}:\\s*#[0-9A-F]{6}`, 'gi')) ?? []).length < 2) errors.push(`Web camera style.css: missing light/dark ${token}`);
+  if (!read(file).includes('SIL OPEN FONT LICENSE')) errors.push(file+': missing font license');
 }
 function tokens(css, selector) {
   const block = css.match(new RegExp(`${selector}\\s*\\{([^}]+)\\}`))?.[1] ?? '';
@@ -136,7 +133,7 @@ function rgb(value) {
     .map(c => Math.round(Math.max(0, Math.min(1, c <= .0031308 ? 12.92*c : 1.055*c**(1/2.4)-.055))*255).toString(16).padStart(2,'0')).join('').toUpperCase();
 }
 
-const consoleCss = read('receiver/web/src/style.css');
+const consoleCss = read('receiver/web/src/theme.css') + read('receiver/web/src/style.css');
 const config = JSON.parse(read('receiver/web/components.json'));
 const dependencies = JSON.parse(read('receiver/web/package.json')).dependencies;
 checks++;

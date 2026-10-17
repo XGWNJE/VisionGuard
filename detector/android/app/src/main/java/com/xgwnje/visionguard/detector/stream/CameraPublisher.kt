@@ -14,7 +14,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-data class StreamTarget(val deviceId: String, val deviceName: String)
+data class StreamTarget(val deviceId: String, val deviceName: String, val platform: String = "", val online: Boolean = true)
 data class CameraStream(val streamId: String, val targetDeviceId: String? = null, val sourceId: String? = null, val sourceName: String = "", val isStreaming: Boolean = false)
 data class PublisherState(val connected: Boolean = false, val status: String = "正在连接", val stream: CameraStream? = null,
     val targets: List<StreamTarget> = emptyList(), val targetsLoading: Boolean = true, val targetsLoadFailed: Boolean = false,
@@ -158,8 +158,8 @@ class CameraPublisher(private val account: AccountStore,
             val targets = buildList {
                 for (i in 0 until devices.length()) {
                     val item = devices.getJSONObject(i)
-                    if (item.optString("component") == "windows-inference" || item.optString("platform") == "windows" && item.optString("nodeType") == "visual")
-                        add(StreamTarget(item.getString("deviceId"), item.getString("deviceName")))
+                    if (item.optString("component") in setOf("windows-inference", "android-inference") || item.optString("platform") == "windows" && item.optString("nodeType") == "visual")
+                        add(StreamTarget(item.getString("deviceId"), item.getString("deviceName"), item.optString("platform"), item.optBoolean("online", true)))
                 }
             }
             updateStreams(account.request("/api/streams").optJSONArray("streams") ?: JSONArray())

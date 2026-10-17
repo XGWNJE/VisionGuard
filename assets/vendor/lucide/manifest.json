@@ -478,6 +478,17 @@
       "sha256": "f0a755619fdbbff89fb3e517cf45e74e9581f5d5783639f07f50ea08607c2788"
     },
     {
+      "name": "square",
+      "symbol": "Square",
+      "platforms": [
+        "android",
+        "web"
+      ],
+      "autoMirror": false,
+      "notification": false,
+      "sha256": "34a59e4e570003baac9c4a9b82f4a8caaf60e0e1d4064a722c8754766c369385"
+    },
+    {
       "name": "timer",
       "symbol": "Timer",
       "platforms": [

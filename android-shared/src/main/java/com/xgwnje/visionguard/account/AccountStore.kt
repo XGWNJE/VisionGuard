@@ -355,7 +355,7 @@ private fun kotlinx.coroutines.CoroutineScope.launchAccount(block: suspend () ->
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("DEPRECATION")
 @Composable
-fun AccountHeader(store: AccountStore, session: AccountSession, actions: @Composable () -> Unit = {}, compact: Boolean = false, beforeLogout: suspend () -> Unit = {}) {
+fun AccountHeader(store: AccountStore, session: AccountSession, actions: @Composable () -> Unit = {}, compact: Boolean = false, title: String? = null, beforeLogout: suspend () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf(false) }
     var oldPassword by remember { mutableStateOf("") }
@@ -370,7 +370,11 @@ fun AccountHeader(store: AccountStore, session: AccountSession, actions: @Compos
     }
     Surface(color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = if (compact) 12.dp else 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compact) 0.dp else 12.dp)) {
-            Text(session.deviceName, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (title == null) Text(session.deviceName, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            else Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(session.deviceName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             actions()
             Box {
                 if (compact) IconButton({ menuOpen = true }, Modifier.size(48.dp)) {

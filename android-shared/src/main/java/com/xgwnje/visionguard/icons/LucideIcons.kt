@@ -348,6 +348,12 @@ object LucideIcons {
         ))
     }
 
+    val Square: ImageVector by lazy {
+        vector("square", false, listOf(
+            "M5 3H19a2 2 0 0 1 2 2V19a2 2 0 0 1 -2 2H5a2 2 0 0 1 -2 -2V5a2 2 0 0 1 2 -2Z"
+        ))
+    }
+
     val Timer: ImageVector by lazy {
         vector("timer", false, listOf(
             "M10 2L14 2",

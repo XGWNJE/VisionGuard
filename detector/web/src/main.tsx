@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Camera, ChevronRight, CircleHelp, Info, RefreshCw, Square } from 'lucide-react';
+import { ThemeProvider } from '@/components/theme-provider';
+import { CameraContextError, CameraLogin, CameraScreen } from './CameraInterface';
 import './style.css';
 import { browserDeviceModel, CameraSettingsStore, indexedDbIdentityPort, readOrCreateDeviceIdentity } from './device';
 import { cameraContextIssue } from './protocol';
@@ -73,7 +74,7 @@ export function App() {
   const [deviceId, setDeviceId] = useState('');
   const [devices, setDevices] = useState<CameraDevice[]>([]);
   const [notice, setNotice] = useState('');
-  const [help, setHelp] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [, setRevision] = useState(0);
 
@@ -136,6 +137,7 @@ export function App() {
       media.stop('user');
       controlRef.current = undefined;
       mediaRef.current = undefined;
+      cameraRef.current = undefined;
     };
   }, [session, settingsStore]);
 
@@ -195,105 +197,23 @@ export function App() {
   }
   stopStreamingRef.current = stopStreaming;
 
-  if (contextIssue) return (
-    <main className="page notice-only"><section className="panel"><h1>相机推流节点</h1><p className="error" role="alert">{contextIssue}</p></section></main>
-  );
+  if (contextIssue) return <CameraContextError message={contextIssue} />;
+  if (!session) return <CameraLogin username={username} password={password} remember={remember} busy={busy} error={loginError}
+    onUsername={setUsername} onPassword={setPassword} onRemember={setRemember} onSubmit={event => void submitLogin(event)} />;
 
-  if (!session) return (
-    <main className="page login-page">
-      <form className="panel login-panel" onSubmit={event => void submitLogin(event)}>
-        <div className="brand"><Camera size={28} aria-hidden="true" /><h1>相机推流节点</h1></div>
-        <label>账号<input value={username} onChange={event => setUsername(event.target.value)} autoComplete="username" required /></label>
-        <label>密码<input type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete="current-password" required /></label>
-        <label className="checkbox"><input type="checkbox" checked={remember} onChange={event => setRemember(event.target.checked)} />记住账号（仅本机浏览器）</label>
-        {loginError && <p className="error" role="alert">{loginError}</p>}
-        <button type="submit" className="primary" disabled={busy}>{busy ? '正在登录…' : '登录'}</button>
-        <p className="subtle">使用与视觉推理节点相同的账号。浏览器只在 HTTPS（或本机 localhost）下提供摄像头。</p>
-      </form>
-    </main>
-  );
-
-  const control = controlRef.current?.state;
-  const media = mediaRef.current?.current;
-  const settings = settingsStore.current;
-  const target = control?.targets.find(item => item.deviceId === control?.stream?.targetDeviceId);
-
-  return (
-    <main className="page">
-      <header className="topbar">
-        <div className="identity"><Camera size={20} aria-hidden="true" /><strong>{session.device.deviceName}</strong>
-          <span className={`status-dot ${control?.connected ? 'online' : ''}`} />{control?.connected ? '在线' : '离线'}</div>
-        <div className="actions">
-          <button type="button" className="icon" aria-label="相机帮助" onClick={() => setHelp(true)}><CircleHelp size={18} /></button>
-          <button type="button" className="icon" onClick={logout}>退出</button>
-        </div>
-      </header>
-
-      <section className="panel preview-panel" aria-label="实时摄像头画面">
-        <video ref={videoRef} className={streaming && !settings.cameraHidePreview ? '' : 'hidden'} playsInline muted autoPlay />
-        {(!streaming || settings.cameraHidePreview) && <p className="placeholder">{settings.cameraHidePreview && streaming ? '预览已关闭' : streaming ? '等待画面' : '未推流'}</p>}
-      </section>
-
-      <section className="panel control-panel">
-        <p className="status">{control?.status ?? '正在连接'}{notice && <span className="warning"> · {notice}</span>}</p>
-        <dl className="stats">
-          <div><dt>入队</dt><dd>{media?.sentFrames ?? 0}</dd></div>
-          <div><dt>收帧</dt><dd>{media?.acknowledgedFrames ?? 0}</dd></div>
-          <div><dt>丢弃</dt><dd>{media?.droppedFrames ?? 0}/{media?.relayDroppedFrames ?? 0}</dd></div>
-        </dl>
-        <div className="field">
-          <span>目标</span>
-          <div className="picker">
-            <select aria-label="目标视觉推理节点" value={control?.stream?.targetDeviceId ?? ''} disabled={streaming || !control?.connected}
-              onChange={event => { const targetId = event.target.value; void controlRef.current?.bind(targetId).then(reason => reason && setNotice(reason)); }}>
-              <option value="">{control?.targetsLoading ? '加载中…' : control?.targetsLoadFailed ? '加载失败' : control?.targets.length ? '选择视觉推理节点' : '暂无节点'}</option>
-              {(control?.targets ?? []).map(item => <option key={item.deviceId} value={item.deviceId}>{item.deviceName}</option>)}
-            </select>
-            <button type="button" className="icon" aria-label="刷新目标" disabled={!control?.connected || control?.targetsLoading}
-              onClick={() => void controlRef.current?.refreshTargets()}><RefreshCw size={16} /></button>
-          </div>
-        </div>
-        <div className="field">
-          <span>规格</span>
-          <div className="segmented">
-            {(['480p', '720p'] as const).map(resolution => (
-              <button key={resolution} type="button" disabled={streaming} aria-pressed={settings.cameraResolution === resolution}
-                className={settings.cameraResolution === resolution ? 'selected' : ''}
-                onClick={() => { const failure = settingsStore.save('cameraResolution', resolution); if (failure) setNotice(failure); }}>{resolution === '720p' ? '720P' : '640×480'}</button>
-            ))}
-          </div>
-        </div>
-        <div className="field">
-          <span>摄像头</span>
-          <select aria-label="摄像头" value={deviceId} disabled={streaming} onChange={event => setDeviceId(event.target.value)}>
-            <option value="">默认（后置优先）</option>
-            {devices.map((device, index) => <option key={device.deviceId || index} value={device.deviceId}>{device.label}</option>)}
-          </select>
-        </div>
-        {!streaming && devices.length === 0 && <p className="warning" role="status">未检测到摄像头设备：请确认本机有摄像头并已授权，浏览器只在 HTTPS 或本机 localhost 下提供设备列表。</p>}
-        <label className="checkbox"><input type="checkbox" checked={!settings.cameraHidePreview}
-          onChange={event => { const failure = settingsStore.save('cameraHidePreview', String(!event.target.checked)); if (failure) setNotice(failure); }} />显示本机预览</label>
-        <p className="subtle">降低窗口亮度由系统控制，页面不做亮度调节。</p>
-        {streaming
-          ? <button type="button" className="primary danger" onClick={() => stopStreaming('user')}><Square size={16} />停止推流</button>
-          : <button type="button" className="primary" disabled={!control?.connected || !control?.stream?.targetDeviceId}
-              onClick={() => void startStreaming().then(reason => reason && setNotice(reason))}><ChevronRight size={16} />开始推流</button>}
-        {target && <p className="subtle">当前推理来源：{control?.stream?.sourceName || target.deviceName}</p>}
-      </section>
-
-      {help && (
-        <section className="panel help" role="dialog" aria-label="相机帮助">
-          <div className="help-head"><h2>相机帮助</h2><button type="button" className="icon" onClick={() => setHelp(false)}>返回</button></div>
-          <h3>开始推流</h3><p>相机与视觉推理节点登录同一账号，先关联目标再开始。规格与摄像头在推流期间不能更换；页面隐藏或锁屏会立即停止推流，回到页面需手动开始。</p>
-          <h3>画面与规格</h3><p>640×480 与 720P 是上限，最高 5 帧/秒；实际采集尺寸由浏览器与摄像头能力决定，超出上限时等比缩放，方向跟随屏幕方向。</p>
-          <h3>统计</h3><p>入队表示本机发送队列接纳，收帧只表示服务中继收件，不代表视觉推理节点已接收或完成推理；丢弃的两个数值依次为本机 / 服务。</p>
-          <h3>前台与授权</h3><p>浏览器会暂停后台标签页的摄像头与网络，因此不做后台保活。摄像头授权、HTTPS 与系统权限必须在本机满足，控制台远程开始推流不能绕过这些前提。</p>
-          <h3>当前状态</h3><p>{control?.status ?? '正在连接'} · 入队 {media?.sentFrames ?? 0} · 收帧 {media?.acknowledgedFrames ?? 0} · 未采样 {media?.sampledOutFrames ?? 0} · 媒体会话 {media?.sessions ?? 0}</p>
-          <p className="subtle"><Info size={14} aria-hidden="true" /> 设备名称、关联与解绑在控制台完成；本机名称上限 64 个字符。</p>
-        </section>
-      )}
-    </main>
-  );
+  function saveSetting(key: keyof CameraSettings, value: string) {
+    const failure = settingsStore.save(key, value);
+    setNotice(failure || ''); bump();
+  }
+  return <CameraScreen session={session} control={controlRef.current?.state} media={mediaRef.current?.current}
+    settings={settingsStore.current} streaming={streaming} starting={starting} notice={notice}
+    devices={devices} deviceId={deviceId} videoRef={videoRef} onCamera={setDeviceId}
+    onStart={() => { setNotice(''); setStarting(true); void startStreaming().then(reason => { if (reason) setNotice(reason); }).finally(() => setStarting(false)); }}
+    onStop={() => stopStreaming('user')} onLogout={logout}
+    onBind={async id => { const failure = await controlRef.current?.bind(id); setNotice(failure || ''); return failure; }}
+    onRefresh={() => void controlRef.current?.refreshTargets()}
+    onResolution={value => saveSetting('cameraResolution', value)}
+    onPreview={value => saveSetting('cameraHidePreview', String(!value))} />;
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(document.getElementById('root')!).render(<ThemeProvider storageKey="visionguard.camera.appearance"><App /></ThemeProvider>);
